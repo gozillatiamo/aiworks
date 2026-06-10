@@ -1,0 +1,22 @@
+# ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
+projects:
+  agent-paotung-cypress:
+    desc: The agent-paotung-cypress repo.
+    url: git@gitlab.com:bluepicode/qa/agent-paotung-cypress.git
+    path: ../agent-paotung-cypress
+    tags: [ofb-platform, cypress]
+  agent-webservice:
+    desc: The agent-webservice repo.
+    url: git@gitlab.com:bluepicode/ofb/agent-webservice.git
+    path: ../agent-webservice
+    tags: [ofb-platform, rust]
+  paotung-template:
+    desc: The paotung-template repo.
+    url: git@gitlab.com:bluepicode/ofb/paotung-template.git
+    path: ../paotung-template
+    tags: [ofb-platform, Next.js]
+  agent-db:
+    desc: The agent-db repo.
+    url: git@gitlab.com:bluepicode/ofb/agent-db.git
+    path: ../agent-db
+    tags: [ofb-platform, postgres]

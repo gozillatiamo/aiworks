@@ -6,3 +6,7 @@
 .env
 .env.*
 !.env.example
+agent-db/
+paotung-template/
+agent-webservice/
+agent-paotung-cypress/

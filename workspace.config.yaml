@@ -1,0 +1,118 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# workspace.config.yaml — the ONE file each organization fills in.
+#
+# Copy this to `workspace.config.yaml` and edit. It is the human-readable source of
+# truth for the whole orchestration:
+#   • skills + agents read it (and docs/agents/issue-tracker.md) at runtime;
+#   • `scripts/aiworks sync` reads `products:` (the repo URLs) and sets EVERYTHING up —
+#     generates mani.d/<product>.yaml, clones each repo, builds the codegraph index,
+#     installs the skill packs, seeds hooks, scaffolds CLAUDE.md + scripts/dev.sh;
+#   • the adapters read their slice from scripts/{vcs,tracker}/.env;
+#   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
+#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at
+#     runtime). `scripts/aiworks sync` — and every `add` / `remove` — REGENERATES that
+#     block from THIS file automatically (`scripts/aiworks config` is the standalone step),
+#     so the mirror always tracks this file. You never hand-edit dev-cycle.js.
+#
+# The fast path to onboard repos:  add their URLs under `products:` below, then run
+#   scripts/aiworks sync          # clone + onboard every declared repo (idempotent)
+# ─────────────────────────────────────────────────────────────────────────────
+
+org:
+  name: bluePi                       # shown in agent copy / summaries
+  product: "OFB"   # the domain agents ground research/copy in
+
+# ── Version control ──────────────────────────────────────────────────────────
+vcs:
+  provider: gitlab                 # github | gitlab  (auto-detected from the repo URL/origin if omitted)
+  auto_merge: false                 # after review + the test-suite gate validate the candidate, the
+                                   #   dev-cycle squash-merges the PR/MR automatically, then distributes
+                                   #   the merged build. false → it still reviews + runs the test-suite gate,
+                                   #   then STOPS and leaves the PR/MR OPEN for a human to merge (nothing is
+                                   #   merged or distributed). Override for a single repo with repos[].auto_merge.
+
+# ── Issue tracker ──────────────────────────────────────────────────────────────
+tracker:
+  provider: jira                 # notion | jira
+  ticket_prefix: OFB                # FM | OFB | …  → drives the ticket-id regex (e.g. FM-\d+)
+  # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
+  # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.
+  statuses:
+    to_do:   "TO DO"
+    in_progress:   "IN PROGRESS"
+    code_review:   "CODE REVIEW"
+    ready_to_merge: "READY TO MERGE"
+    ready_to_test: "READY TO TEST"
+    testing:       "TESTING"
+    done:          "DONE"
+
+# ── Branch model (defaults; a repo may override under products[].repos[].base) ─
+branch_model:
+  feature_base: develop            # base branch for feature/* work
+  fix_base:     main               # base branch for fix/* work
+
+# ── Quality gate (the guardian's static-analysis gate) ─────────────────────────
+quality_gate:
+  provider: sonarqube              # sonarqube | none
+
+# ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
+planning:
+  auto_approve: false               # auto-approve-plan. true → execution proceeds straight from the
+                                   #   plan (no review). false → after a plan is produced the run
+                                   #   STOPS for a human to review + APPROVE before execution (build);
+                                   #   re-run the dev-cycle with --approve-plan to proceed past the gate.
+  to_html: true                   # plan-to-html. true → each plan is ALSO rendered to a self-contained
+                                   #   interactive HTML doc (the write-interactive-docs skill), alongside
+                                   #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
+
+# ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
+# A product groups the repos that ship together. Each product is ONE
+# mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit
+# mani.d). For each repo you only need a `url` (+ `kind`); aiworks derives the rest:
+#
+#   id / path  ← the repo NAME from the URL (last path segment, minus .git).  Override
+#                the clone dir with `path:`.
+#   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
+#                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
+#                It selects one of two role/gate ARCHETYPES:
+#                  test-suite   → qa-runner builds the test suite (E2E / API / load), no code
+#                                 review, provides the cross-repo test-suite (QA) gate. The ONE
+#                                 special kind name.
+#                  <any other>  → a code repo: developer builds (TDD), code-reviewer reviews,
+#                                 guard+perf gates on (tune per repo via green / guardian_focus)
+#
+# After editing this block run `scripts/aiworks sync` to clone + onboard. That (like `add` /
+# `remove`) also REGENERATES the dev-cycle.js CONFIG `REPOS` block from this file — the workflow
+# can't read the FS at runtime, so `scripts/aiworks config` keeps its mirror in sync for you.
+products:
+  - id: ofb-platform                          # → mani.d/<product-id>.yaml
+    repos:
+      - url: git@gitlab.com:bluepicode/ofb/agent-db.git   # ← all you must provide
+        kind: migration                           # any dev-context label; test-suite = QA archetype
+        lang: postgres                                  # optional; else auto-detected from the clone
+        distribute: none                        # firebase | none | custom  (default: none)
+        # auto_merge: false                         # optional — override vcs.auto_merge for this repo
+        # path: your-app                            # optional — clone dir (default: the repo name)
+        green: "migrate passed successfully and rollback able"   # optional override (else from kind)
+        guardian_focus: "secrets"     # optional override (else from kind)
+
+      - url: git@gitlab.com:bluepicode/ofb/paotung-template.git
+        kind: web-app
+        lang: Next.js
+        green: "tests via stroybook passed successfully"
+        guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/agent-webservice.git
+        kind: backend 
+        lang: rust
+        green: "unit tests + integration tests passed successfully"
+        guardian_focus: "secrets, data-protection, injection attacks"
+
+      - url: git@gitlab.com:bluepicode/qa/agent-paotung-cypress.git
+        kind: test-suite
+        lang: cypress
+        green: "tests via cypress passed successfully"
+
+
+# Repo dependency edges (build/merge order) are decided per-ticket by the scoping
+# stage; a typical chain is backend → app → test-suite.

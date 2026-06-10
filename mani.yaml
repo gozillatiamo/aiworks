@@ -1,4 +1,5 @@
 import:
+  - mani.d/ofb-platform.yaml
 
 sync_gitignore: false 
 
