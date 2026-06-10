@@ -9,9 +9,10 @@
 #     installs the skill packs, seeds hooks, scaffolds CLAUDE.md + scripts/dev.sh;
 #   • the adapters read their slice from scripts/{vcs,tracker}/.env;
 #   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
-#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem) —
-#     keep that block in sync with `products`, `tracker`, `branch_model`, and
-#     `vcs.auto_merge` here.
+#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at
+#     runtime). `scripts/aiworks sync` — and every `add` / `remove` — REGENERATES that
+#     block from THIS file automatically (`scripts/aiworks config` is the standalone step),
+#     so the mirror always tracks this file. You never hand-edit dev-cycle.js.
 #
 # The fast path to onboard repos:  add their URLs under `products:` below, then run
 #   scripts/aiworks sync          # clone + onboard every declared repo (idempotent)
@@ -24,11 +25,11 @@ org:
 # ── Version control ──────────────────────────────────────────────────────────
 vcs:
   provider: github                 # github | gitlab  (auto-detected from the repo URL/origin if omitted)
-  auto_merge: true                 # after review, the dev-cycle squash-merges the PR/MR automatically.
-                                   #   false → it still opens the PR/MR and runs every reviewer, then
-                                   #   STOPS and leaves it OPEN for a human to merge (the cross-repo
-                                   #   integration, distribute, and ticket-close steps are skipped).
-                                   #   Override for a single repo with repos[].auto_merge below.
+  auto_merge: true                 # after review + the test-suite gate validate the candidate, the
+                                   #   dev-cycle squash-merges the PR/MR automatically, then distributes
+                                   #   the merged build. false → it still reviews + runs the test-suite gate,
+                                   #   then STOPS and leaves the PR/MR OPEN for a human to merge (nothing is
+                                   #   merged or distributed). Override for a single repo with repos[].auto_merge.
 
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
@@ -36,9 +37,16 @@ tracker:
   ticket_prefix: FM                # FM | OFB | …  → drives the ticket-id regex (e.g. FM-\d+)
   # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
   # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.
+  # Declare WHATEVER your board uses — every key here is mirrored into the workflow. The
+  # dev-cycle drives the ticket FORWARD ONLY, at aggregate milestones (it owns the status;
+  # the per-repo agents don't), and at each milestone it uses the best status you've
+  # declared: e.g. after review it prefers `ready_to_merge`, else `ready_to_test`. Extra
+  # keys (e.g. `to_do`, `code_review`, `ready_to_merge`) are optional and fully supported.
   statuses:
     not_started:   "Not started"
     in_progress:   "In progress"
+    # code_review:   "Code review"     # optional — richer boards can add intermediate states
+    # ready_to_merge: "Ready to merge"
     ready_to_test: "Ready to test"
     testing:       "Testing"
     done:          "Done"
@@ -52,6 +60,16 @@ branch_model:
 quality_gate:
   provider: sonarqube              # sonarqube | none
 
+# ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
+planning:
+  auto_approve: true               # auto-approve-plan. true → execution proceeds straight from the
+                                   #   plan (no review). false → after a plan is produced the run
+                                   #   STOPS for a human to review + APPROVE before execution (build);
+                                   #   re-run the dev-cycle with --approve-plan to proceed past the gate.
+  to_html: false                   # plan-to-html. true → each plan is ALSO rendered to a self-contained
+                                   #   interactive HTML doc (the write-interactive-docs skill), alongside
+                                   #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
+
 # ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
 # A product groups the repos that ship together. Each product is ONE
 # mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit
@@ -59,27 +77,31 @@ quality_gate:
 #
 #   id / path  ← the repo NAME from the URL (last path segment, minus .git).  Override
 #                the clone dir with `path:`.
-#   kind       → the role/gate defaults the orchestration uses:
-#                  flutter-app  → developer (TDD) builds, code-reviewer reviews, guard+perf gates
-#                  appium-e2e   → qa-runner builds the E2E suite, no code review, provides the
-#                                 cross-repo integration suite (test_suite)
-#                  generic      → developer builds, code-reviewer reviews (tune the gates per repo)
+#   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
+#                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
+#                It selects one of two role/gate ARCHETYPES:
+#                  test-suite   → qa-runner builds the test suite (E2E / API / load), no code
+#                                 review, provides the cross-repo test-suite (QA) gate. The ONE
+#                                 special kind name.
+#                  <any other>  → a code repo: developer builds (TDD), code-reviewer reviews,
+#                                 guard+perf gates on (tune per repo via green / guardian_focus)
 #
-# After editing this block run `scripts/aiworks sync` to clone + onboard, then MIRROR
-# the repos into the dev-cycle.js CONFIG `REPOS` block (the workflow can't read the FS).
+# After editing this block run `scripts/aiworks sync` to clone + onboard. That (like `add` /
+# `remove`) also REGENERATES the dev-cycle.js CONFIG `REPOS` block from this file — the workflow
+# can't read the FS at runtime, so `scripts/aiworks config` keeps its mirror in sync for you.
 products:
   - id: <product-id>                          # → mani.d/<product-id>.yaml
     repos:
       - url: git@github.com:your-org/your-app.git   # ← all you must provide
-        kind: flutter-app                           # flutter-app | appium-e2e | generic
-        lang: dart                                  # optional; else auto-detected from the clone
+        kind: frontend                              # any dev-context label; test-suite = QA archetype
+        lang: dart                                  # the TECH lives here; else auto-detected from the clone
         distribute: firebase                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
         # path: your-app                            # optional — clone dir (default: the repo name)
         # green: "<keep-it-green check, e.g. lint + unit tests>"   # optional override (else from kind)
         # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)
-      - url: git@github.com:your-org/your-e2e.git
-        kind: appium-e2e
+      - url: git@github.com:your-org/your-tests.git
+        kind: test-suite                            # the cross-repo QA suite (E2E / API / load)
 
 # Repo dependency edges (build/merge order) are decided per-ticket by the scoping
-# stage; a typical chain is backend → app → e2e.
+# stage; a typical chain is backend → app → test-suite.

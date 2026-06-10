@@ -1,79 +1,70 @@
 export const meta = {
   name: 'dev-cycle',
-  description: 'Full development cycle for one ticket — MULTI-REPO. Scopes which repos a ticket touches, runs each through plan→build→pre-merge gates→PR/MR→review in dependency WAVES, then merges upstream→downstream, runs the E2E integration gate against the merged app build, distributes, and summarizes. Provider-agnostic: VCS via scripts/vcs/ (github/gitlab), tracker via scripts/tracker/ (notion/jira). Pass the ticket number as args, e.g. "FM-12". A single-repo ticket collapses to a one-repo flow.',
-  whenToUse: 'Run one <KEY> ticket end to end across every repo it touches — through per-repo merge, cross-repo integration, and distribution — with a single command.',
+  description: 'Full development cycle for one ticket — MULTI-REPO. Scopes which repos a ticket touches, runs each through plan→build→PR/MR→review in dependency WAVES, validates the candidate with the cross-repo test-suite (QA) gate, MERGES upstream→downstream, then distributes the merged build, and summarizes. Provider-agnostic: VCS via scripts/vcs/ (github/gitlab), tracker via scripts/tracker/ (notion/jira). The WORKFLOW owns the ticket status (monotonic, decoupled from the per-repo agents). Pass the ticket number as args, e.g. "FM-12". A single-repo ticket collapses to a one-repo flow.',
+  whenToUse: 'Run one <KEY> ticket end to end across every repo it touches — through review, the cross-repo test-suite gate, the merge, and distribution — with a single command.',
   phases: [
-    { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether an integration gate applies', model: 'opus' },
-    { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (app code) · qa-planner designs the BDD + Appium plan (e2e) → branch + in-progress + plan', model: 'opus' },
-    { title: 'Build', detail: 'per repo, in dependency waves (∥ within a wave): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The e2e repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its BDD + regression specs — before the PR/MR.', model: 'sonnet/opus' },
+    { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether the cross-repo test-suite (QA) gate applies', model: 'opus' },
+    { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
+    { title: 'Build', detail: 'per repo, in dependency waves (∥ within a wave): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
-    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch; scoped re-review; round cap. SKIPPED for the e2e repo (no reviewers).', model: 'sonnet[1m]' },
-    { title: 'Merge', detail: 'if vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (e2e, no reviewer). If auto-merge is off (global or per-repo) the reviewed PR/MR is left OPEN for a human and the run stops here.', model: 'sonnet[1m]' },
-    { title: 'Integration', detail: 'qa-runner: run THIS ticket\'s scope against the MERGED app build — the ticket\'s BDD spec(s) + the ticket\'s regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. Single-case isolate to triage a red — the cross-repo join gate (skipped if no integration needed)', model: 'sonnet' },
-    { title: 'Distribute', detail: 'per-repo: app → its configured distribution target (e.g. Firebase App Distribution)', model: 'sonnet' },
+    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch; scoped re-review; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet[1m]' },
+    { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
+    { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet[1m]' },
+    { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
   ],
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// CONFIG  —  EDIT THIS BLOCK PER ORG.  Workflow scripts have NO filesystem access,
-// so this is the workflow's own copy of workspace.config.yaml — keep the two in sync
-// (tracker.ticket_prefix, tracker.statuses, branch_model, and the repo registry).
+// CONFIG  —  GENERATED FROM workspace.config.yaml BY scripts/aiworks. DO NOT EDIT THE
+// MARKED BLOCK BELOW BY HAND. Workflow scripts have NO filesystem access, so they can't
+// read workspace.config.yaml at runtime — this is the workflow's own MIRROR of it. To
+// change it: edit workspace.config.yaml, then run `scripts/aiworks config` (or any
+// `aiworks add` / `remove` / `sync`, which regenerate it for you). Anything you type
+// between the AIWORKS:CONFIG markers is OVERWRITTEN on the next regenerate.
 //
-// TICKET_PREFIX — the ticket id prefix (drives the <PREFIX>-\d+ regex).
-// STATUS        — canonical phase → the org's REAL status name (see issue-tracker.md);
-//                 used wherever the workflow moves a ticket.
-// REPOS         — one entry per repo the orchestration spans:
-//   path        — dir relative to the workspace launch root
-//   kind        — flutter-app | appium-e2e | generic (selects role behaviour)
-//   base        — branch a ticket targets: { feature, fix }
-//   plan/build/review — agentTypes. review:null ⇒ no code review (e2e repo); its PR/MR
-//                 is merged by the build role (qa-runner) instead of a code-reviewer.
-//   guard/perf  — whether the guardian (quality-gate) / performance gate applies.
-//   green       — the "keep it green" check phrase used in build/fix prompts.
-//   guardianFocus — repo-specific guardian checklist.
-//   testSuite   — true for the repo that PROVIDES the cross-repo integration suite.
-//   distribute  — 'firebase' | 'custom' | null  (how a merged build ships).
-//   autoMerge   — OPTIONAL per-repo override of AUTO_MERGE (below). Omit to inherit.
-// AUTO_MERGE — mirror of workspace.config.yaml `vcs.auto_merge`. true ⇒ the Merge phase
-//   squash-merges automatically after review. false ⇒ the run opens + reviews the PR/MR
-//   then STOPS, leaving it OPEN for a human (Integration / Distribute / close are skipped).
-// (The examples below are GENERIC — replace ids/paths/kinds with your repos.)
+// TICKET_PREFIX — the ticket id prefix (drives the <PREFIX>-\d+ regex).      ← tracker.ticket_prefix
+// STATUS        — EVERY status the org declares, canonical_key → REAL name.  ← tracker.statuses.*
+//                 The workflow drives a monotonic SUBSET (see STATUS_ORDER / moveTicket);
+//                 keys it doesn't emit are carried for humans/other tools.
+// REPOS         — one entry per repo (derived from products[].repos[] + its kind):
+//   path        — dir relative to the workspace launch root                 ← repos[].path (or repo name)
+//   kind        — free-form dev-context label (frontend|backend|web-app|…); 'test-suite' selects
+//                 the QA archetype, any other kind selects the code archetype.            ← repos[].kind
+//   base        — branch a ticket targets: { feature, fix }                 ← branch_model (test-suite ⇒ fix base)
+//   plan/build/review — agentTypes set by kind. review:null ⇒ no code review (test-suite repo); its
+//                 PR/MR is merged by the build role (qa-runner) instead of a code-reviewer.
+//   guard/perf  — whether the guardian / performance gate applies (by kind).
+//   green       — the "keep it green" check phrase.                          ← kind default, or repos[].green
+//   guardianFocus — repo-specific guardian checklist.                        ← kind default, or repos[].guardian_focus
+//   testSuite   — true for the repo that PROVIDES the cross-repo test-suite gate (the QA repo).
+//   distribute  — 'firebase' | 'custom' | null (how the merged build ships).  ← repos[].distribute
+//   autoMerge   — OPTIONAL per-repo override of AUTO_MERGE.                   ← repos[].auto_merge
+// AUTO_MERGE — vcs.auto_merge. true ⇒ the Merge phase squash-merges automatically (after review +
+//   the test-suite gate validate the candidate), then the merged build is distributed. false ⇒ the
+//   run reviews + runs the test-suite gate then STOPS, leaving the PR/MR OPEN for a human (nothing
+//   merged or distributed).
+// AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
+//   approval before build; re-run with --approve-plan to proceed.
+// PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML.
 // ──────────────────────────────────────────────────────────────────────────
-const TICKET_PREFIX = 'FM'
-const AUTO_MERGE = true // mirror of workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
+// >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
+const TICKET_PREFIX = 'OFB'
+const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
+const AUTO_APPROVE_PLAN = false // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
+const PLAN_TO_HTML = true     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
 const STATUS = {
-  not_started: 'Not started', in_progress: 'In progress',
-  ready_to_test: 'Ready to test', testing: 'Testing', done: 'Done',
+  to_do: 'TO DO',
+  in_progress: 'IN PROGRESS',
+  code_review: 'CODE REVIEW',
+  ready_to_merge: 'READY TO MERGE',
+  ready_to_test: 'READY TO TEST',
+  testing: 'TESTING',
+  done: 'DONE',
 }
 const REPOS = {
-  'app': {
-    path: 'app', kind: 'flutter-app',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner',
-    build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'lint + unit tests (via scripts/dev.sh)',
-    guardianFocus: 'no hardcoded secrets/keys in source, dependency health, data-protection for personal data stored locally, least-privilege platform permissions, keeping sensitive data out of logs, safe deep-link handling',
-    distribute: 'firebase',
-  },
-  'e2e': {
-    path: 'e2e', kind: 'appium-e2e',
-    base: { feature: 'main', fix: 'main' },
-    plan: 'qa-planner',
-    build: 'qa-runner', review: null, // QA repo: no code review — qa-runner merges its own PR/MR
-    guard: false, perf: false,        // QA repo: no guardian/perf gate either
-    green: 'the ticket BDD + regression specs (scoped `npm test -- <specs>`, POM) green on iOS + Android — the full-suite run is on-demand',
-    testSuite: true,
-    distribute: null,
-  },
-  // 'backend': {  // example — a service repo
-  //   path: 'backend', kind: 'generic', base: { feature: 'develop', fix: 'main' },
-  //   build: 'developer', review: 'code-reviewer', guard: true, perf: true,
-  //   green: '<unit + integration tests>', guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit', distribute: 'custom',
-  //   autoMerge: false, // optional — leave THIS repo's PR/MR open for a human even when AUTO_MERGE is on
-  // },
 }
+// <<< AIWORKS:CONFIG END >>>
 
 // ──────────────────────────────────────────────────────────────────────────
 // Inputs
@@ -87,11 +78,14 @@ if (!ticket) throw new Error(`dev-cycle needs a ticket number, e.g. args: "${TIC
 const opt = typeof args === 'object' && args ? args : {}
 const MAX_GATE_ROUNDS = opt.maxGateRounds || 3     // build↔gates loops, per repo
 const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 3 // review↔fix loops, per repo
-// DRY RUN — stop after the per-repo Build & gates phase: NO cross-repo Merge,
-// Integration, or Distribute (no real squash-merge to the base branch, no distribution).
-// Lets a run confirm build/gate behaviour safely. Set via "--dry-run" in the arg
-// string or opt.dryRun.
+// DRY RUN — run review + the (read-only) cross-repo test-suite gate, then STOP before the
+// outward/irreversible steps: NO Merge and NO Distribute (no squash-merge to the base branch,
+// no distribution). Lets a run confirm build/gate/test-suite behaviour safely.
+// Set via "--dry-run" in the arg string or opt.dryRun.
 const dryRun = /--dry-run\b/i.test(rawArg) || opt.dryRun === true
+// PLAN APPROVAL — when AUTO_APPROVE_PLAN is false the run STOPS after Kickoff so a human can
+// review the plan(s) before build. Re-run with "--approve-plan" (or opt.approvePlan) to proceed.
+const approvePlan = /--approve-plan\b/i.test(rawArg) || opt.approvePlan === true
 
 // Machine-readable marker prefixed on EVERY agent prompt so
 // summarize-workflow-performance can attribute each transcript to a repo+role.
@@ -120,7 +114,7 @@ const SCOPE_SCHEMA = {
         },
       },
     },
-    integration: {
+    test_suite: {
       type: 'object', additionalProperties: false,
       properties: {
         needed: { type: 'boolean' }, suite: { type: 'string' }, notes: { type: 'string' },
@@ -136,6 +130,7 @@ const REPO_PLAN_SCHEMA = {
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
     base_branch: { type: 'string' }, work_branch: { type: 'string' },
     figma_url: { type: ['string', 'null'] }, plan_path: { type: 'string' },
+    plan_html: { type: ['string', 'null'] }, // set when PLAN_TO_HTML rendered the plan to interactive HTML
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
   },
 }
@@ -195,7 +190,7 @@ const MERGE_SCHEMA = {
     sha: { type: 'string' }, note: { type: 'string' },
   },
 }
-const INTEGRATION_SCHEMA = {
+const TEST_SUITE_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['passed'],
   properties: {
@@ -224,6 +219,15 @@ const CLOSE_SCHEMA = {
   properties: {
     closed: { type: 'boolean' }, // true ONLY after Status → Done actually persisted
     note: { type: 'string' },
+  },
+}
+// One ticket-status move (the workflow's monotonic status driver — see moveTicket).
+const STATUS_MOVE_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['moved'],
+  properties: {
+    moved: { type: 'boolean' }, // true ONLY after the --status write actually persisted (re-read to confirm)
+    status: { type: ['string', 'null'] }, note: { type: 'string' },
   },
 }
 const SUMMARY_SCHEMA = {
@@ -259,6 +263,36 @@ const safeAgent = async (prompt, opts) => {
   }
 }
 
+// ── Ticket status — OWNED BY THE WORKFLOW (option 2: decoupled from per-repo agents) ──
+// The single ticket is shared by every repo it touches, so NO per-repo agent writes its
+// status (that caused non-monotonic thrash — e.g. the test-suite planner jumping a still-
+// building ticket to "testing"). Instead the WORKFLOW moves it FORWARD ONLY, once per
+// aggregate milestone, through one confirmed helper.
+//
+// STATUS_ORDER is the canonical lifecycle rank (low → high). STATUS (generated from
+// workspace.config.yaml) supplies the org's REAL name for whichever of these it declares;
+// any it omits are simply skipped. At each milestone moveTicket() is given a PREFERENCE
+// list and picks the first status that is (a) declared by the org and (b) strictly forward
+// of the current rank — so a rich board (…ready_to_merge…) and the minimal board
+// (…ready_to_test…) both work from the same call site.
+const STATUS_ORDER = ['to_do', 'not_started', 'in_progress', 'code_review', 'ready_to_merge', 'ready_to_test', 'testing', 'done']
+const rankOf = (key) => STATUS_ORDER.indexOf(key)
+let statusRank = rankOf('in_progress') - 1 // ticket starts before in_progress (PO set to_do/not_started)
+// keys: ordered preference list of canonical status keys for this milestone.
+async function moveTicket(keys, why, phaseName) {
+  if (!trackerReachable) { log(`[status] tracker unreachable — ${ticket} NOT moved (${keys.join('/')}); best-effort only.`); return false }
+  const cand = keys.find((k) => STATUS[k] && rankOf(k) > statusRank)
+  if (!cand) { log(`[status] no forward move for [${keys.join('/')}] (rank ${statusRank}) — skipped (none declared/forward).`); return false }
+  const real = STATUS[cand]
+  const r = await safeAgent(
+    `${tag('all', 'tracker', 'status')} Move ticket ${ticket} Status → "${real}" (canonical "${cand}"; ${why}). Run /update-ticket ${ticket} --status "${real}" through the tracker adapter (scripts/tracker/upsert-ticket-details.sh). Return moved:true ONLY after the write actually persisted (re-read with get-ticket-details.sh to confirm); on a rejected status return moved:false with the adapter's available targets in note. Do NOT do anything else — no branching, no code, no comments.`,
+    { agentType: 'developer', model: 'haiku', phase: phaseName, label: `status:${ticket}:${cand}`, schema: STATUS_MOVE_SCHEMA },
+  )
+  if (r?.moved) { statusRank = rankOf(cand); log(`[status] ${ticket} → ${real} (${cand})`); return true }
+  log(`⚠️ [status] move to ${real} (${cand}) NOT confirmed — ${r?.note ?? 'agent did not converge'}; board may be stale.`)
+  return false
+}
+
 // Topologically sort the scoped repo plans into dependency WAVES. Repos in the
 // same wave have no interdependency and run in parallel; waves run in sequence.
 // Edges referencing out-of-scope repos are ignored. A cycle/unmet-dep is not
@@ -283,7 +317,7 @@ async function writeSummary(runStatus, runResult) {
   phase('Summary')
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
-1. Compose a short narrative: repos touched, per-repo gate/review rounds, merge order + SHAs, integration-gate result, PR/MR + distribution links — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.
+1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.
 ${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}3. WRITE that narrative to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md with the Write tool (the agent_logs dir exists).
 4. As the LAST step, RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write the file AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.`,
@@ -308,41 +342,42 @@ async function runRepoPipeline(rp, desc) {
   const inRepo = `Work in the ${R} repo (cwd ${desc.path}/).`
 
   // BUILD — initial implementation from the plan. Code repos: developer (TDD).
-  // The appium e2e repo: qa-runner branches, implements POM, iterates SCOPED, then
-  // runs the ticket scope (BDD + regression specs) before handoff (full-suite run is
+  // The test-suite repo: qa-runner branches, implements POM, iterates SCOPED, then
+  // runs the ticket scope (spec(s) + regression specs) before handoff (full-suite run is
   // on-demand, not here) — and never opens/merges the PR here.
-  const buildPrompt = desc.kind === 'appium-e2e'
-    ? `${tag(R, desc.build, 'build', 0)} Build the E2E automation for ${ticket} in the ${R} repo from the plan at ${rp.plan_path} (behaviour reference: agent_logs/${ticket}-testcases.md). ${inRepo}
+  // NOTE: build agents do NOT touch the ticket status — the workflow owns it (moveTicket).
+  const buildPrompt = desc.kind === 'test-suite'
+    ? `${tag(R, desc.build, 'build', 0)} Build the test-suite automation for ${ticket} in the ${R} repo from the plan at ${rp.plan_path} (behaviour reference: agent_logs/${ticket}-testcases.md). ${inRepo}
 1. BRANCH ONLY — /self-control-gitflow start ${ticket} → create ${rp.work_branch} off ${rp.base_branch}. Do NOT finish/merge (the workflow opens + merges the PR later, in order).
 2. IMPLEMENT — strictly POM via /coding-automate ${ticket} (Page Objects in pages/, specs in tests/). Commit each slice conventionally (Refs ${ticket}).
 3. ITERATE SCOPED, not full — while building/fixing one feature run only its spec(s) on the SAME command: \`npm test -- <spec-token…>\`. Do NOT run the whole suite on every change.
 4. BOUNDED TRIAGE on a break — re-run the broken case ONCE (\`PLATFORM=<failing-platform> npm test -- <spec-token>\` + ONE \`npm run why\`), classify it, then ACT and MOVE ON — do not keep digging:
    • automation/selector/flake → fix the spec/Page Object and re-run that one case until green.
-   • genuine APP/feature bug → log it to agent_logs/${ticket}-bugs.md and comment it ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + repro, then move on. You are in the ${R} repo ONLY — NEVER read, reason about, or edit the app repo's source; root-causing app behaviour is the developer's job at the Integration gate, not yours.
-   • a brand-new feature spec red only because the app change is not merged yet is EXPECTED — note it and move on; it validates at the Integration gate against the merged build, not here.
-5. SCOPED RUN before handoff — once your automation is correct, run THIS ticket's scope ONCE on iOS AND Android: \`npm test -- <spec-token…>\` covering (a) the ticket's own BDD spec(s) you built + (b) the ticket's regression spec(s) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's BDD spec(s)). Do NOT run the whole suite (\`npm test\` with no args): the full-suite run is ON-DEMAND only (the user triggers a full run separately), not part of this flow. ${desc.green} is the target — but a scoped red caused ONLY by reported app bugs or expected pre-merge reds is a VALID handoff state; record it, do not chase it.
-6. RETURN CONTRACT (mandatory) — /handoff, set Status → ${STATUS.testing} (via /update-ticket), then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, and in "fixed" the spec/Page Object files you touched. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
-    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Run /karpathy-guidelines, then build it slice-by-slice with /tdd, commit each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff and set Status → ${STATUS.ready_to_test} (via /update-ticket).`
+   • genuine APP/feature bug → log it to agent_logs/${ticket}-bugs.md and comment it ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + repro, then move on. You are in the ${R} repo ONLY — NEVER read, reason about, or edit the app repo's source; root-causing app behaviour is the developer's job at the test-suite gate, not yours.
+   • a brand-new feature spec red only because the app change is not built into this run yet is EXPECTED — note it and move on; it validates at the test-suite gate against the candidate build, not here.
+5. SCOPED RUN before handoff — once your automation is correct, run THIS ticket's scope ONCE on iOS AND Android: \`npm test -- <spec-token…>\` covering (a) the ticket's own spec(s) you built + (b) the ticket's regression spec(s) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)). Do NOT run the whole suite (\`npm test\` with no args): the full-suite run is ON-DEMAND only (the user triggers a full run separately), not part of this flow. ${desc.green} is the target — but a scoped red caused ONLY by reported app bugs or expected pre-merge reds is a VALID handoff state; record it, do not chase it.
+6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
+    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Run /karpathy-guidelines, then build it slice-by-slice with /tdd, commit each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.`
   let dev = await safeAgent(
     buildPrompt,
     { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
   )
-  // A null build means the agent never produced a structured handoff — for the appium
-  // e2e repo this is the "runaway" failure (qa-runner kept root-causing a red instead of
+  // A null build means the agent never produced a structured handoff — for the test-suite
+  // repo this is the "runaway" failure (qa-runner kept root-causing a red instead of
   // reporting + returning). Don't throw on dev.summary and abort the wave with a confusing
   // error; return a clean diagnostic status and stop this repo here.
   if (!dev) {
-    log(`⚠️ [${R}] build did not converge to a structured handoff (likely ran away triaging a red) — left In progress; downstream skipped.`)
+    log(`⚠️ [${R}] build did not converge to a structured handoff (likely ran away triaging a red) — left mid-flight; downstream skipped.`)
     return { repo: R, status: 'build-unresolved', plan: rp }
   }
   log(`[${R}] initial build: ${dev.summary?.slice(0, 70) ?? 'done'}`)
   tick(`${R}:build`)
 
   // OPEN PR — open the PR/MR right after build so EVERY reviewer comments on the OPEN
-  // PR/MR via the VCS adapter. Code repos via /open-pr; the e2e repo via the adapter
-  // directly. Open ONLY — never merge (the ordered cross-repo Merge phase merges).
-  const openPrPrompt = desc.kind === 'appium-e2e'
-    ? `${tag(R, desc.build, 'open-pr')} The ticket scope (BDD + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${ticket}: ${rp.title ?? '<Task name>'}" --body "<what was automated + the scoped (ticket BDD + regression) green evidence>"\`. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
+  // PR/MR via the VCS adapter. Code repos via /open-pr; the test-suite repo via the adapter
+  // directly. Open ONLY — never merge (the final cross-repo Merge phase merges).
+  const openPrPrompt = desc.kind === 'test-suite'
+    ? `${tag(R, desc.build, 'open-pr')} The ticket scope (spec(s) + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${ticket}: ${rp.title ?? '<Task name>'}" --body "<what was automated + the scoped (ticket spec(s) + regression) green evidence>"\`. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
     : `${tag(R, desc.build, 'open-pr')} ${ticket} is built in ${R} — open the PR/MR now so the reviewers (code-reviewer + guardian + performance) can review it on the host. ${inRepo} Ensure git status is clean (commit any stray artifact), then run /open-pr ${ticket} to open the PR/MR for ${rp.work_branch} → ${rp.base_branch}, titled "${ticket}: ${rp.title ?? '<Task name>'}". Do NOT merge it. Return the PR/MR URL + number.`
   const pr = await safeAgent(
     openPrPrompt,
@@ -360,7 +395,7 @@ async function runRepoPipeline(rp, desc) {
   // that verdicts passed/approved is frozen and NOT re-reviewed in later rounds — only
   // the still-open reviewers re-run. The developer fixes the combined batch on the
   // PR/MR; later rounds re-review only the changed scope; round-capped. A crashed
-  // reviewer is INCONCLUSIVE (re-runs, never a silent pass). The e2e repo has no
+  // reviewer is INCONCLUSIVE (re-runs, never a silent pass). The test-suite repo has no
   // reviewers → it is ready as soon as the PR/MR is open.
   const reviewers = [
     desc.review && { key: 'review', role: desc.review, schema: REVIEW_SCHEMA, passed: (r) => r?.approved === true, open: (r) => r?.comments?.length || 0 },
@@ -434,7 +469,7 @@ async function runRepoPipeline(rp, desc) {
 // 1. SCOPE — which repos does this ticket touch, and in what dependency order?
 phase('Scope')
 const scope = await safeAgent(
-  `${tag('all', 'cto', 'scope')} You are the scoping stage for ${ticket}. Read the ticket via the tracker adapter (\`scripts/tracker/get-ticket-details.sh ${ticket}\`, + \`get-ticket-comments.sh\`) and decide which of the workspace's repos it requires changes in: ${Object.keys(REPOS).join(', ')} (only these are registered). For each touched repo return { repo, depends_on (other touched repo ids that must be built/merged first — typically a backend → app → e2e order), summary (what that repo must change) }. Set integration.needed:true when the change should be validated end-to-end by the E2E suite against the app build. Most tickets touch ONLY the app repo — if so, return just that one repo. Also set tracker_reachable: true ONLY if the adapter actually returned the live ticket this call — set it false if the tracker was unreachable and you proceeded from inline/contextual info (the run then loudly flags that Status moves, comments, and improvement tickets did NOT persist). Return the structured scope.`,
+  `${tag('all', 'cto', 'scope')} You are the scoping stage for ${ticket}. Read the ticket via the tracker adapter (\`scripts/tracker/get-ticket-details.sh ${ticket}\`, + \`get-ticket-comments.sh\`) and decide which of the workspace's repos it requires changes in: ${Object.keys(REPOS).join(', ')} (only these are registered). For each touched repo return { repo, depends_on (other touched repo ids that must be built/merged first — typically a backend → app → test-suite order), summary (what that repo must change) }. Set test_suite.needed:true when the change should be validated end-to-end by the cross-repo test suite (E2E / API / load) against the candidate build. Most tickets touch ONLY the app repo — if so, return just that one repo. Also set tracker_reachable: true ONLY if the adapter actually returned the live ticket this call — set it false if the tracker was unreachable and you proceeded from inline/contextual info (the run then loudly flags that Status moves, comments, and improvement tickets did NOT persist). Return the structured scope.`,
   { agentType: 'cto', phase: 'Scope', label: `scope:${ticket}`, schema: SCOPE_SCHEMA },
 )
 if (!scope) throw new Error(`dev-cycle: scope stage did not converge for ${ticket}`)
@@ -442,13 +477,16 @@ trackerReachable = scope.tracker_reachable !== false
 if (!trackerReachable) log('⚠️ TRACKER UNREACHABLE — ticket Status moves, comments, and /clarifying-ticket improvement tickets will NOT persist this run; all ticket-tracking is best-effort. Flagged in the run result + summary.')
 const scoped = (scope.repos || []).filter((r) => REPOS[r.repo])
 if (!scoped.length) throw new Error(`Scope returned no known repos for ${ticket} (got: ${JSON.stringify(scope.repos)})`)
-log(`Scope ${ticket} (${scope.type}): ${scoped.map((r) => r.repo).join(', ')}${scope.integration?.needed ? ' + integration gate' : ''}`)
+log(`Scope ${ticket} (${scope.type}): ${scoped.map((r) => r.repo).join(', ')}${scope.test_suite?.needed ? ' + test-suite gate' : ''}`)
 tick('scope')
 
 // 2. KICKOFF — per touched repo (parallel). Code repos: development-planner runs
-//    /ticket-kickoff (branch + In progress + plan). The appium e2e repo: qa-planner
-//    designs the BDD + Appium plan and does NOT branch (qa-runner branches at build).
+//    /ticket-kickoff (branch + plan). The test-suite repo: qa-planner designs the test
+//    plan + automation plan and does NOT branch (qa-runner branches at build).
+//    The WORKFLOW owns the ticket status — it moves the ticket to in_progress ONCE here
+//    (not the per-repo planners), so a multi-repo ticket can't thrash its status.
 phase('Kickoff')
+await moveTicket(['in_progress'], 'kickoff started', 'Kickoff')
 const branchKind = scope.type === 'bug' ? 'fix' : 'feature' // polish rides the feature flow
 const plans = (await parallel(scoped.map((r) => () => {
   const desc = REPOS[r.repo]
@@ -456,17 +494,32 @@ const plans = (await parallel(scoped.map((r) => () => {
   const baseBranch = desc.base[branchKind]
   const workBranch = `${branchKind}/${ticket}`
   const slice = r.summary || 'see ticket'
-  const prompt = desc.kind === 'appium-e2e'
-    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the E2E TEST repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan + Status → ${STATUS.testing}), then /plan-appium-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=agent_logs/${ticket}-appium-plan.md, and the acceptance/summary for this slice (${slice}).`
-    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/). Run /ticket-kickoff ${ticket} to fetch + classify the ticket, move it to ${STATUS.in_progress}, and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes). Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to agent_logs/development-planner/${ticket}-${r.repo}-plan.md (git-ignored). Return the structured repo plan.`
+  const planPath = desc.kind === 'test-suite' ? `agent_logs/${ticket}-appium-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
+  // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
+  const htmlClause = PLAN_TO_HTML
+    ? ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at agent_logs/${ticket}-${r.repo}-plan.html (it must read as a human-facing plan write-up), and set plan_html to that path in your structured result.`
+    : ''
+  const prompt = desc.kind === 'test-suite'
+    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-appium-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
+    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/). Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan.${htmlClause}`
   return agent(prompt, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
 // carry the dependency edges from scope onto the plans
 plans.forEach((p) => { p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || [] })
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
+if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
 log(`Waves: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
+
+// PLAN-APPROVAL GATE — when planning.auto_approve is off, STOP here with the plan(s) ready
+// for a human to review/approve; the run does NOT proceed to build. Re-run with --approve-plan.
+if (!AUTO_APPROVE_PLAN && !approvePlan) {
+  const planList = plans.map((p) => `${p.repo}: ${p.plan_path}${p.plan_html ? ` (html: ${p.plan_html})` : ''}`).join('; ')
+  log(`⏸️ Plan approval required (planning.auto_approve=false) — plans ready for human review, NOT proceeding to build: ${planList}. Re-run \`/dev-cycle ${ticket} --approve-plan\` once approved.`)
+  const summary = await writeSummary('awaiting-plan-approval', { ticket, repos: waveList.flat(), plans })
+  return { ticket, status: 'awaiting-plan-approval', plans, summary, spend }
+}
 
 // 3. BUILD → OPEN PR → REVIEW — per repo, in dependency waves (∥ within a wave).
 // Reviewers (code-reviewer + guardian + performance) all review the OPEN PR.
@@ -488,34 +541,73 @@ if (aborted) {
   return { ticket, status: 'repo-unresolved', aborted, repoResults, summary, spend }
 }
 
-// DRY RUN stop — every scoped repo reached 'ready'. Stop BEFORE the cross-repo Merge
-// so nothing irreversible happens (no squash-merge, no integration gate, no distribution).
-if (dryRun) {
-  log(`🧪 DRY RUN — all scoped repos reached 'ready'; stopping before Merge/Integration/Distribute (no real merge, no distribution). Per-repo: ${waveList.flat().map((id) => `${id}=${repoResults[id]?.status}`).join(', ')}.`)
-  const summary = await writeSummary('dry-run', { ticket, repos: waveList.flat(), repoResults })
-  return { ticket, status: 'dry-run', dryRun: true, repoResults, summary, spend }
+// All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.
+// Repo order (upstream → downstream) for the test-suite, distribute, and final merge phases.
+const mergeOrder = waveList.flat()
+// The workflow advances the ticket ONCE here (decoupled from the per-repo agents): a rich
+// board lands on ready_to_merge; the minimal board on ready_to_test.
+await moveTicket(['ready_to_merge', 'ready_to_test'], 'all repos built, reviewed & approved', 'Review')
+
+// 4. TEST-SUITE GATE — the cross-repo QA suite (E2E / API / load) against the CANDIDATE
+// (the ticket's work branches, PRE-merge): the join check that the repos work together,
+// run BEFORE the final merge so we validate the candidate, not after committing it. Runs
+// when a test-suite gate is needed, a test-suite repo is in scope, and at least one
+// non-test-suite (app/service) repo is present for the suite to run against.
+let testSuite = null
+const testSuiteRepo = mergeOrder.find((id) => REPOS[id].testSuite)
+if (scope.test_suite?.needed && testSuiteRepo && mergeOrder.some((id) => !REPOS[id].testSuite)) {
+  phase('Test suite')
+  await moveTicket(['testing'], 'cross-repo test-suite gate running', 'Test suite')
+  const candidates = mergeOrder.filter((id) => !REPOS[id].testSuite).map((id) => `${id}@${repoResults[id].plan.work_branch}`)
+  const testSuiteFixed = repoResults[testSuiteRepo]?.build?.fixed || []
+  const specHint = testSuiteFixed.length
+    ? ` The ${testSuiteRepo} build for this ticket touched these spec/Page-Object files — use them to pin the ticket's own spec scope: ${testSuiteFixed.join(', ')}.`
+    : ''
+  testSuite = await safeAgent(
+    `${tag(testSuiteRepo, 'qa-runner', 'test-suite')} CROSS-REPO TEST-SUITE gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite. Validate the CANDIDATE (the ticket's work branches, NOT yet merged): build the app/service repo(s) from their ticket work branch(es) — ${candidates.join(', ')} (checkout that branch in each repo before building). Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/, already on its work branch ${repoResults[testSuiteRepo].plan.work_branch}). Then run ONLY this ticket's scope:
+1. SCOPE = (a) the ticket's own spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the spec map in agent_logs/${ticket}-appium-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)).
+2. RUN SCOPED — \`npm test -- <spec-token…>\` covering exactly the ticket + regression spec(s) on each platform the suite targets. Do NOT run \`npm test\` with no args: the FULL-suite run is ON-DEMAND (the user triggers it separately) and is NOT part of this gate.
+On a red: SINGLE-CASE triage — re-run just the broken case to rule out flake: \`PLATFORM=<failing-platform> npm test -- <spec-token>\` (+ \`npm run why\`). If it reproduces as a genuine APP/feature bug, report it as-is — comment a reproducible report ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + evidence, list it in failures, and fail the gate (you do NOT fix app code here — only re-run to triage).
+Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures.`,
+    { agentType: 'qa-runner', phase: 'Test suite', label: `test-suite:${ticket}`, schema: TEST_SUITE_SCHEMA },
+  )
+  log(`Test-suite gate (scoped: ticket + regression): ${testSuite?.passed ? 'PASS' : `${testSuite?.failures?.length ?? '?'} failure(s)`}`)
+  tick('test-suite')
+  if (!testSuite?.passed) {
+    log('⚠️ Test-suite gate failed — stopping before Distribute + Merge. The candidate does not pass; NOTHING merged; left for human review.')
+    const summary = await writeSummary('test-suite-failed', { ticket, mergeOrder, repoResults, testSuite })
+    return { ticket, status: 'test-suite-failed', mergeOrder, repoResults, testSuite, summary, spend }
+  }
 }
 
-// 4. MERGE — ordered upstream → downstream (sequential), record each SHA.
-// Gated by auto-merge (workspace.config.yaml vcs.auto_merge, per-repo override via
-// REPOS[id].autoMerge): when a repo opts OUT, its reviewed PR/MR is left OPEN for a
-// human and the run stops here (downstream merges + Integration + Distribute + close
-// all depend on this merge), exactly like a dry-run but with real, reviewed PRs.
+// DRY RUN stop — repos built/reviewed and the test-suite gate passed. Stop BEFORE the
+// outward/irreversible steps (Merge, then Distribute): no squash-merge, no distribution.
+if (dryRun) {
+  log(`🧪 DRY RUN — all repos 'ready'${testSuite ? ` + test-suite ${testSuite.passed ? 'PASS' : 'n/a'}` : ''}; stopping before Merge + Distribute (no merge, no distribution). Per-repo: ${mergeOrder.map((id) => `${id}=${repoResults[id]?.status}`).join(', ')}.`)
+  const summary = await writeSummary('dry-run', { ticket, repos: mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null })
+  return { ticket, status: 'dry-run', dryRun: true, repoResults, testSuite, summary, spend }
+}
+
+// 5. MERGE — the commit gate. After review + the test-suite gate have validated the candidate
+// (PRE-merge), squash-merge UPSTREAM → DOWNSTREAM (sequential), record each SHA. Gated by
+// auto-merge (workspace.config.yaml vcs.auto_merge, per-repo override via REPOS[id].autoMerge):
+// when a repo opts OUT, its reviewed + validated PR/MR is left OPEN for a human and the run stops
+// here — NOTHING is merged or distributed (review + the test-suite gate still ran, so the human
+// merges a fully-validated candidate). Exactly like a dry-run, but with real, reviewed PRs.
 phase('Merge')
-const mergeOrder = waveList.flat()
 const merges = {}
 for (const id of mergeOrder) {
   const rr = repoResults[id], desc = REPOS[id], rp = rr.plan
   if ((desc.autoMerge ?? AUTO_MERGE) === false) {
     merges[id] = { merged: false, base: rp.base_branch, note: 'auto-merge disabled — PR/MR left open for a human', pr: rr.pr?.pr_url }
-    log(`⏸️ [${id}] auto-merge disabled — PR/MR left OPEN for human merge: ${rr.pr?.pr_url ?? '(see run)'}. Stopping before downstream merge/integration/distribute.`)
-    const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, merges })
-    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, summary, spend }
+    log(`⏸️ [${id}] auto-merge disabled — reviewed + validated PR/MR left OPEN for human merge: ${rr.pr?.pr_url ?? '(see run)'}. Nothing merged or distributed this run.`)
+    const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, merges })
+    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, summary, spend }
   }
-  const merger = desc.review || desc.build // QA repo (no reviewer): the qa-runner merges its own PR
+  const merger = desc.review || desc.build // test-suite repo (no reviewer): the qa-runner merges its own PR
   const mergePreamble = desc.review
     ? `You approved the PR/MR for ${ticket} in ${id} (${rr.pr.pr_url}). The squash-merge is YOUR exclusive gate.`
-    : `The ticket scope (BDD + regression specs) for ${ticket} is green and its PR/MR is open in ${id} (${rr.pr.pr_url}). It is now your turn in the dependency order to squash-merge it.`
+    : `The ticket scope (spec(s) + regression specs) for ${ticket} is green and its PR/MR is open in ${id} (${rr.pr.pr_url}). It is now your turn in the dependency order to squash-merge it.`
   const m = await safeAgent(
     `${tag(id, merger, 'merge')} ${mergePreamble} Work in the ${id} repo (cwd ${desc.path}/). Squash-merge PR/MR number ${rr.pr?.pr_number ?? '(see ' + rr.pr?.pr_url + ')'} into ${rp.base_branch} THROUGH THE HOST (via the VCS adapter) so the web PR/MR is marked **Merged** — do NOT run a local "git merge --squash" + push: that advances the base but leaves the PR/MR showing **Closed**, the exact bug we avoid. Run:
 \`scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<number>'} --subject "${ticket}: ${rp.title ?? '<Task name>'}"\` — this squash-merges server-side, advances ${rp.base_branch}, marks the PR/MR Merged, and prints \`state=\` + \`merge_sha=\`.
@@ -526,41 +618,14 @@ VERIFY the printed \`state=MERGED\` before reporting (re-check with \`scripts/vc
   log(`[${id}] merged → ${rp.base_branch}${m?.sha ? ` (${m.sha.slice(0, 8)})` : ''}`)
   tick(`${id}:merge`)
   if (!m?.merged) {
-    log(`⚠️ [${id}] merge did not complete — stopping before integration/distribution.`)
+    log(`⚠️ [${id}] merge did not complete — stopping before distribution; left for human review (review + test-suite already passed).`)
     const summary = await writeSummary('merge-failed', { ticket, mergeOrder, repoResults, merges })
-    return { ticket, status: 'merge-failed', failedAt: id, repoResults, merges, summary, spend }
+    return { ticket, status: 'merge-failed', failedAt: id, repoResults, merges, testSuite, summary, spend }
   }
 }
 
-// 5. INTEGRATION GATE — the E2E suite against the MERGED app build (the join check).
-let integration = null
-const testSuiteRepo = mergeOrder.find((id) => REPOS[id].testSuite)
-// Run it when integration is needed, an e2e-suite repo is in scope, and at least one
-// non-e2e (app/service) repo was merged for the suite to run against.
-if (scope.integration?.needed && testSuiteRepo && mergeOrder.some((id) => !REPOS[id].testSuite)) {
-  phase('Integration')
-  const testSuiteFixed = repoResults[testSuiteRepo]?.build?.fixed || []
-  const specHint = testSuiteFixed.length
-    ? ` The ${testSuiteRepo} build for this ticket touched these spec/Page-Object files — use them to pin the ticket's own spec scope: ${testSuiteFixed.join(', ')}.`
-    : ''
-  integration = await safeAgent(
-    `${tag(testSuiteRepo, 'qa-runner', 'integration')} CROSS-REPO INTEGRATION gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite. All repos are now squash-merged (${mergeOrder.map((id) => `${id}@${REPOS[id].base.feature}`).join(', ')}). Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/). Build the MERGED app repo, then run the Appium E2E suite against it on iOS AND Android — but run ONLY this ticket's scope:
-1. SCOPE = (a) the ticket's own BDD spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the BDD→spec map in agent_logs/${ticket}-appium-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's BDD spec(s)).
-2. RUN SCOPED — \`npm test -- <spec-token…>\` covering exactly the ticket BDD + regression spec(s) on iOS AND Android. Do NOT run \`npm test\` with no args: the FULL-suite regression run is now ON-DEMAND (the user triggers the qa-runner for a full run separately) and is NOT part of this gate.
-On a red: SINGLE-CASE triage — re-run just the broken case to rule out flake: \`PLATFORM=<failing-platform> npm test -- <spec-token>\` (+ \`npm run why\`). If it reproduces as a genuine APP/feature bug, report it as-is — comment a reproducible report ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + evidence, list it in failures, and fail the gate (you do NOT fix app code here, and the suite is already merged — only re-run to triage).
-Return passed:true only if the scoped run (ticket BDD + regression spec(s)) is green; otherwise passed:false with the failures.`,
-    { agentType: 'qa-runner', phase: 'Integration', label: `integration:${ticket}`, schema: INTEGRATION_SCHEMA },
-  )
-  log(`Integration gate (scoped: ticket BDD + regression): ${integration?.passed ? 'PASS' : `${integration?.failures?.length ?? '?'} failure(s)`}`)
-  tick('integration')
-  if (!integration?.passed) {
-    log('⚠️ Integration gate failed — stopping before distribution. Merged, but the repos do not work together for this ticket; left for human review.')
-    const summary = await writeSummary('integration-failed', { ticket, mergeOrder, merges, integration })
-    return { ticket, status: 'integration-failed', mergeOrder, merges, integration, summary, spend }
-  }
-}
-
-// 6. DISTRIBUTE — per-repo, per descriptor. distribute: 'firebase' | 'custom' | null/'none'.
+// 6. DISTRIBUTE — per-repo: build a release artifact from the MERGED base and ship it to the
+// repo's target. distribute: 'firebase' | 'custom' | null/'none'.
 phase('Distribute')
 const dists = {}
 for (const id of mergeOrder) {
@@ -570,7 +635,7 @@ for (const id of mergeOrder) {
       ? 'distribute it to Firebase App Distribution for the tester group (firebase CLI "firebase appdistribution:distribute …" or the Firebase MCP)'
       : `distribute it via this repo's configured target ("${desc.distribute}" — see the repo's docs/scripts)`
     dists[id] = await safeAgent(
-      `${tag(id, desc.build, 'distribute')} ${ticket} is squash-merged into ${repoResults[id].plan.base_branch}${merges[id]?.sha ? ` (${merges[id].sha})` : ''}. Work in the ${id} repo (cwd ${desc.path}/). Build a release artifact and ${how}. Return distributed + the release link.`,
+      `${tag(id, desc.build, 'distribute')} ${ticket} is squash-merged into ${repoResults[id].plan.base_branch}${merges[id]?.sha ? ` (${merges[id].sha})` : ''}. Work in the ${id} repo (cwd ${desc.path}/). Build a release artifact from the merged base and ${how}. Return distributed + the release link.`,
       { agentType: desc.build, phase: 'Distribute', label: `distribute:${ticket}:${id}`, schema: DIST_SCHEMA },
     )
     log(`[${id}] distributed: ${dists[id]?.release_link ?? '(see note)'}`)
@@ -578,27 +643,28 @@ for (const id of mergeOrder) {
   }
 }
 
-// 6b. CLOSE — ownership: the build role (developer) that shipped the app moves the
-// ticket to Done now that it's merged + distributed — NOT a human after the run.
-// Gated on a reachable tracker (else the write won't persist this run) and on an
-// actually-distributed app build.
+// 6b. CLOSE → done — the WORKFLOW closes the ticket now that the whole change set is
+// MERGED (the real ship). Gated on a reachable tracker (else the write won't persist) and
+// a successful merge. The build role that shipped the app posts the closing comment.
 let close = null
-const closeId = mergeOrder.find((id) => REPOS[id].distribute && REPOS[id].distribute !== 'none' && dists[id]?.distributed)
+const closeId = mergeOrder.find((id) => merges[id]?.merged && REPOS[id].distribute && REPOS[id].distribute !== 'none')
+  || mergeOrder.find((id) => merges[id]?.merged)
 if (trackerReachable && closeId) {
   const cdesc = REPOS[closeId]
   const csha = merges[closeId]?.sha
   const clink = dists[closeId]?.release_link
   const cpr = repoResults[closeId].pr?.pr_url
   close = await safeAgent(
-    `${tag(closeId, cdesc.build, 'close')} ${ticket} is squash-merged into ${repoResults[closeId].plan.base_branch}${csha ? ` (${csha})` : ''} and distributed${clink ? ` (${clink})` : ''}. You shipped it, so you CLOSE it: invoke /update-ticket ${ticket} to move Status → ${STATUS.done}, then post a one-line closing comment citing PR/MR ${cpr ?? '(see run)'}${csha ? `, merge ${csha}` : ''}${clink ? `, ${clink}` : ''}. Return { closed:true } ONLY after the ${STATUS.done} write actually persisted.`,
-    { agentType: cdesc.build, phase: 'Distribute', label: `close:${ticket}:${closeId}`, schema: CLOSE_SCHEMA },
+    `${tag(closeId, cdesc.build, 'close')} ${ticket} is squash-merged into ${repoResults[closeId].plan.base_branch}${csha ? ` (${csha})` : ''}${clink ? ` and distributed (${clink})` : ''}. You shipped it, so you CLOSE it: invoke /update-ticket ${ticket} to move Status → ${STATUS.done}, then post a one-line closing comment citing PR/MR ${cpr ?? '(see run)'}${csha ? `, merge ${csha}` : ''}${clink ? `, ${clink}` : ''}. Return { closed:true } ONLY after the ${STATUS.done} write actually persisted.`,
+    { agentType: cdesc.build, phase: 'Merge', label: `close:${ticket}:${closeId}`, schema: CLOSE_SCHEMA },
   )
+  if (close?.closed) statusRank = rankOf('done')
   log(`[${closeId}] ticket → ${STATUS.done}: ${close?.closed ? 'closed' : 'NOT confirmed (left for manual close)'}`)
   tick(`${closeId}:close`)
 } else if (!trackerReachable) {
   log('⚠️ Tracker unreachable — ticket NOT moved to Done (write would not persist); left for manual close.')
 } else {
-  log('No distributed app build — ticket Done-transition skipped; left for manual close.')
+  log('No merged repo — ticket Done-transition skipped; left for manual close.')
 }
 
 // 7. SUMMARY — required closing step.
@@ -609,12 +675,12 @@ const summary = await writeSummary('shipped', {
     reviewRounds: repoResults[id].reviewRound,
     pr: repoResults[id].pr?.pr_url, sha: merges[id]?.sha, distribution: dists[id]?.release_link,
   })),
-  integration: integration ? { passed: integration.passed } : null,
+  testSuite: testSuite ? { passed: testSuite.passed } : null,
 })
 
 return {
   ticket, status: 'shipped',
   repos: mergeOrder, repoResults, merges,
-  integration, distribution: dists, closed: close?.closed === true, summary, trackerReachable,
+  testSuite, distribution: dists, closed: close?.closed === true, summary, trackerReachable,
   spend, // per-phase output-token deltas; the per-repo/role table lives in summary.summary_path
 }

@@ -8,6 +8,7 @@ maxTurns: 80
 skills:
   - caveman
   - ticket-kickoff
+  - write-interactive-docs
 tools:
   - Read
   - Grep
@@ -52,6 +53,10 @@ Before pinging Noah with the plan or escalating an ADR conflict to the CTO, prod
    - **Edge cases & risks** — offline, error/`Failure` paths, empty/loading states, localization, animation.
    - **Definition of done** — what Noah must satisfy before handing to QA.
 7. **No commit needed.** The plan lives under git-ignored `agent_logs/George_development-planner/` — a local artifact, never committed.
+
+## Planning policy — honor `planning.*` in `workspace.config.yaml`
+- **`planning.to_html: true`** → after the plan markdown exists, ALSO render it to a self-contained interactive doc with **`/write-interactive-docs`** (a `<plan>.html` next to the markdown) and report that path. (The dev-cycle passes this through; honor it on a standalone run too.)
+- **`planning.auto_approve: false`** → the plan needs **human approval before execution**. In the dev-cycle the workflow enforces this by halting after Kickoff; on a standalone run, present the plan and explicitly request approval — do **not** let coding begin until a human approves.
 
 ## Output
 Return the kickoff summary **plus** the plan file path and a condensed plan (goal, branch, ordered slices, edge cases). This is Noah's brief — complete and unambiguous.

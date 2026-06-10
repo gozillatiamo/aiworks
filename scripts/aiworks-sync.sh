@@ -12,15 +12,26 @@
 # `aiworks add` is idempotent, so repos already set up just report SKIP and move on.
 #
 # Usage:
-#   aiworks sync [<product>] [options]
+#   aiworks sync [<product>|<repo>] [options]
 #
-#   <product>             Only sync repos under products[].id == <product> (default: every product).
+#   <product>|<repo>      Narrow the sweep. If it names a product (products[].id) only that
+#                         product's repos sync; otherwise it is treated as a repo name and ONLY
+#                         that repo syncs (default: every repo of every product).
+#   --repo <name>         Only sync the repo(s) with this name — repeatable, or comma-separated
+#                         (e.g. --repo agent-db,paotung-template). Matches a repo's clone-dir name
+#                         (the last URL segment, minus .git) or its `path:` override. Combine with
+#                         a <product> to scope the match within that product.
 #   --kind <kind>         Force the kind for ALL synced repos (overrides each entry's kind).
 #   --distribute <how>    Override distribute for all synced repos (default: from each entry).
 #   --skill-cmd <slash>   Forwarded to `aiworks add`.
 #   --claude-timeout <s>  Forwarded to `aiworks add`.
 #   --safe-perms          Forwarded to `aiworks add`.
 #   --force               Forwarded — re-run already-done steps.
+#   -y, --yes             Forwarded to `aiworks add` — assume yes: skip its Proceed prompt and,
+#                         for a repo that already has a CLAUDE.md, skip it. OPT-IN: omit it and
+#                         each repo runs interactively (e.g. asks regenerate/combine/skip an
+#                         existing CLAUDE.md, read from /dev/tty). With no controlling terminal
+#                         (CI/headless) `add` proceeds with its defaults either way — never blocks.
 #   -n, --dry-run         List what WOULD be synced (and the add command per repo); run nothing.
 #   -h, --help            Show this help.
 #
@@ -41,20 +52,24 @@ ADD="$DIR/aiworks-add.sh"
 [[ -x "$ADD" ]] || die "aiworks-add.sh not found/executable next to aiworks-sync.sh ($ADD)"
 
 # ── args ──────────────────────────────────────────────────────────────────────
-PRODUCT="" KIND="" DISTRIBUTE="" SKILL_CMD="" CLAUDE_TIMEOUT="" SAFE=0 FORCE=0 DRY=0
+PRODUCT="" KIND="" DISTRIBUTE="" SKILL_CMD="" CLAUDE_TIMEOUT="" SAFE=0 FORCE=0 DRY=0 YES=0
+SELECTOR=""        # the positional: a product id OR a repo name (auto-detected below)
+REPO_FILTER=""     # space-separated repo names/paths to restrict to (from --repo and/or a repo positional)
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --kind)            KIND="${2:-}"; shift 2 ;;
     --distribute)      DISTRIBUTE="${2:-}"; shift 2 ;;
+    --repo)            [[ -n "${2:-}" ]] || die "--repo needs a repo name"; REPO_FILTER="$REPO_FILTER ${2//,/ }"; shift 2 ;;
     --skill-cmd)       SKILL_CMD="${2:-}"; shift 2 ;;
     --claude-timeout)  CLAUDE_TIMEOUT="${2:-}"; shift 2 ;;
     --safe-perms)      SAFE=1; shift ;;
     --force)           FORCE=1; shift ;;
+    -y|--yes)          YES=1; shift ;;
     -n|--dry-run)      DRY=1; shift ;;
     -h|--help)         usage; exit 0 ;;
     -*)                die "unknown option: $1   (see -h)" ;;
-    *)                 [[ -z "$PRODUCT" ]] || die "unexpected argument: $1 (one <product> only)"; PRODUCT="$1"; shift ;;
+    *)                 [[ -z "$SELECTOR" ]] || die "unexpected argument: $1 (one <product>|<repo> only)"; SELECTOR="$1"; shift ;;
   esac
 done
 
@@ -88,20 +103,39 @@ parse_repos() {
   ' "$WC"
 }
 
-printf '%sSyncing repos declared in workspace.config.yaml%s%s\n' "$c_step" "${PRODUCT:+ (product: $PRODUCT)}" "$c_off"
+# Resolve the positional: a known products[].id is a product filter; anything else is a repo name.
+if [[ -n "$SELECTOR" ]]; then
+  if parse_repos | awk -F$'\037' -v p="$SELECTOR" '$1==p{f=1} END{exit f?0:1}'; then
+    PRODUCT="$SELECTOR"
+  else
+    REPO_FILTER="$REPO_FILTER $SELECTOR"
+  fi
+fi
+REPO_FILTER="${REPO_FILTER# }"   # trim the leading space the appends leave behind
+# Membership test for the repo filter (repo names/paths never contain spaces).
+in_repo_filter() { case " $REPO_FILTER " in *" $1 "*) return 0 ;; esac; return 1; }
+
+sel="${PRODUCT:+ (product: $PRODUCT)}${REPO_FILTER:+ (repo: $REPO_FILTER)}"
+printf '%sSyncing repos declared in workspace.config.yaml%s%s\n' "$c_step" "$sel" "$c_off"
 [[ "$DRY" -eq 1 ]] && printf '  %s(dry run — nothing will be executed)%s\n' "$c_dim" "$c_off"
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
-total=0; synced=0; failed=0; noted=()
+total=0; synced=0; failed=0; noted=(); MATCHED=""
 while IFS=$'\037' read -r prod url kind lang dist path; do   # \037 (US) — empty fields aren't collapsed
   [[ -n "$url" ]] || continue
   [[ -z "$PRODUCT" || "$prod" == "$PRODUCT" ]] || continue
   key="${url%.git}"; key="${key##*/}"; key="${key##*:}"
   [[ -n "$key" ]] || { warn "could not derive a repo name from url '$url' — skipping"; noted+=("$url: bad url"); continue; }
+  if [[ -n "$REPO_FILTER" ]]; then          # restrict to the named repo(s) when a repo filter is set
+    if   in_repo_filter "$key";                   then MATCHED="$MATCHED $key"
+    elif [[ -n "$path" ]] && in_repo_filter "$path"; then MATCHED="$MATCHED $path"
+    else continue; fi
+  fi
   repokind="$KIND"; [[ -n "$repokind" ]] || repokind="${kind:-generic}"
   total=$((total+1))
 
-  cmd=("$ADD" --url "$url" --product "$prod" --kind "$repokind" -y)
+  cmd=("$ADD" --url "$url" --product "$prod" --kind "$repokind")
+  [[ "$YES" -eq 1 ]]        && cmd+=(-y)   # opt-in: only assume-yes when the caller passed -y to sync
   [[ -n "$path" ]]          && cmd+=(--path "$path")
   [[ -n "$lang" ]]          && cmd+=(--lang "$lang")
   if   [[ -n "$DISTRIBUTE" ]]; then cmd+=(--distribute "$DISTRIBUTE")
@@ -118,8 +152,9 @@ while IFS=$'\037' read -r prod url kind lang dist path; do   # \037 (US) — emp
   fi
 
   step "Sync $prod/$key  (kind $repokind${path:+, dir $path/})"
-  # </dev/null so aiworks-add never consumes this loop's parse stream; its own prompts use
-  # /dev/tty and Ctrl+C is signal-based, so both still work.
+  # </dev/null so aiworks-add never consumes this loop's parse stream. Its own prompts read
+  # /dev/tty (not stdin), so when -y is OMITTED they still fire here; with no tty they fall back
+  # to defaults. Ctrl+C is signal-based, so it still stops the whole sweep.
   if "${cmd[@]}" </dev/null; then synced=$((synced+1))
   else
     rc=$?
@@ -128,10 +163,31 @@ while IFS=$'\037' read -r prod url kind lang dist path; do   # \037 (US) — emp
   fi
 done < <(parse_repos)
 
+# Flag any requested repo name that matched no declared repo (typo / wrong product scope).
+if [[ -n "$REPO_FILTER" ]]; then
+  for want in $REPO_FILTER; do
+    case " $MATCHED " in
+      *" $want "*) ;;
+      *) warn "no repo named '$want' to sync${PRODUCT:+ under product '$PRODUCT'}"
+         noted+=("repo '$want': not found in workspace.config.yaml${PRODUCT:+ under product '$PRODUCT'}") ;;
+    esac
+  done
+fi
+
+# ── regenerate the workflow CONFIG once from the now up-to-date workspace.config.yaml ──
+# (the workflow can't read the FS at runtime, so it keeps an in-source mirror).
+if [[ "$DRY" -ne 1 ]]; then
+  GEN="$DIR/aiworks-config.sh"
+  if [[ -x "$GEN" ]]; then
+    step "Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
+    "$GEN" || warn "could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand"
+  fi
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────────
 printf '\n%s──────── sync summary ────────%s\n' "$c_step" "$c_off"
 if [[ "$total" -eq 0 ]]; then
-  printf '%sNo repos to sync%s%s — declare them under products[].repos[] in workspace.config.yaml (each needs a url + kind).\n' "$c_warn" "${PRODUCT:+ for product '$PRODUCT'}" "$c_off"
+  printf '%sNo repos to sync%s%s%s — declare them under products[].repos[] in workspace.config.yaml (each needs a url + kind).\n' "$c_warn" "${PRODUCT:+ for product '$PRODUCT'}" "${REPO_FILTER:+ matching repo(s) '$REPO_FILTER'}" "$c_off"
 elif [[ "$DRY" -eq 1 ]]; then
   printf '%s%d repo(s)%s would be synced (dry run). Re-run without --dry-run to execute.\n' "$c_step" "$total" "$c_off"
 else
@@ -139,6 +195,6 @@ else
   if [[ "${#noted[@]}" -gt 0 ]]; then
     printf '%sNotes:%s\n' "$c_warn" "$c_off"; for n in "${noted[@]}"; do printf '  • %s\n' "$n"; done
   fi
-  printf '%sNext:%s mirror any newly-onboarded repos into the .claude/workflows/dev-cycle.js CONFIG `REPOS` block (each `aiworks add` printed a paste-ready entry).\n' "$c_step" "$c_off"
+  printf '%sNext:%s `mani list projects` to see the set. (The .claude/workflows/dev-cycle.js CONFIG was regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off"
 fi
 [[ "$failed" -eq 0 ]]

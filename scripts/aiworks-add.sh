@@ -28,11 +28,16 @@
 #   --tags <a,b,…>         EXTRA tags, appended after [product, language] in the mani entry
 #                          (e.g. "ui,offline"). Default: none.
 #   --desc <text>          mani entry description (default: "The <repo-name> repo.").
-#   --kind <kind>          workspace.config.yaml repo kind: generic | flutter-app | appium-e2e
-#                          (default: generic) — drives the plan/build/review/guard/perf/e2e defaults.
+#   --kind <kind>          repo kind — a free-form, tech-agnostic dev-context label (frontend,
+#                          backend, web-app, service, migration, generic, …; the tech goes in
+#                          --lang). Only 'test-suite' is special (QA archetype); any other kind
+#                          is a code repo (plan→build→review + guard/perf). Default: generic.
+#                          (default: generic) — drives the plan/build/review/guard/perf/test-suite defaults.
 #   --distribute <how>     workspace.config.yaml distribute: none | firebase | custom (default: none).
 #   --path <dir>           Clone dir under the workspace root (default: the repo name from --url).
 #   --skill-cmd <slash>    Skill-generator command to run in the repo (default: /run-skill-generator).
+#                          It's told to make the generated run skill a thin wrapper over
+#                          `scripts/dev.sh run` (step 10) rather than re-derive how to run.
 #   --claude-timeout <s>   Per-step timeout (seconds) for each headless `claude` call so a hung
 #                          step can't stall the run (default: 900; 0 disables; needs timeout/gtimeout).
 #   --safe-perms           Run the headless `claude` steps with --permission-mode acceptEdits
@@ -55,6 +60,10 @@ skip()  { printf '    %s⤼ SKIP: %s%s\n' "$c_warn" "$*" "$c_off"; SKIPPED+=("$*
 glance(){ printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
 die()   { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 have()  { command -v "$1" >/dev/null 2>&1; }
+# A repo is codegraph-"initialized" only when the graph DB exists — a bare .codegraph/ dir
+# (just its .gitignore, e.g. from an interrupted init) is NOT initialized and `codegraph sync`
+# rejects it. Both the init (step 4) and sync (step 10.6) steps gate on THIS, so they agree.
+cg_indexed() { local f; for f in "$1"/.codegraph/*.db; do [[ -e "$f" ]] && return 0; done; return 1; }
 
 # Ask on the CONTROLLING TERMINAL (/dev/tty), not stdin — so a prompt still works even when
 # stdin is a pipe or has been consumed by a child. Sets REPLY. Returns 0 if it asked, 1 if
@@ -97,18 +106,9 @@ print_summary() {
     for f in "${FOLLOWUP[@]}"; do printf '  • %s\n' "$f"; done
   fi
   [[ $((TOK_IN + TOK_OUT + TOK_CR + TOK_CW)) -gt 0 ]] && printf '%sClaude usage this run:%s in=%d out=%d cache(r=%d w=%d)  total cost=$%s\n' "$c_step" "$c_off" "$TOK_IN" "$TOK_OUT" "$TOK_CR" "$TOK_CW" "$TOK_COST"
-  # Print a ready-to-paste dev-cycle.js CONFIG `REPOS` entry — the workflow can't read the
-  # filesystem, so this block is its hand-maintained mirror of workspace.config.yaml.
-  if [[ -n "${REPO_NAME:-}" ]]; then
-    local jr jd
-    jr="$([[ "${WC_REVIEW:-}" == null ]] && printf 'null' || printf "'%s'" "${WC_REVIEW:-code-reviewer}")"
-    jd="$([[ -z "${DISTRIBUTE:-}" || "${DISTRIBUTE:-}" == none ]] && printf 'null' || printf "'%s'" "$DISTRIBUTE")"
-    printf '%sMirror into .claude/workflows/dev-cycle.js CONFIG REPOS (workflow can'\''t read the FS):%s\n' "$c_step" "$c_off"
-    printf "  '%s': { path: '%s', kind: '%s', base: { feature: '<feature_base>', fix: '<fix_base>' },\n" "$REPO_NAME" "${PATH_REL:-$REPO_NAME}" "${KIND:-generic}"
-    printf "    plan: '%s', build: '%s', review: %s, guard: %s, perf: %s,\n" "${WC_PLAN:-development-planner}" "${WC_BUILD:-developer}" "$jr" "${WC_GUARD:-true}" "${WC_PERF:-true}"
-    printf "    green: '<keep-it-green check>', guardianFocus: '<…>', testSuite: %s, distribute: %s },\n" "${WC_TEST_SUITE:-false}" "$jd"
-  fi
-  printf '%sNext:%s paste the entry above into dev-cycle.js (set base from branch_model + any autoMerge override), then `mani list projects`.\n' "$c_step" "$c_off"
+  # The dev-cycle.js CONFIG mirror is regenerated FROM workspace.config.yaml by step 2.6
+  # (scripts/aiworks-config.sh) — there is nothing to paste by hand anymore.
+  printf '%sNext:%s the .claude/workflows/dev-cycle.js CONFIG is auto-generated from workspace.config.yaml (regenerated at step 2.6; re-run `aiworks config` any time). Then `mani list projects`.\n' "$c_step" "$c_off"
 }
 # Append a literal line to a file iff absent. Returns 0 if it added it, 1 if already
 # present. Guarantees the file ends in a newline first so lines never merge.
@@ -270,16 +270,16 @@ tags_yaml=""; for t in "${tags_list[@]}"; do tags_yaml+="${tags_yaml:+, }$t"; do
 [[ "$PATH_REL" =~ ^[A-Za-z0-9._/-]+$ ]] || die "repo/dir name '$PATH_REL' is not a simple dir path — pass --path"
 [[ "$CLAUDE_TIMEOUT" =~ ^[0-9]+$ ]]     || CLAUDE_TIMEOUT=900
 
-# Map the repo kind → the role/gate defaults. These are NOT written into
-# workspace.config.yaml (the entry there stays minimal: url + kind); they're used only to
-# print a ready-to-paste dev-cycle.js CONFIG `REPOS` entry at the end (the workflow can't
-# read the FS, so its mirror is maintained by hand). appium-e2e has no code review and
-# provides the cross-repo integration suite; everything else is dev+review.
+# `kind` is a FREE-FORM, tech-agnostic dev-context label (frontend, backend, web-app, service,
+# migration, generic, …) — the tech is captured by --lang. Behaviour is by ARCHETYPE: 'test-suite'
+# selects the QA pipeline (qa-planner/qa-runner, no code review, provides the cross-repo test-suite
+# gate); EVERY other kind is a "code" repo (plan→build→review + guard/perf). The kind→defaults
+# mapping lives in ONE place — scripts/aiworks-config.sh — applied when the dev-cycle.js CONFIG is
+# regenerated at the end of this run (step 2.6). Here we only note which archetype the kind selects.
 case "$KIND" in
-  appium-e2e)             WC_PLAN=qa-planner;          WC_BUILD=qa-runner; WC_REVIEW=null;          WC_GUARD=false; WC_PERF=false; WC_TEST_SUITE=true ;;
-  flutter-app|generic)    WC_PLAN=development-planner; WC_BUILD=developer; WC_REVIEW=code-reviewer; WC_GUARD=true;  WC_PERF=true;  WC_TEST_SUITE=false ;;
-  *) printf '%s! unknown --kind "%s"; using generic role defaults%s\n' "$c_warn" "$KIND" "$c_off"
-     WC_PLAN=development-planner; WC_BUILD=developer; WC_REVIEW=code-reviewer; WC_GUARD=true; WC_PERF=true; WC_TEST_SUITE=false ;;
+  test-suite)  printf '%s  kind "%s" → QA archetype (qa-runner builds the suite; no code review)%s\n' "$c_dim" "$KIND" "$c_off" ;;
+  ''|generic)  ;;
+  *)           printf '%s  kind "%s" → code repo (plan→build→review + guard/perf); tune via green/guardian_focus%s\n' "$c_dim" "$KIND" "$c_off" ;;
 esac
 
 printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
@@ -372,6 +372,18 @@ else
     && ok "created products: block in workspace.config.yaml (product '$PRODUCT', repo '$REPO_NAME')"
 fi
 
+# ── 2.6. regenerate the dev-cycle workflow CONFIG from workspace.config.yaml ────
+# The workflow can't read the FS at runtime, so it carries an in-source mirror of the config.
+# Now that the repo is in workspace.config.yaml, regenerate that mirror — no hand-paste needed.
+step "2.6. Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
+GEN="$(cd "$(dirname "$0")" && pwd)/aiworks-config.sh"
+if [[ -x "$GEN" ]]; then
+  if out="$("$GEN" -q 2>&1)"; then ok "dev-cycle.js CONFIG mirrors workspace.config.yaml (no manual paste needed)"
+  else skip "2.6. could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand. Detail: ${out}"; fi
+else
+  skip "2.6. aiworks-config.sh not found next to aiworks-add.sh — mirror dev-cycle.js by hand"
+fi
+
 # ── 3. clone via mani + 3.1 gitignore ─────────────────────────────────────────
 step "3. Clone the repo (mani sync)"
 if ! have mani; then
@@ -400,18 +412,24 @@ cd "$REPO_DIR" || die "cannot cd into $REPO_DIR"
 
 # ── 3.2. repo .gitignore — ignore agent_logs/ (agent plans / run summaries / bug logs,
 #         incl. the dev.sh verbose logs in agent_logs/executed_verbose/) + .aiworks/ (this
-#         tool's per-repo idempotency sentinels) ──────────
-step "3.2. Ignore agent_logs/ + .aiworks/ in $PATH_REL/.gitignore"
+#         tool's per-repo idempotency sentinels) + the codegraph daemon runtime files
+#         (.codegraph/daemon.pid + .codegraph/codegraph.lock — machine-local, never committed) ──────────
+step "3.2. Ignore agent_logs/ + .aiworks/ + codegraph runtime in $PATH_REL/.gitignore"
 if ensure_line "$REPO_DIR/.gitignore" "agent_logs/"; then ok "added agent_logs/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores agent_logs/"; fi
 if ensure_line "$REPO_DIR/.gitignore" ".aiworks/"; then ok "added .aiworks/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores .aiworks/"; fi
+ensure_line "$REPO_DIR/.gitignore" "# codegraph" || true   # group header for the two runtime files below
+if ensure_line "$REPO_DIR/.gitignore" ".codegraph/daemon.pid"; then ok "added .codegraph/daemon.pid to $PATH_REL/.gitignore"
+else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/daemon.pid"; fi
+if ensure_line "$REPO_DIR/.gitignore" ".codegraph/codegraph.lock"; then ok "added .codegraph/codegraph.lock to $PATH_REL/.gitignore"
+else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/codegraph.lock"; fi
 
 # ── 4. codegraph index ────────────────────────────────────────────────────────
 step "4. Initialize the codegraph index (in $PATH_REL/)"
 if ! have codegraph; then skip "4. 'codegraph' not installed — run 'codegraph init' in $PATH_REL/ later"
-elif [[ -d "$REPO_DIR/.codegraph" && "$FORCE" -ne 1 ]]; then skip "4. .codegraph already initialized"
-elif codegraph init "$REPO_DIR"; then ok "codegraph index built"
+elif cg_indexed "$REPO_DIR" && [[ "$FORCE" -ne 1 ]]; then skip "4. .codegraph index already built"
+elif codegraph init "$REPO_DIR"; then ok "codegraph index built"   # recovers a bare/partial .codegraph/ too
 else skip "4. 'codegraph init' failed"; fi
 
 # ── 5. karpathy skills plugin — INSTALL **and ENABLE** at project scope ─────────
@@ -495,16 +513,48 @@ else
   fi
 fi
 
-# ── 8. run the setup-matt-pocock-skills SKILL (idempotent) ─────────────────────
-# It's a Claude skill (installed in step 6), invoked as the /slash command. It scaffolds an
-# `## Agent skills` block (in CLAUDE.md/AGENTS.md) + docs/agents/, so treat any of those — or
-# our own sentinel — as "already done" and SKIP (it's an interactive skill; don't re-run it).
-step "8. Run the /setup-matt-pocock-skills skill"
+# ── 8. scaffold the matt-pocock per-repo config (NON-INTERACTIVE) ──────────────
+# /setup-matt-pocock-skills (installed in step 6) is a PROMPT-DRIVEN skill whose default flow is
+# explore → present findings → ASK THE USER → write. Run headless that "ask" step has no one to
+# answer (stdin is /dev/null), so it exits 0 having written nothing — which is why a bare invocation
+# always left step 8 asking for an interactive follow-up. So we DON'T invoke the bare slash command:
+# we pass a self-contained NON-INTERACTIVE prompt that tells the headless run to skip the ask/confirm
+# steps and write the artifacts directly with derived defaults (tracker ← git remote, canonical
+# triage labels 1:1, single-context). Success is still judged by a real ARTIFACT (docs/agents/ or the
+# '## Agent skills' block); the step is idempotent (once the artifact exists, later runs short-circuit)
+# and a genuine miss simply RETRIES on the next sync — no manual step.
+step "8. Scaffold matt-pocock per-repo config (/setup-matt-pocock-skills, non-interactive)"
+# What proves the skill actually did its job:
+mp_artifact() { [[ -d "$REPO_DIR/docs/agents" ]] || grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md"; }
+# The headless override prompt. Quoted heredoc → no expansion/command-substitution (the backticks
+# below are LITERAL); `read -d ''` returns non-zero at EOF but set -e is off, so it's safe (same
+# pattern as BASE_SETTINGS in step 9).
+read -r -d '' MP_PROMPT <<'EOF'
+Run the /setup-matt-pocock-skills skill for THIS repository in NON-INTERACTIVE (headless) mode.
+There is NO human available to answer questions and stdin is closed, so you MUST NOT ask for
+confirmation or wait for input. SKIP the skill's "Present findings and ask" and "Confirm and edit"
+steps entirely. Apply these defaults and WRITE the files directly:
+
+- Issue tracker: inspect `git remote -v`. If the origin remote is GitLab, use the gitlab seed
+  template; if GitHub, the github seed template; if there is no remote, the local-markdown seed
+  template. Copy the matching template from the skill folder to docs/agents/issue-tracker.md.
+- Triage labels: the five canonical roles mapped 1:1 to their default strings — write
+  docs/agents/triage-labels.md from the seed template unchanged.
+- Domain docs: single-context — write docs/agents/domain.md from the seed template.
+- Add (or update in place) the "## Agent skills" block in CLAUDE.md if it exists, else AGENTS.md,
+  else create CLAUDE.md. Never create the other file when one already exists.
+
+Write all three docs/agents/*.md files and the "## Agent skills" block now. Do not ask — just write.
+EOF
 if ! have claude; then skip "8. 'claude' CLI not found"
-elif { is_done step8-setup-mp || [[ -d "$REPO_DIR/docs/agents" ]] || grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md"; } && [[ "$FORCE" -ne 1 ]]; then
-  skip "8. setup-matt-pocock-skills already done (sentinel / docs/agents/ / '## Agent skills' present)"
-elif claude_run "/setup-matt-pocock-skills"; then ok "/setup-matt-pocock-skills ran"; mark_done step8-setup-mp
-else skip "8. /setup-matt-pocock-skills failed (was step 6 able to install it?)"; fi
+elif [[ -d "$REPO_DIR/docs/agents" ]] && [[ "$FORCE" -ne 1 ]]; then
+  skip "8. already done — docs/agents/ present"
+elif grep -qs '## Agent skills' "$REPO_DIR/CLAUDE.md" "$REPO_DIR/AGENTS.md" && [[ "$FORCE" -ne 1 ]]; then
+  skip "8. already done — '## Agent skills' block present in CLAUDE.md/AGENTS.md"
+elif claude_run "$MP_PROMPT"; then
+  if mp_artifact; then ok "/setup-matt-pocock-skills (non-interactive) scaffolded docs/agents/ + the '## Agent skills' block"
+  else warn "8. /setup-matt-pocock-skills wrote no docs/agents/ or '## Agent skills' block — retries on the next sync (re-run with --force to retry now; was step 6 able to install it?)"; fi
+else skip "8. /setup-matt-pocock-skills failed (auth? was step 6 able to install it?)"; fi
 
 # ── 9. hooks + permissions baseline (HARDCODED, sonar-free) ────────────────────
 # No reference repo: the hooks come from the workspace's own .claude/hooks (the dev-wrapper,
@@ -585,7 +635,7 @@ if ! have claude; then skip "10. 'claude' CLI not found — author scripts/dev.s
 elif [[ -f "$REPO_DIR/scripts/dev.sh" && "$FORCE" -ne 1 ]]; then skip "10. scripts/dev.sh already present"
 else
   mkdir -p "$REPO_DIR/scripts"
-  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
+  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable. Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
   glance "scaffolding scripts/dev.sh (${LANG:-language inferred}) ..."
   if claude_run "$gen_prompt"; then
     [[ -f "$REPO_DIR/scripts/dev.sh" ]] && chmod +x "$REPO_DIR/scripts/dev.sh" 2>/dev/null
@@ -598,13 +648,23 @@ fi
 # Idempotent: the generator writes a real skill dir under .claude/skills/ (the mattpocock
 # skills there are SYMLINKS, so `-type d` matches only a generated skill). That, or our
 # sentinel, means it already ran — SKIP (don't regenerate on every run).
+#
+# We FORCE the generated run skill to DELEGATE to `scripts/dev.sh run` (step 10) rather than
+# re-derive how to build/launch the app — that derivation is the expensive part, dev.sh already
+# owns it, and re-doing it burns tokens. The run skill stays a thin wrapper over dev.sh run.
 step "10.5. Run the skill generator ($SKILL_CMD) in $PATH_REL/"
 if ! have claude; then skip "10.5. 'claude' CLI not found — run $SKILL_CMD in $PATH_REL/ later"
 elif { is_done step10_5-skillgen || [[ -n "$(find "$REPO_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)" ]]; } && [[ "$FORCE" -ne 1 ]]; then
   skip "10.5. a generated skill already exists in .claude/skills/ (or sentinel) — not re-running $SKILL_CMD"
 else
+  skill_prompt="$SKILL_CMD"
+  if [[ -f "$REPO_DIR/scripts/dev.sh" ]]; then
+    skill_prompt="$SKILL_CMD
+
+This repo's scripts/dev.sh already has a 'run' subcommand that is the SINGLE SOURCE OF TRUTH for how to build, launch and drive this app (just generated for this exact stack). To stay lean on tokens, DO NOT re-derive how to run, and DO NOT build/launch the app yourself to discover it — trust scripts/dev.sh run. The generated run skill MUST be a THIN WRAPPER: its 'Run (agent path)' section simply invokes 'scripts/dev.sh run' (and points at 'scripts/dev.sh status' / 'scripts/dev.sh why run' for diagnosis). Do NOT write a separate driver script that duplicates dev.sh, and keep Prerequisites/Setup to the few lines dev.sh assumes."
+  fi
   glance "running ${SKILL_CMD} ..."
-  if claude_run "$SKILL_CMD"; then ok "$SKILL_CMD ran"; mark_done step10_5-skillgen
+  if claude_run "$skill_prompt"; then ok "$SKILL_CMD ran (delegates to scripts/dev.sh run)"; mark_done step10_5-skillgen
   else skip "10.5. $SKILL_CMD failed (is the skill installed? override the name with --skill-cmd)"; fi
 fi
 
@@ -613,7 +673,7 @@ fi
 # skills) AFTER the step-4 index build, so re-sync so the index reflects the final tree.
 step "10.6. Sync the codegraph index (in $PATH_REL/)"
 if ! have codegraph; then skip "10.6. 'codegraph' not installed — run 'codegraph sync $PATH_REL' later"
-elif [[ ! -d "$REPO_DIR/.codegraph" ]]; then skip "10.6. no .codegraph index to sync (step 4 didn't run) — 'codegraph init $PATH_REL' first"
+elif ! cg_indexed "$REPO_DIR"; then skip "10.6. no .codegraph index to sync (step 4 didn't build one) — run 'codegraph init $PATH_REL' first"
 elif codegraph sync "$REPO_DIR"; then ok "codegraph index synced"
 else skip "10.6. 'codegraph sync' failed"; fi
 

@@ -5,9 +5,10 @@
 # A thin wrapper over the per-repo lifecycle scripts. Run it from anywhere inside a
 # workspace (it finds the workspace root by mani.yaml).
 #
-#   aiworks add    --url <git-url> [options]   # onboard one repo            (→ aiworks-add.sh)
-#   aiworks sync   [<product>]     [options]   # onboard repos from config   (→ aiworks-sync.sh)
+#   aiworks add    --url <git-url> [options]      # onboard one repo            (→ aiworks-add.sh)
+#   aiworks sync   [<product>|<repo>] [options]   # onboard repos from config   (→ aiworks-sync.sh)
 #   aiworks remove <repo>          [options]   # offboard a repo             (→ aiworks-remove.sh)
+#   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
 #   aiworks help | -h | --help
 #
 # Each subcommand has its own --help:  aiworks add -h  ·  aiworks sync -h  ·  aiworks remove -h
@@ -27,18 +28,25 @@ Commands:
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
              seed hooks/permissions, scaffold scripts/dev.sh, run the skill generator.
   sync       Onboard every repo DECLARED in workspace.config.yaml products[].repos[]
-             (optionally one product) by running the `add` toolchain for each — reading
+             (optionally narrowed to one product, or one repo via a repo-name positional
+             or --repo <name>) by running the `add` toolchain for each — reading
              url/kind/lang/distribute/path from the config. This is the fast path: add a
              repo's URL to the config, then `aiworks sync`. Idempotent: already-onboarded
              repos just SKIP. Use -n to preview.
   remove     Offboard a repo: deregister it from workspace.config.yaml products[].repos[],
              mani.d/<product>.yaml, mani.yaml and the .gitignore (optionally --purge the clone).
+  config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)
+             FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
+             an in-source mirror. add / remove / sync run this automatically; run it yourself
+             after hand-editing workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
   help       Show this help. Use `aiworks <command> -h` for a command's options.
 
 Examples:
   # fast path — declare repos under products: in workspace.config.yaml, then:
   aiworks sync                          # onboard every repo in the config
   aiworks sync feeed-me --dry-run       # preview just the feeed-me product
+  aiworks sync agent-db                 # onboard ONLY the agent-db repo (repo-name positional)
+  aiworks sync --repo agent-db,paotung-template   # …or several named repos
   # or onboard one repo imperatively (also writes it into the config):
   aiworks add --url git@github.com:your-org/feeedme-api.git --product backend --lang go
   aiworks remove feeedme-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
@@ -50,6 +58,7 @@ case "$cmd" in
   add)            exec "$DIR/aiworks-add.sh" "$@" ;;
   sync)           exec "$DIR/aiworks-sync.sh" "$@" ;;
   remove|rm)      exec "$DIR/aiworks-remove.sh" "$@" ;;
+  config)         exec "$DIR/aiworks-config.sh" "$@" ;;
   help|-h|--help|"") usage ;;
   *) printf 'aiworks: unknown command %q (try `aiworks help`)\n' "$cmd" >&2; exit 1 ;;
 esac

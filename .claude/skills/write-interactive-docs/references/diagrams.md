@@ -111,8 +111,18 @@ A diagram a reader can *explore* teaches far more than a static picture. Inline
 CSS and waits for Mermaid to finish) and every diagram instantly gains, with zero
 extra authoring:
 
-- **zoom & pan + reset + fullscreen** — large diagrams stop being unreadable;
+- **zoom & pan + reset + fullscreen** — the +/- buttons zoom about the diagram's
+  centre (so it stays put); fullscreen fits the diagram to the screen and centres it;
+  drag to pan. On a Mac trackpad a **pinch** zooms the diagram (about the cursor) while a
+  plain **two-finger up/down swipe scrolls the page** — the engine tells them apart by the
+  `ctrlKey` flag the browser sets on a pinch's wheel event, intercepting *only* the pinch
+  and leaving ordinary scroll completely untouched (claiming the plain wheel was the old
+  "scroll doesn't work" bug);
 - **hover spotlight** — hovering a node dims the rest so a path stands out;
+- **click to select** — clicking a node gives it a persistent highlight that follows
+  your clicks (and the walkthrough); the detail drawer is *non-modal*, so you can click
+  node→node and the highlight + info just follow along. Clicking empty space or closing
+  the drawer clears it;
 - **keyboard-reachable nodes** — focusable, Enter/Space activates.
 
 Then make nodes *do* something by adding an optional **`nodes`** map to the

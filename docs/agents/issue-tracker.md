@@ -43,17 +43,25 @@ Canonical workflow phases → this org's real status names (from
 `workspace.config.yaml: tracker.statuses`). Pass the **real name** to
 `upsert-ticket-details.sh --status`.
 
-| Phase (what the workflow means) | Real status name | Set by |
-|---|---|---|
-| `not_started`   | `<Not started>`   | product-owner on ticket creation |
-| `in_progress`   | `<In progress>`   | ticket-kickoff, at the start of work |
-| `ready_to_test` | `<Ready to test>` | developer at handoff (code repos) |
-| `testing`       | `<Testing>`       | qa at test-design / during QA |
-| `done`          | `<Done>`          | the build role after merge + distribute |
+**The dev-cycle workflow owns the ticket status.** Because one ticket is shared by every
+repo it touches, the workflow — not the per-repo agents — moves it, **forward only**, once
+per aggregate milestone (so a multi-repo ticket can't thrash its status). Declare whatever
+statuses your board uses; at each milestone the workflow picks the best one you've declared
+(the *preference* column below), and silently skips any you haven't. A human or product-owner
+still owns the initial state and may use extra statuses the workflow doesn't drive.
 
-If a provider rejects a status (e.g. no Jira transition to it from the current state),
-the adapter prints the available targets — pick the right real name and update the map
-above so it matches your board.
+| Milestone (what the workflow means) | Status preference (first you declare) | Set by |
+|---|---|---|
+| ticket created            | `not_started` / `to_do`          | product-owner on creation |
+| Kickoff begins            | `in_progress`                    | the workflow (once) |
+| all repos built + reviewed + approved | `ready_to_merge` → `ready_to_test` | the workflow (once) |
+| cross-repo test-suite gate running (pre-merge) | `testing`       | the workflow (once) |
+| merged + distributed      | `done`                           | the workflow (once, after merge → distribute) |
+
+`code_review` (and other intermediate states) are carried through to the board for humans /
+other tools even though the workflow doesn't drive them. If a provider rejects a status (e.g.
+no Jira transition to it from the current state), the adapter prints the available targets —
+pick the right real name and update `workspace.config.yaml` so it matches your board.
 
 ## Notes
 

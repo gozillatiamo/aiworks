@@ -1,6 +1,9 @@
 # mac osx files
 .DS_Store
 
+# node dependencies — installed from package.json + lockfile, never committed (any depth)
+node_modules/
+
 # environment files — ignore every .env (and .env.* local variants) at any depth,
 # but keep the committed templates. Covers scripts/tracker/.env and scripts/vcs/.env.
 .env

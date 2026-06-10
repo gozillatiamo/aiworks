@@ -78,9 +78,12 @@ one diagram, refreshing an engine — is in **references/editing.md**. Read it f
 be broken at runtime: a diagram's Mermaid is subtly invalid, the exported `source`
 drifted from the visible diagram, or a clickable node's key doesn't match the real SVG
 node so clicks/walkthrough do nothing. The verifier renders every diagram with real
-Mermaid and exercises the interaction engine against it, catching all of these:
+Mermaid and exercises the engine — and, when Chrome/Chromium + puppeteer-core are present,
+drives a REAL mouse click in a headless browser to confirm clicks actually fire. That last
+gate is the only thing that catches load-order/timing bugs AND real-click failures (e.g.
+pointer-capture swallowing the click) that synthetic events and the source can't reveal:
 ```
-npm i --no-save mermaid jsdom        # once, in the dir you run from
+npm i --no-save mermaid jsdom puppeteer-core   # once; Chrome auto-detected (set CHROME_PATH if needed)
 node <skill>/scripts/verify-doc.mjs path/to/doc.html   # fix flags, re-run to ALL PASS
 ```
 (If node/npm isn't available, say the verifier was skipped and eyeball instead.) Then
@@ -95,7 +98,7 @@ the path and the export buttons (page toolbar top-right; per-section on hover).
 - **assets/template.html** — scaffold to copy; documents the DOM contract.
 - **assets/export-engine.js** — inline it; reusable MD/JSON export (page + per-section). Don't reinvent.
 - **assets/diagram-interactions.js** — inline it; zoom/pan + hover + clickable nodes + walkthrough; self-injects its CSS. Don't reinvent.
-- **scripts/verify-doc.mjs** — authoritative runtime check (real Mermaid + the engine). Run before handing over.
+- **scripts/verify-doc.mjs** — authoritative runtime check (real Mermaid + the engine, plus a real-mouse-click gate in headless Chrome via puppeteer-core when available). Run before handing over.
 - **references/components.md** — every block, its HTML + export island; comparison + Implementation Plan rules.
 - **references/diagrams.md** — pick the diagram kind; Mermaid recipes; make it interactive; the two gotchas.
 - **references/theming.md** — detect or generate the project's palette.

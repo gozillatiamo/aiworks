@@ -127,6 +127,18 @@ step "3. Un-ignore $DIR_REL/ in the workspace .gitignore"
 if remove_line "$ROOT/.gitignore" "$DIR_REL/"; then ok "removed $DIR_REL/ from the workspace .gitignore"
 else skip "3. $DIR_REL/ not in the workspace .gitignore"; fi
 
+# ── 3.5. regenerate the dev-cycle workflow CONFIG from workspace.config.yaml ───
+# The workflow can't read the FS at runtime, so it carries an in-source mirror. Regenerate
+# it from the (now repo-less) workspace.config.yaml so the '$REPO' entry is dropped too.
+step "3.5. Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
+GEN="$(cd "$(dirname "$0")" && pwd)/aiworks-config.sh"
+if [[ -x "$GEN" ]]; then
+  if out="$("$GEN" -q 2>&1)"; then ok "dev-cycle.js CONFIG re-mirrored from workspace.config.yaml (the '$REPO' entry is gone)"
+  else skip "3.5. could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand. Detail: ${out}"; fi
+else
+  skip "3.5. aiworks-config.sh not found — remove the '$REPO' entry from dev-cycle.js by hand"
+fi
+
 # ── 4. (--purge) delete the cloned working tree ──────────────────────────────────
 step "4. Working tree ($DIR_REL/)"
 if [[ "$PURGE" -ne 1 ]]; then
@@ -152,4 +164,4 @@ if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
   printf '%sSkipped (%d):%s\n' "$c_warn" "${#SKIPPED[@]}" "$c_off"
   for s in "${SKIPPED[@]}"; do printf '  ⤼ %s\n' "$s"; done
 fi
-printf '%sNext:%s remove the "%s" entry from the .claude/workflows/dev-cycle.js CONFIG `REPOS` block (the workflow cannot read the FS).\n' "$c_step" "$c_off" "$REPO"
+printf '%sNext:%s the .claude/workflows/dev-cycle.js CONFIG was regenerated from workspace.config.yaml — no manual edit needed (re-run `aiworks config` any time to re-sync).\n' "$c_step" "$c_off"

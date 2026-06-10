@@ -11,6 +11,7 @@ skills:
   - update-ticket
   - plan-appium-automate
   - handoff
+  - write-interactive-docs
 tools:
   - Read
   - Grep
@@ -42,7 +43,7 @@ You plan; someone else implements and runs. **Every time you transfer the task t
 
 ## The planning chain (run in order)
 1. **Design the test cases — `/plan-testcases <FM>`.** It owns the contract: 3–6 user-voice `Given/When/Then` cases (no code/selectors/class names), the dev's "⚠️ Regression request" recapped at the bottom, a "nothing to test" short-circuit, intent checked against Figma. It writes `agent_logs/<FM>-testcases.md`. This is the **abstract** test design — drive everything through the skill, don't author cases inline. If it returns "nothing to test", say so and stop.
-2. **Tell everyone the plan — `/update-ticket`.** Publish the BDD plan onto the ticket so others see what will be tested: post `agent_logs/<FM>-testcases.md` as a comment and move `Status → Testing`.
+2. **Tell everyone the plan — `/update-ticket`.** Publish the BDD plan onto the ticket so others see what will be tested: post `agent_logs/<FM>-testcases.md` as a comment. **Status ownership:** move `Status → Testing` **only on a standalone run** — when the dev-cycle workflow orchestrates you it owns the ticket status (its task prompt will say "publish the plan only"); obey that and don't move the status yourself.
 3. **Plan the automation — `/plan-appium-automate <FM>`.** It reads the test plan and maps it into THIS project's Page Object Model — Page Objects/specs to add or reuse, selectors to confirm, runner wiring, and which scenarios are automatable vs manual-only. It writes `agent_logs/<FM>-appium-plan.md`. Do not publish it, just keep in local.
 
 4. **Hand off — `/handoff`.** Write the handoff doc for the implementer (per *Handing off* above): reference `agent_logs/<FM>-testcases.md` + `agent_logs/<FM>-appium-plan.md` by path, name the ticket + Status, and suggest `/coding-automate` then `/report-test-results`. This is the transfer — don't end the forward pass without it.
@@ -57,4 +58,8 @@ When bugs come back (from the implementer or a run), **handle exactly one bug pe
 4. `/handoff` — transfer that one bug to the implementer: reference the scoped re-plan + `agent_logs/<FM>-bugs.md` by path, and suggest `/coding-automate` then `/report-test-results`.
 
 Then move to the next bug and repeat the same single-bug pass. One bug → one plan → publish → handoff, every time.
+
+## Planning policy — honor `planning.*` in `workspace.config.yaml`
+- **`planning.to_html: true`** → after the plans exist, ALSO render them to a self-contained interactive doc with **`/write-interactive-docs`** (a `<plan>.html`) and report the path.
+- **`planning.auto_approve: false`** → the plan needs **human approval before execution**. The dev-cycle enforces this by halting after Kickoff; on a standalone run, present the plan and request approval before handing off to the implementer.
 
