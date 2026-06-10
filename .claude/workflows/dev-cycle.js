@@ -63,6 +63,42 @@ const STATUS = {
   done: 'DONE',
 }
 const REPOS = {
+  'agent-db': {
+    path: 'agent-db', kind: 'migration',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'migrate passed successfully and rollback able',
+    guardianFocus: 'secrets',
+    distribute: null,
+  },
+  'paotung-template': {
+    path: 'paotung-template', kind: 'web-app',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'tests via stroybook passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
+  'agent-webservice': {
+    path: 'agent-webservice', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests + integration tests passed successfully',
+    guardianFocus: 'secrets, data-protection, injection attacks',
+    distribute: null,
+  },
+  'agent-paotung-cypress': {
+    path: 'agent-paotung-cypress', kind: 'test-suite',
+    base: { feature: 'main', fix: 'main' },
+    plan: 'qa-planner', build: 'qa-runner', review: null,
+    guard: false, perf: false,
+    green: 'tests via cypress passed successfully',
+    testSuite: true,
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 
