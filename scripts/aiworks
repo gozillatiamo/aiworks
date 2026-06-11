@@ -9,7 +9,13 @@
 #   aiworks sync   [<product>|<repo>] [options]   # onboard repos from config   (→ aiworks-sync.sh)
 #   aiworks remove <repo>          [options]   # offboard a repo             (→ aiworks-remove.sh)
 #   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
+#   aiworks setup                  [args…]     # workspace setup             (→ .superset/setup.sh)
+#   aiworks run                    [args…]     # workspace run               (→ .superset/run.sh)
+#   aiworks teardown               [args…]     # workspace teardown          (→ .superset/teardown.sh)
 #   aiworks help | -h | --help
+#
+# setup / run / teardown are thin pass-throughs: they exec the matching .superset/<cmd>.sh
+# at the workspace root verbatim, forwarding any extra args. No extra logic.
 #
 # Each subcommand has its own --help:  aiworks add -h  ·  aiworks sync -h  ·  aiworks remove -h
 #
@@ -39,6 +45,12 @@ Commands:
              FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
              an in-source mirror. add / remove / sync run this automatically; run it yourself
              after hand-editing workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
+  setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
+             adapter .env, link adapters into each repo). Pass-through — forwards any extra args.
+  run        Run the workspace run hook: exec .superset/run.sh verbatim. Pass-through —
+             forwards any extra args. (Errors clearly if .superset/run.sh does not exist.)
+  teardown   Run the workspace teardown hook: exec .superset/teardown.sh verbatim (remove the
+             cloned product repos). Pass-through — forwards any extra args.
   help       Show this help. Use `aiworks <command> -h` for a command's options.
 
 Examples:
@@ -50,7 +62,23 @@ Examples:
   # or onboard one repo imperatively (also writes it into the config):
   aiworks add --url git@github.com:your-org/feeedme-api.git --product backend --lang go
   aiworks remove feeedme-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
+  # workspace lifecycle — pass straight through to the .superset hooks:
+  aiworks setup                         # exec .superset/setup.sh
+  aiworks teardown                      # exec .superset/teardown.sh
 EOF
+}
+
+# Pass-through to a .superset/<name>.sh hook at the workspace root, verbatim. The
+# scripts/ dir always lives at <root>/scripts, so .superset is a sibling of $DIR.
+superset_hook() {
+  local name="$1"; shift
+  local script="$DIR/../.superset/$name.sh"
+  if [[ ! -f "$script" ]]; then
+    printf 'aiworks %s: no hook found at %s\n' "$name" "$script" >&2
+    printf '  create a .superset/%s.sh (see .superset/setup.sh for the pattern).\n' "$name" >&2
+    exit 1
+  fi
+  if [[ -x "$script" ]]; then exec "$script" "$@"; else exec bash "$script" "$@"; fi
 }
 
 cmd="${1:-}"; [[ $# -gt 0 ]] && shift
@@ -59,6 +87,9 @@ case "$cmd" in
   sync)           exec "$DIR/aiworks-sync.sh" "$@" ;;
   remove|rm)      exec "$DIR/aiworks-remove.sh" "$@" ;;
   config)         exec "$DIR/aiworks-config.sh" "$@" ;;
+  setup)          superset_hook setup "$@" ;;
+  run)            superset_hook run "$@" ;;
+  teardown)       superset_hook teardown "$@" ;;
   help|-h|--help|"") usage ;;
   *) printf 'aiworks: unknown command %q (try `aiworks help`)\n' "$cmd" >&2; exit 1 ;;
 esac
