@@ -13,3 +13,7 @@ agent-db/
 paotung-template/
 agent-webservice/
 agent-paotung-cypress/
+
+# .superset runtime state (pidfiles + service logs from run.sh)
+.superset/run/
+.superset/logs/
