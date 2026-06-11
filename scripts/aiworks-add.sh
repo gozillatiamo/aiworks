@@ -410,6 +410,21 @@ if [[ ! -d "$REPO_DIR" ]]; then
 else
 cd "$REPO_DIR" || die "cannot cd into $REPO_DIR"
 
+# ── 3.1.5. git submodules — FIRST thing we do inside the freshly cloned repo. `mani sync`
+#          does a plain clone, so any submodules land as empty dirs; pull them in BEFORE
+#          codegraph (step 4) or the skill steps read the tree, so nested repos are present.
+#          Gated on a tracked .gitmodules — a no-op for repos that declare no submodules. ──
+step "3.1.5. Initialize git submodules (if any) in $PATH_REL/"
+if [[ ! -f "$REPO_DIR/.gitmodules" ]]; then
+  skip "3.1.5. $PATH_REL/ has no .gitmodules — no submodules to initialize"
+elif ! have git; then
+  skip "3.1.5. 'git' not installed — run 'git submodule update --init --recursive' in $PATH_REL/ later"
+elif git submodule update --init --recursive; then
+  ok "git submodules initialized (--init --recursive)"
+else
+  skip "3.1.5. 'git submodule update --init --recursive' failed — check submodule URLs / your SSH access"
+fi
+
 # ── 3.2. repo .gitignore — ignore agent_logs/ (agent plans / run summaries / bug logs,
 #         incl. the dev.sh verbose logs in agent_logs/executed_verbose/) + .aiworks/ (this
 #         tool's per-repo idempotency sentinels) + the codegraph daemon runtime files

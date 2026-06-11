@@ -153,6 +153,8 @@ Under the hood, both `add` and `sync` will, for each repo:
 - write a minimal entry under `products[].repos[]` (creating the config from the example
   if missing)
 - generate its `mani.d/<product>.yaml` entry + `mani.yaml` `import:`, then clone via `mani sync`
+- initialize git submodules first (`git submodule update --init --recursive`) when the repo
+  declares a `.gitmodules` (a no-op otherwise)
 - git-ignore the clone in the workspace `.gitignore` (and `agent_logs/` inside the repo)
 - build the codegraph index
 - install the agent skill packs **at project scope** (karpathy plugin installed *and*
