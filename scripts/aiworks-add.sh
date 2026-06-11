@@ -425,6 +425,28 @@ else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/daemon.pid"; fi
 if ensure_line "$REPO_DIR/.gitignore" ".codegraph/codegraph.lock"; then ok "added .codegraph/codegraph.lock to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/codegraph.lock"; fi
 
+# ── 3.3. link the workspace adapters INTO this repo + hide the links from its git ──
+#   Agents/skills run with cwd inside a repo and call the adapters by RELATIVE path
+#   (scripts/tracker/… , scripts/vcs/…), but the real adapters live ONLY at the workspace
+#   root — so we symlink them in (scripts/<a> → ../../scripts/<a>). Those links are
+#   workspace-local plumbing that must NEVER dirty (or get committed to) the product repo,
+#   so we also add them to THIS repo's .git/info/exclude — a LOCAL-ONLY ignore (per-clone,
+#   never travels with the repo), NOT its tracked .gitignore. We exclude the two link names
+#   exactly (no trailing slash — git treats a symlink-to-dir as a file, so `scripts/tracker/`
+#   would NOT match it) and never `scripts/` as a whole (the repo's own scripts/dev.sh is
+#   tracked). Idempotent: existing links and exclude lines are kept.
+step "3.3. Link adapters (scripts/{tracker,vcs}) + hide them in $PATH_REL/.git/info/exclude"
+mkdir -p scripts
+exclude="$(git rev-parse --git-path info/exclude 2>/dev/null || echo .git/info/exclude)"
+mkdir -p "$(dirname "$exclude")" 2>/dev/null || true
+for a in tracker vcs; do
+  if [[ -e "scripts/$a" || -L "scripts/$a" ]]; then skip "3.3. scripts/$a already present"
+  elif ln -s "../../scripts/$a" "scripts/$a" 2>/dev/null; then ok "linked scripts/$a → ../../scripts/$a"
+  else warn "could not link scripts/$a — link it by hand: (cd $PATH_REL && ln -s ../../scripts/$a scripts/$a)"; fi
+  if ensure_line "$exclude" "scripts/$a"; then ok "git-excluded scripts/$a (local-only, never committed)"
+  else skip "3.3. scripts/$a already in .git/info/exclude"; fi
+done
+
 # ── 4. codegraph index ────────────────────────────────────────────────────────
 step "4. Initialize the codegraph index (in $PATH_REL/)"
 if ! have codegraph; then skip "4. 'codegraph' not installed — run 'codegraph init' in $PATH_REL/ later"

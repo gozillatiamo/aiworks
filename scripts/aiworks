@@ -46,7 +46,8 @@ Commands:
              an in-source mirror. add / remove / sync run this automatically; run it yourself
              after hand-editing workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
-             adapter .env, link adapters into each repo). Pass-through — forwards any extra args.
+             adapter .env, link adapters into each repo + git-exclude the links so they never
+             dirty the product repo). Pass-through — forwards any extra args.
   run        Run the workspace run hook: exec .superset/run.sh verbatim. Pass-through —
              forwards any extra args. (Errors clearly if .superset/run.sh does not exist.)
   teardown   Run the workspace teardown hook: exec .superset/teardown.sh verbatim (remove the

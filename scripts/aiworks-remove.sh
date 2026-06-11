@@ -139,6 +139,24 @@ else
   skip "3.5. aiworks-config.sh not found — remove the '$REPO' entry from dev-cycle.js by hand"
 fi
 
+# ── 3.6. unlink the workspace adapters + drop them from .git/info/exclude ──────────
+# The inverse of `aiworks add` step 3.3: remove the scripts/{tracker,vcs} symlinks we wired
+# in (ONLY if they are our symlinks — never a real dir the repo owns) and the matching
+# local-only ignore lines. Best-effort, and run BEFORE the purge so a kept tree (config-only
+# remove, or a --purge that refuses on a dirty tree) is left clean.
+step "3.6. Unlink adapters + un-exclude in $DIR_REL/.git/info/exclude"
+if [[ ! -d "$REPO_DIR" ]]; then
+  skip "3.6. no working tree at $DIR_REL/ — nothing to unlink"
+else
+  exclude="$REPO_DIR/.git/info/exclude"
+  for a in tracker vcs; do
+    if [[ -L "$REPO_DIR/scripts/$a" ]]; then rm -f "$REPO_DIR/scripts/$a" && ok "unlinked scripts/$a"
+    else skip "3.6. scripts/$a not a workspace symlink (left as-is)"; fi
+    if remove_line "$exclude" "scripts/$a"; then ok "dropped scripts/$a from .git/info/exclude"
+    else skip "3.6. scripts/$a not in .git/info/exclude"; fi
+  done
+fi
+
 # ── 4. (--purge) delete the cloned working tree ──────────────────────────────────
 step "4. Working tree ($DIR_REL/)"
 if [[ "$PURGE" -ne 1 ]]; then
