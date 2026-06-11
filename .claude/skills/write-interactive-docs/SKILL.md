@@ -59,7 +59,9 @@ rebuild). Pick the mode from the request before doing anything.
 5. **Conditionals:** add a **comparison** section when the doc weighs options (mark the
    Recommended), and an **Implementation Plan** as the last section when something is
    to be built (ordered steps with real file targets + acceptance criteria). Both are
-   specified in **references/components.md**.
+   specified in **references/components.md**. If the doc IS a plan (it has an
+   Implementation Plan), also follow **"Plans vs. documents"** below — it changes what
+   you must emit and whether the human approves in-page.
 6. **Verify, then hand over** — see below.
 
 ## Mode B — update an existing doc
@@ -72,6 +74,53 @@ inlined engines) untouched, keep each changed block's visual and its `export-dat
 island in sync, then verify. The step-by-step playbook — locating sections, editing a
 block + island together, adding/removing a section, re-theming, adding interactivity to
 one diagram, refreshing an engine — is in **references/editing.md**. Read it first.
+
+## Plans vs. documents (the markdown contract & in-page approval)
+
+Most docs are **explainers** — the HTML is the deliverable; you're done when it's
+verified. But when the doc is a **plan** — it ends in an Implementation Plan because
+something will be built from it — the HTML is *not* the thing that gets executed. A
+later phase (e.g. the dev-cycle re-run with `--approve-plan`) reads a **markdown**
+file, never the page. Treat that markdown as the real artifact and the HTML as the
+human's reading-and-deciding surface over it. Two rules and one mode follow from that.
+
+**1 — A plan ALWAYS has a markdown twin, even when `to_html` is on.** `to_html` adds
+the HTML; it never *replaces* the markdown. So whenever you produce a plan as HTML,
+make sure the plan markdown exists too: in the dev-cycle the planner already wrote it
+(at `plan_path`) before you render; for a standalone plan, write the plan markdown
+yourself next to the `.html` (same basename, `.md`) before handing over. The HTML's
+export buttons reconstruct the same markdown, but a later phase shouldn't have to open
+a browser to get it — the file must be on disk.
+
+**2 — Downstream reads the markdown, not the HTML.** Keep the two in sync, and never
+point a build/approve step at the `.html`. The HTML is human-only. Make this concrete
+by setting `data-plan-md` (below) to the exact markdown path the next phase reads, so
+the in-page Approve writes back to that same file.
+
+**The mode — in-page approval when `planning.auto_approve` is false.** When a human
+must sign off before the plan is built, turn the plan doc into an approval surface so
+their decisions reach the markdown (otherwise edits made in the HTML are silently lost
+at build time). Set three attributes on the page root and inline
+`assets/plan-approval.js` after `export-engine.js`:
+```html
+<main data-doc data-doc-title="…"
+      data-plan-approval="pending"
+      data-plan-md="agent_logs/development-planner/FM-12-app-plan.md"   <!-- the markdown the next phase reads -->
+      data-plan-cmd="/dev-cycle FM-12 --approve-plan">                  <!-- the command to re-run, shown to the human -->
+```
+With that, the engine (no extra authoring): gives every section a **Decision** control
+(accept / pick an option / write a modification — options auto-derived from a
+comparison in the section), writes each change **live** into the Implementation Plan
+(its `decisions` island + a visible "Human decisions" block — yes, real-time, it's all
+one page), and adds an **✅ Approve & download plan** button to the plan section. On
+approve it serializes the current plan (decisions included) to markdown and downloads
+it under the `data-plan-md` basename, then tells the human to **replace `data-plan-md`
+with the download and re-run `data-plan-cmd`** (a browser can't overwrite a file on
+disk, so this hand-off is one explicit step). Full schema → **references/components.md
+→ "Plan-approval mode"**.
+
+When `auto_approve` is **on** (or the doc is a plain explainer), omit the three
+attributes and don't inline the engine — the plan renders read-only.
 
 ## Verify & hand over
 **Run the verifier — it's the authoritative check.** A doc can look right in source yet
@@ -90,14 +139,20 @@ node <skill>/scripts/verify-doc.mjs path/to/doc.html   # fix flags, re-run to AL
 sanity-check: plain language; right visual per idea; theme not black-and-white;
 comparison present iff options are weighed; Implementation Plan present iff something's
 to be built; exports work (click "↓ JSON" → a structured tree); single file,
-responsive, readable contrast. Save as `<topic>.html` (kebab-case — alongside the
-source repo's `docs/` when documenting code, else where the user asked). Tell the user
-the path and the export buttons (page toolbar top-right; per-section on hover).
+responsive, readable contrast. **If it's a plan:** the markdown twin exists on disk
+(see "Plans vs. documents"); and in approval mode (`data-plan-approval` set) the page
+shows per-section Decision controls + an Approve button, `data-plan-md` points at that
+markdown, and `plan-approval.js` is inlined — the verifier checks this wiring. Save as
+`<topic>.html` (kebab-case — alongside the source repo's `docs/` when documenting code,
+else where the user asked). Tell the user the path and the export buttons (page toolbar
+top-right; per-section on hover) — and, for a plan in approval mode, that approving
+downloads the markdown to drop over `data-plan-md`.
 
 ## Bundled resources
 - **assets/template.html** — scaffold to copy; documents the DOM contract.
 - **assets/export-engine.js** — inline it; reusable MD/JSON export (page + per-section). Don't reinvent.
 - **assets/diagram-interactions.js** — inline it; zoom/pan + hover + clickable nodes + walkthrough; self-injects its CSS. Don't reinvent.
+- **assets/plan-approval.js** — inline it (after export-engine.js) **only for a plan awaiting approval**; adds per-section Decision controls, a live "Human decisions" mirror, and the Approve→markdown download. Self-injects its CSS; inert unless `data-plan-approval` is set. Don't reinvent.
 - **scripts/verify-doc.mjs** — authoritative runtime check (real Mermaid + the engine, plus a real-mouse-click gate in headless Chrome via puppeteer-core when available). Run before handing over.
 - **references/components.md** — every block, its HTML + export island; comparison + Implementation Plan rules.
 - **references/diagrams.md** — pick the diagram kind; Mermaid recipes; make it interactive; the two gotchas.

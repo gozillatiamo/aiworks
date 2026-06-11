@@ -10,6 +10,9 @@
  *   3. a declared interactive node never matches a real SVG node (clicks /
  *      walkthrough silently do nothing — the "doesn't respond" bug);
  *   4. the page no longer exports valid JSON.
+ *   5. (plan-approval docs) the markdown contract is broken — no Implementation Plan
+ *      island, engine not inlined, data-plan-md missing/pointing at the HTML, or the
+ *      Decision/Approve UI never injects, so a human's edits can't reach the build.
  *
  * Usage:
  *   npm i --no-save mermaid jsdom        # once, in the dir you run this from
@@ -105,14 +108,60 @@ for (const r of rendered) {
 }
 
 /* whole-page JSON export must be valid (run export-engine via the real doc) */
+const rawDoc = fs.readFileSync(docPath, "utf8");
+let w2 = null;
 try {
-  const stripped = fs.readFileSync(docPath, "utf8")
+  const stripped = rawDoc
     .replace(/<script src="https:\/\/cdn[^>]*><\/script>/g, "")
     .replace(/mermaid\.initialize\([\s\S]*?\}\);/, "");
-  const w2 = new JSDOM(stripped, { runScripts: "dangerously", virtualConsole: new VirtualConsole() }).window;
+  w2 = new JSDOM(stripped, { runScripts: "dangerously", virtualConsole: new VirtualConsole() }).window;
   await new Promise((r) => setTimeout(r, 300));
   ok(w2.WID && !!JSON.parse(JSON.stringify(w2.WID.pageModel())), "page exports valid JSON");
 } catch (e) { ok(false, "page exports valid JSON — " + e.message.split("\n")[0]); }
+
+/* PLAN-APPROVAL gate — only when the doc opts into approval mode
+ * (data-plan-approval on the root). Confirms the markdown contract is actually
+ * wired: an Implementation Plan island to approve, the engine inlined, data-plan-md
+ * pointing at the markdown a later phase reads, and — run live — the Decision
+ * controls + Approve button injected and the exported plan markdown carrying any
+ * decisions. Without this, a human's in-page edits never reach the build. */
+const planRoot = PD.querySelector("[data-doc][data-plan-approval]");
+if (planRoot) {
+  console.log("\nPlan-approval mode:");
+  ok(!!planRoot.getAttribute("data-plan-md"),
+    "data-plan-md points at the authoritative markdown the next phase reads (not the .html)");
+  ok(!/\.html\b/i.test(planRoot.getAttribute("data-plan-md") || ""),
+    "data-plan-md is a .md file, not the HTML (the HTML is human-only)");
+  let planData = null;
+  for (const host of PD.querySelectorAll("[data-block='steps']")) {
+    const isl = host.querySelector(":scope > script.export-data");
+    if (!isl) continue;
+    try { const d = JSON.parse(isl.textContent); if (d.type === "steps") { planData = d; break; } } catch (_) {}
+  }
+  ok(!!planData, "an Implementation Plan (steps island) is present to approve");
+  ok(/WIDPlan/.test(rawDoc), "plan-approval.js is inlined (after export-engine.js)");
+  if (w2) {
+    await new Promise((r) => setTimeout(r, 150));
+    ok(typeof w2.WIDPlan === "object" && w2.WIDPlan !== null, "plan-approval engine initialises");
+    ok(!!w2.document.querySelector(".wid-plan-approve .wid-approve-btn"),
+      "Approve button is injected into the plan section");
+    const nonPlanSections = [...w2.document.querySelectorAll("[data-section]")]
+      .filter((s) => s.getAttribute("data-section-id") !== "implementation-plan").length;
+    const controls = w2.document.querySelectorAll(".wid-decision").length;
+    ok(nonPlanSections === 0 || controls >= 1,
+      `Decision controls injected (${controls} on ${nonPlanSections} reviewable section(s))`);
+    // a decision recorded in the island must surface in the exported markdown
+    try {
+      if (planData) {
+        const probe = JSON.parse(JSON.stringify(planData));
+        probe.decisions = [{ section: "Probe", choice: "Option B", note: "verifier probe" }];
+        const md = w2.WID.pageMd({ title: "t", sections: [{ id: "p", title: "Implementation Plan", blocks: [probe] }] });
+        ok(/Human decisions/.test(md) && /Option B/.test(md),
+          "approved decisions render into the exported plan markdown");
+      }
+    } catch (e) { ok(false, "approved decisions render into the exported plan markdown — " + e.message.split("\n")[0]); }
+  }
+}
 
 /* REAL-BROWSER gate — the only check that catches bugs jsdom + synthetic events can't:
  *   • load-order/timing (CDN Mermaid async render + subtree replacement → 0 wired), and

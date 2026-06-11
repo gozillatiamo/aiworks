@@ -168,8 +168,20 @@
   </style>
 </head>
 
-<!-- data-doc + titles drive the export engine. data-doc-project shows in exports. -->
+<!-- data-doc + titles drive the export engine. data-doc-project shows in exports.
+
+  PLAN-APPROVAL MODE (only for a PLAN doc when planning.auto_approve = false):
+  add the three data-plan-* attributes below to turn on per-section Decision
+  controls + an Approve button, and inline assets/plan-approval.js at the bottom.
+    data-plan-approval="pending"  → enables the approval UI (value: pending|approved)
+    data-plan-md="<path>"         → the AUTHORITATIVE markdown a later phase reads/executes
+                                     (the Approve download replaces THIS file)
+    data-plan-cmd="<command>"     → the command to re-run once approved (shown to the human)
+  Omit all three for a plain explainer or when auto_approve is on. -->
 <body>
+<!-- Default scaffold = a plain explainer (no plan attributes). For a PLAN awaiting
+     approval, add the three data-plan-* attributes from the comment above to <main>
+     and inline plan-approval.js at the bottom. -->
 <main class="doc-wrap" data-doc data-doc-title="{{DOC_TITLE}}" data-doc-project="{{PROJECT_NAME}}">
 
   <header class="doc-hero">
@@ -252,7 +264,11 @@ flowchart LR
     </script>
   </section>
 
-  <!-- LAST SECTION (conditional): Implementation Plan, written for an AI agent. -->
+  <!-- LAST SECTION (conditional): Implementation Plan, written for an AI agent.
+       In PLAN-APPROVAL mode (data-plan-approval set above), plan-approval.js injects a
+       live "Human decisions" mirror after the <h2> and an Approve toolbar at the end —
+       you don't author those. The island's `decisions` array is filled at runtime from
+       the per-section controls; leave it empty (or omit it) here. -->
   <section class="doc-section" data-section data-section-title="Implementation Plan" data-section-id="implementation-plan" data-block="steps">
     <h2>Implementation Plan <small style="color:var(--color-muted);font-weight:400;font-size:14px;">— for AI preview</small></h2>
     <div class="plan">
@@ -316,6 +332,16 @@ flowchart LR
      ============================================================ -->
 <script>
 /* PASTE assets/diagram-interactions.js HERE */
+</script>
+
+<!-- ============================================================
+     PLAN-APPROVAL only: inline assets/plan-approval.js HERE, AFTER
+     export-engine.js (it uses window.WID to build the approved Markdown).
+     It self-injects its CSS and does nothing unless data-plan-approval is
+     set on <main>, so it's safe to omit for non-plan docs.
+     ============================================================ -->
+<script>
+/* PASTE assets/plan-approval.js HERE (plan-approval docs only) */
 </script>
 
 </body>

@@ -12,7 +12,7 @@ A **run** = one `Workflow({name:'dev-cycle', args:'FM-<n>'})` invocation taken e
 
 ## When to use
 - A dev-cycle workflow run has finished and the user wants a cost/time recap per role.
-- Pair it with a run-summary file in `agent_logs/`, named `<ticket>-DEV-CYCLE-SUMMARY.md` (e.g. `agent_logs/FM-9-DEV-CYCLE-SUMMARY.md`) — alongside the per-role work logs. `agent_logs/` is git-ignored, so the summary is local-only.
+- Pair it with a run-summary file in the **workspace (org) root** `agent_logs/`, named `<ticket>-DEV-CYCLE-SUMMARY.md` (e.g. `agent_logs/FM-9-DEV-CYCLE-SUMMARY.md`) — never inside a product repo's `agent_logs/`. `agent_logs/` is git-ignored, so the summary is local-only.
 
 ## How to run
 
@@ -29,7 +29,7 @@ python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usa
 ## Finish by appending the usage table to the summary file
 **Always end a run-summary write by running the script and pasting its result at the bottom of the summary file.** Required final step:
 
-1. Write the narrative run-summary (what shipped, gate/review rounds, per-role notes, the PR/MR + distribution links the workflow returned) to `agent_logs/<ticket>-DEV-CYCLE-SUMMARY.md`.
+1. Write the narrative run-summary (what shipped, gate/review rounds, per-role notes, the PR/MR + distribution links the workflow returned) to `agent_logs/<ticket>-DEV-CYCLE-SUMMARY.md` at the workspace (org) root.
 2. As the **last step**, run the parser for the run's ticket and capture the Markdown table:
 
    ```bash

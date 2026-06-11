@@ -7,7 +7,7 @@
 #
 #   aiworks add    --url <git-url> [options]      # onboard one repo            (→ aiworks-add.sh)
 #   aiworks sync   [<product>|<repo>] [options]   # onboard repos from config   (→ aiworks-sync.sh)
-#   aiworks remove <repo>          [options]   # offboard a repo             (→ aiworks-remove.sh)
+#   aiworks remove <repo>|--all    [options]   # offboard a repo (or all)    (→ aiworks-remove.sh)
 #   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
 #   aiworks setup                  [args…]     # workspace setup             (→ .superset/setup.sh)
 #   aiworks run                    [args…]     # workspace run               (→ .superset/run.sh)
@@ -41,8 +41,9 @@ Commands:
              repos just SKIP. Use -n to preview. Also seeds the adapter .env files
              (scripts/{tracker,vcs}/.env) when missing — from .env.example, pre-filled with
              the providers/keys from workspace.config.yaml (an existing .env is left as-is).
-  remove     Offboard a repo: deregister it from workspace.config.yaml products[].repos[],
-             mani.d/<product>.yaml, mani.yaml and the .gitignore (optionally --purge the clone).
+  remove     Offboard a repo (or every repo, with --all): deregister it from
+             workspace.config.yaml products[].repos[], mani.d/<product>.yaml, mani.yaml and
+             the .gitignore, unlink the workspace adapters (optionally --purge the clone).
   config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)
              FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
              an in-source mirror. add / remove / sync run this automatically; run it yourself
@@ -65,6 +66,8 @@ Examples:
   # or onboard one repo imperatively (also writes it into the config):
   aiworks add --url git@github.com:your-org/feeedme-api.git --product backend --lang go
   aiworks remove feeedme-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
+  aiworks remove --all                  # offboard EVERY onboarded repo (config-only; keeps clones)
+  aiworks remove --all --purge --force  # …and delete every clone too (force past dirty/unpushed)
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
   aiworks teardown                      # exec .superset/teardown.sh

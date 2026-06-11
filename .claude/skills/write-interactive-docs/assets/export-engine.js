@@ -212,8 +212,22 @@
         return `> ${icon} **${label}**\n${body}`;
       }
 
-      case "steps":
-        return (b.steps || []).map((s, i) => `${i + 1}. **${s.title || ""}** ${s.md || ""}`.trim()).join("\n");
+      case "steps": {
+        const parts = [];
+        // Human decisions (from the plan-approval engine) lead, so an implementer
+        // reading the Markdown sees what the human changed before the original steps.
+        if (Array.isArray(b.decisions) && b.decisions.length) {
+          parts.push("**🧑‍⚖️ Human decisions (approved):**");
+          parts.push(b.decisions.map((d) => {
+            const where = d.section ? `**${d.section}** — ` : "";
+            const head = d.choice ? `chose **${d.choice}**` : "modified";
+            const note = d.note ? ` — ${d.note}` : "";
+            return `- ${where}${head}${note}`;
+          }).join("\n"));
+        }
+        parts.push((b.steps || []).map((s, i) => `${i + 1}. **${s.title || ""}** ${s.md || ""}`.trim()).join("\n"));
+        return parts.join("\n\n");
+      }
 
       case "kpis":
         return (b.items || []).map((k) => `- **${k.value}** — ${k.label}`).join("\n");

@@ -92,6 +92,14 @@ for repo in */; do
 done
 
 log "Workspace ready. Projects:"
+# Start the shared, long-lived MCP service containers (one container shared by every
+# client/agent over SSE — replaces the old per-client `docker run` servers that orphaned
+# on crash). Idempotent and self-skipping if docker is unavailable. See
+# .superset/mcp-compose.yml for the rationale.
+echo "==> Starting shared MCP services…"
+./.superset/mcp-services.sh up || true
+
+echo "==> Workspace ready. Projects:"
 mani list projects
 
 if [[ "${#ENV_TODO[@]}" -gt 0 ]]; then

@@ -34,6 +34,7 @@ and the in-document anchors.
 - [Diagram](#diagram) — see also references/diagrams.md
 - [Chart](#chart) — quantitative data (Chart.js)
 - [Steps / Implementation Plan](#steps--implementation-plan)
+- [Plan-approval mode (decisions + approve)](#plan-approval-mode)
 - [Accordion / details](#accordion)
 
 ---
@@ -191,6 +192,68 @@ paste-ready prompt.
   </script>
 </div>
 ```
+
+<a id="plan-approval-mode"></a>
+## Plan-approval mode (decisions + approve)
+
+A doc is a **plan** (not a plain explainer) when it ends in an Implementation Plan.
+When that plan still needs a human's sign-off — i.e. `planning.auto_approve` is
+**false** — turn on *plan-approval mode* so the human can decide *in the page* and
+have those decisions reach the markdown a later phase executes. Why it matters: the
+HTML is for reading only; `--approve-plan` and every downstream step read the
+**markdown**, never the page. Without this loop, a human's edits in the HTML are
+silently dropped at build time.
+
+**Turn it on** by setting three attributes on the page root and inlining
+`assets/plan-approval.js` (after `export-engine.js`):
+```html
+<main data-doc data-doc-title="…"
+      data-plan-approval="pending"
+      data-plan-md="agent_logs/development-planner/FM-12-app-plan.md"
+      data-plan-cmd="/dev-cycle FM-12 --approve-plan">
+```
+- `data-plan-md` is the **authoritative markdown** the next phase reads — the Approve
+  download is named to replace exactly this file.
+- `data-plan-cmd` is the command shown to the human to re-run once approved.
+- Omit all three (and don't inline the engine) for a plain explainer, or when
+  `auto_approve` is on — the plan then renders read-only.
+
+**What the engine does, with no extra authoring:**
+- Adds a collapsible **Decision** control to every section — *accept as proposed*,
+  *pick an option*, or *write a modification* for the implementer. Options are
+  auto-derived from a [comparison](#comparison) in that section (its `options`,
+  defaulting to `recommended`), so a "weigh the options" section becomes a real
+  choose-one control for free.
+- Writes each change **live** into the plan island's `decisions` array (the export
+  source of truth) and mirrors it in a "Human decisions" block inside the plan — so
+  the plan reflects the human's intent in real time.
+- Renders an **✅ Approve & download plan** button in the plan section. It serializes
+  the current plan (decisions included) to Markdown via the export engine and
+  downloads it under the `data-plan-md` basename, then tells the human to drop it over
+  `data-plan-md` and re-run `data-plan-cmd`.
+
+The exported `steps` block leads with the approved decisions, then the original steps:
+```markdown
+**🧑‍⚖️ Human decisions (approved):**
+- **Options compared** — chose **Synchronous** — start simple; revisit if load grows
+- **Data model** — modified — keep meals and meds in one table for v1
+1. **Add the queue client** `lib/infra/queue.dart` — typed `enqueue()`.
+…
+```
+
+**Pose a specific question** (optional) by adding a `decision-data` island to a section
+— it overrides the auto-derived control:
+```html
+<section class="doc-section" data-section data-section-title="Write path" data-section-id="write-path">
+  …
+  <script type="application/json" class="decision-data">
+    {"question":"Which write path for v1?","options":["Queue-based","Synchronous"],"default":"Queue-based"}
+  </script>
+</section>
+```
+Decision controls are pure UI (`div`/`label`/`select`/`textarea`/`button`) the export
+engine ignores, so they never leak into the Markdown — only the island's `decisions`
+field does.
 
 ## Accordion
 Use the native `<details>` element for "deep dive on demand" — it exports as a

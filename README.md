@@ -250,5 +250,27 @@ the best match per milestone (e.g. `ready_to_merge` if you have it, else `ready_
 are just defaults — set `quality_gate.provider: none` and per-repo `distribute: none` to
 skip them.
 
+**Shared MCP services.** Container-backed MCP servers run as ONE long-lived, shared
+container instead of a per-client `docker run` in `.mcp.json`. An stdio MCP server is
+spawned once per client process, so the fan-out workflow's many subagents each spawned
+their own container — and a crashed agent never closes the pipe, so `--rm` never fires and
+the container orphans. The shared model fixes both: `.superset/mcp-compose.yml` defines the
+stack (currently `postgres-mcp` over SSE on `127.0.0.1:8000`), `.mcp.json` points every
+client at the SSE URL, and one container serves them all.
+
+- **Lifecycle:** `scripts/aiworks setup` starts it (`up -d`, idempotent); `restart:
+  unless-stopped` keeps it alive across reboots; `scripts/aiworks teardown` stops it and
+  reaps any stray per-client MCP containers left by the old model.
+- **Manual:** `.superset/mcp-services.sh up | down | reap | status`. `reap` kills orphan
+  `postgres-mcp` / `mcp/sonarqube` containers while leaving the shared stack running.
+- **Config:** override `DATABASE_URI` / `MCP_POSTGRES_PORT` in `.superset/.env` (git-ignored).
+  If you change the port, update the URL in `.mcp.json` to match.
+- **Not converted:** `redis` (run via `uvx`, not a container — upstream is stdio-only, no
+  orphan problem) and `sonarqube` (managed by the `sonar` CLI). Their orphans, if any, are
+  cleaned by `reap`.
+- **Optional zero-touch start:** to bring the stack up automatically whenever a session
+  begins (not just on `setup`), add a `SessionStart` hook to `.claude/settings.json` that
+  runs `.superset/mcp-services.sh up` in the background.
+
 **More docs:** `scripts/tracker/README.md` and `scripts/vcs/README.md` explain each
 adapter and how to add a new provider.

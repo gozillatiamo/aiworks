@@ -13,6 +13,11 @@
 # --purge-repos additionally REMOVES the cloned product repos (the original
 # Superset worktree-removal behaviour). Destructive: push uncommitted work in
 # the clones first. Without the flag, repos (and db-data volumes) are kept.
+# Undoes setup: stops the shared MCP service containers, then removes the product repos
+# that `mani sync` cloned into the workspace root (and the adapter symlinks inside them).
+# The clones are untracked (gitignored from the parent repo), so clearing them lets
+# Superset remove the worktree cleanly. Deleting a workspace discards its state by design
+# — push uncommitted work in these clones first.
 #
 set -euo pipefail
 
@@ -27,6 +32,10 @@ for arg in "$@"; do
     *) PRODUCT="$arg" ;;
   esac
 done
+
+echo "==> Stopping shared MCP services…"
+./.superset/mcp-services.sh down || true
+./.superset/mcp-services.sh reap || true
 
 runtime_dirs "$PRODUCT"
 load_product "$PRODUCT"

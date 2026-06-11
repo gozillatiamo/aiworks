@@ -1,0 +1,1373 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head><meta charset="utf-8"><title>FM-12 — Meal reminder plan</title>
+<style>
+:root{--font-sans:system-ui,sans-serif;--font-mono:monospace;--color-bg:#f3faf8;--color-surface:#fff;
+--color-surface-2:#e6f4f0;--color-text:#13201c;--color-muted:#5a6b66;--color-border:#d6e8e3;
+--color-primary:#0e9f8e;--color-accent:#ff7a59;--c-info:#3b82f6;--c-tip:#14b8a6;--c-warning:#f59e0b;
+--c-danger:#ef4444;--c-success:#22c55e;--radius:14px;--shadow:0 1px 2px rgba(0,0,0,.06);--maxw:880px;}
+body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-sans);line-height:1.65}
+.doc-wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+.doc-section{padding:30px 0;border-bottom:1px solid var(--color-border);position:relative}
+.compare{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.compare-card{border:1px solid var(--color-border);border-radius:var(--radius);padding:16px;background:var(--color-surface)}
+.compare-card.is-recommended{border-color:var(--color-accent)}
+.plan{border:1px dashed var(--color-primary);border-radius:var(--radius);padding:18px}
+.plan .target{font-family:var(--font-mono);font-size:13px;color:var(--color-primary)}
+</style></head>
+<body>
+<main class="doc-wrap" data-doc data-doc-title="FM-12 — Meal reminder plan" data-doc-project="FeeedMe"
+      data-plan-approval="pending"
+      data-plan-md="agent_logs/development-planner/FM-12-app-plan.md"
+      data-plan-cmd="/dev-cycle FM-12 --approve-plan">
+
+  <header class="doc-hero"><h1>FM-12 — Meal reminder plan</h1>
+  <p>How we'll add a daily meal reminder to the pet's care screen.</p></header>
+
+  <section class="doc-section" data-section data-section-title="Overview" data-section-id="overview">
+    <h2>Overview</h2>
+    <p>Owners forget meals. A local daily reminder nudges them at a chosen time.</p>
+  </section>
+
+  <section class="doc-section" data-section data-section-title="Scheduling approach" data-section-id="compare" data-block="comparison">
+    <h2>Scheduling approach</h2>
+    <div class="compare">
+      <div class="compare-card is-recommended"><span class="badge">Recommended</span><h4>Local notifications</h4>
+        <ul class="pros"><li>Works offline</li></ul><ul class="cons"><li>OS-throttled</li></ul></div>
+      <div class="compare-card"><h4>Server push</h4>
+        <ul class="pros"><li>Central control</li></ul><ul class="cons"><li>Needs backend + network</li></ul></div>
+    </div>
+    <script type="application/json" class="export-data">
+      {"type":"comparison","title":"Scheduling approach","options":["Local notifications","Server push"],
+       "criteria":[{"name":"Offline","values":["Yes","No"]}],"recommended":"Local notifications",
+       "rationale":"Offline-first app; no backend today."}
+    </script>
+  </section>
+
+  <section class="doc-section" data-section data-section-title="Data model" data-section-id="data">
+    <h2>Data model</h2>
+    <p>Store reminders in the existing local store.</p>
+    <script type="application/json" class="decision-data">
+      {"question":"One reminders table, or per-pet embedded?","options":["Separate table","Embedded in pet"],"default":"Separate table"}
+    </script>
+  </section>
+
+  <section class="doc-section" data-section data-section-title="How it flows" data-section-id="flow">
+    <h2>How it flows</h2>
+    <figure class="diagram" data-block="diagram">
+      <pre class="mermaid">flowchart LR
+  U[Owner] --> S[Set time] --> N[Local notif]</pre>
+      <figcaption>Reminder flow.</figcaption>
+      <script type="application/json" class="export-data">
+        {"type":"diagram","diagramType":"flowchart","title":"Reminder flow",
+         "source":"flowchart LR\n  U[Owner] --> S[Set time] --> N[Local notif]",
+         "nodes":{"Local notif":{"detail":"Scheduled on-device via flutter_local_notifications."}}}
+      </script>
+    </figure>
+  </section>
+
+  <section class="doc-section" data-section data-section-title="Implementation Plan" data-section-id="implementation-plan" data-block="steps">
+    <h2>Implementation Plan</h2>
+    <div class="plan"><ol>
+      <li><strong>Add the scheduler.</strong> <span class="target">lib/features/reminders/scheduler.dart</span></li>
+      <li><strong>Acceptance:</strong> a set reminder fires at the chosen local time.</li>
+    </ol></div>
+    <script type="application/json" class="export-data">
+      {"type":"steps","title":"Implementation Plan","steps":[
+        {"title":"Add the scheduler","md":"`lib/features/reminders/scheduler.dart`"},
+        {"title":"Acceptance","md":"A set reminder fires at the chosen local time."}]}
+    </script>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:"base",securityLevel:"loose"});</script>
+<script>/*
+ * Interactive Docs — Export Engine (self-contained, no dependencies)
+ * --------------------------------------------------------------------
+ * Gives any generated doc two superpowers, both AI-friendly:
+ *   • Export to Markdown   (clean prose an LLM can read as a prompt)
+ *   • Export to JSON        (a structured tree an LLM can parse)
+ * …at two scopes:
+ *   • the WHOLE page
+ *   • a SINGLE section
+ * …via two actions:
+ *   • download a file
+ *   • copy to clipboard (great for pasting straight into another prompt)
+ *
+ * INLINE this whole file inside a <script> tag in the generated .html so the
+ * doc stays a single shareable file. Do NOT link it as an external src.
+ *
+ * ── How it reads the document ──────────────────────────────────────────────
+ * The page root:      <main data-doc data-doc-title="My Doc">
+ * Each section:       <section class="doc-section" data-section
+ *                              data-section-title="Overview" data-section-id="overview">
+ *
+ * Standard HTML inside a section converts automatically:
+ *   h1–h6, p, ul/ol/li (nested ok), table, pre>code, blockquote, hr,
+ *   a, img, strong/b, em/i, code.
+ *
+ * Rich components (diagrams, charts, comparisons, tabs, callouts) can't be
+ * reverse-engineered from their pixels, so each one carries a canonical export
+ * representation in a hidden JSON island — the single source of truth for export:
+ *
+ *   <figure data-block="diagram">
+ *     ...visual...
+ *     <script type="application/json" class="export-data">
+ *       {"type":"diagram","diagramType":"flowchart","title":"Auth flow",
+ *        "source":"graph TD; A-->B"}
+ *     <\/script>
+ *   </figure>
+ *
+ * If a block has an export-data island, the engine trusts it and ignores the
+ * visual DOM for that block. See renderBlockMd()/normalizeBlock() for the
+ * per-type schemas. Authoring tip: write the island FIRST, then build the
+ * visual from the same data, so the two never drift apart.
+ */
+(function () {
+  "use strict";
+
+  /* ----------------------------- helpers ---------------------------------- */
+
+  const slug = (s) =>
+    (s || "section")
+      .toLowerCase()
+      .replace(/[^\w]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "section";
+
+  const txt = (el) => (el.textContent || "").replace(/\s+/g, " ").trim();
+
+  function toast(msg) {
+    let t = document.querySelector(".wid-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.className = "wid-toast";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("is-on");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("is-on"), 1600);
+  }
+
+  function download(name, mime, content) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Copied to clipboard");
+    } catch (e) {
+      // Fallback for non-secure contexts / older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); toast("Copied to clipboard"); }
+      catch (_) { toast("Copy failed — select & copy manually"); }
+      ta.remove();
+    }
+  }
+
+  /* ----------------- inline (bold / italic / code / link) ----------------- */
+
+  function inlineMd(node) {
+    let out = "";
+    node.childNodes.forEach((n) => {
+      if (n.nodeType === 3) {
+        out += n.nodeValue.replace(/\s+/g, " ");
+      } else if (n.nodeType === 1) {
+        const tag = n.tagName.toLowerCase();
+        const inner = inlineMd(n);
+        if (tag === "strong" || tag === "b") out += `**${inner.trim()}**`;
+        else if (tag === "em" || tag === "i") out += `*${inner.trim()}*`;
+        else if (tag === "code") out += "`" + txt(n) + "`";
+        else if (tag === "a") out += `[${inner.trim()}](${n.getAttribute("href") || ""})`;
+        else if (tag === "br") out += "  \n";
+        else if (tag === "img")
+          out += `![${n.getAttribute("alt") || ""}](${n.getAttribute("src") || ""})`;
+        else out += inner;
+      }
+    });
+    return out;
+  }
+
+  function listMd(listEl, depth) {
+    const ordered = listEl.tagName.toLowerCase() === "ol";
+    let i = 1, lines = [];
+    [...listEl.children].forEach((li) => {
+      if (li.tagName.toLowerCase() !== "li") return;
+      const sub = li.querySelector(":scope > ul, :scope > ol");
+      const own = [...li.childNodes]
+        .filter((c) => !(c.nodeType === 1 && /^(ul|ol)$/i.test(c.tagName)))
+        .map((c) => (c.nodeType === 1 ? inlineMd(c) : (c.nodeValue || "")))
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim();
+      const bullet = ordered ? `${i++}.` : "-";
+      lines.push(`${"  ".repeat(depth)}${bullet} ${own}`);
+      if (sub) lines.push(listMd(sub, depth + 1));
+    });
+    return lines.join("\n");
+  }
+
+  function tableMd(tableEl) {
+    const rows = [...tableEl.querySelectorAll("tr")].map((tr) =>
+      [...tr.children].map((c) => inlineMd(c).trim().replace(/\|/g, "\\|"))
+    );
+    if (!rows.length) return "";
+    const head = rows[0];
+    const body = rows.slice(1);
+    const sep = head.map(() => "---");
+    const fmt = (r) => `| ${r.join(" | ")} |`;
+    return [fmt(head), fmt(sep), ...body.map(fmt)].join("\n");
+  }
+
+  /* ----------------------- rich-block markdown ---------------------------- */
+
+  function renderBlockMd(b) {
+    switch (b.type) {
+      case "diagram": {
+        const parts = [];
+        if (b.title) parts.push(`**${b.title}**`);
+        parts.push("```mermaid\n" + (b.source || "").trim() + "\n```");
+        // Interactive node info (detail / navigation / link) so the export keeps
+        // what a reader would discover by clicking the diagram.
+        if (b.nodes && typeof b.nodes === "object") {
+          const rows = Object.keys(b.nodes).map((k) => {
+            const v = b.nodes[k] || {};
+            if (!(v.detail || v.section || v.url)) return null;
+            const dest = v.section ? ` _(→ ${v.section})_` : v.url ? ` _(→ ${v.url})_` : "";
+            return `- **${v.label || k}**${dest}${v.detail ? " — " + v.detail : ""}`;
+          }).filter(Boolean);
+          if (rows.length) parts.push("_Nodes:_\n" + rows.join("\n"));
+        }
+        return parts.join("\n\n");
+      }
+
+      case "chart": {
+        const lines = [];
+        if (b.title) lines.push(`**${b.title}**  _(chart: ${b.chartType || "bar"})_\n`);
+        const ds = b.datasets || [];
+        const head = ["", ...ds.map((d) => d.label || "value")];
+        lines.push(`| ${head.join(" | ")} |`);
+        lines.push(`| ${head.map(() => "---").join(" | ")} |`);
+        (b.labels || []).forEach((lab, i) => {
+          lines.push(`| ${lab} | ${ds.map((d) => (d.data || [])[i] ?? "").join(" | ")} |`);
+        });
+        return lines.join("\n");
+      }
+
+      case "comparison": {
+        const lines = [];
+        if (b.title) lines.push(`**${b.title}**\n`);
+        const opts = b.options || [];
+        lines.push(`| Criterion | ${opts.join(" | ")} |`);
+        lines.push(`| ${["---", ...opts.map(() => "---")].join(" | ")} |`);
+        (b.criteria || []).forEach((c) => {
+          lines.push(`| ${c.name} | ${(c.values || []).join(" | ")} |`);
+        });
+        if (b.recommended) lines.push(`\n✅ **Recommended: ${b.recommended}**`);
+        if (b.rationale) lines.push(`\n${b.rationale}`);
+        return lines.join("\n");
+      }
+
+      case "tabs":
+        return (b.tabs || [])
+          .map((t) => `##### ${t.label}\n\n${(t.md || "").trim()}`)
+          .join("\n\n");
+
+      case "callout": {
+        const icon = { info: "ℹ️", tip: "💡", warning: "⚠️", danger: "🛑", success: "✅" }[b.variant] || "ℹ️";
+        const label = (b.variant || "note").toUpperCase();
+        const body = (b.md || "").trim().split("\n").map((l) => `> ${l}`).join("\n");
+        return `> ${icon} **${label}**\n${body}`;
+      }
+
+      case "steps": {
+        const parts = [];
+        // Human decisions (from the plan-approval engine) lead, so an implementer
+        // reading the Markdown sees what the human changed before the original steps.
+        if (Array.isArray(b.decisions) && b.decisions.length) {
+          parts.push("**🧑‍⚖️ Human decisions (approved):**");
+          parts.push(b.decisions.map((d) => {
+            const where = d.section ? `**${d.section}** — ` : "";
+            const head = d.choice ? `chose **${d.choice}**` : "modified";
+            const note = d.note ? ` — ${d.note}` : "";
+            return `- ${where}${head}${note}`;
+          }).join("\n"));
+        }
+        parts.push((b.steps || []).map((s, i) => `${i + 1}. **${s.title || ""}** ${s.md || ""}`.trim()).join("\n"));
+        return parts.join("\n\n");
+      }
+
+      case "kpis":
+        return (b.items || []).map((k) => `- **${k.value}** — ${k.label}`).join("\n");
+
+      default:
+        // Unknown rich type: dump its markdown field, else JSON.
+        return b.md || "```json\n" + JSON.stringify(b, null, 2) + "\n```";
+    }
+  }
+
+  /* ------------- walk a section's DOM into ordered blocks ----------------- */
+
+  function blockFromIsland(host) {
+    const island = host.querySelector(":scope > script.export-data");
+    if (!island) return null;
+    try { return JSON.parse(island.textContent); }
+    catch (e) { return null; }
+  }
+
+  // Returns array of {type, ...} block objects in document order.
+  function readBlocks(scope) {
+    const blocks = [];
+    const walk = (node) => {
+      [...node.children].forEach((el) => {
+        const tag = el.tagName.toLowerCase();
+        // A rich block declares itself with data-block + an export-data island.
+        if (el.hasAttribute("data-block")) {
+          const island = blockFromIsland(el);
+          if (island) { blocks.push(island); return; }
+        }
+        if (/^h[1-6]$/.test(tag)) {
+          blocks.push({ type: "heading", level: +tag[1], text: inlineMd(el).trim() });
+        } else if (tag === "p") {
+          const t = inlineMd(el).trim();
+          if (t) blocks.push({ type: "prose", md: t });
+        } else if (tag === "ul" || tag === "ol") {
+          blocks.push({ type: "list", ordered: tag === "ol", md: listMd(el, 0) });
+        } else if (tag === "table") {
+          blocks.push({ type: "table", md: tableMd(el) });
+        } else if (tag === "pre") {
+          const code = el.querySelector("code");
+          const lang = (code && (code.getAttribute("data-lang") ||
+            (code.className.match(/language-([\w-]+)/) || [])[1])) || "";
+          blocks.push({ type: "code", lang, text: (code || el).textContent.replace(/\s+$/, "") });
+        } else if (tag === "blockquote") {
+          blocks.push({ type: "quote", md: inlineMd(el).trim() });
+        } else if (tag === "hr") {
+          blocks.push({ type: "rule" });
+        } else if (tag === "figure" || tag === "figcaption" || tag === "div" || tag === "section") {
+          // containers without an island: descend
+          walk(el);
+        }
+      });
+    };
+    walk(scope);
+    return blocks;
+  }
+
+  function blockToMd(b) {
+    switch (b.type) {
+      case "heading": return `${"#".repeat(b.level)} ${b.text}`;
+      case "prose": return b.md;
+      case "list": return b.md;
+      case "table": return b.md;
+      case "code": return "```" + (b.lang || "") + "\n" + b.text + "\n```";
+      case "quote": return b.md.split("\n").map((l) => `> ${l}`).join("\n");
+      case "rule": return "---";
+      default: return renderBlockMd(b);
+    }
+  }
+
+  /* ----------------------------- assemble --------------------------------- */
+
+  function sectionModel(sectionEl) {
+    const title =
+      sectionEl.getAttribute("data-section-title") ||
+      txt(sectionEl.querySelector("h1,h2,h3")) ||
+      "Section";
+    const id = sectionEl.getAttribute("data-section-id") || slug(title);
+    // Defensive: a section may itself be tagged as a single rich block
+    // (e.g. <section data-block="comparison">). Trust its island if so.
+    const ownIsland = sectionEl.hasAttribute("data-block") ? blockFromIsland(sectionEl) : null;
+    return { id, title, blocks: ownIsland ? [ownIsland] : readBlocks(sectionEl) };
+  }
+
+  function pageModel() {
+    const root = document.querySelector("[data-doc]") || document.body;
+    return {
+      title: root.getAttribute("data-doc-title") || document.title || "Document",
+      generatedFor: root.getAttribute("data-doc-project") || null,
+      sections: [...root.querySelectorAll("[data-section]")].map(sectionModel),
+    };
+  }
+
+  function sectionMd(model) {
+    const lines = [];
+    // If the section has no leading heading block, synthesize one from its title
+    // so the title is never lost — and never doubled when an <h2> already exists.
+    if (!(model.blocks[0] && model.blocks[0].type === "heading")) {
+      lines.push(`## ${model.title}`);
+    }
+    model.blocks.forEach((b) => { lines.push(blockToMd(b)); });
+    return lines.join("\n\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  }
+
+  function pageMd(model) {
+    const out = [`# ${model.title}`];
+    if (model.generatedFor) out.push(`_Generated for: ${model.generatedFor}_`);
+    model.sections.forEach((s) => out.push(sectionMd(s)));
+    return out.join("\n\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  }
+
+  /* ------------------------------ exports --------------------------------- */
+
+  function exportPage(fmt, action) {
+    const model = pageModel();
+    const base = slug(model.title);
+    if (fmt === "json") {
+      const s = JSON.stringify(model, null, 2);
+      action === "copy" ? copy(s) : download(`${base}.json`, "application/json", s);
+    } else {
+      const s = pageMd(model);
+      action === "copy" ? copy(s) : download(`${base}.md`, "text/markdown", s);
+    }
+  }
+
+  function exportSection(sectionEl, fmt, action) {
+    const model = sectionModel(sectionEl);
+    const base = slug(model.title);
+    if (fmt === "json") {
+      const s = JSON.stringify(model, null, 2);
+      action === "copy" ? copy(s) : download(`${base}.json`, "application/json", s);
+    } else {
+      const s = sectionMd(model); // sectionMd already emits the title
+      action === "copy" ? copy(s) : download(`${base}.md`, "text/markdown", s);
+    }
+  }
+
+  /* --------------------------- wire the UI -------------------------------- */
+
+  function btn(label, title, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "wid-btn";
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function buildSectionControls(sectionEl) {
+    if (sectionEl.querySelector(":scope > .wid-section-tools")) return;
+    const bar = document.createElement("div");
+    bar.className = "wid-section-tools";
+    bar.setAttribute("aria-label", "Export this section");
+    bar.append(
+      btn("⧉ MD", "Copy this section as Markdown", () => exportSection(sectionEl, "md", "copy")),
+      btn("↓ MD", "Download this section as Markdown", () => exportSection(sectionEl, "md", "download")),
+      btn("↓ JSON", "Download this section as JSON", () => exportSection(sectionEl, "json", "download"))
+    );
+    sectionEl.prepend(bar);
+  }
+
+  function buildGlobalToolbar() {
+    // Honour an author-provided toolbar if present (buttons with data-wid-action),
+    // otherwise inject a floating one.
+    const declared = document.querySelectorAll("[data-wid-action]");
+    if (declared.length) {
+      declared.forEach((el) => {
+        const [scope, fmt, action] = (el.getAttribute("data-wid-action") || "").split(":");
+        el.addEventListener("click", () =>
+          scope === "page"
+            ? exportPage(fmt, action || "download")
+            : exportSection(el.closest("[data-section]"), fmt, action || "download")
+        );
+      });
+      return;
+    }
+    const bar = document.createElement("div");
+    bar.className = "wid-toolbar";
+    bar.setAttribute("role", "toolbar");
+    bar.setAttribute("aria-label", "Export document");
+    const lab = document.createElement("span");
+    lab.className = "wid-toolbar-label";
+    lab.textContent = "Export page:";
+    bar.append(
+      lab,
+      btn("⧉ MD", "Copy whole page as Markdown", () => exportPage("md", "copy")),
+      btn("↓ MD", "Download whole page as Markdown", () => exportPage("md", "download")),
+      btn("↓ JSON", "Download whole page as JSON", () => exportPage("json", "download"))
+    );
+    document.body.appendChild(bar);
+  }
+
+  function init() {
+    buildGlobalToolbar();
+    document.querySelectorAll("[data-section]").forEach(buildSectionControls);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  // Expose for programmatic use / debugging.
+  window.WID = { exportPage, exportSection, pageModel, pageMd };
+})();
+</script>
+<script>/*
+ * Interactive Docs — Diagram Interaction Engine (self-contained, no deps)
+ * ----------------------------------------------------------------------
+ * Turns every static Mermaid diagram into something the reader can EXPLORE,
+ * not just look at. Auto-applied to each `figure.diagram` once Mermaid renders:
+ *
+ *   • Zoom & pan + reset + fullscreen   — big diagrams become legible
+ *   • Hover spotlight                    — hovering a node dims the rest
+ *   • Clickable nodes                    — a node can jump to a section,
+ *                                          open a detail drawer, or open a URL
+ *   • Guided walkthrough (optional)      — ◀ ▶ step through a flow node-by-node
+ *
+ * INLINE this whole file in a <script> tag (it injects its own CSS), AFTER the
+ * Mermaid <script>. It waits for Mermaid to finish via a MutationObserver, so it
+ * doesn't matter whether Mermaid runs on load or you call mermaid.run() yourself.
+ *
+ * ── Where the interactivity comes from ─────────────────────────────────────
+ * Zoom/pan/hover/fullscreen need NO authoring — they apply to every diagram.
+ * Click actions + walkthrough are declared in the diagram's export-data island,
+ * keyed by each node's id OR its visible label (whichever is handier):
+ *
+ *   <figure class="diagram" data-block="diagram">
+ *     <pre class="mermaid">flowchart LR
+ *       U[Pet owner] --> A[App] --> DB[(Local DB)]</pre>
+ *     <script type="application/json" class="export-data">
+ *       {"type":"diagram","diagramType":"flowchart","title":"Save flow",
+ *        "source":"flowchart LR\n U[Pet owner] --> A[App] --> DB[(Local DB)]",
+ *        "nodes":{
+ *          "Pet owner":{"detail":"The person using the app to log a meal."},
+ *          "App":{"section":"architecture","detail":"The offline-first Flutter client."},
+ *          "Local DB":{"url":"https://isar.dev","detail":"Isar — the on-device store."}
+ *        },
+ *        "walkthrough":["Pet owner","App","Local DB"]}
+ *     <\/script>
+ *   </figure>
+ *
+ * Per-node config (all optional): { section, url, detail, label }
+ *   • section  → click scrolls to [data-section-id="…"] and pulses it
+ *   • url      → click opens the link in a new tab
+ *   • detail   → click opens a side drawer rendering this markdown
+ *   • label    → friendly title for the drawer + the Markdown export
+ * `walkthrough` is an ordered list of node keys for the ◀ ▶ guided tour.
+ *
+ * The island stays the single source of truth: the export engine reads the same
+ * `nodes`/detail into the Markdown/JSON export, so the interactive content isn't
+ * lost when the doc is handed to an AI.
+ *
+ * For Mermaid-native click directives (advanced), set securityLevel:"loose" and
+ * use `click X call widGo("section-id")` / `click X "https://…"`. The handlers
+ * widGo() and widInfo() are exposed globally for that path.
+ */
+(function () {
+  "use strict";
+
+  var REDUCED = typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ----------------------------- styles ---------------------------------- */
+  function injectCSS() {
+    if (document.getElementById("wid-dgm-css")) return;
+    var css = `
+    /* touch-action:auto — DON'T claim any gesture. The browser then sends a two-finger
+       trackpad scroll up the normal scroll chain (the page scrolls); pinch still arrives
+       as a ctrl+wheel we handle for zoom; mouse drag-to-pan uses pointer events, which
+       touch-action never gates. (Claiming pan-x/pan-y made the browser try to scroll
+       this non-scrollable box and ate the gesture, so the page didn't move.) */
+    .wid-dgm-viewport{position:relative; overflow:clip; height:100%; max-height:72vh; border-radius:12px;
+      background:var(--color-surface-2,rgba(127,127,127,.06)); cursor:grab; touch-action:auto; user-select:none}
+    .wid-dgm-viewport.is-panning{cursor:grabbing}
+    .wid-dgm-viewport > .mermaid{margin:0}
+    .wid-dgm-viewport > .mermaid > svg{transform-origin:0 0; will-change:transform; max-width:none!important; height:auto}
+    .wid-dgm-tools{position:absolute; top:8px; right:8px; z-index:3; display:flex; gap:4px; align-items:center}
+    .wid-dgm-tools button{font:inherit; font-size:13px; line-height:1; cursor:pointer; width:30px; height:30px;
+      display:grid; place-items:center; border:1px solid var(--color-border,rgba(127,127,127,.3));
+      background:var(--color-surface,#fff); color:var(--color-text,#222); border-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,.12)}
+    .wid-dgm-tools button:hover{border-color:var(--color-primary,#3a6df0); color:var(--color-primary,#3a6df0)}
+    .wid-dgm-walk{display:flex; gap:4px; align-items:center; margin-right:6px;
+      background:var(--color-surface,#fff); border:1px solid var(--color-border,rgba(127,127,127,.3));
+      border-radius:999px; padding:2px 4px; box-shadow:0 1px 2px rgba(0,0,0,.12)}
+    .wid-dgm-walk .lbl{font-size:12px; color:var(--color-muted,#667); padding:0 4px; min-width:54px; text-align:center}
+    .wid-dgm-hint{position:absolute; left:10px; bottom:8px; z-index:3; font-size:11px; color:var(--color-muted,#778);
+      background:var(--color-surface,#fff); border:1px solid var(--color-border,rgba(127,127,127,.25));
+      border-radius:999px; padding:2px 9px; opacity:.85; pointer-events:none}
+    /* hover spotlight (wid-hot) + persistent click selection (wid-sel) — Mermaid node
+       groups carry class "node". Both stay full-opacity while the rest is dimmed. */
+    .wid-dim .node{opacity:.3; transition:${REDUCED ? "none" : "opacity .15s"}}
+    .wid-dim .node.wid-hot, .wid-dim .node.wid-sel{opacity:1}
+    .wid-dim .edgePaths,.wid-dim .edgeLabels,.wid-dim .relation,.wid-dim .messageLine0,.wid-dim .messageLine1{opacity:.18}
+    .node.wid-act{cursor:pointer}
+    .node.wid-act:focus{outline:none}
+    .node.wid-act:hover :is(rect,circle,polygon,path,ellipse){stroke-width:2.4px}
+    .node.wid-hot :is(rect,circle,polygon,path,ellipse){filter:drop-shadow(0 0 6px var(--color-accent,#22c3d6))}
+    /* the clicked/selected node — a stronger, distinct (primary-colour) highlight that persists */
+    .node.wid-sel :is(rect,circle,polygon,path,ellipse){filter:drop-shadow(0 0 8px var(--color-primary,#7c6cff)); stroke:var(--color-primary,#7c6cff); stroke-width:2.6px}
+    /* section pulse when a node navigates to it */
+    @keyframes wid-flash{0%{box-shadow:0 0 0 0 var(--color-accent,#22c3d6)}100%{box-shadow:0 0 0 8px transparent}}
+    .wid-flash{animation:${REDUCED ? "none" : "wid-flash 1.1s ease-out"}; border-radius:12px}
+    /* fullscreen */
+    /* Fullscreen: a large centred MODAL that keeps a margin (not edge-to-edge). Explicit
+       width/height via calc (rather than relying on inset to stretch the box) guarantees a
+       full-size stage in every browser; the .mermaid inside is height:100% so the diagram
+       stage fills the panel even for a short diagram — align-items:center keeps the svg from
+       being flex-stretched (which would distort it and break fit's measurement); fit() then
+       scales-to-contain and centres the diagram within. */
+    .wid-dgm-viewport.is-fs{position:fixed; top:14px; left:14px; width:calc(100vw - 28px);
+      height:calc(100vh - 28px); max-height:none; z-index:80; border-radius:12px;
+      box-shadow:0 20px 80px rgba(0,0,0,.5)}
+    .wid-dgm-viewport.is-fs > .mermaid{height:100%; align-items:center}
+    /* detail drawer */
+    .wid-dgm-panel{position:fixed; top:0; right:0; height:100%; width:min(420px,92vw); z-index:90;
+      background:var(--color-surface,#fff); color:var(--color-text,#222);
+      border-left:1px solid var(--color-border,rgba(127,127,127,.3)); box-shadow:-12px 0 40px rgba(0,0,0,.25);
+      transform:translateX(102%); transition:${REDUCED ? "none" : "transform .22s ease"}; display:flex; flex-direction:column}
+    .wid-dgm-panel.is-open{transform:none}
+    .wid-dgm-panel header{display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:16px 18px; border-bottom:1px solid var(--color-border,rgba(127,127,127,.25))}
+    .wid-dgm-panel header h3{margin:0; font-size:18px}
+    .wid-dgm-panel header button{border:none; background:none; font-size:22px; cursor:pointer; color:var(--color-muted,#667); line-height:1}
+    .wid-dgm-panel .body{padding:16px 18px; overflow:auto; line-height:1.6}
+    .wid-dgm-panel .body code{font-family:ui-monospace,monospace; font-size:.9em;
+      background:var(--color-surface-2,rgba(127,127,127,.12)); padding:1px 5px; border-radius:5px}
+    .wid-dgm-panel .body a{color:var(--color-primary,#3a6df0)}
+    /* the scrim is purely a subtle visual dim — it must NEVER capture clicks, so the
+       diagram stays interactive while the drawer is open (non-modal). A light tint only. */
+    .wid-dgm-scrim{position:fixed; inset:0; z-index:89; background:rgba(0,0,0,.08); opacity:0; pointer-events:none;
+      transition:${REDUCED ? "none" : "opacity .2s"}}
+    .wid-dgm-scrim.is-open{opacity:1}
+    `;
+    var s = document.createElement("style");
+    s.id = "wid-dgm-css"; s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  /* --------------------- tiny markdown for the drawer --------------------- */
+  function mdInline(s) {
+    return s
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  function mdToHtml(md) {
+    var lines = String(md || "").split("\n"), html = [], list = false;
+    lines.forEach(function (ln) {
+      if (/^\s*[-*]\s+/.test(ln)) {
+        if (!list) { html.push("<ul>"); list = true; }
+        html.push("<li>" + mdInline(ln.replace(/^\s*[-*]\s+/, "")) + "</li>");
+      } else {
+        if (list) { html.push("</ul>"); list = false; }
+        if (ln.trim() === "") html.push("");
+        else html.push("<p>" + mdInline(ln) + "</p>");
+      }
+    });
+    if (list) html.push("</ul>");
+    return html.join("\n");
+  }
+
+  /* ----------------------------- drawer ----------------------------------- */
+  var panel, scrim;
+  function ensurePanel() {
+    if (panel) return;
+    scrim = document.createElement("div"); scrim.className = "wid-dgm-scrim";
+    panel = document.createElement("div"); panel.className = "wid-dgm-panel";
+    panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", "Diagram detail");
+    panel.innerHTML = '<header><h3></h3><button aria-label="Close" title="Close">×</button></header><div class="body"></div>';
+    document.body.append(scrim, panel);
+    var close = closePanel;
+    panel.querySelector("button").addEventListener("click", close);
+    scrim.addEventListener("click", close);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+    // Non-modal: the drawer doesn't block the diagram, so you can click NODE → NODE and
+    // the drawer (and the highlight) just follow along. A click on genuinely empty space
+    // (not a node, the panel, or a toolbar) closes it.
+    document.addEventListener("click", function (e) {
+      if (!panel.classList.contains("is-open")) return;
+      var t = e.target;
+      if (t.closest && (t.closest(".wid-dgm-panel") || t.closest("g.node") || t.closest(".wid-dgm-tools"))) return;
+      close();
+    });
+  }
+  function openPanel(title, md) {
+    ensurePanel();
+    panel.querySelector("h3").textContent = title || "Detail";
+    panel.querySelector(".body").innerHTML = mdToHtml(md);
+    panel.classList.add("is-open"); scrim.classList.add("is-open");
+  }
+  // Each diagram registers a callback here so closing the drawer also clears its
+  // selection spotlight (the drawer is a singleton, so it can't reach figure state directly).
+  var onPanelClose = [];
+  function closePanel() {
+    if (panel) { panel.classList.remove("is-open"); scrim.classList.remove("is-open"); }
+    onPanelClose.forEach(function (f) { try { f(); } catch (_) {} });
+  }
+
+  /* ------------------------- navigation handler --------------------------- */
+  function widGo(sectionId) {
+    var el = document.querySelector('[data-section-id="' + sectionId + '"]') ||
+             document.getElementById(sectionId);
+    if (!el) return;
+    try { el.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "start" }); } catch (_) {}
+    el.classList.remove("wid-flash"); void el.offsetWidth; el.classList.add("wid-flash");
+  }
+  // Registry so Mermaid-native `click X call widInfo("key")` can find detail text.
+  var registry = {};
+  function widInfo(key) {
+    var cfg = registry[key];
+    if (cfg) openPanel(cfg.label || key, cfg.detail || "");
+  }
+
+  /* --------------------------- node helpers ------------------------------- */
+  function nodeText(g) { return (g.textContent || "").replace(/\s+/g, " ").trim(); }
+  // Resolve every key a node could be matched by. Mermaid v11 ids look like
+  // "<renderId>-flowchart-<NODEID>-<index>" (the renderId contains digits, and
+  // there is NO data-id), so naive parsing fails — we try several strategies and
+  // also fall back to the visible label, so islands can be keyed by id OR label.
+  function nodeKeys(g) {
+    var keys = [];
+    var di = g.getAttribute("data-id"); if (di) keys.push(di);          // future-proof
+    var id = g.id || "";
+    if (id) {
+      var noIdx = id.replace(/-\d+$/, "");                              // drop trailing -<index>
+      var last = noIdx.match(/([A-Za-z0-9_]+)$/);                       // the NODEID (common: alnum/underscore)
+      if (last) keys.push(last[1]);
+      var typed = noIdx.match(/-(?:flowchart(?:-v2)?|stateDiagram(?:-v2)?|state|classDiagram|class|er|mindmap|sequence)-(.+)$/);
+      if (typed) keys.push(typed[1]);                                   // node ids containing dashes
+    }
+    var t = nodeText(g); if (t) keys.push(t);                           // match by visible label too
+    return keys.filter(function (k, i, a) { return k && a.indexOf(k) === i; });
+  }
+
+  function wireNode(g, key, cfg) {
+    g.classList.add("wid-act");
+    g.setAttribute("tabindex", "0");
+    g.setAttribute("role", "button");
+    var verb = cfg.section ? "Go to section" : cfg.url ? "Open link" : "Show detail";
+    g.setAttribute("aria-label", (cfg.label || key) + " — " + verb);
+    registry[key] = cfg;
+    var act = function (e) {
+      var vp = g.closest(".wid-dgm-viewport");
+      if (vp && vp._panned) return;           // a drag, not a click
+      if (e) e.preventDefault();
+      if (cfg.section) widGo(cfg.section);
+      else if (cfg.url) window.open(cfg.url, "_blank", "noopener");
+      else if (cfg.detail) openPanel(cfg.label || key, cfg.detail);
+    };
+    g.addEventListener("click", act);
+    g.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") act(e);
+    });
+  }
+
+  /* ------------------------------ enhance --------------------------------- */
+  function readIsland(fig) {
+    var s = fig.querySelector(":scope > script.export-data");
+    if (!s) return null;
+    try { return JSON.parse(s.textContent); } catch (e) { return null; }
+  }
+
+  function enhance(fig) {
+    if (fig.__widDgm) return true;
+    var mer = fig.querySelector(".mermaid");
+    var svg = mer && mer.querySelector("svg");
+    if (!svg) return false;            // Mermaid hasn't inserted the SVG yet
+    // Mermaid renders ASYNC and flips data-processed="true" a beat BEFORE the node
+    // <g> elements are actually queryable — so that flag is NOT a safe "ready" signal
+    // for wiring (enhancing on it grabs a node-less SVG, wires nothing, and the
+    // __widDgm guard then blocks the retry). Instead: if this diagram declares
+    // interactive nodes, wait until those node elements truly exist (the observer
+    // re-fires as Mermaid inserts them); otherwise just wait for any rendered content.
+    var island = readIsland(fig);
+    var wantsNodes = !!(island && (island.nodes || (island.walkthrough && island.walkthrough.length)));
+    var hasNodes = !!svg.querySelector("g.node, .node, .actor, .classGroup, .statediagram-state, .er.entityBox");
+    if (wantsNodes) { if (!hasNodes) return false; }
+    else if (mer.getAttribute("data-processed") !== "true" && !svg.querySelector("g")) return false;
+    fig.__widDgm = true;
+
+    /* wrap for zoom/pan */
+    var vp = document.createElement("div");
+    vp.className = "wid-dgm-viewport";
+    mer.parentNode.insertBefore(vp, mer);
+    vp.appendChild(mer);
+
+    var st = { s: 1, x: 0, y: 0 };
+    var apply = function () { svg.style.transform = "translate(" + st.x + "px," + st.y + "px) scale(" + st.s + ")"; };
+    // Wide bounds: a big/tall diagram must be allowed to shrink well below the old 0.4
+    // floor — otherwise "fit to fullscreen" can't contain it and zoom-out hits a wall.
+    var clamp = function (v) { return Math.max(0.1, Math.min(8, v)); };
+    // Fit the diagram to fill the viewport (contain), centred — used in fullscreen so a
+    // small/short diagram scales up and sits in the middle instead of tiny in the corner.
+    function fit() {
+      var prev = svg.style.transform; svg.style.transform = "none";
+      var sr = svg.getBoundingClientRect(), r = vp.getBoundingClientRect();
+      var sw = sr.width, sh = sr.height;
+      if (!sw || !sh) { svg.style.transform = prev; return; }
+      // The svg's untransformed top-left does NOT necessarily coincide with the viewport's
+      // top-left: an inline svg carries a line-box gap above it, and a centred .mermaid
+      // offsets it horizontally. Measure that real offset (with transform off) so the
+      // centring below lands the diagram dead-centre instead of ~16px down-and-right —
+      // the "small diagram doesn't fill / sits off in fullscreen" bug.
+      var off = { x: sr.left - r.left, y: sr.top - r.top };
+      var pad = 32;
+      st.s = clamp(Math.min((r.width - pad) / sw, (r.height - pad) / sh));
+      st.x = (r.width - sw * st.s) / 2 - off.x;
+      st.y = (r.height - sh * st.s) / 2 - off.y;
+      apply();
+    }
+    var reset = function () {
+      if (vp.classList.contains("is-fs")) { fit(); return; }  // in fullscreen, "reset" means fit
+      st.s = 1; st.x = 0; st.y = 0; apply();
+    };
+    // Zoom about a fixed point (cx,cy in viewport coords) so that point stays put.
+    var zoomAt = function (ns, cx, cy) {
+      ns = clamp(ns);
+      st.x = cx - (cx - st.x) * (ns / st.s);
+      st.y = cy - (cy - st.y) * (ns / st.s);
+      st.s = ns; apply();
+    };
+    // The +/- buttons zoom about the viewport CENTRE, so the diagram stays centred.
+    var zoomCenter = function (mult) { var r = vp.getBoundingClientRect(); zoomAt(st.s * mult, r.width / 2, r.height / 2); };
+
+    /* pan — capture the pointer ONLY once it actually moves past a threshold. Capturing
+       on pointerdown (as before) makes the browser retarget the follow-up `click` to the
+       viewport, so a plain click never reaches a node or a toolbar button — interaction
+       silently dies for real mouse/touch users (synthetic dispatch is unaffected, which
+       is why tests missed it). Deferring capture keeps a click a click. */
+    var drag = null;
+    vp.addEventListener("pointerdown", function (e) {
+      if (e.target.closest && e.target.closest(".wid-dgm-tools")) return; // don't pan from the toolbar
+      drag = { x: e.clientX, y: e.clientY, ox: st.x, oy: st.y, id: e.pointerId, capturing: false };
+      vp._panned = false;
+    });
+    vp.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.capturing && Math.abs(dx) + Math.abs(dy) > 4) {
+        drag.capturing = true; vp._panned = true; vp.classList.add("is-panning");
+        try { vp.setPointerCapture(drag.id); } catch (_) {}
+      }
+      if (!drag.capturing) return;        // below the threshold → still a potential click
+      st.x = drag.ox + dx; st.y = drag.oy + dy; apply();
+    });
+    var endDrag = function () { drag = null; vp.classList.remove("is-panning"); };
+    vp.addEventListener("pointerup", endDrag);
+    vp.addEventListener("pointercancel", endDrag);
+    vp.addEventListener("pointerleave", endDrag);
+
+    /* Trackpad / mouse wheel — we intercept exactly ONE gesture: a PINCH, to zoom the
+       diagram. The trick that makes both scroll AND pinch-zoom work on a Mac trackpad is
+       that the browser delivers them as different wheel events:
+         • a PINCH (two fingers apart/together) arrives as wheel with ctrlKey === true;
+         • a plain two-finger up/down SWIPE arrives as wheel with ctrlKey === false.
+       So we gate on ctrlKey:
+         • ctrlKey  → pinch → zoom the diagram about the cursor, and preventDefault so the
+                      browser doesn't page-zoom on top of us;
+         • no ctrl  → ordinary scroll → do NOTHING (never preventDefault) → the page scrolls
+                      natively. Not claiming the plain wheel is what keeps two-finger scroll
+                      working — the earlier "scroll doesn't work" bug was from claiming it.
+       passive:false is required for preventDefault() to take effect on the pinch. */
+    vp.addEventListener("wheel", function (e) {
+      if (!e.ctrlKey) return;                          // two-finger scroll → leave it to the page
+      e.preventDefault();
+      var r = vp.getBoundingClientRect();
+      var factor = Math.exp(-e.deltaY * 0.01);         // deltaY<0 pinch-apart → in; >0 pinch-together → out
+      zoomAt(st.s * factor, e.clientX - r.left, e.clientY - r.top);  // zoom about the cursor
+    }, { passive: false });
+
+    /* toolbar */
+    var tools = document.createElement("div");
+    tools.className = "wid-dgm-tools";
+    function tbtn(txt, title, fn) {
+      var b = document.createElement("button"); b.type = "button"; b.textContent = txt;
+      b.title = title; b.setAttribute("aria-label", title);
+      b.addEventListener("click", fn); return b;
+    }
+
+    /* walkthrough (optional) — `island` already read above */
+    var gNodes = [].map.call(svg.querySelectorAll("g.node"), function (g) { return { g: g, keys: nodeKeys(g) }; });
+    var find = function (key) {
+      return gNodes.filter(function (o) { return o.keys.indexOf(key) >= 0; })[0];
+    };
+
+    /* persistent click-selection spotlight — the focus follows clicks AND the walkthrough,
+       so clicking a node moves the highlight to it (the drawer info already updates). The
+       page dims while a node is selected OR hovered; selection clears on a background
+       click or when the detail drawer closes. */
+    var selected = null, hovering = null;
+    var dim = function () { svg.classList[(selected || hovering) ? "add" : "remove"]("wid-dim"); };
+    var selectNode = function (g) { if (selected && selected !== g) selected.classList.remove("wid-sel"); selected = g || null; if (g) g.classList.add("wid-sel"); dim(); };
+    var clearSelect = function () { if (selected) selected.classList.remove("wid-sel"); selected = null; dim(); };
+    onPanelClose.push(clearSelect);
+    vp.addEventListener("click", function (e) {
+      if (vp._panned) return;
+      if (e.target.closest && (e.target.closest("g.node") || e.target.closest(".wid-dgm-tools"))) return;
+      clearSelect();                                   // clicked empty space → deselect
+    });
+
+    /* node click actions from the island (+ move the selection spotlight to the clicked node) */
+    if (island && island.nodes) {
+      Object.keys(island.nodes).forEach(function (key) {
+        var hit = find(key);
+        if (!hit) return;
+        wireNode(hit.g, key, island.nodes[key]);
+        hit.g.addEventListener("click", function () { if (!vp._panned) selectNode(hit.g); });
+      });
+    }
+
+    var walk = island && Array.isArray(island.walkthrough) ? island.walkthrough : null;
+    if (walk && walk.length) {
+      var idx = -1;
+      var box = document.createElement("div"); box.className = "wid-dgm-walk";
+      var lbl = document.createElement("span"); lbl.className = "lbl";
+      var step = function (i) {
+        idx = (i + walk.length) % walk.length;
+        var hit = find(walk[idx]); var cfg = island.nodes && island.nodes[walk[idx]];
+        if (hit) selectNode(hit.g);                    // reuse the selection spotlight
+        lbl.textContent = (idx + 1) + " / " + walk.length;
+        if (cfg && cfg.detail) openPanel((cfg && cfg.label) || walk[idx], cfg.detail);
+      };
+      var stop = function () { clearSelect(); idx = -1; lbl.textContent = "Tour"; closePanel(); };
+      box.append(
+        tbtn("◀", "Previous step", function () { step(idx <= 0 ? walk.length - 1 : idx - 1); }),
+        lbl,
+        tbtn("▶", "Next step / start tour", function () { step(idx + 1); })
+      );
+      lbl.textContent = "Tour";
+      tools.appendChild(box);
+      box.appendChild(tbtn("✕", "End tour", stop));
+    }
+
+    /* hover spotlight — transient; doesn't clear a click-selection (dim stays if selected) */
+    gNodes.forEach(function (o) {
+      o.g.addEventListener("mouseenter", function () { hovering = o.g; o.g.classList.add("wid-hot"); dim(); });
+      o.g.addEventListener("mouseleave", function () { hovering = null; o.g.classList.remove("wid-hot"); dim(); });
+    });
+
+    tools.append(
+      tbtn("＋", "Zoom in", function () { zoomCenter(1.2); }),
+      tbtn("－", "Zoom out", function () { zoomCenter(0.8); }),
+      tbtn("⟲", "Reset view", reset),
+      tbtn("⤢", "Fullscreen", function () { vp.classList.toggle("is-fs"); reset(); })
+    );
+    vp.appendChild(tools);
+
+    var hint = document.createElement("div");
+    hint.className = "wid-dgm-hint";
+    hint.textContent = (island && island.nodes ? "click nodes · " : "") + "drag to pan · pinch or +/− to zoom";
+    vp.appendChild(hint);
+
+    return true;
+  }
+
+  /* ----------------------- wait for Mermaid render ------------------------ */
+  function scan() {
+    var figs = document.querySelectorAll("figure.diagram, .wid-diagram, [data-block='diagram']");
+    var pending = false;
+    figs.forEach(function (f) { if (!enhance(f)) pending = true; });
+    return pending;
+  }
+
+  function start() {
+    injectCSS();
+    // Mermaid renders async AND can replace the rendered subtree a tick after it first
+    // appears (the replacement keeps our wid-* classes but drops the JS click/hover
+    // listeners) — so enhancing on the first mutation wires elements that are then
+    // thrown away. Instead, DEBOUNCE: only enhance after the DOM has been quiet for a
+    // beat, so we wire the final, stable nodes. Re-scan on childList changes and on the
+    // data-processed flag flip (a node-less diagram emits only the attribute when done).
+    var timer = null, obs = null;
+    var settle = function () { if (!scan() && obs) obs.disconnect(); };
+    var schedule = function () { clearTimeout(timer); timer = setTimeout(settle, 250); };
+    obs = new MutationObserver(schedule);
+    obs.observe(document.body, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ["data-processed"],
+    });
+    schedule();                                   // also handles an already-rendered page
+    setTimeout(function () { if (obs) obs.disconnect(); }, 15000);  // safety net
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+
+  window.widGo = window.widGo || widGo;
+  window.widInfo = window.widInfo || widInfo;
+  window.WIDDiagram = { enhance: enhance, openPanel: openPanel, go: widGo };
+})();
+</script>
+<script>/*
+ * Interactive Docs — Plan Approval Engine (self-contained, no deps)
+ * ----------------------------------------------------------------------
+ * Turns a *plan* doc into a review-and-approve surface for a human, and keeps the
+ * Implementation Plan in sync with their decisions in REAL TIME — so the Markdown a
+ * later phase executes reflects what the human actually decided, not the first draft.
+ *
+ * It is ONLY for PLAN docs awaiting human approval (planning.auto_approve = false).
+ * It activates ITSELF only when the page root opts in:
+ *
+ *   <main data-doc
+ *         data-plan-approval="pending"                          <- presence = enable; value pending|approved
+ *         data-plan-md="agent_logs/development-planner/FM-12-app-plan.md"  <- the AUTHORITATIVE markdown
+ *         data-plan-cmd="/dev-cycle FM-12 --approve-plan">      <- the command to re-run once approved
+ *
+ * INLINE this whole file in a <script> tag (it injects its own CSS), AFTER
+ * export-engine.js — it leans on window.WID for the Markdown serialization, so the
+ * approved download is the very same Markdown export every other button produces.
+ *
+ * ── Why a separate engine, and the contract it enforces ────────────────────
+ * The HTML is for a human to READ and DECIDE in. It is NEVER what a later phase
+ * executes — `--approve-plan` (and every downstream step) reads the MARKDOWN file at
+ * data-plan-md. So the human's decisions are worthless unless they flow back into
+ * that Markdown. This engine closes that loop:
+ *
+ *   1. Each section gets a lightweight Decision control — "accept as proposed", pick
+ *      an option (auto-derived from a comparison in the section, or a decision-data
+ *      island you author), or write a free-text modification for the implementer.
+ *   2. Every change is written LIVE into the Implementation Plan island's `decisions`
+ *      array (the export single-source-of-truth) and mirrored in a visible
+ *      "Human decisions" block — so the plan reflects the human's intent in real time.
+ *   3. "✅ Approve & download plan" serializes the CURRENT plan (decisions included)
+ *      to Markdown and downloads it under the data-plan-md BASENAME, then tells the
+ *      human exactly where to drop it and which command to re-run. Because a browser
+ *      cannot silently overwrite a file on disk, the human/agent replaces the
+ *      authoritative .md with the download — a one-line, explicit step.
+ *
+ * Decision controls are pure UI (div/label/select/textarea/button) the export engine
+ * ignores, so they never leak into the exported Markdown — only the island's
+ * `decisions` field does.
+ */
+(function () {
+  "use strict";
+
+  var root = document.querySelector("[data-doc][data-plan-approval]");
+  if (!root) return; // not a plan awaiting approval — do nothing.
+
+  var REDUCED = typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ------------------------------- styles -------------------------------- */
+  function injectCSS() {
+    if (document.getElementById("wid-plan-css")) return;
+    var css = `
+    .wid-decision{margin:18px 0 4px; border:1px dashed var(--color-border,rgba(127,127,127,.4)); border-radius:12px;
+      background:color-mix(in srgb, var(--color-accent,#14b8a6) 5%, var(--color-surface,#fff))}
+    .wid-decision.is-modified{border-style:solid; border-color:var(--color-accent,#14b8a6)}
+    .wid-decision-head{display:flex; align-items:center; gap:8px; width:100%; text-align:left; cursor:pointer;
+      font:inherit; font-size:14px; color:var(--color-text,#222); background:none; border:none; padding:10px 14px}
+    .wid-decision-status{margin-left:auto; font-size:12px; font-weight:600; color:var(--color-muted,#667);
+      border:1px solid var(--color-border,rgba(127,127,127,.3)); border-radius:999px; padding:1px 10px}
+    .wid-decision.is-modified .wid-decision-status{color:var(--color-accent,#0e9f8e);
+      border-color:var(--color-accent,#14b8a6)}
+    .wid-decision-caret{transition:${REDUCED ? "none" : "transform .15s"}}
+    .wid-decision[open] .wid-decision-caret{transform:rotate(180deg)}
+    .wid-decision-body{padding:0 14px 14px; display:grid; gap:10px}
+    .wid-decision-q{font-size:13px; color:var(--color-muted,#667)}
+    .wid-decision-opts{display:grid; gap:6px}
+    .wid-decision-opts label{display:flex; gap:8px; align-items:flex-start; font-size:14px; cursor:pointer}
+    .wid-decision-note{font:inherit; font-size:14px; width:100%; min-height:54px; resize:vertical; padding:8px 10px;
+      border:1px solid var(--color-border,rgba(127,127,127,.3)); border-radius:8px; background:var(--color-surface,#fff);
+      color:var(--color-text,#222)}
+    .wid-decision-actions{display:flex; gap:8px}
+    .wid-decision-reset{font:inherit; font-size:12px; cursor:pointer; color:var(--color-muted,#667);
+      background:none; border:none; padding:2px 0; text-decoration:underline}
+
+    .wid-plan-decisions{margin:4px 0 16px; border-left:3px solid var(--color-accent,#14b8a6);
+      background:color-mix(in srgb, var(--color-accent,#14b8a6) 7%, var(--color-surface,#fff));
+      border-radius:0 10px 10px 0; padding:12px 16px}
+    .wid-plan-decisions h4{margin:0 0 6px; font-size:14px}
+    .wid-plan-decisions ul{margin:0; padding-left:18px; font-size:14px}
+    .wid-plan-decisions li{margin:4px 0}
+    .wid-plan-decisions .none{color:var(--color-muted,#667); font-size:14px; margin:0}
+
+    .wid-plan-approve{margin-top:18px; padding:16px; border-radius:12px; border:1px solid var(--color-border,rgba(127,127,127,.3));
+      background:var(--color-surface,#fff); box-shadow:var(--shadow,0 1px 2px rgba(0,0,0,.08))}
+    .wid-plan-approve .status{font-size:14px; color:var(--color-muted,#667); margin-bottom:10px}
+    .wid-plan-approve.is-approved{border-color:var(--c-success,#22c55e);
+      background:color-mix(in srgb, var(--c-success,#22c55e) 8%, var(--color-surface,#fff))}
+    .wid-approve-btn{font:inherit; font-size:15px; font-weight:600; cursor:pointer; color:#fff;
+      background:var(--color-accent,#14b8a6); border:none; border-radius:10px; padding:10px 18px}
+    .wid-approve-btn:hover{filter:brightness(1.05)}
+    .wid-plan-approve .next{margin-top:12px; font-size:13.5px; line-height:1.6; color:var(--color-text,#222)}
+    .wid-plan-approve .next code{font-family:var(--font-mono,monospace); font-size:.92em;
+      background:var(--color-surface-2,#eee); padding:2px 6px; border-radius:6px}
+    .wid-plan-approve .reopen{font:inherit; font-size:12px; cursor:pointer; color:var(--color-muted,#667);
+      background:none; border:none; text-decoration:underline; margin-top:8px}
+    `;
+    var s = document.createElement("style");
+    s.id = "wid-plan-css";
+    s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  /* ------------------------------- helpers ------------------------------- */
+  function islandOf(host, cls) {
+    var el = host.querySelector(":scope > script." + cls);
+    if (!el) return null;
+    try { return JSON.parse(el.textContent); } catch (e) { return null; }
+  }
+  function writeIsland(host, cls, obj) {
+    var el = host.querySelector(":scope > script." + cls);
+    if (el) el.textContent = JSON.stringify(obj, null, 2);
+  }
+  function basename(p) {
+    return (p || "plan.md").split(/[\\/]/).pop() || "plan.md";
+  }
+  function download(name, content) {
+    var blob = new Blob([content], { type: "text/markdown" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  /* ---- find the Implementation Plan section + its steps island ---------- */
+  function findPlan() {
+    var byId = root.querySelector('[data-section][data-section-id="implementation-plan"]');
+    var candidates = byId ? [byId] : [...root.querySelectorAll('[data-section][data-block="steps"]')];
+    for (var i = 0; i < candidates.length; i++) {
+      var sec = candidates[i];
+      var host = sec.matches('[data-block="steps"]') ? sec : sec.querySelector('[data-block="steps"]');
+      if (!host) continue;
+      var data = islandOf(host, "export-data");
+      if (data && data.type === "steps") return { section: sec, host: host, data: data };
+    }
+    return null;
+  }
+
+  var plan = findPlan();
+  if (!plan) return; // a doc with no Implementation Plan is not a plan — nothing to approve.
+
+  injectCSS();
+
+  var planMdPath = root.getAttribute("data-plan-md") || basename(document.title) + ".md";
+  var reRunCmd = root.getAttribute("data-plan-cmd") || "";
+  var decisions = {}; // sectionId -> {sectionTitle, question, choice, note, modified}
+
+  /* ---- inject a Decision control on every reviewable section ------------ */
+  function optionsForSection(sec) {
+    // 1) an explicit decision-data island wins.
+    var dd = islandOf(sec, "decision-data") ||
+      (sec.querySelector('[data-block] > script.decision-data') &&
+        islandOf(sec.querySelector("[data-block]"), "decision-data"));
+    if (dd) return { question: dd.question || "How should this be handled?", options: dd.options || [], def: dd.default || "" };
+    // 2) else derive from a comparison block in the section.
+    var cmp = sec.matches('[data-block="comparison"]') ? sec : sec.querySelector('[data-block="comparison"]');
+    if (cmp) {
+      var c = islandOf(cmp, "export-data");
+      if (c && c.options) return { question: c.title || "Which option do you choose?", options: c.options, def: c.recommended || "" };
+    }
+    return { question: "Accept this section as proposed, or modify it?", options: [], def: "" };
+  }
+
+  function buildDecision(sec) {
+    var id = sec.getAttribute("data-section-id") || "s" + Math.abs(hash(sec.getAttribute("data-section-title") || ""));
+    var title = sec.getAttribute("data-section-title") ||
+      (sec.querySelector("h2,h3") && sec.querySelector("h2,h3").textContent.trim()) || "Section";
+    var spec = optionsForSection(sec);
+    decisions[id] = { sectionTitle: title, question: spec.question, choice: "", note: "", modified: false };
+
+    var wrap = document.createElement("details");
+    wrap.className = "wid-decision";
+    wrap.setAttribute("data-decision-for", id);
+
+    var head = document.createElement("summary");
+    head.className = "wid-decision-head";
+    head.innerHTML = '<span>🤔</span><span class="wid-decision-label">Your decision</span>' +
+      '<span class="wid-decision-status">Accepted as proposed</span><span class="wid-decision-caret">▾</span>';
+    wrap.appendChild(head);
+
+    var body = document.createElement("div");
+    body.className = "wid-decision-body";
+    var q = document.createElement("div");
+    q.className = "wid-decision-q";
+    q.textContent = spec.question;
+    body.appendChild(q);
+
+    var radioName = "wid-dec-" + id;
+    if (spec.options.length) {
+      var opts = document.createElement("div");
+      opts.className = "wid-decision-opts";
+      spec.options.forEach(function (o) {
+        var lab = document.createElement("label");
+        var r = document.createElement("input");
+        r.type = "radio"; r.name = radioName; r.value = o;
+        if (o === spec.def) r.checked = true;
+        lab.appendChild(r);
+        lab.appendChild(document.createTextNode(o + (o === spec.def ? "  (proposed)" : "")));
+        opts.appendChild(lab);
+        r.addEventListener("change", function () { onChoice(id, o, spec.def); });
+      });
+      body.appendChild(opts);
+    }
+
+    var note = document.createElement("textarea");
+    note.className = "wid-decision-note";
+    note.placeholder = "Modify the approach, refine the wording, or leave a note for whoever implements this…";
+    note.addEventListener("input", function () { onNote(id, note.value); });
+    body.appendChild(note);
+
+    var actions = document.createElement("div");
+    actions.className = "wid-decision-actions";
+    var reset = document.createElement("button");
+    reset.type = "button"; reset.className = "wid-decision-reset"; reset.textContent = "Reset to proposed";
+    reset.addEventListener("click", function () {
+      note.value = "";
+      var checked = wrap.querySelector('input[type=radio][value="' + cssEsc(spec.def) + '"]');
+      if (checked) checked.checked = true;
+      decisions[id].choice = ""; decisions[id].note = ""; decisions[id].modified = false;
+      sync();
+    });
+    actions.appendChild(reset);
+    body.appendChild(actions);
+
+    wrap.appendChild(body);
+    sec.appendChild(wrap);
+  }
+
+  function onChoice(id, value, def) {
+    decisions[id].choice = (value === def) ? "" : value; // only record a DEVIATION from the proposal
+    recompute(id);
+    sync();
+  }
+  function onNote(id, value) {
+    decisions[id].note = value.trim();
+    recompute(id);
+    sync();
+  }
+  function recompute(id) {
+    var d = decisions[id];
+    d.modified = !!(d.choice || d.note);
+  }
+
+  /* ---- write decisions into the plan island + the visible mirror -------- */
+  function activeDecisions() {
+    return Object.keys(decisions).map(function (id) {
+      var d = decisions[id];
+      if (!d.modified) return null;
+      return { section: d.sectionTitle, choice: d.choice || "", note: d.note || "" };
+    }).filter(Boolean);
+  }
+
+  function sync() {
+    var list = activeDecisions();
+    // 1) island = export source of truth.
+    plan.data.decisions = list;
+    writeIsland(plan.host, "export-data", plan.data);
+    // 2) visible mirror inside the plan section.
+    renderMirror(list);
+    // 3) per-control status pills.
+    root.querySelectorAll(".wid-decision").forEach(function (w) {
+      var id = w.getAttribute("data-decision-for");
+      var d = decisions[id];
+      var pill = w.querySelector(".wid-decision-status");
+      w.classList.toggle("is-modified", !!(d && d.modified));
+      if (pill) pill.textContent = d && d.modified
+        ? (d.choice ? "Chose: " + d.choice : "Modified") : "Accepted as proposed";
+    });
+  }
+
+  function renderMirror(list) {
+    var box = plan.section.querySelector(".wid-plan-decisions");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "wid-plan-decisions";
+      var h = plan.section.querySelector("h2, h3");
+      if (h && h.nextSibling) plan.section.insertBefore(box, h.nextSibling);
+      else plan.section.insertBefore(box, plan.section.firstChild);
+    }
+    if (!list.length) {
+      box.innerHTML = '<h4>🧑‍⚖️ Human decisions</h4><p class="none">No changes yet — every section accepted as proposed. ' +
+        'Pick an option or write a note on any section above and it appears here, and in the exported plan, instantly.</p>';
+      return;
+    }
+    var items = list.map(function (d) {
+      var head = d.choice ? "chose <strong>" + esc(d.choice) + "</strong>" : "modified";
+      var note = d.note ? " — " + esc(d.note) : "";
+      return "<li><strong>" + esc(d.section) + "</strong> — " + head + note + "</li>";
+    }).join("");
+    box.innerHTML = '<h4>🧑‍⚖️ Human decisions (live)</h4><ul>' + items + "</ul>";
+  }
+
+  /* ---- the approve toolbar ---------------------------------------------- */
+  function buildApprove() {
+    var bar = document.createElement("div");
+    bar.className = "wid-plan-approve";
+    bar.innerHTML =
+      '<div class="status">⏸️ This plan is awaiting your approval. Review each section, record any decisions, ' +
+      'then approve to export the final plan for the next phase.</div>' +
+      '<button type="button" class="wid-approve-btn">✅ Approve &amp; download plan (.md)</button>';
+    bar.querySelector(".wid-approve-btn").addEventListener("click", approve);
+    plan.section.appendChild(bar);
+    return bar;
+  }
+
+  function approve() {
+    sync(); // make sure the island has the very latest decisions
+    var md = (window.WID && window.WID.pageMd)
+      ? window.WID.pageMd(window.WID.pageModel())
+      : null;
+    if (!md) { alert("Export engine not found — make sure export-engine.js is inlined before this script."); return; }
+    var name = basename(planMdPath);
+    download(name, md);
+    root.setAttribute("data-plan-approval", "approved");
+    var bar = plan.section.querySelector(".wid-plan-approve");
+    bar.classList.add("is-approved");
+    bar.innerHTML =
+      '<div class="status">✅ Plan approved and exported.</div>' +
+      '<div class="next">Downloaded <code>' + esc(name) + '</code>. To put your approved plan into the pipeline:' +
+      '<br>1. Replace the authoritative plan markdown <code>' + esc(planMdPath) + '</code> with the file you just downloaded.' +
+      (reRunCmd ? '<br>2. Re-run <code>' + esc(reRunCmd) + '</code> — it reads that markdown, not this page.' : '') +
+      '</div>' +
+      '<button type="button" class="reopen">↩ Re-open for edits</button>';
+    bar.querySelector(".reopen").addEventListener("click", function () {
+      root.setAttribute("data-plan-approval", "pending");
+      bar.classList.remove("is-approved");
+      bar.remove();
+      buildApprove();
+    });
+  }
+
+  /* ---- small utils ------------------------------------------------------ */
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+  function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
+  function hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
+
+  /* ------------------------------- wire up ------------------------------- */
+  function init() {
+    root.querySelectorAll("[data-section]").forEach(function (sec) {
+      if (sec === plan.section) return;       // the plan section gets the mirror + approve, not a decision control
+      if (sec.closest("[data-section]") !== sec) return; // top-level sections only
+      buildDecision(sec);
+    });
+    buildApprove();
+    sync();
+    if (root.getAttribute("data-plan-approval") === "approved") {
+      // authored as already-approved (rare) — collapse the toolbar to its done state.
+      approve();
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  window.WIDPlan = { decisions: decisions, approve: approve, planMdPath: planMdPath };
+})();
+</script>
+</body></html>

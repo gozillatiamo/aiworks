@@ -17,3 +17,8 @@ agent-paotung-cypress/
 # .superset runtime state (pidfiles + service logs from run.sh)
 .superset/run/
 .superset/logs/
+
+# logs
+agent_logs/
+
+# product repo clones (cloned by aiworks; not committed to the workspace meta-repo)

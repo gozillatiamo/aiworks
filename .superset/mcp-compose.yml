@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared, long-lived MCP service containers for the workspace.
+#
+# WHY THIS EXISTS
+#   An stdio MCP server (the old `command: docker run -i …` form in .mcp.json) is
+#   spawned PER CLIENT: every agent process that initializes the MCP layer runs the
+#   `docker run` line again → a fresh container. The dev-cycle workflow fans out into
+#   many subagents, so N agents → up to N containers. Worse, when an agent is killed
+#   or crashes its stdin pipe isn't closed gracefully, the server never sees EOF,
+#   `--rm` never fires, and the container lingers forever → orphans pile up every run.
+#
+#   Instead we run ONE long-lived container, started once, and point .mcp.json at its
+#   SSE URL. Every client/agent shares that single container — nothing is spawned or
+#   orphaned per-agent. See README.md ("Shared MCP services").
+#
+# LIFECYCLE
+#   up    : `scripts/aiworks setup`  (+ a SessionStart safety-net) → docker compose up -d
+#   down  : `scripts/aiworks teardown`
+#   manual: `.superset/mcp-services.sh up | down | reap | status`
+#
+# CONFIG (override in `.superset/.env` — git-ignored — or the environment)
+#   DATABASE_URI       host Postgres the postgres-mcp server talks to
+#   MCP_POSTGRES_PORT  host port the SSE endpoint is published on (default 8000;
+#                      if you change it, update the URL in .mcp.json to match)
+# ─────────────────────────────────────────────────────────────────────────────
+name: aiworks-mcp                       # fixed project name → ONE shared stack regardless of cwd
+
+services:
+  postgres-mcp:
+    image: crystaldba/postgres-mcp
+    container_name: aiworks-mcp-postgres
+    command: ["--access-mode=unrestricted", "--transport=sse"]
+    environment:
+      # Inside the container `localhost` is the container itself — reach the HOST
+      # Postgres via host.docker.internal (mapped to the host gateway below).
+      DATABASE_URI: ${DATABASE_URI:-postgresql://postgres:postgres@host.docker.internal:5432/postgres}
+    ports:
+      - "127.0.0.1:${MCP_POSTGRES_PORT:-25432}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
+    restart: unless-stopped
+    healthcheck:
+      # SSE endpoint streams (never closes) so we can't GET it cleanly — just check the
+      # port is accepting connections. python ships in the image; curl/wget/nc do not.
+      test: ["CMD", "python", "-c", "import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(s.connect_ex(('127.0.0.1',8000)))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
