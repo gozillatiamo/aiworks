@@ -38,7 +38,9 @@ Commands:
              or --repo <name>) by running the `add` toolchain for each — reading
              url/kind/lang/distribute/path from the config. This is the fast path: add a
              repo's URL to the config, then `aiworks sync`. Idempotent: already-onboarded
-             repos just SKIP. Use -n to preview.
+             repos just SKIP. Use -n to preview. Also seeds the adapter .env files
+             (scripts/{tracker,vcs}/.env) when missing — from .env.example, pre-filled with
+             the providers/keys from workspace.config.yaml (an existing .env is left as-is).
   remove     Offboard a repo: deregister it from workspace.config.yaml products[].repos[],
              mani.d/<product>.yaml, mani.yaml and the .gitignore (optionally --purge the clone).
   config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)

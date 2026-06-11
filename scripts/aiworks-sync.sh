@@ -11,6 +11,12 @@
 # Use it to bring up a workspace from a freshly-edited config, or to re-sync the whole set:
 # `aiworks add` is idempotent, so repos already set up just report SKIP and move on.
 #
+# It also PREPARES the adapter .env files (scripts/{tracker,vcs}/.env) when they are missing:
+# each is seeded from its committed .env.example and pre-filled with the values derivable from
+# workspace.config.yaml (vcs.provider → VCS_PROVIDER; tracker.provider → TRACKER_PROVIDER;
+# tracker.ticket_prefix → JIRA_PROJECT_KEY for jira; tracker.statuses.done → NOTION_STATUS_DONE
+# for notion). An existing .env is left untouched — you still fill in the secrets by hand.
+#
 # Usage:
 #   aiworks sync [<product>|<repo>] [options]
 #
@@ -41,6 +47,7 @@ set -uo pipefail
 c_step=$'\033[1;36m'; c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
 [[ -t 1 ]] || { c_step=; c_ok=; c_warn=; c_err=; c_dim=; c_off=; }
 step() { printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; }
+ok()   { printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; }
 warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
@@ -103,6 +110,102 @@ parse_repos() {
   ' "$WC"
 }
 
+# ── adapter .env preparation ─────────────────────────────────────────────────────
+# scripts/{tracker,vcs}/.env are git-ignored LOCAL config the adapters source at runtime
+# (scripts/{tracker,vcs}/lib.sh). They normally have to be hand-copied from .env.example
+# and filled in. We can do better: seed each MISSING one from its committed .env.example
+# and pre-fill the values DERIVABLE from workspace.config.yaml — the providers, the Jira
+# project key, the Notion done-status. An EXISTING .env is never touched (we don't clobber
+# a human's secrets); the rest of each .env keeps its .env.example comments to fill in by hand.
+
+# Set KEY=VALUE in a .env file, in place: if a live OR commented-out `KEY=` line exists,
+# replace the first one; otherwise append. Keeps the surrounding template/comments intact.
+env_set() {
+  local file="$1" key="$2" value="$3" tmp
+  if grep -qE "^[[:space:]]*#?[[:space:]]*${key}=" "$file" 2>/dev/null; then
+    tmp="$(mktemp)" || return 1
+    awk -v k="$key" -v v="$value" '
+      !done && $0 ~ ("^[[:space:]]*#?[[:space:]]*" k "=") { print k "=" v; done=1; next }
+      { print }
+    ' "$file" > "$tmp" && mv "$tmp" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+# Seed <dir>/.env from <dir>/.env.example (only if .env is missing) and set the given
+# KEY VALUE pairs (a pair with an empty value is skipped). Honours $DRY. <dir> may not
+# exist (nothing to do) — e.g. a workspace that ships only one adapter.
+seed_env_file() {
+  local dir="$1"; shift
+  local env="$dir/.env" ex="$dir/.env.example" rel="${dir#$ROOT/}/.env"
+  [[ -d "$dir" ]] || return 0
+
+  # Describe the keys we'd actually set (skip empty values).
+  local -a pairs=("$@"); local kv='' i
+  for ((i=0; i<${#pairs[@]}; i+=2)); do
+    [[ -n "${pairs[i+1]:-}" ]] && kv+="${kv:+, }${pairs[i]}=${pairs[i+1]}"
+  done
+
+  if [[ -f "$env" ]]; then
+    ok "$rel exists — left untouched"
+    return 0
+  fi
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould create %s%s%s\n' "$c_dim" "$rel" "${kv:+ (set $kv)}" "$c_off"
+    return 0
+  fi
+
+  if [[ -f "$ex" ]]; then
+    cp "$ex" "$env" || { warn "could not seed $rel from $(basename "$ex")"; return 1; }
+  else
+    printf '# Seeded by `aiworks sync` from workspace.config.yaml. Fill in any secrets below.\n' > "$env"
+  fi
+  for ((i=0; i<${#pairs[@]}; i+=2)); do
+    [[ -n "${pairs[i+1]:-}" ]] && env_set "$env" "${pairs[i]}" "${pairs[i+1]}"
+  done
+  ok "created $rel${kv:+ — set $kv}"
+}
+
+# Read the workspace.config.yaml scalars that map onto adapter env vars, then seed the
+# tracker + vcs .env files. Provider-specific keys are only added for that provider.
+prepare_adapter_env() {
+  local vcs_provider='' tracker_provider='' ticket_prefix='' status_done=''
+  while IFS=$'\t' read -r k v; do
+    case "$k" in
+      VCS_PROVIDER)     vcs_provider="$v" ;;
+      TRACKER_PROVIDER) tracker_provider="$v" ;;
+      TICKET_PREFIX)    ticket_prefix="$v" ;;
+      STATUS_DONE)      status_done="$v" ;;
+    esac
+  done < <(
+    awk '
+      function val(s){ sub(/^[^:]*:[ \t]*/,"",s); sub(/[ \t]+#.*$/,"",s);
+                       gsub(/^[ \t]+|[ \t]+$/,"",s); gsub(/^["'\'']|["'\'']$/,"",s); return s }
+      /^[A-Za-z_][A-Za-z0-9_]*:/ { sec=$0; sub(/:.*/,"",sec); instat=0 }
+      sec=="vcs"     && /^  provider:/           { print "VCS_PROVIDER\t"     val($0); next }
+      sec=="tracker" && /^  provider:/           { print "TRACKER_PROVIDER\t" val($0); next }
+      sec=="tracker" && /^  ticket_prefix:/      { print "TICKET_PREFIX\t"    val($0); next }
+      sec=="tracker" && /^  statuses:[ \t]*$/    { instat=1; next }
+      sec=="tracker" && instat && /^    done:/   { print "STATUS_DONE\t"      val($0); next }
+      sec=="tracker" && instat && /^  [A-Za-z_]/ { instat=0 }
+    ' "$WC"
+  )
+
+  step "Prepare adapter .env files from workspace.config.yaml"
+
+  # vcs/.env — the provider (the adapter otherwise auto-detects it from the origin remote).
+  seed_env_file "$DIR/vcs" VCS_PROVIDER "$vcs_provider"
+
+  # tracker/.env — the provider, plus the one provider-specific value the config carries.
+  local -a tkv=(TRACKER_PROVIDER "$tracker_provider")
+  case "$tracker_provider" in
+    jira)   tkv+=(JIRA_PROJECT_KEY  "$ticket_prefix") ;;   # ticket_prefix == the Jira project key
+    notion) tkv+=(NOTION_STATUS_DONE "$status_done") ;;    # the "done" status name find-tickets uses
+  esac
+  seed_env_file "$DIR/tracker" "${tkv[@]}"
+}
+
 # Resolve the positional: a known products[].id is a product filter; anything else is a repo name.
 if [[ -n "$SELECTOR" ]]; then
   if parse_repos | awk -F$'\037' -v p="$SELECTOR" '$1==p{f=1} END{exit f?0:1}'; then
@@ -118,6 +221,10 @@ in_repo_filter() { case " $REPO_FILTER " in *" $1 "*) return 0 ;; esac; return 1
 sel="${PRODUCT:+ (product: $PRODUCT)}${REPO_FILTER:+ (repo: $REPO_FILTER)}"
 printf '%sSyncing repos declared in workspace.config.yaml%s%s\n' "$c_step" "$sel" "$c_off"
 [[ "$DRY" -eq 1 ]] && printf '  %s(dry run — nothing will be executed)%s\n' "$c_dim" "$c_off"
+
+# Seed the adapter .env files (idempotent; never overwrites an existing .env) before the
+# per-repo work, so the adapters the onboarded repos link to are already configured.
+prepare_adapter_env
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
 total=0; synced=0; failed=0; noted=(); MATCHED=""
