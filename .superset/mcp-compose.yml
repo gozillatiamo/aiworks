@@ -26,9 +26,9 @@
 name: aiworks-mcp                       # fixed project name → ONE shared stack regardless of cwd
 
 services:
-  postgres-mcp:
+  postgres-mad-mcp:
     image: crystaldba/postgres-mcp
-    container_name: aiworks-mcp-postgres
+    container_name: aiworks-mcp-postgres-mad
     command: ["--access-mode=unrestricted", "--transport=sse"]
     environment:
       # Inside the container `localhost` is the container itself — reach the HOST
@@ -36,6 +36,28 @@ services:
       DATABASE_URI: ${DATABASE_URI:-postgresql://postgres:postgres@host.docker.internal:5432/postgres}
     ports:
       - "127.0.0.1:${MCP_POSTGRES_PORT:-25432}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
+    restart: unless-stopped
+    healthcheck:
+      # SSE endpoint streams (never closes) so we can't GET it cleanly — just check the
+      # port is accepting connections. python ships in the image; curl/wget/nc do not.
+      test: ["CMD", "python", "-c", "import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(s.connect_ex(('127.0.0.1',8000)))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres-ass-mcp:
+    image: crystaldba/postgres-mcp
+    container_name: aiworks-mcp-postgres-ass
+    command: ["--access-mode=unrestricted", "--transport=sse"]
+    environment:
+      # Inside the container `localhost` is the container itself — reach the HOST
+      # Postgres via host.docker.internal (mapped to the host gateway below).
+      DATABASE_URI: ${DATABASE_URI:-postgresql://postgres:postgres@host.docker.internal:5433/postgres}
+    ports:
+      - "127.0.0.1:${MCP_POSTGRES_PORT:-25433}:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
     restart: unless-stopped
