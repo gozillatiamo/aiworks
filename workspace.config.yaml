@@ -116,7 +116,7 @@ products:
       - url: git@gitlab.com:bluepicode/ofb/paotung-template.git
         kind: web-app
         lang: Next.js
-        green: "tests via stroybook passed successfully"
+        green: "tests via stroybook and lint passed successfully"
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/ofb/agent-webservice.git
