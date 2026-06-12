@@ -106,6 +106,7 @@ products:
     repos:
       - url: git@gitlab.com:bluepicode/ofb/agent-db.git   # ← all you must provide
         kind: migration                           # any dev-context label; test-suite = QA archetype
+        desc: Data storage and Database migration for the platform, included all data storage kinds.   # one-line repo responsibility (anatomy at a glance)
         lang: postgres                                  # optional; else auto-detected from the clone
         distribute: none                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
@@ -115,21 +116,36 @@ products:
 
       - url: git@gitlab.com:bluepicode/ofb/paotung-template.git
         kind: web-app
-        lang: Next.js
+        desc: The web app for player users, it's one of the player site theme concept in platform.   # one-line repo responsibility (anatomy at a glance)
+        lang: next.js
         green: "tests via stroybook and lint passed successfully"
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/ofb/agent-webservice.git
         kind: backend 
+        desc: The monolithic backend service for the platform. It's contains mostly the business logic for the platform.   # one-line repo responsibility (anatomy at a glance)
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection, injection attacks"
 
       - url: git@gitlab.com:bluepicode/qa/agent-paotung-cypress.git
         kind: test-suite
+        desc: The cross-repo QA suite for the paotung-template repo. It's contains the E2E UI tests for the paotung-template.   # one-line repo responsibility (anatomy at a glance)
         lang: cypress
         green: "tests via cypress passed successfully"
 
+      - url: git@gitlab.com:bluepicode/ofb/backoffice.git 
+        kind: web-app 
+        desc: The backoffice CRM for Admins a Agents to manage the platform. Under the concept of Agency and sites with different theme and packages. currently it's gently convert into Bullet Proof React pattern.  # one-line repo responsibility (anatomy at a glance)
+        lang: next.js 
+        green: "tests via stroybook and lint passed successfully"
+        guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/qa/ofb-backoffice-cypress.git 
+        kind: test-suite 
+        desc: The cross-repo QA suite for the backoffice repo. It's contains the E2E UI tests for the backoffice. Including the Newman API tests for the platform.  # one-line repo responsibility (anatomy at a glance)
+        lang: cypress, newman 
+        green: "tests via cypress and newman passed successfully"
 
 # Repo dependency edges (build/merge order) are decided per-ticket by the scoping
 # stage; a typical chain is backend → app → test-suite.
