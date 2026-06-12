@@ -88,7 +88,7 @@ cd "$ROOT" || die "cannot cd to workspace root"
 WC="$ROOT/workspace.config.yaml"
 [[ -f "$WC" ]] || die "no workspace.config.yaml in $ROOT — copy workspace.config.example.yaml and declare your repos under products:"
 
-# Parse products[].repos[] → one line per repo:  product \037 url \037 kind \037 lang \037 distribute \037 path
+# Parse products[].repos[] → one line per repo:  product \037 url \037 kind \037 lang \037 distribute \037 path \037 desc
 # Indentation contract (see workspace.config.example.yaml): products: at col 0; `  - id:`
 # (2sp) per product; `    repos:` (4sp); `      - url:` (6sp) per repo; `        <field>:` (8sp).
 parse_repos() {
@@ -97,9 +97,10 @@ parse_repos() {
     function setkv(line){ k=line; sub(/^[ \t]*/,"",k)
       if(k ~ /^url:/) url=val(k); else if(k ~ /^kind:/) kind=val(k)
       else if(k ~ /^lang:/) lang=val(k); else if(k ~ /^distribute:/) dist=val(k)
+      else if(k ~ /^desc:/ || k ~ /^description:/) desc=val(k)
       else if(k ~ /^path:/) path=val(k) }
-    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\n", prod,url,kind,lang,dist,path }
-      url="";kind="";lang="";dist="";path="" }
+    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\n", prod,url,kind,lang,dist,path,desc }
+      url="";kind="";lang="";dist="";path="";desc="" }
     /^products:[ \t]*$/ { inp=1; next }
     inp && /^  - id:/ { flush(); prod=val($0); inrepos=0; next }
     inp && /^    repos:[ \t]*$/ { inrepos=1; next }
@@ -236,7 +237,7 @@ prepare_adapter_env
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
 total=0; synced=0; failed=0; noted=(); MATCHED=""
-while IFS=$'\037' read -r prod url kind lang dist path; do   # \037 (US) — empty fields aren't collapsed
+while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) — empty fields aren't collapsed
   [[ -n "$url" ]] || continue
   [[ -z "$PRODUCT" || "$prod" == "$PRODUCT" ]] || continue
   key="${url%.git}"; key="${key##*/}"; key="${key##*:}"
@@ -252,6 +253,7 @@ while IFS=$'\037' read -r prod url kind lang dist path; do   # \037 (US) — emp
   cmd=("$ADD" --url "$url" --product "$prod" --kind "$repokind")
   [[ "$YES" -eq 1 ]]        && cmd+=(-y)   # opt-in: only assume-yes when the caller passed -y to sync
   [[ -n "$path" ]]          && cmd+=(--path "$path")
+  [[ -n "$desc" ]]          && cmd+=(--desc "$desc")
   [[ -n "$lang" ]]          && cmd+=(--lang "$lang")
   if   [[ -n "$DISTRIBUTE" ]]; then cmd+=(--distribute "$DISTRIBUTE")
   elif [[ -n "$dist" ]];      then cmd+=(--distribute "$dist"); fi

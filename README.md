@@ -121,7 +121,8 @@ scripts/aiworks sync agent-db              # onboard ONLY one repo (by name)
 scripts/aiworks sync --repo agent-db,paotung-template   # …or several named repos
 
 scripts/aiworks add --url git@github.com:your-org/feeedme-api.git \
-                    --product backend --lang go --kind generic   # onboard one repo
+                    --product backend --lang go --kind generic \
+                    --desc "REST API + data layer"             # onboard one repo
 scripts/aiworks remove feeedme-api         # deregister (keeps the clone)
 scripts/aiworks remove feeedme-api --purge # also delete the clone (refuses if dirty/unpushed)
 
@@ -133,8 +134,9 @@ scripts/aiworks config                     # regen the dev-cycle.js CONFIG from 
 ### `sync` — the fast path
 
 Reads `products[].repos[]` (optionally just one product) and runs the full per-repo
-toolchain for each, pulling `url` / `kind` / `lang` / `distribute` / `path` straight from
-the config so you never retype them. Idempotent, so already-set-up repos report **SKIP** —
+toolchain for each, pulling `url` / `kind` / `desc` / `lang` / `distribute` / `path` straight
+from the config so you never retype them (`desc` is the one-line repo responsibility, surfaced
+by `mani list projects`). Idempotent, so already-set-up repos report **SKIP** —
 safe to re-run after adding a URL. Add `-n` / `--dry-run` to preview the commands.
 
 ### `add` — onboard one repo imperatively

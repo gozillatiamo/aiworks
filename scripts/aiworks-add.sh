@@ -27,7 +27,9 @@
 #                          the repo's anatomy once cloned.
 #   --tags <a,b,…>         EXTRA tags, appended after [product, language] in the mani entry
 #                          (e.g. "ui,offline"). Default: none.
-#   --desc <text>          mani entry description (default: "The <repo-name> repo.").
+#   --desc <text>          one-line repo responsibility — explains the repo's anatomy/role. Written
+#                          to the mani entry (desc:) AND, when given, back into workspace.config.yaml
+#                          (desc:) for round-tripping. Default (mani only): "The <repo-name> repo.".
 #   --kind <kind>          repo kind — a free-form, tech-agnostic dev-context label (frontend,
 #                          backend, web-app, service, migration, generic, …; the tech goes in
 #                          --lang). Only 'test-suite' is special (QA archetype); any other kind
@@ -241,7 +243,8 @@ REPO_NAME="${URL%.git}"; REPO_NAME="${REPO_NAME##*/}"; REPO_NAME="${REPO_NAME##*
 # Defaults derived from the repo name.
 [[ -n "$PRODUCT" ]]  || PRODUCT="$REPO_NAME"          # product = repo name unless --product given
 [[ -n "$PATH_REL" ]] || PATH_REL="$REPO_NAME"          # clone DIR = repo name (override with --path)
-[[ -n "$DESC" ]]     || DESC="The $REPO_NAME repo."    # default desc = repo-name short description
+if [[ -n "$DESC" ]]; then DESC_GIVEN=1                  # an explicit --desc is written back to the config
+else DESC="The $REPO_NAME repo."; DESC_GIVEN=0; fi      # default desc = repo-name short description (mani only)
 
 # ── locate the workspace root (where mani.yaml lives) ──────────────────────────
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -342,6 +345,7 @@ if [[ ! -f "$WC" ]]; then
 fi
 # Build the minimal repo block (6/8-space indented). Optional fields only when meaningful.
 repo_block="      - url: $URL"$'\n'"        kind: $KIND"$'\n'
+[[ "$DESC_GIVEN" -eq 1 ]]                     && repo_block+="        desc: $DESC"$'\n'
 [[ -n "$LANG" ]]                              && repo_block+="        lang: $LANG"$'\n'
 [[ -n "$DISTRIBUTE" && "$DISTRIBUTE" != none ]] && repo_block+="        distribute: $DISTRIBUTE"$'\n'
 [[ "$PATH_REL" != "$REPO_NAME" ]]             && repo_block+="        path: $PATH_REL"$'\n'

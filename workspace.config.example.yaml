@@ -95,6 +95,11 @@ planning:
 #
 #   id / path  ← the repo NAME from the URL (last path segment, minus .git).  Override
 #                the clone dir with `path:`.
+#   desc       → a one-line repo responsibility — what this repo IS and owns, so the team (and
+#                the agents) can read the workspace's anatomy BEFORE anything is cloned. Optional
+#                but recommended. Flows verbatim into the generated mani.d/<product>.yaml `desc:`
+#                (what `mani list projects` shows). Omitted → defaults to "The <repo-name> repo.".
+#                (`description:` is accepted as an alias.)
 #   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
 #                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
 #                It selects one of two role/gate ARCHETYPES:
@@ -112,6 +117,7 @@ products:
     repos:
       - url: git@github.com:your-org/your-app.git   # ← all you must provide
         kind: frontend                              # any dev-context label; test-suite = QA archetype
+        desc: The mobile app — offline-first, UI only.   # one-line repo responsibility (anatomy at a glance)
         lang: dart                                  # the TECH lives here; else auto-detected from the clone
         distribute: firebase                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
@@ -120,6 +126,7 @@ products:
         # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)
       - url: git@github.com:your-org/your-tests.git
         kind: test-suite                            # the cross-repo QA suite (E2E / API / load)
+        desc: Android/iOS E2E UI tests for the app.      # one-line repo responsibility
 
 # Repo dependency edges (build/merge order) are decided per-ticket by the scoping
 # stage; a typical chain is backend → app → test-suite.

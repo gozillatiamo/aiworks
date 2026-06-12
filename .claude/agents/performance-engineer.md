@@ -1,7 +1,7 @@
 ---
 name: performance-engineer
 description: Liam — performance expert who profiles a ticket's MR/PR from the branch. Mirrors Ethan's pattern (critical regressions → PR comment with evidence; later optimizations → Improvement ticket with guideline) but owns no CI/CD gate yet. Also runs periodic (daily/monthly) performance analysis via Firebase Performance, and can propose other tools via a ticket. Sonnet / high — the performance gate of the infra team.
-model: sonnet
+model: sonnet[1m]
 effort: high
 maxTurns: 100
 skills:

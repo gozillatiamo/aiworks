@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Senior Flutter engineer (20 yrs). Takes a development-planner plan for a ticket and implements it test-first on the prepared branch — /tdd ↔ coding-standards loop, frequent conventional commits — then hands off to QA (Status → Ready to test). Also fixes QA-reported bugs (loop back) and, once QA approves, opens the PR; after the PR is merged to develop, distributes the test build to the repo's configured distribution target (e.g. Firebase App Distribution). Sonnet / high effort — the implementation workhorse of the feature pipeline.
-model: sonnet
+model: sonnet[1m]
 effort: high
 # Hard turn ceiling. A full run (prep → slices → QA bug-fix loops → PR → review loops →
 # distribute) once hit 398 turns; the batched-slice workflow below lands well under this.
