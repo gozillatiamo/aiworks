@@ -93,7 +93,7 @@ The whole setup is "fill in one config, then run one command." Here's the full p
    in `CLAUDE.md`. The agents and workflows are already provider-agnostic, but a few
    **stack-specific** skills still ship with the reference stack's copy/tooling (a Flutter
    app + an Appium test-suite repo). Adapt these to your stack:
-   `.claude/skills/{coding-feature,coding-automate,plan-appium-automate}` and the
+   `.claude/skills/{coding-feature,coding-automate,plan-automate}` and the
    `coding-feature/*.md` references. (VCS/tracker wiring needs no further edits.)
 
 > **You never hand-edit the workflow.** `.claude/workflows/dev-cycle.js` keeps a mirrored
@@ -158,6 +158,15 @@ Under the hood, both `add` and `sync` will, for each repo:
 - initialize git submodules first (`git submodule update --init --recursive`) when the repo
   declares a `.gitmodules` (a no-op otherwise)
 - git-ignore the clone in the workspace `.gitignore` (and `agent_logs/` inside the repo)
+- re-include the clone for **Cursor** indexing via a workspace-root `.cursorindexingignore`
+  (`!<repo>/`) — Cursor honours `.gitignore` as a hard baseline and would otherwise skip the
+  whole clone, so this negated entry keeps it git-ignored yet searchable (best-effort; varies
+  by Cursor version). `.cursorignore` can't do this — its negations don't override `.gitignore`.
+- make the clone searchable in **VS Code** via a workspace-root `.vscode/settings.json`
+  (jq-merged, preserving your own keys): `search.useIgnoreFiles: false` so VS Code search
+  stops honouring `.gitignore` (which hid the clones), plus `search.exclude` globs that
+  re-exclude the noise — a few workspace-global `**/` keys and this repo's language-derived,
+  repo-scoped build dirs (e.g. `<repo>/build`, `<repo>/.dart_tool`)
 - build the codegraph index
 - install the agent skill packs **at project scope** (karpathy plugin installed *and*
   enabled via `--scope project`; mattpocock skills installed one `--skill` per call)
@@ -181,7 +190,10 @@ follow-ups. At the end it **regenerates the `dev-cycle.js` CONFIG block** from t
 
 Deregisters the repo from `workspace.config.yaml` (matched by repo name in its URL), from
 `mani.d/<product>.yaml` (deleting the file + its `mani.yaml` import if it was the product's
-last repo), and from the workspace `.gitignore`. The clone stays unless you pass `--purge`
+last repo), from the workspace `.gitignore`, from the workspace `.cursorindexingignore`
+(the Cursor re-include line; the shared header comment is left behind), and from the workspace
+`.vscode/settings.json` (this repo's `search.exclude` keys; the shared workspace-global keys
+stay). The clone stays unless you pass `--purge`
 (which refuses on a dirty/unpushed tree unless you also pass `--force`). It then
 regenerates the `dev-cycle.js` CONFIG block too, so the repo drops out of the workflow
 mirror automatically.

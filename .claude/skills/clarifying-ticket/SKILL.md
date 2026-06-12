@@ -7,6 +7,9 @@ allowed-tools:
   - Read
   - Grep
   - Glob
+  # Codegraph (per-repo index): the FIRST lookup for the Mode-B code skim —
+  # codegraph explore/search before Grep/Glob/Read (which stay the last resort).
+  - Bash(codegraph *)
   - AskUserQuestion
 ---
 
@@ -80,7 +83,7 @@ for this org's ticket-id format, status names, and any read-only fields.
    Only when nothing on the board covers it do you continue. When overlap is
    partial/ambiguous, prefer linking to the existing ticket (note the overlap in the new
    ticket's **Source** block) over filing a near-duplicate.
-3. **(Mode B only) Clarify.** Shallow code skim (`Grep`/`Glob`/`Read` slices) → detect
+3. **(Mode B only) Clarify.** Shallow code skim — **codegraph FIRST** (`codegraph explore`/`codegraph search` to find the area the request touches), with `Grep`/`Glob`/`Read` slices only as a last resort — → detect
    type → `AskUserQuestion` (≤4 related per call). Business-requirement first; no file
    paths / function names / schemas in the ticket — leave design to the implementer.
 4. **Classify.** Type (bug / feature / polish), Priority (map a finding's severity),

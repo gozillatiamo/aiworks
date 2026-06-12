@@ -1,6 +1,6 @@
 ---
 name: coding-automate
-description: Implement an approved Appium automation plan in THIS project's Page Object Model and verify it. Reads agent_logs/<FM>-appium-plan.md (the plan to follow) with agent_logs/<FM>-testcases.md as the reference for expected behaviour/assertions, writes/extends Page Objects (pages/) and specs (tests/) strictly POM, wires the runner, then verifies with `npm test`. On a red run, investigate with `npm run why`, fix automation issues and re-run; log genuine app bugs to agent_logs/<FM>-bugs.md. This is the implement+execute step after plan-appium-automate — it writes test code and runs the suite.
+description: Implement an approved Appium automation plan in THIS project's Page Object Model and verify it. Reads agent_logs/<FM>-appium-plan.md (the plan to follow) with agent_logs/<FM>-testcases.md as the reference for expected behaviour/assertions, writes/extends Page Objects (pages/) and specs (tests/) strictly POM, wires the runner, then verifies with `npm test`. On a red run, investigate with `npm run why`, fix automation issues and re-run; log genuine app bugs to agent_logs/<FM>-bugs.md. This is the implement+execute step after plan-automate — it writes test code and runs the suite.
 argument-hint: "[FM-ticket]"
 arguments: [ticket]
 ---
@@ -12,11 +12,13 @@ Turn the approved Appium implementation plan into **working test code** the way 
 ## 1. Resolve the ticket and read the two inputs
 
 - Resolve the ticket: `$ticket` (an `FM-<n>` key) given → use it; already in context → reuse it; neither → ask for the `FM-<n>` key.
-- **Implementation plan — what you build:** read **`agent_logs/<FM>-appium-plan.md`** (the `plan-appium-automate` output). It is the contract: which Page Objects/specs to add or reuse, selectors to confirm, runner wiring, and which scenarios are Automatable. **Missing? Stop** and tell the user to run `/plan-appium-automate <FM>` first — don't improvise a plan.
+- **Implementation plan — what you build:** read **`agent_logs/<FM>-appium-plan.md`** (the `plan-automate` output). It is the contract: which Page Objects/specs to add or reuse, selectors to confirm, runner wiring, and which scenarios are Automatable. **Missing? Stop** and tell the user to run `/plan-automate <FM>` first — don't improvise a plan.
 - **Test plan — your reference for *expected behaviour*:** read **`agent_logs/<FM>-testcases.md`** (the `plan-testcases` output). The BDD `Given/When/Then` are the source of each spec's flow and **assertions** — what the app must do. If it says **"Nothing to test"**, there's nothing to automate — say so and stop.
 - Build only what the plan marks **Automatable**. Skip **Manual-only**; for **Partial**, automate the automatable part and note the gap in your final report.
 
 ## 2. Survey the code so what you write matches the project
+
+**Codegraph FIRST.** Find the existing Page Objects/specs to reuse and the idiom to copy by querying the repo's codegraph index — `codegraph explore` ("where are the Page Objects / how does a spec wire the runner"), `codegraph search` (a named Page Object/method), `codegraph callers` (who already uses a Page Object). It is the pre-built index for this repo, so use it instead of globbing+reading; reserve `Grep`/`Glob`/`Read` as a last resort to confirm a detail it didn't cover. The artifacts to look for:
 
 - `pages/*.js` — Page Objects to **reuse**, and the idiom to copy (`pages/WelcomePage.js`): a `class` with `constructor(driver)`, selector **getters** returning `this.driver.$('~accessibility-id')`, a bounded-wait `isLoaded()`, and intent-named action methods.
 - `config/capabilities.js` — platform caps + app id (`com.feeedme.feeedme`); the cross-platform accessibility-id (`~`) is the default strategy — branch android/ios only when labels actually differ.

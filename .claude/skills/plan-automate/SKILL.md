@@ -1,5 +1,5 @@
 ---
-name: plan-appium-automate
+name: plan-automate
 description: Read a test plan (agent_logs/<KEY>-testcases.md) and plan how to automate it with Appium in THIS project's Page Object Model — which Page Objects and specs to add or reuse, the selectors to confirm, the runner/wiring changes needed, and which scenarios are automatable vs manual-only. Plan only; writes the plan to agent_logs/ and never writes test code or runs the app.
 argument-hint: "[ticket]"
 arguments: [ticket]
@@ -18,7 +18,7 @@ Turn an approved test plan into an implementation plan for automating it the way
 
 ## 2. Survey the project — so the plan fits real conventions
 
-Read the current code so the plan reflects what exists, not a generic template:
+Map what already exists so the plan reflects it, not a generic template — **codegraph FIRST.** Query the repo's codegraph index (`codegraph explore` for "where are the Page Objects / how is the runner wired", `codegraph search` for a named Page Object/method, `codegraph callers` for reuse) instead of a grep+read sweep; it is the pre-built index for this repo. Reserve `Grep`/`Glob`/`Read` for a last-resort detail codegraph didn't surface. The artifacts to map:
 
 - `pages/*.js` — existing Page Objects to **reuse**, and the idiom to follow (see `pages/WelcomePage.js`): a `class` with `constructor(driver)`, selector **getters** returning `this.driver.$('~accessibility-id')`, an `isLoaded()` bounded-wait check, and intent-named action methods. **No assertions, no test logic in a Page Object.**
 - `config/capabilities.js` — platform caps + app id (`com.feeedme.feeedme`); selectors prefer the cross-platform accessibility-id (`~`) — branch android/ios only when the labels actually differ.

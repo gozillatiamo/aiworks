@@ -167,6 +167,31 @@ offboard_one() {
   if remove_line "$ROOT/.gitignore" "$DIR_REL/"; then ok "[$REPO] removed $DIR_REL/ from the workspace .gitignore"
   else skip "[$REPO] 3. $DIR_REL/ not in the workspace .gitignore"; fi
 
+  # 3.1. workspace .cursorindexingignore (inverse of `aiworks add` step 3.1.1) ───
+  # Drop the Cursor re-include line. The shared header comment is intentionally left
+  # behind (harmless, mirrors how the .gitignore section header is kept).
+  step "3.1. Drop the Cursor re-include for $DIR_REL/ (.cursorindexingignore)"
+  if remove_line "$ROOT/.cursorindexingignore" "!$DIR_REL/"; then ok "[$REPO] removed !$DIR_REL/ from the workspace .cursorindexingignore"
+  else skip "[$REPO] 3.1. $DIR_REL/ not re-included in the workspace .cursorindexingignore"; fi
+
+  # 3.2. workspace .vscode/settings.json (inverse of `aiworks add` step 3.1.2) ───
+  # Strip just THIS repo's build-dir search excludes (keys under "$DIR_REL/"). The
+  # workspace-global keys (search.useIgnoreFiles + the **/ excludes) are shared across
+  # repos, so they're intentionally left behind — like the .cursorindexingignore header.
+  step "3.2. Drop $DIR_REL/ search excludes from .vscode/settings.json"
+  VS="$ROOT/.vscode/settings.json"
+  if [[ ! -f "$VS" ]] || ! command -v jq >/dev/null 2>&1; then
+    skip "[$REPO] 3.2. no .vscode/settings.json (or 'jq' missing) — nothing to clean"
+  elif ! jq -e --arg p "$DIR_REL/" '(.["search.exclude"] // {}) | keys | any(startswith($p))' "$VS" >/dev/null 2>&1; then
+    skip "[$REPO] 3.2. no $DIR_REL/ excludes in .vscode/settings.json"
+  elif jq --arg p "$DIR_REL/" '
+         if (.["search.exclude"]? | type) == "object"
+         then .["search.exclude"] |= with_entries(select(.key | startswith($p) | not))
+         else . end
+       ' "$VS" > "$VS.tmp" 2>/dev/null && mv "$VS.tmp" "$VS"; then
+    ok "[$REPO] removed $DIR_REL/ excludes from .vscode/settings.json"
+  else rm -f "$VS.tmp"; skip "[$REPO] 3.2. could not edit .vscode/settings.json — remove $DIR_REL/ keys by hand"; fi
+
   # 4. unlink the workspace adapters + drop them from .git/info/exclude ──────────
   # The inverse of `aiworks add` step 3.3: remove the scripts/{tracker,vcs} symlinks we wired
   # in (ONLY if they are our symlinks — never a real dir the repo owns) and the matching

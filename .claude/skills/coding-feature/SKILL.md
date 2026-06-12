@@ -9,6 +9,9 @@ allowed-tools:
     - Read
     - Grep
     - Glob
+    # Codegraph (per-repo index): the FIRST lookup for "where does this code live / what
+    # exists already" — codegraph explore/search/callers/impact before any grep (Grep/Glob last resort).
+    - Bash(codegraph *)
     - Write
     - Edit
     - Bash(git *)
@@ -41,6 +44,7 @@ effort: high
 ## When coding a feature:
 - Read project knowledge in @docs/ first — the relevant ADRs in @docs/adr/ and the @CONTEXT.md glossary — and follow the recorded decisions and terminology throughout.
 - Read UI desgin in Figma Dev Mode $figma-url if provided, specific to $feature-name
+- **Locate the work via codegraph FIRST.** Before designing where code goes, query the repo's codegraph index (`codegraph explore` for "where is the <feature> module / how does <flow> work", `codegraph search` for a named symbol, `codegraph callers`/`codegraph impact` for blast radius) to see what already exists vs. what's new — it is the pre-built index for this repo, so use it instead of a grep+read sweep. Reserve `Grep`/`Glob` for a last-resort detail codegraph didn't cover (a non-code asset, a config string).
 - Design code staructure, files and feature layer.
 - Download necessary assets from Figma, into the project.
 - Document @docs in the project, to read later.

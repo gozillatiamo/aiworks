@@ -22,6 +22,8 @@ Whatever the user said is the fixed point — a commit SHA, branch name, tag, `m
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
+Also note the **changed symbols** (the functions/classes/methods the diff touches) — both sub-agents use the repo's codegraph index to trace their **blast radius** (`codegraph callers`/`codegraph impact`), so a change that breaks a dependent OUTSIDE the diff is caught, not just what the diff literally shows. Codegraph is the pre-built index for this repo; `Grep`/`Glob` are the last resort for a detail it didn't cover.
+
 ### 2. Identify the spec source
 
 Look for the originating spec, in this order:
@@ -46,19 +48,19 @@ Collect the list of files. The **Standards** sub-agent will read them.
 
 ### 4. Spawn both sub-agents in parallel
 
-Send a single message with two `Agent` tool calls. Use the `general-purpose` subagent for both.
+Send a single message with two `Agent` tool calls. Use the `general-purpose` subagent for both. Tell **both** sub-agents to lean on the repo's codegraph index for lookups — `codegraph explore`/`codegraph search` to understand a touched area, and **`codegraph callers`/`codegraph impact` to trace the blast radius of changed symbols** (what depends on them OUTSIDE the diff). It is the pre-built index for this repo, so prefer it over a grep+read sweep; `Grep`/`Glob` are the last resort for a detail it didn't cover. (The `general-purpose` subagent already has the tools — no extra grant needed.)
 
 **Standards sub-agent prompt** — include:
 
 - The full diff command and commit list.
 - The list of standards-source files you found in step 3.
-- The brief: "Read the standards docs. Then read the diff. Report — per file/hunk where relevant — every place the diff violates a documented standard. Cite the standard (file + the rule). Distinguish hard violations from judgement calls. Skip anything tooling enforces. Under 400 words."
+- The brief: "Read the standards docs. Then read the diff. For each changed symbol, run `codegraph callers`/`codegraph impact` to see its dependents before judging change-preventer/coupler smells and contract changes. Report — per file/hunk where relevant — every place the diff violates a documented standard (cite the standard: file + rule), plus any changed contract whose dependents (per codegraph) now break. Distinguish hard violations from judgement calls. Skip anything tooling enforces. Use `Grep`/`Glob` only as a last resort. Under 400 words."
 
 **Spec sub-agent prompt** — include:
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Read the spec. Then read the diff. Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+- The brief: "Read the spec. Then read the diff. Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong — use `codegraph callers`/`codegraph impact` on changed symbols to check the change didn't break a dependent the spec relies on, outside the diff. Quote the spec line for each finding. Use `Grep`/`Glob` only as a last resort. Under 400 words."
 
 If the spec is missing, skip the Spec sub-agent and note this in the final report.
 

@@ -18,6 +18,10 @@ tools:
   - Bash(npm *)
   - Bash(pnpm *)
   - Bash(node *)
+  # Codegraph (per-repo index): the FIRST lookup when /to-prd explores the codebase —
+  # codegraph explore/search before any grep (Grep/Glob last resort). to-prd has no
+  # allowed-tools block, so it inherits this grant.
+  - Bash(codegraph *)
   - WebSearch
   - WebFetch
   - Bash(*scripts/tracker/*)

@@ -27,6 +27,10 @@ tools:
   - Bash(dart *)
   - Bash(mkdir *)
   - Bash(xcrun *)
+  # Codegraph (per-repo index): the FIRST lookup for "where in this repo is X" —
+  # codegraph explore/search/callers/impact before any grep. Index stays fresh via the
+  # Write/Edit `codegraph sync` hook.
+  - Bash(codegraph *)
   # VCS adapter (scripts/vcs/, github|gitlab): open PRs/MRs, reply to review comments.
   - Bash(*scripts/vcs/*)
   # Tracker adapter (scripts/tracker/, notion|jira): close the ticket after shipping
@@ -70,7 +74,7 @@ On failure, drill in instead of dumping the log: `scripts/dev.sh test || scripts
 
 ## Workflow
 
-0. **🛑 MUST DO — already-implemented short-circuit (check FIRST).** If the ticket is **already fully implemented/fixed** (every acceptance criterion satisfied on the branch/`develop`; verify via `Grep`/`Glob`/`codegraph`), write/edit/commit/build **nothing** — run the same short-circuit the planner does (see development-planner step 5: comment "already implemented" + evidence via `scripts/tracker/add-ticket-comment.sh <KEY> "…"`, then `scripts/tracker/upsert-ticket-details.sh <KEY> --status Done`), then stop and return a one-line summary. Only on **complete** coverage — if partial, implement just the gap via the flow below.
+0. **🛑 MUST DO — already-implemented short-circuit (check FIRST).** If the ticket is **already fully implemented/fixed** (every acceptance criterion satisfied on the branch/`develop`; verify by querying the repo's codegraph index FIRST — `codegraph explore`/`codegraph search` to find the implementing symbols, `codegraph callers`/`codegraph impact` to confirm full coverage — and fall back to `Grep`/`Glob` only as a last resort for a detail codegraph didn't cover), write/edit/commit/build **nothing** — run the same short-circuit the planner does (see development-planner step 5: comment "already implemented" + evidence via `scripts/tracker/add-ticket-comment.sh <KEY> "…"`, then `scripts/tracker/upsert-ticket-details.sh <KEY> --status Done`), then stop and return a one-line summary. Only on **complete** coverage — if partial, implement just the gap via the flow below.
 
 1. **Prep in one decisive pass — settle everything that would otherwise force a rework loop.** Batch your reads in parallel up front: the plan, the Figma reference (`get_screenshot`), the touched `docs/adr/` + `CONTEXT.md`, and current `pubspec.yaml`. Then invoke `/coding-feature` (pass the feature name + Figma URL). Decide three things *once*, here, before any code:
    - **Dependencies, settled now.** List every package add/bump the plan needs; apply the CLAUDE.md version policy. Edit `pubspec.yaml` and run `scripts/dev.sh clean` **once** — resolving deps before coding removes a whole rework sub-loop.

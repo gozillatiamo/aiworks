@@ -402,9 +402,56 @@ step "3.1. Ignore $PATH_REL/ in the workspace .gitignore"
 if ensure_line "$ROOT/.gitignore" "$PATH_REL/"; then ok "added $PATH_REL/ to the workspace .gitignore"
 else skip "3.1. workspace .gitignore already ignores $PATH_REL/"; fi
 
+# ── 3.1.1. Cursor IDE indexing — re-include $PATH_REL/ so Cursor can search it ─────
+#   The clone is gitignored at the workspace root (step 3.1) so it never dirties the
+#   meta-repo — but Cursor honours .gitignore as a HARD baseline and would skip the whole
+#   clone, leaving it unsearchable. A workspace-root .cursorindexingignore with a NEGATED
+#   entry (`!$PATH_REL/`) is the one layer that re-includes a gitignored path for indexing
+#   while keeping it git-ignored. (.cursorignore can't — its negations don't override
+#   .gitignore.) Best-effort: Cursor's support for this has varied across versions. The
+#   .cursorindexingignore is committed with the meta-repo, exactly like the .gitignore above.
+step "3.1.1. Re-include $PATH_REL/ for Cursor indexing (.cursorindexingignore)"
+ensure_line "$ROOT/.cursorindexingignore" "# Re-include repos the root .gitignore hides, so Cursor can index + search them." || true
+if ensure_line "$ROOT/.cursorindexingignore" "!$PATH_REL/"; then ok "added !$PATH_REL/ to the workspace .cursorindexingignore"
+else skip "3.1.1. workspace .cursorindexingignore already re-includes $PATH_REL/"; fi
+
 # Re-detect the language now that the repo is (hopefully) cloned, so later steps + tags-in-
 # hand have it even on a first run. (mani.d was already written; the tag is informational.)
 [[ -n "$LANG" ]] || { [[ -d "$REPO_DIR" ]] && LANG="$(detect_lang "$REPO_DIR")"; }
+
+# ── 3.1.2. VS Code search — make $PATH_REL/ searchable in VS Code (.vscode/settings.json) ─
+#   Unlike Cursor, VS Code has no per-folder "un-gitignore". Its search honours .gitignore
+#   (search.useIgnoreFiles defaults to true), so the gitignored clone is skipped in
+#   project-wide search. We flip that off workspace-wide (so the clones ARE searchable) and
+#   re-exclude the noise .gitignore used to hide: a small set of workspace-global **/ keys
+#   plus this repo's LANGUAGE-DERIVED, repo-scoped build/output dirs (so `aiworks remove` can
+#   strip exactly this repo's keys later). jq-merged so any hand-added settings are kept; the
+#   .vscode/settings.json is committed with the meta-repo, like the .gitignore/.cursor* above.
+step "3.1.2. Make $PATH_REL/ searchable in VS Code (.vscode/settings.json)"
+if ! have jq; then
+  skip "3.1.2. 'jq' missing — set \"search.useIgnoreFiles\":false + $PATH_REL/ build-dir excludes in .vscode/settings.json by hand"
+  FOLLOWUP+=("add VS Code search settings for $PATH_REL/ to .vscode/settings.json (install jq to let aiworks do it)")
+else
+  vs_ex=()   # repo-scoped build/output dirs to keep out of search, by detected language
+  case "$LANG" in
+    flutter) vs_ex=( "$PATH_REL/build" "$PATH_REL/.dart_tool" "$PATH_REL/ios/Pods" "$PATH_REL/android/.gradle" ) ;;
+    node)    vs_ex=( "$PATH_REL/dist" "$PATH_REL/coverage" "$PATH_REL/.expo" ) ;;
+    go)      vs_ex=( "$PATH_REL/vendor" "$PATH_REL/bin" ) ;;
+    rust)    vs_ex=( "$PATH_REL/target" ) ;;
+    python)  vs_ex=( "$PATH_REL/.venv" "$PATH_REL/__pycache__" "$PATH_REL/.mypy_cache" "$PATH_REL/.pytest_cache" ) ;;
+    jvm)     vs_ex=( "$PATH_REL/build" "$PATH_REL/.gradle" "$PATH_REL/target" ) ;;
+  esac
+  VS="$ROOT/.vscode/settings.json"; mkdir -p "$ROOT/.vscode"; [[ -f "$VS" ]] || printf '{}\n' > "$VS"
+  if jq '
+        .["search.useIgnoreFiles"] = false                       # VS Code search ignores .gitignore now…
+        | .["search.exclude"] = ( (.["search.exclude"] // {})     # …so re-exclude the noise it used to hide
+            + { "**/node_modules": true, "**/agent_logs": true, "**/.codegraph": true,
+                "**/.aiworks": true, "**/.git": true, "**/.env": true }
+            + (reduce $ARGS.positional[] as $g ({}; .[$g] = true)) )
+      ' --args ${vs_ex[@]+"${vs_ex[@]}"} < "$VS" > "$VS.tmp" 2>/dev/null && mv "$VS.tmp" "$VS"; then
+    ok "updated .vscode/settings.json (search.useIgnoreFiles=false + $PATH_REL/ build excludes)"
+  else rm -f "$VS.tmp"; skip "3.1.2. could not merge .vscode/settings.json — add the search settings by hand"; fi
+fi
 
 # Everything below operates INSIDE the repo. Bail out of the per-repo steps cleanly
 # (back to root) if the clone isn't actually there.

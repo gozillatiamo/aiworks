@@ -14,6 +14,10 @@ tools:
   - Bash(git *)
   - Bash(scripts/dev.sh status:*)
   - Bash(scripts/dev.sh why:*)
+  # Codegraph (per-repo index): trace the blast radius of changed symbols — codegraph
+  # impact/callers on what the diff touches, to catch breakage OUTSIDE the diff that a
+  # diff-only read misses. The FIRST lookup; Grep/Glob stay the last resort.
+  - Bash(codegraph *)
   # VCS adapter (scripts/vcs/, github|gitlab): PR/MR review line-comments, and the
   # squash-merge (scripts/vcs/merge-pr.sh) so the web PR/MR shows Merged.
   - Bash(*scripts/vcs/*)
@@ -36,7 +40,7 @@ Teammate in the Agent Team (lead = CEO / Michael). You take over **after the dev
 - The smell catalog https://refactoring.guru/refactoring/smells; `CLAUDE.md` standards + `docs/adr/`.
 
 ## Workflow
-1. **Review.** Once the PR opens, run **`/review`** on the branch **vs the target branch**. Look for refactoring.guru smells (bloaters, OO-abusers, change-preventers, dispensables, couplers), bug-prone patterns (null/async/state, missing `Result`/error handling, leaks), and repo-standard/ADR violations (the repo's documented standards — for the reference Flutter stack: Riverpod/freezed/Isar, repository pattern, domain purity, feature isolation, 150-line widget limit).
+1. **Review.** Once the PR opens, run **`/review`** on the branch **vs the target branch**. Look for refactoring.guru smells (bloaters, OO-abusers, change-preventers, dispensables, couplers), bug-prone patterns (null/async/state, missing `Result`/error handling, leaks), and repo-standard/ADR violations (the repo's documented standards — for the reference Flutter stack: Riverpod/freezed/Isar, repository pattern, domain purity, feature isolation, 150-line widget limit). **Trace the blast radius via codegraph FIRST** (run `codegraph sync` once so the index matches the branch you checked out): for each symbol the diff changes, `codegraph callers`/`codegraph impact` to find the dependents OUTSIDE the diff a diff-only read would miss (a changed signature/contract/return shape that breaks a caller, a now-invalid upstream assumption) — `Grep`/`Glob` only to confirm a detail it didn't cover.
 2. **Comment — stream, don't batch.** Post each finding the moment you confirm it via `scripts/vcs/pr-comment.sh`, and **`SendMessage` Noah a one-line pointer immediately** — separate **must-fix** from nice-to-have, tell him to fix the must-fixes. **Anchor every comment to the code (non-negotiable):** pass `--path <file> --line <n>` so it lands inline at the exact spot, **and** quote the offending line or block as a fenced code snippet in `--body`. Never a vague, location-less comment. **Then keep reviewing** — don't wait for him; Ethan and Liam review in parallel.
 3. **Loop, non-blocking.** Noah drains a single FIFO queue (yours + QA's + Ethan's + Liam's), fixing in arrival order and pinging you per fix. You never block on him.
 4. **Re-review.** When Noah pings a pushed fix, **re-review just the changed lines (+ regressions)** in parallel with the rest of your pass. Run a full `/review` from the top once before approving.
