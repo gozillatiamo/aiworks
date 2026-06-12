@@ -6,6 +6,12 @@ vcs_require_config() {
 }
 
 # vcs_open_pr BASE HEAD TITLE BODY [DRY] -> prints "<url>" then "number=<n>".
+# NOTE: GitHub has no per-PR "squash" checkbox to set at create time (unlike GitLab's
+# --squash-before-merge) — the merge method is chosen at merge time. Squash is guaranteed
+# two ways: the adapter merges with --squash (vcs_merge_pr below), and for human web-UI
+# merges (when vcs.auto_merge is off) the repo should allow ONLY squash merging
+# (Settings → General → Pull Requests: enable "Allow squash merging", disable merge
+# commits + rebase). That repo setting is the GitHub equivalent of "always squash".
 vcs_open_pr() {
   local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
   # Reuse an open PR for this head branch (avoid duplicates).
@@ -63,6 +69,16 @@ vcs_pr_comment() {
 # vcs_pr_comments NUMBER -> prints the PR's comments/review notes as plain text.
 vcs_pr_comments() {
   gh pr view "$1" --comments 2>/dev/null || die "could not read comments for PR #$1"
+}
+
+# vcs_close_pr NUMBER [DRY] -> close the PR without merging (branch kept), then pr-view.
+vcs_close_pr() {
+  local num="$1" dry="${2:-0}"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr close %s\n' "$num"; return 0
+  fi
+  gh pr close "$num"
+  vcs_pr_view "$num"
 }
 
 # vcs_merge_pr NUMBER SUBJECT [DRY] -> server-side squash-merge (PR shows Merged), then pr-view.

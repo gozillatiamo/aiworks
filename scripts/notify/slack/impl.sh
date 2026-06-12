@@ -28,8 +28,31 @@ notify_send() {
       -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
       -H 'Content-Type: application/json; charset=utf-8' \
       --data "$payload")" || die "slack request failed (network)"
+    # not_in_channel → try to self-join (public channels; needs channels:join + channels:read
+    # scopes) and retry once. Private channels still need a manual /invite of the bot.
+    if [[ "$(printf '%s' "$resp" | jq -r '.error // empty')" == "not_in_channel" ]]; then
+      local cid="$channel"
+      if [[ "$channel" == \#* ]]; then
+        cid="$(curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel" \
+          -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null \
+          | jq -r --arg n "${channel#\#}" '.channels[]? | select(.name==$n) | .id' | head -n1 || true)"
+      fi
+      if [[ -n "$cid" ]]; then
+        curl -sS -X POST "https://slack.com/api/conversations.join" \
+          -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+          -H 'Content-Type: application/json; charset=utf-8' \
+          --data "$(jq -n --arg c "$cid" '{channel:$c}')" >/dev/null 2>&1 || true
+        resp="$(curl -sS -X POST https://slack.com/api/chat.postMessage \
+          -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+          -H 'Content-Type: application/json; charset=utf-8' \
+          --data "$payload")" || die "slack request failed (network)"
+      fi
+    fi
     if [[ "$(printf '%s' "$resp" | jq -r '.ok')" != true ]]; then
-      die "slack rejected the message: $(printf '%s' "$resp" | jq -r '.error // "unknown"')"
+      local err; err="$(printf '%s' "$resp" | jq -r '.error // "unknown"')"
+      [[ "$err" == "not_in_channel" ]] && \
+        die "slack rejected the message: not_in_channel — the bot isn't in $channel; invite it (/invite @<bot>) or grant the channels:join + channels:read scopes"
+      die "slack rejected the message: $err"
     fi
     # Best-effort permalink (non-fatal if the scope/lookup isn't available).
     local ch ts link
