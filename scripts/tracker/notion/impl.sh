@@ -280,12 +280,15 @@ tracker_upsert() {
 }
 
 tracker_add_comment() {
-  local ticket="$1" dry="$2" text="$3" page_id body cid
+  local ticket="$1" dry="$2" text="$3" page_id body cid resp
   page_id="$(notion_resolve_page_id "$ticket")"
-  # Notion caps each rich-text object at 2000 chars; split long text across several.
-  body="$(jq -n --arg pid "$page_id" --arg t "$text" '
-    def chunks($n): if (. | length) <= $n then [.] else [.[0:$n]] + (.[$n:] | chunks($n)) end;
-    {parent: {page_id: $pid}, rich_text: ($t | chunks(2000) | map({text: {content: .}}))}')"
+  # Render the Markdown into a prettified rich_text run (bold headings, • bullets,
+  # inline marks/links, aligned tables) — the /comments endpoint takes rich_text only,
+  # never block children, so md_to_comment_rt also keeps each object under Notion's
+  # 2000-char cap and the array under its 100-element limit.
+  body="$(printf '%s' "$text" | jq -R -s -L "$NOTION_IMPL_DIR" --arg pid "$page_id" '
+    include "notion";
+    {parent: {page_id: $pid}, rich_text: md_to_comment_rt}')"
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — POST /comments\n%s\n' "$(printf '%s' "$body" | jq .)"
     return 0

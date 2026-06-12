@@ -2,7 +2,13 @@
 # Comment on a PR/MR — inline at PATH:LINE where the provider supports it, else a
 # normal PR/MR comment that references PATH:LINE in its text.
 #
-#   ./pr-comment.sh 42 --path lib/foo.dart --line 88 --body "Guard the null case."
+# Review-comment convention (all reviewers): a review comment MUST anchor to the
+# code — pass --path + --line so it lands inline at the exact spot, AND quote the
+# offending line/block as a fenced code snippet in --body. No vague, location-less
+# review comments.
+#
+#   ./pr-comment.sh 42 --path lib/foo.dart --line 88 \
+#       --body $'Guard the null case.\n\n```dart\nfinal pet = cache[id]; // can be null\nreturn pet.name;       // NPE if absent\n```'
 #   ./pr-comment.sh 42 --body "Overall LGTM."
 #   ./pr-comment.sh 42 --path … --line … --body … --dry-run
 #

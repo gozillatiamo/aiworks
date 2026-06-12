@@ -5,13 +5,14 @@ export const meta = {
   phases: [
     { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether the cross-repo test-suite (QA) gate applies', model: 'opus' },
     { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
-    { title: 'Build', detail: 'per repo, in dependency waves (∥ within a wave): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
+    { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
     { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch; scoped re-review; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet[1m]' },
     { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet[1m]' },
     { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
+    { title: 'Notify', detail: 'OPTIONAL — only when notify.enabled AND auto-merge is off: post a "please review" digest of the open PR/MR per repo to the configured chat channel (scripts/notify/). With auto-merge on, the run merges + distributes itself, so nothing is left to review and this phase is skipped.', model: 'haiku' },
   ],
 }
 
@@ -47,12 +48,19 @@ export const meta = {
 // AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
 //   approval before build; re-run with --approve-plan to proceed.
 // PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML.
+// NOTIFY / NOTIFY_PROVIDER / NOTIFY_CHANNEL — notify.{enabled,provider,channel}. When NOTIFY is
+//   true AND AUTO_MERGE is false, the final Notify phase posts a "please review" digest (the open
+//   PR/MR per repo) to NOTIFY_CHANNEL via the scripts/notify/ adapter. With auto-merge ON the run
+//   merges + distributes itself, so there is nothing to review and the phase is skipped.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const TICKET_PREFIX = 'OFB'
 const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = false // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = true     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
+const NOTIFY = false        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
+const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
+const NOTIFY_CHANNEL = '' // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const STATUS = {
   to_do: 'TO DO',
   in_progress: 'IN PROGRESS',
@@ -128,6 +136,13 @@ const approvePlan = /--approve-plan\b/i.test(rawArg) || opt.approvePlan === true
 // Format the parser keys off: [dev-cycle FM-9 repo=app role=developer phase=build round=2]
 const tag = (repo, role, phase, round) =>
   `[dev-cycle ${ticket} repo=${repo} role=${role} phase=${phase}${round ? ` round=${round}` : ''}]`
+
+// PR/MR titles follow Conventional Commits. The type comes from the branch the ticket
+// is on — a `fix/*` branch → `fix`, anything else (`feature/*`) → `feat` — matching the
+// branch model's fix_base/feature_base split. The squash-merge subject reuses the same
+// title so the commit that lands on the base is itself a conventional commit.
+const ccType = (branch) => (/^fix\//i.test(branch ?? '') ? 'fix' : 'feat')
+const prTitle = (rp) => `${ccType(rp.work_branch)}(${ticket}): ${rp.title ?? '<Task name>'}`
 
 // ──────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -275,6 +290,15 @@ const SUMMARY_SCHEMA = {
     note: { type: 'string' },
   },
 }
+const NOTIFY_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['sent'],
+  properties: {
+    sent: { type: 'boolean' }, // true ONLY after the notify adapter exited 0 (printed ok=1)
+    channel: { type: ['string', 'null'] }, permalink: { type: ['string', 'null'] },
+    note: { type: 'string' },
+  },
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -329,10 +353,12 @@ async function moveTicket(keys, why, phaseName) {
   return false
 }
 
-// Topologically sort the scoped repo plans into dependency WAVES. Repos in the
-// same wave have no interdependency and run in parallel; waves run in sequence.
-// Edges referencing out-of-scope repos are ignored. A cycle/unmet-dep is not
-// fatal: the remaining repos are emitted as one final wave so the run proceeds.
+// Topologically sort the scoped repo plans into dependency WAVES. Build no longer
+// gates on these waves — every scoped repo is built in parallel (build-order is
+// decoupled from merge-order). The waves are kept for their FLATTENED order
+// (waveList.flat()), the upstream→downstream sequence the Merge / Distribute phases
+// follow. Edges referencing out-of-scope repos are ignored. A cycle/unmet-dep is not
+// fatal: the remaining repos are emitted as one final wave so the order still resolves.
 function toWaves(plans) {
   const ids = new Set(plans.map((p) => p.repo))
   const deps = {}
@@ -363,6 +389,45 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
   if (s && s.token_table_appended === false) log('⚠️ Summary file written but the token/time table was NOT appended (parser empty/failed) — run parse_workflow_usage.py manually.')
   log(`Run summary: ${s?.summary_path ?? '(summary agent did not converge)'}`)
   return s ?? { summary_path: null, token_table_appended: false, note: 'summary agent did not converge' }
+}
+
+// ── Notify (review request) — OPTIONAL phase, runs LAST (after Summary) ──
+// Called ONLY from the auto-merge-OFF (merge-skipped) path: every repo is built + reviewed
+// and the cross-repo test-suite gate is green, but the validated PR/MR are left OPEN for a
+// human to merge — so we ping the team to review them. Gated on notify.enabled (NOTIFY). With
+// auto-merge ON the run merges + distributes itself (nothing to review), so this is never
+// reached. Best-effort: a send failure NEVER changes the run's outcome — the PRs are already
+// open + validated. Message format (the user-specified template):
+//   Please review, <KEY> <title>.
+//   - <repo>: <pr_url>
+//   - <repo>: <pr_url>
+// `reposInOrder` = repo ids in dependency order; their PR/MR URLs come from repoResults[id].pr.
+async function notifyReview(reposInOrder) {
+  if (!NOTIFY) return null
+  phase('Notify')
+  const title = scope?.title || plans.find((p) => p?.title)?.title || ''
+  const rows = reposInOrder
+    .map((id) => ({ id, url: repoResults[id]?.pr?.pr_url }))
+    .filter((r) => r.url)
+  if (!rows.length) { log('[notify] no open PR/MR URL to announce — Notify skipped.'); return null }
+  const message = `Please review, ${ticket}${title ? ` ${title}` : ''}.\n` +
+    rows.map((r) => `- ${r.id}: ${r.url}`).join('\n')
+  const channelArg = NOTIFY_CHANNEL ? ` --channel ${JSON.stringify(NOTIFY_CHANNEL)}` : ''
+  const msgPath = `agent_logs/${ticket}-notify.txt`
+  const r = await safeAgent(
+    `${tag('all', 'notifier', 'notify')} Post a "please review" notification for ${ticket} to the team chat via the notify adapter. This is a one-shot send — do NOT touch git, the tracker, or any product repo; stay at the WORKSPACE (org) ROOT (the dir holding .claude/), never cd into a repo.
+1. With the Write tool, write the message below VERBATIM (everything between the «MSG» fences, fences EXCLUDED — keep the line breaks exactly) to ${msgPath}:
+«MSG»
+${message}
+«MSG»
+2. Send it (pipe the file on stdin so the newlines survive — do NOT retype the message inline):
+\`scripts/notify/send.sh${channelArg} < ${msgPath}\`
+The adapter reads NOTIFY_PROVIDER (${NOTIFY_PROVIDER}) + creds from scripts/notify/.env and posts to ${NOTIFY_CHANNEL || 'its default channel'}; on success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY if the command exited 0 (printed ok=1) — include the permalink if one was printed and channel="${NOTIFY_CHANNEL}"; on ANY failure return sent:false with the adapter's stderr in note. Do NOT reword the message and do NOT retry more than once.`,
+    { agentType: 'documentor', model: 'haiku', phase: 'Notify', label: `notify:${ticket}`, schema: NOTIFY_SCHEMA },
+  )
+  tick('notify')
+  log(`[notify] review request → ${NOTIFY_CHANNEL || '(default channel)'}: ${r?.sent ? (r.permalink || 'sent') : `NOT sent (${r?.note ?? 'agent did not converge'})`}`)
+  return r ?? { sent: false, note: 'notify agent did not converge' }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -413,8 +478,8 @@ async function runRepoPipeline(rp, desc) {
   // PR/MR via the VCS adapter. Code repos via /open-pr; the test-suite repo via the adapter
   // directly. Open ONLY — never merge (the final cross-repo Merge phase merges).
   const openPrPrompt = desc.kind === 'test-suite'
-    ? `${tag(R, desc.build, 'open-pr')} The ticket scope (spec(s) + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${ticket}: ${rp.title ?? '<Task name>'}" --body "<what was automated + the scoped (ticket spec(s) + regression) green evidence>"\`. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
-    : `${tag(R, desc.build, 'open-pr')} ${ticket} is built in ${R} — open the PR/MR now so the reviewers (code-reviewer + guardian + performance) can review it on the host. ${inRepo} Ensure git status is clean (commit any stray artifact), then run /open-pr ${ticket} to open the PR/MR for ${rp.work_branch} → ${rp.base_branch}, titled "${ticket}: ${rp.title ?? '<Task name>'}". Do NOT merge it. Return the PR/MR URL + number.`
+    ? `${tag(R, desc.build, 'open-pr')} The ticket scope (spec(s) + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${prTitle(rp)}" --body "<what was automated + the scoped (ticket spec(s) + regression) green evidence>"\`. The title is Conventional Commits (\`<type>(${ticket}): <title>\`) — keep it exactly as given. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
+    : `${tag(R, desc.build, 'open-pr')} ${ticket} is built in ${R} — open the PR/MR now so the reviewers (code-reviewer + guardian + performance) can review it on the host. ${inRepo} Ensure git status is clean (commit any stray artifact), then run /open-pr ${ticket} to open the PR/MR for ${rp.work_branch} → ${rp.base_branch}, titled per Conventional Commits "${prTitle(rp)}". Do NOT merge it. Return the PR/MR URL + number.`
   const pr = await safeAgent(
     openPrPrompt,
     { agentType: desc.build, phase: 'Open PR', label: `open-pr:${ticket}:${R}`, schema: PR_SCHEMA },
@@ -552,7 +617,7 @@ plans.forEach((p) => { p.depends_on = (scoped.find((s) => s.repo === p.repo)?.de
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
 if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
-log(`Waves: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
+log(`Build: all ${plans.length} repo(s) in parallel · merge order: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
 
 // PLAN-APPROVAL GATE — when planning.auto_approve is off, STOP here with the plan(s) ready
@@ -564,22 +629,20 @@ if (!AUTO_APPROVE_PLAN && !approvePlan) {
   return { ticket, status: 'awaiting-plan-approval', plans, summary, spend }
 }
 
-// 3. BUILD → OPEN PR → REVIEW — per repo, in dependency waves (∥ within a wave).
-// Reviewers (code-reviewer + guardian + performance) all review the OPEN PR.
+// 3. BUILD → OPEN PR → REVIEW — ALL scoped repos IN PARALLEL.
+// Build-order is decoupled from merge-order: a repo's build only needs the agreed
+// contract, not a merged upstream artifact, so every scoped repo is built + reviewed
+// concurrently regardless of depends_on. depends_on is still honored at Merge
+// (mergeOrder, below) so the squash-merges land upstream → downstream. Reviewers
+// (code-reviewer + guardian + performance) all review the OPEN PR.
 phase('Build')
 const repoResults = {}
-let aborted = null
-for (const wave of waveList) {
-  if (aborted) break
-  const res = await parallel(wave.map((id) => () => runRepoPipeline(plans.find((p) => p.repo === id), REPOS[id])))
-  res.forEach((r, i) => { if (r) repoResults[wave[i]] = r })
-  const failed = wave.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
-  if (failed.length) {
-    aborted = failed
-    log(`⚠️ ${failed.join(', ')} did not reach 'ready' — stopping; downstream waves skipped.`)
-  }
-}
-if (aborted) {
+const buildIds = waveList.flat() // every scoped repo, in dependency (merge) order
+const buildRes = await parallel(buildIds.map((id) => () => runRepoPipeline(plans.find((p) => p.repo === id), REPOS[id])))
+buildRes.forEach((r, i) => { if (r) repoResults[buildIds[i]] = r })
+const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
+if (aborted.length) {
+  log(`⚠️ ${aborted.join(', ')} did not reach 'ready' — the whole change set must be ready before any merge; stopping.`)
   const summary = await writeSummary('repo-unresolved', { ticket, aborted, repoResults })
   return { ticket, status: 'repo-unresolved', aborted, repoResults, summary, spend }
 }
@@ -645,7 +708,10 @@ for (const id of mergeOrder) {
     merges[id] = { merged: false, base: rp.base_branch, note: 'auto-merge disabled — PR/MR left open for a human', pr: rr.pr?.pr_url }
     log(`⏸️ [${id}] auto-merge disabled — reviewed + validated PR/MR left OPEN for human merge: ${rr.pr?.pr_url ?? '(see run)'}. Nothing merged or distributed this run.`)
     const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, merges })
-    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, summary, spend }
+    // NOTIFY (final phase) — auto-merge is off, so the validated PR/MR are awaiting a human:
+    // ping the configured chat channel to review them. No-op unless notify.enabled.
+    const notify = await notifyReview(mergeOrder)
+    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, summary, notify, spend }
   }
   const merger = desc.review || desc.build // test-suite repo (no reviewer): the qa-runner merges its own PR
   const mergePreamble = desc.review
@@ -653,7 +719,7 @@ for (const id of mergeOrder) {
     : `The ticket scope (spec(s) + regression specs) for ${ticket} is green and its PR/MR is open in ${id} (${rr.pr.pr_url}). It is now your turn in the dependency order to squash-merge it.`
   const m = await safeAgent(
     `${tag(id, merger, 'merge')} ${mergePreamble} Work in the ${id} repo (cwd ${desc.path}/). Squash-merge PR/MR number ${rr.pr?.pr_number ?? '(see ' + rr.pr?.pr_url + ')'} into ${rp.base_branch} THROUGH THE HOST (via the VCS adapter) so the web PR/MR is marked **Merged** — do NOT run a local "git merge --squash" + push: that advances the base but leaves the PR/MR showing **Closed**, the exact bug we avoid. Run:
-\`scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<number>'} --subject "${ticket}: ${rp.title ?? '<Task name>'}"\` — this squash-merges server-side, advances ${rp.base_branch}, marks the PR/MR Merged, and prints \`state=\` + \`merge_sha=\`.
+\`scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<number>'} --subject "${prTitle(rp)}"\` (the same Conventional Commits subject as the PR/MR title) — this squash-merges server-side, advances ${rp.base_branch}, marks the PR/MR Merged, and prints \`state=\` + \`merge_sha=\`.
 VERIFY the printed \`state=MERGED\` before reporting (re-check with \`scripts/vcs/pr-view.sh ${rr.pr?.pr_number ?? '<number>'}\` if unsure). Return merged:true ONLY when state is MERGED (not Closed), base=${rp.base_branch}, and sha = the printed merge_sha on ${rp.base_branch}.`,
     { agentType: merger, phase: 'Merge', label: `merge:${ticket}:${id}`, schema: MERGE_SCHEMA },
   )

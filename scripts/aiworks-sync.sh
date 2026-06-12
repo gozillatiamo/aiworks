@@ -11,11 +11,12 @@
 # Use it to bring up a workspace from a freshly-edited config, or to re-sync the whole set:
 # `aiworks add` is idempotent, so repos already set up just report SKIP and move on.
 #
-# It also PREPARES the adapter .env files (scripts/{tracker,vcs}/.env) when they are missing:
+# It also PREPARES the adapter .env files (scripts/{tracker,vcs,notify}/.env) when they are missing:
 # each is seeded from its committed .env.example and pre-filled with the values derivable from
 # workspace.config.yaml (vcs.provider → VCS_PROVIDER; tracker.provider → TRACKER_PROVIDER;
 # tracker.ticket_prefix → JIRA_PROJECT_KEY for jira; tracker.statuses.done → NOTION_STATUS_DONE
-# for notion). An existing .env is left untouched — you still fill in the secrets by hand.
+# for notion; notify.provider/channel → NOTIFY_PROVIDER/NOTIFY_CHANNEL). An existing .env is left
+# untouched — you still fill in the secrets by hand (e.g. the Slack token in notify/.env).
 #
 # Usage:
 #   aiworks sync [<product>|<repo>] [options]
@@ -111,12 +112,12 @@ parse_repos() {
 }
 
 # ── adapter .env preparation ─────────────────────────────────────────────────────
-# scripts/{tracker,vcs}/.env are git-ignored LOCAL config the adapters source at runtime
-# (scripts/{tracker,vcs}/lib.sh). They normally have to be hand-copied from .env.example
+# scripts/{tracker,vcs,notify}/.env are git-ignored LOCAL config the adapters source at runtime
+# (scripts/{tracker,vcs,notify}/lib.sh). They normally have to be hand-copied from .env.example
 # and filled in. We can do better: seed each MISSING one from its committed .env.example
 # and pre-fill the values DERIVABLE from workspace.config.yaml — the providers, the Jira
-# project key, the Notion done-status. An EXISTING .env is never touched (we don't clobber
-# a human's secrets); the rest of each .env keeps its .env.example comments to fill in by hand.
+# project key, the Notion done-status, the notify channel. An EXISTING .env is never touched (we
+# don't clobber a human's secrets); the rest of each .env keeps its .env.example comments to fill in by hand.
 
 # Set KEY=VALUE in a .env file, in place: if a live OR commented-out `KEY=` line exists,
 # replace the first one; otherwise append. Keeps the surrounding template/comments intact.
@@ -170,13 +171,15 @@ seed_env_file() {
 # Read the workspace.config.yaml scalars that map onto adapter env vars, then seed the
 # tracker + vcs .env files. Provider-specific keys are only added for that provider.
 prepare_adapter_env() {
-  local vcs_provider='' tracker_provider='' ticket_prefix='' status_done=''
+  local vcs_provider='' tracker_provider='' ticket_prefix='' status_done='' notify_provider='' notify_channel=''
   while IFS=$'\t' read -r k v; do
     case "$k" in
       VCS_PROVIDER)     vcs_provider="$v" ;;
       TRACKER_PROVIDER) tracker_provider="$v" ;;
       TICKET_PREFIX)    ticket_prefix="$v" ;;
       STATUS_DONE)      status_done="$v" ;;
+      NOTIFY_PROVIDER)  notify_provider="$v" ;;
+      NOTIFY_CHANNEL)   notify_channel="$v" ;;
     esac
   done < <(
     awk '
@@ -189,6 +192,8 @@ prepare_adapter_env() {
       sec=="tracker" && /^  statuses:[ \t]*$/    { instat=1; next }
       sec=="tracker" && instat && /^    done:/   { print "STATUS_DONE\t"      val($0); next }
       sec=="tracker" && instat && /^  [A-Za-z_]/ { instat=0 }
+      sec=="notify"  && /^  provider:/           { print "NOTIFY_PROVIDER\t"  val($0); next }
+      sec=="notify"  && /^  channel:/            { print "NOTIFY_CHANNEL\t"   val($0); next }
     ' "$WC"
   )
 
@@ -204,6 +209,9 @@ prepare_adapter_env() {
     notion) tkv+=(NOTION_STATUS_DONE "$status_done") ;;    # the "done" status name find-tickets uses
   esac
   seed_env_file "$DIR/tracker" "${tkv[@]}"
+
+  # notify/.env — the provider + default channel (the Slack token/webhook is filled in by hand).
+  seed_env_file "$DIR/notify" NOTIFY_PROVIDER "$notify_provider" NOTIFY_CHANNEL "$notify_channel"
 }
 
 # Resolve the positional: a known products[].id is a product filter; anything else is a repo name.

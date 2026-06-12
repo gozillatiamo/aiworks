@@ -12,7 +12,7 @@ provider implementation chosen by `TRACKER_PROVIDER` (`notion` | `jira`). Reader
 | `get-ticket-comments.sh`  | Read open comments (`--deep` also gathers inline/block-anchored — Notion only) |
 | `find-tickets.sh`         | **Search** the tracker (`--query`/`--type`/`--open`) — the dedup lookup |
 | `upsert-ticket-details.sh`| Set Status/Priority/Effort/Title/Description, and write the full spec to the **body** (`--body`/`--body-file`) — updates or creates the ticket |
-| `add-ticket-comment.sh`   | Add a comment (text from an argument or stdin) |
+| `add-ticket-comment.sh`   | Add a comment (text from an argument or stdin) — Markdown is rendered to the tracker's native style, not posted raw |
 
 The two write scripts accept `--dry-run` to print the request instead of sending it.
 
@@ -21,10 +21,21 @@ The two write scripts accept `--dry-run` to print the request instead of sending
 of type `JIRA_DEFAULT_ISSUETYPE`). The created key is printed as `Created <KEY> — …`.
 
 **Spec in the body:** `--body <md>` / `--body-file <path|->` writes the full clarified
-spec (Markdown — headings, bullet/numbered/to-do lists, quotes, dividers, fenced code)
-into the ticket body, not a comment. Notion appends page blocks (in 100-block batches);
-Jira renders the Markdown to ADF as the issue **description** (its one rich field — so a
-bare `--description` is used only when no `--body` is given).
+spec (Markdown — headings, bullet/numbered/to-do lists, quotes, dividers, pipe tables,
+fenced code, and inline **bold**/*italic*/`code`/[links]) into the ticket body, not a
+comment. Notion appends page blocks (in 100-block batches); Jira renders the Markdown to
+ADF as the issue **description** (its one rich field — so a bare `--description` is used
+only when no `--body` is given).
+
+**Comments render Markdown too:** `add-ticket-comment.sh` no longer posts raw Markdown —
+it converts it to each tracker's native style so headers, bullets, tables and inline
+marks read as intended, not as literal `##`/`-`/`|`. **Jira** comment bodies are full ADF
+(same renderer as the description), so headings, lists, **tables** and code blocks are
+native. **Notion**'s `/comments` endpoint accepts a `rich_text` array only — never block
+children — so a Notion *comment* can't hold heading/list/table *blocks*; it's rendered as
+one prettified rich-text run instead: **bold** headings, `•`/numbered/`☑` list lines,
+inline marks and real links kept as annotations, and tables laid out as aligned monospace.
+Native heading/list/table blocks in Notion only exist in the page **body** (`--body`).
 
 **Dedup before filing:** `find-tickets.sh --query "<distinctive token>" --open` searches
 the board so a caller never files a duplicate. Notion matches a case-insensitive title
@@ -89,6 +100,9 @@ canonical workflow-phase → real-status mapping for this org lives in
 - **Notion**: only *open* comments are exposed by the API; resolved threads aren't.
   `--deep` fans out one request per block (parallel, `NOTION_CONCURRENCY`, default 8).
   Creating a missing ticket needs `--title`; the ticket number is auto-assigned.
+  Comments are a `rich_text`-only run (no block children), so a very long Markdown
+  comment is coalesced and capped at 100 rich-text objects — beyond that it's truncated
+  with a "see the ticket body" note; put large specs in the **body** (`--body`), not a comment.
 - **Jira**: a single comment stream (no `--deep`); description/comments are read+written
   as ADF (common node types rendered to text). `--effort` is ignored unless
   `JIRA_EFFORT_FIELD` is set. A bare number needs `JIRA_PROJECT_KEY` to form the key.

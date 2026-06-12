@@ -43,13 +43,61 @@ def text_to_adf:
 # fenced ``` code blocks, paragraphs. Adjacent list items are merged into one list
 # node (ADF requires bullet/orderedList wrappers, unlike Notion's flat blocks).
 
-def _adf_text($s): [{ type: "text", text: ($s // "") }];
-def _adf_para($s): { type: "paragraph", content: _adf_text($s) };
+# Leftmost inline-markup match, or null. Capture index identifies the kind:
+#   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_
+def _md_first($s):
+  [ $s | match("(`[^`]+`)|(\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|(__[^_]+__)|(\\*[^*]+\\*)|(_[^_]+_)") ] | .[0];
+def _adf_plain($s): if (($s // "") | length) == 0 then [] else [{ type: "text", text: $s }] end;
+
+# Parse inline Markdown into ADF text nodes with marks (strong/em/code/link).
+# Recurses on the tail; ADF forbids empty text nodes, so empties are dropped.
+def _inline_adf:
+  . as $s
+  | if ($s | length) == 0 then []
+    else (_md_first($s)) as $m
+    | if $m == null then _adf_plain($s)
+      else ($m.offset) as $o | ($m.length) as $n | ($m.string) as $tok
+      | ($s[0:$o]) as $pre | ($s[($o + $n):]) as $post
+      | ($m.captures | map(.string)) as $g
+      | ( if   $g[0] != null then { type:"text", text:($tok[1:-1]), marks:[{type:"code"}] }
+          elif $g[1] != null then ($tok | match("\\[([^\\]]+)\\]\\(([^)]+)\\)") | .captures) as $c
+                                  | { type:"text", text:($c[0].string), marks:[{type:"link", attrs:{href:($c[1].string)}}] }
+          elif ($g[2] != null or $g[3] != null) then { type:"text", text:($tok[2:-2]), marks:[{type:"strong"}] }
+          else { type:"text", text:($tok[1:-1]), marks:[{type:"em"}] }
+          end ) as $styled
+      | _adf_plain($pre) + [$styled] + ($post | _inline_adf)
+      end
+    end;
+
+def _adf_text($s):       ($s // "") | _inline_adf;                   # inline marks honoured
+def _adf_text_plain($s): if (($s // "") | length) == 0 then [] else [{ type:"text", text:$s }] end;  # literal (code)
+def _adf_para($s):
+  (($s // "") | _inline_adf) as $c
+  | if ($c | length) == 0 then { type:"paragraph" } else { type:"paragraph", content:$c } end;
 def _adf_li($s):   { type: "listItem",  content: [_adf_para($s)] };
 def _adf_list($kind; $items):
   { type: (if $kind == "ordered" then "orderedList" else "bulletList" end), content: $items };
 
-# Classify one (non-fence, non-blank) line into a token {kind, level?, text?}.
+# Pipe-table helpers (GitHub-flavoured Markdown) → an ADF table node. A 2nd
+# separator row marks the first row as the column header (tableHeader cells).
+def _split_cells($row):
+  ($row | sub("^\\s*\\|"; "") | sub("\\|\\s*$"; "") | split("|") | map(gsub("(^\\s+)|(\\s+$)"; "")));
+def _is_sep_row($row):
+  ($row | test("-")) and ($row | test("^\\s*\\|?[\\s:|\\-]+\\|?\\s*$"));
+def _adf_table($rows):
+  ($rows | map(_split_cells(.))) as $all
+  | (if (($rows | length) >= 2 and (_is_sep_row($rows[1])))
+     then {hdr: true, head: $all[0], body: $all[2:]}
+     else {hdr: false, head: null, body: $all} end) as $t
+  | { type: "table", attrs: {isNumberColumnEnabled: false, layout: "default"},
+      content: (
+        ( if $t.hdr
+          then [ {type:"tableRow", content: ($t.head | map({type:"tableHeader", attrs:{}, content:[_adf_para(.)]}))} ]
+          else [] end )
+        + ( $t.body | map({type:"tableRow", content: (map({type:"tableCell", attrs:{}, content:[_adf_para(.)]}))}) )
+      ) };
+
+# Classify one (non-fence, non-blank, non-table) line into a token {kind, level?, text?}.
 def _md_classify:
   . as $l
   | if   ($l|test("^### "))             then {kind:"h",      level:3, text:($l|sub("^### ";""))}
@@ -64,27 +112,38 @@ def _md_classify:
     else                                     {kind:"para",    text:$l}
     end;
 
-# A non-list token → its ADF block node.
+# A non-list, non-table token → its ADF block node.
 def _md_tok_to_node:
   . as $t
   | if   $t.kind == "h"     then { type:"heading", attrs:{level:$t.level}, content:_adf_text($t.text) }
     elif $t.kind == "rule"  then { type:"rule" }
     elif $t.kind == "quote" then { type:"blockquote", content:[_adf_para($t.text)] }
-    elif $t.kind == "code"  then { type:"codeBlock",  content:_adf_text($t.text) }
+    elif $t.kind == "code"  then ((_adf_text_plain($t.text)) as $c
+                                  | if ($c|length) == 0 then { type:"codeBlock" } else { type:"codeBlock", content:$c } end)
     else                         { type:"paragraph",  content:_adf_text($t.text) }
     end;
 
 def md_to_adf:
-  # phase 1 — fold fenced code blocks into tokens, classify/drop the rest
+  # phase 1 — fold fenced code blocks and pipe-table runs into tokens; classify the rest
   ( ( . // "" ) | gsub("\r"; "") | split("\n")
-    | reduce .[] as $l ( {toks:[], incode:false, buf:[]};
+    | reduce .[] as $l ( {toks:[], incode:false, buf:[], trows:[]};
         if .incode then
-          if ($l|test("^```")) then .toks += [{kind:"code", text:(.buf|join("\n"))}] | .incode=false | .buf=[]
-          else .buf += [$l] end
-        elif ($l|test("^```")) then .incode=true | .buf=[]
-        elif ($l|test("^\\s*$")) then .
-        else .toks += [($l | _md_classify)] end )
-    | (if .incode and ((.buf|length) > 0) then .toks + [{kind:"code", text:(.buf|join("\n"))}] else .toks end)
+          ( if ($l|test("^```")) then (.toks += [{kind:"code", text:(.buf|join("\n"))}] | .incode=false | .buf=[])
+            else (.buf += [$l]) end )
+        elif ((.trows|length) > 0) then
+          ( if ($l|test("^\\s*\\|.*\\|\\s*$")) then (.trows += [$l])
+            else (.toks += [{kind:"table", rows:.trows}] | .trows=[])
+              | ( if ($l|test("^```"))      then (.incode=true | .buf=[])
+                  elif ($l|test("^\\s*$"))  then .
+                  else (.toks += [($l | _md_classify)]) end )
+            end )
+        elif ($l|test("^```"))               then (.incode=true | .buf=[])
+        elif ($l|test("^\\s*\\|.*\\|\\s*$")) then (.trows=[$l])
+        elif ($l|test("^\\s*$"))             then .
+        else (.toks += [($l | _md_classify)]) end )
+    | ( if .incode and ((.buf|length) > 0)  then (.toks + [{kind:"code", text:(.buf|join("\n"))}])
+        elif ((.trows|length) > 0)          then (.toks + [{kind:"table", rows:.trows}])
+        else .toks end )
   )
   # phase 2 — assemble content, merging adjacent bullet/ordered items into one list
   | reduce .[] as $t ( {content:[], lk:null, items:[]};
@@ -96,6 +155,9 @@ def md_to_adf:
              (if $s.lk != null then ($s | .content += [_adf_list($s.lk; $s.items)]) else $s end)
              | .lk = $k | .items = [_adf_li($t.text)]
            end)
+        elif ($k == "table") then
+          ((if $s.lk != null then ($s | .content += [_adf_list($s.lk; $s.items)] | .lk=null | .items=[]) else $s end)
+           | .content += [ _adf_table($t.rows) ])
         else
           (if $s.lk != null then ($s | .content += [_adf_list($s.lk; $s.items)] | .lk=null | .items=[]) else $s end)
           | .content += [ ($t | _md_tok_to_node) ]

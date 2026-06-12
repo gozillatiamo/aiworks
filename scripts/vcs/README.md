@@ -10,7 +10,7 @@ remote** when unset. All commands run against the repo in the current directory.
 | `default-branch.sh` | Print the repo's default/parent branch |
 | `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=` |
 | `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` |
-| `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) |
+| `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |
 | `pr-comments.sh`    | Print a PR/MR's comments / review notes as plain text |
 | `merge-pr.sh`       | **Squash-merge server-side** so the web PR/MR shows *Merged*, then prints pr-view |
 
@@ -39,6 +39,13 @@ Handled by the provider CLI, not this adapter:
 
 ## Notes
 
+- **Review-comment convention (all reviewers).** Every review comment MUST anchor to
+  the code: pass `--path` + `--line` so it lands inline at the exact spot, **and** quote
+  the offending line or block as a fenced code snippet in `--body`. No vague,
+  location-less review comments — this applies to the code reviewer (Daniel), the
+  guardian (Ethan), and the performance reviewer (Liam) alike. On GitLab, where the
+  inline position can't be set, the adapter still references `path:line` in the note, so
+  the quoted snippet in `--body` is what makes the comment self-contained there.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on GitHub; on GitLab the adapter
   posts an MR **note** that references `path:line` (positioned discussions are

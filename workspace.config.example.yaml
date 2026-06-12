@@ -31,6 +31,24 @@ vcs:
                                    #   then STOPS and leaves the PR/MR OPEN for a human to merge (nothing is
                                    #   merged or distributed). Override for a single repo with repos[].auto_merge.
 
+# ── Notifications ──────────────────────────────────────────────────────────────
+# AFTER the run finishes its pre-merge work (every repo built + reviewed and the cross-repo
+# test-suite gate green) the dev-cycle can post a "please review" digest to chat. This phase
+# runs LAST (after Summary) and ONLY when BOTH hold:
+#   • notify.enabled: true        (this block), AND
+#   • vcs.auto_merge:  false      (auto-merge ON ⇒ the run merges + distributes itself, so there
+#                                  is nothing left for a human to review — the notification is skipped).
+# The message is the open PR/MR per repo for the ticket:
+#     Please review, FM-12 Add the vet-visit reminder.
+#     - feeedme-app: https://github.com/your-org/feeedme-app/pull/42
+#     - feeedme-appium: https://github.com/your-org/feeedme-appium/pull/7
+# Posting goes through the notify adapter (scripts/notify/), provider-agnostic like vcs/tracker.
+notify:
+  enabled: false                   # true → post the review-request when auto_merge is off (see above)
+  provider: slack                  # slack (the only provider today)
+  channel: "#feeed-me-reviews"     # the Slack channel the digest is posted to (id or #name). The token/
+                                   #   webhook live in scripts/notify/.env (seeded by `aiworks sync`).
+
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
   provider: notion                 # notion | jira

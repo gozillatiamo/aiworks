@@ -17,6 +17,8 @@ tools:
   - Write
   - Bash(python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py:*)
   - Bash(*scripts/tracker/*)
+  # Dev-cycle Notify phase: send the "please review" digest through the notify adapter.
+  - Bash(*scripts/notify/*)
   - mcp__plugin_figma_figma
 ---
 

@@ -45,9 +45,9 @@ Goal: a clean feature branch off the newest default branch, so coding never happ
    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
    ```
    If there are no commits ahead of `base` (`git rev-list --count "$base..$head"` is 0), there's nothing to merge — stop and say so.
-3. Open the PR/MR to the parent/default branch (the adapter pushes the branch for you):
+3. Open the PR/MR to the parent/default branch (the adapter pushes the branch for you). Title it per **Conventional Commits**, deriving the type from the branch prefix — `feature/<KEY>` → `feat(<KEY>): <title>`, `fix/<KEY>` → `fix(<KEY>): <title>`:
    ```sh
-   scripts/vcs/open-pr.sh --base "$base" --head "$head" --title "<title>" --body "<summary>"
+   scripts/vcs/open-pr.sh --base "$base" --head "$head" --title "<type>(<KEY>): <title>" --body "<summary>"
    ```
    End the PR/MR body with:
    ```
@@ -59,9 +59,9 @@ Goal: a clean feature branch off the newest default branch, so coding never happ
    effective value is **false**, STOP here: leave the PR/MR **open**, report its URL + number and
    that it is awaiting a human merge (auto-merge is off), then skip steps 5–6 — do **not** merge.
    If it is **true** (the default), continue.
-5. Squash-merge it yourself (server-side, so the web PR/MR shows Merged):
+5. Squash-merge it yourself (server-side, so the web PR/MR shows Merged). Use the same Conventional Commits subject as the PR/MR title so the squashed commit lands on the base as a conventional commit:
    ```sh
-   scripts/vcs/merge-pr.sh <number> --subject "<title>"
+   scripts/vcs/merge-pr.sh <number> --subject "<type>(<KEY>): <title>"
    ```
    It prints `state=` + `merge_sha=`; confirm `state=MERGED` before reporting.
 6. Return to base: `git switch "$base" && git pull --ff-only origin "$base"`. Report the merged PR/MR URL.

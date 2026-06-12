@@ -20,6 +20,9 @@
 #   vcs.auto_merge                   → const AUTO_MERGE
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
+#   notify.enabled                   → const NOTIFY
+#   notify.provider                  → const NOTIFY_PROVIDER
+#   notify.channel                   → const NOTIFY_CHANNEL
 #   branch_model.{feature,fix}_base  → each repo's base.{feature,fix} (kind may override)
 #   products[].repos[]               → const REPOS  (one entry per repo)
 #       url               → the REPOS key (repo name) + path default
@@ -92,6 +95,7 @@ jsbool() { case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
 # vars via a case. Defaults below match the workflow's historical fallbacks.
 PREFIX='FM'; AM_RAW='true'; AA_RAW='true'; TH_RAW='false'
 FEATURE_BASE='develop'; FIX_BASE='main'
+NT_RAW='false'; NOTIFY_PROVIDER='slack'; NOTIFY_CHANNEL=''
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -103,6 +107,9 @@ while IFS=$'\t' read -r k v; do
     TO_HTML)       TH_RAW="$v" ;;
     FEATURE_BASE)  FEATURE_BASE="$v" ;;
     FIX_BASE)      FIX_BASE="$v" ;;
+    NOTIFY_ENABLED)  NT_RAW="$v" ;;
+    NOTIFY_PROVIDER) NOTIFY_PROVIDER="$v" ;;
+    NOTIFY_CHANNEL)  NOTIFY_CHANNEL="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -120,11 +127,15 @@ done < <(
     sec=="branch_model" && /^  fix_base:/        { print "FIX_BASE\t"     val($0); next }
     sec=="planning"     && /^  auto_approve:/    { print "AUTO_APPROVE\t"  val($0); next }
     sec=="planning"     && /^  to_html:/         { print "TO_HTML\t"       val($0); next }
+    sec=="notify"       && /^  enabled:/         { print "NOTIFY_ENABLED\t"  val($0); next }
+    sec=="notify"       && /^  provider:/        { print "NOTIFY_PROVIDER\t" val($0); next }
+    sec=="notify"       && /^  channel:/         { print "NOTIFY_CHANNEL\t"  val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
 AUTO_APPROVE="$(jsbool "$AA_RAW" true)"
 TO_HTML="$(jsbool "$TH_RAW" false)"
+NOTIFY="$(jsbool "$NT_RAW" false)"
 # Fall back to the historical 5-phase lifecycle when the org declared no statuses.
 if [[ -z "$STATUS_PAIRS" ]]; then
   STATUS_PAIRS=$'not_started\tNot started\nin_progress\tIn progress\nready_to_test\tReady to test\ntesting\tTesting\ndone\tDone\n'
@@ -230,6 +241,9 @@ BODY="const TICKET_PREFIX = $(jsq "$PREFIX")
 const AUTO_MERGE = ${AUTO_MERGE}        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = ${AUTO_APPROVE} // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = ${TO_HTML}     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
+const NOTIFY = ${NOTIFY}        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
+const NOTIFY_PROVIDER = $(jsq "$NOTIFY_PROVIDER") // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
+const NOTIFY_CHANNEL = $(jsq "$NOTIFY_CHANNEL")  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const STATUS = {
 ${status_body}}
 const REPOS = {

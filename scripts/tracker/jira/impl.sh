@@ -194,7 +194,9 @@ jira_transition() {
 tracker_add_comment() {
   local ticket="$1" dry="$2" text="$3" key body cid
   key="$(jira_key "$ticket")"
-  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" 'include "jira"; {body: ($t | text_to_adf)}')"
+  # Render the Markdown to ADF (headings, lists, tables, code, inline marks) — a Jira
+  # comment body is a full ADF doc, so it renders natively like the issue description.
+  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" 'include "jira"; {body: ($t | md_to_adf)}')"
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — POST /rest/api/3/issue/%s/comment\n%s\n' "$key" "$(printf '%s' "$body" | jq .)"
     return 0
