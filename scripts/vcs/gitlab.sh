@@ -91,6 +91,28 @@ vcs_close_pr() {
   vcs_pr_view "$num"
 }
 
+# vcs_upload_media KEY FILE [DRY] -> upload one file to the project, print its embeddable
+# markdown line for the MR description. GitLab has a first-class uploads API: a POST returns
+# a relative /uploads/<hash>/<file> URL that renders inline in any description/note in the
+# project (images inline, video as a player). We rewrite the alt text to "<KEY> <file>" so
+# the reviewer sees which ticket/screen each shot belongs to.
+vcs_upload_media() {
+  local key="$1" file="$2" dry="${3:-0}"
+  local base; base="$(basename "$file")"
+  local label; label="$(printf '%s%s' "${key:+$key }" "$base")"
+  if [[ "$dry" -eq 1 ]]; then
+    # The /uploads/<hash> path isn't known until the file is actually uploaded — show the shape.
+    vcs_media_md "$label" "/uploads/<sha>/$base" "$base"; return 0
+  fi
+  [[ -f "$file" ]] || { echo "warn: media file not found: $file" >&2; return 1; }
+  local json url
+  json="$(glab api --method POST "projects/:fullpath/uploads" -F "file=@${file}" 2>/dev/null)" \
+    || { echo "warn: gitlab upload failed for $file" >&2; return 1; }
+  url="$(printf '%s' "$json" | jq -r '.url // empty' 2>/dev/null)"
+  [[ -n "$url" ]] || { echo "warn: no upload url in gitlab response for $file" >&2; return 1; }
+  vcs_media_md "$label" "$url" "$base"
+}
+
 # vcs_merge_pr NUMBER SUBJECT [DRY] -> squash-merge server-side (MR shows Merged), then pr-view.
 # The squash commit message defaults to the MR title (== SUBJECT, since we open the MR with it).
 vcs_merge_pr() {

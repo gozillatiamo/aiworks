@@ -16,7 +16,7 @@
 # Usage:
 #   aiworks add --url <git-url> [--product <id>] [options]
 #
-#   --url  <git-url>       Clone URL (git@github.com:org/feeedme-app.git). Its REPO name
+#   --url  <git-url>       Clone URL (git@github.com:org/your-app.git). Its REPO name
 #                          (last URL segment, minus .git) is the clone dir + mani key, and
 #                          identifies the repo's entry under products[].repos[].  [required]
 #   --product <id>         Product this repo belongs to = its group under `products:` in
@@ -36,6 +36,9 @@
 #                          is a code repo (plan→build→review + guard/perf). Default: generic.
 #                          (default: generic) — drives the plan/build/review/guard/perf/test-suite defaults.
 #   --distribute <how>     workspace.config.yaml distribute: none | firebase | custom (default: none).
+#   --app-id <id>          MOBILE APP REPOS ONLY — application/bundle id (e.g. com.acme.app), written
+#                          to workspace.config.yaml app_id:. The QA/automation skills read it as the
+#                          app-under-test id. (optional; omit for non-mobile repos)
 #   --path <dir>           Clone dir under the workspace root (default: the repo name from --url).
 #   --skill-cmd <slash>    Skill-generator command to run in the repo (default: /run-skill-generator).
 #                          It's told to make the generated run skill a thin wrapper over
@@ -212,7 +215,7 @@ claude_run() {
 
 # ── args ────────────────────────────────────────────────────────────────────
 PRODUCT="" URL="" TAGS="" DESC="" PATH_REL="" LANG="" SKILL_CMD="/run-skill-generator"
-KIND="generic" DISTRIBUTE="none" CLAUDE_TIMEOUT=900
+KIND="generic" DISTRIBUTE="none" APP_ID="" CLAUDE_TIMEOUT=900
 FORCE=0 YES=0 PERM_FLAG="--dangerously-skip-permissions"
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
@@ -224,6 +227,7 @@ while [[ $# -gt 0 ]]; do
     --desc)            DESC="${2:-}"; shift 2 ;;
     --kind)            KIND="${2:-}"; shift 2 ;;
     --distribute)      DISTRIBUTE="${2:-}"; shift 2 ;;
+    --app-id)          APP_ID="${2:-}"; shift 2 ;;
     --path)            PATH_REL="${2:-}"; shift 2 ;;
     --skill-cmd)       SKILL_CMD="${2:-}"; shift 2 ;;
     --claude-timeout)  CLAUDE_TIMEOUT="${2:-}"; shift 2 ;;
@@ -347,6 +351,7 @@ fi
 repo_block="      - url: $URL"$'\n'"        kind: $KIND"$'\n'
 [[ "$DESC_GIVEN" -eq 1 ]]                     && repo_block+="        desc: $DESC"$'\n'
 [[ -n "$LANG" ]]                              && repo_block+="        lang: $LANG"$'\n'
+[[ -n "$APP_ID" ]]                            && repo_block+="        app_id: $APP_ID"$'\n'
 [[ -n "$DISTRIBUTE" && "$DISTRIBUTE" != none ]] && repo_block+="        distribute: $DISTRIBUTE"$'\n'
 [[ "$PATH_REL" != "$REPO_NAME" ]]             && repo_block+="        path: $PATH_REL"$'\n'
 if grep -qF "url: $URL" "$WC"; then
@@ -646,7 +651,7 @@ else skip "8. /setup-matt-pocock-skills failed (auth? was step 6 able to install
 
 # ── 9. hooks + permissions baseline (HARDCODED, sonar-free) ────────────────────
 # No reference repo: the hooks come from the workspace's own .claude/hooks (the dev-wrapper,
-# modeled on feeedme-app minus sonar) and settings.json is written from a hardcoded, stack-
+# modeled on a Flutter app baseline minus sonar) and settings.json is written from a hardcoded, stack-
 # agnostic, rtk-guarded baseline. We jq-MERGE settings so any plugin enablement added by
 # steps 5/6 is preserved (never clobbered).
 step "9. Seed Claude hooks + settings (hardcoded baseline, sonar-free)"
@@ -661,7 +666,7 @@ elif [[ -d "$ROOT/.claude/hooks" ]]; then
 else
   skip "9. no $ROOT/.claude/hooks to seed from — copy your hook scripts into $PATH_REL/.claude/hooks/ by hand"
 fi
-# 9b. settings.json — hardcoded baseline (feeedme-app minus sonar), merged to keep plugins.
+# 9b. settings.json — hardcoded baseline (modeled on a Flutter app, minus sonar), merged to keep plugins.
 SETTINGS_FILE="$REPO_DIR/.claude/settings.json"
 read -r -d '' BASE_SETTINGS <<'JSON'
 {

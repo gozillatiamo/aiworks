@@ -453,7 +453,7 @@
       <div class="tab-panel">
         <p>Registers one repo, clones it, builds the codegraph index, installs the agent skill packs, seeds hooks and settings, and scaffolds a <code>CLAUDE.md</code> + <code>scripts/dev.sh</code> shaped by the repo's own toolchain. Anything already done is skipped.</p>
         <pre><code>scripts/aiworks add \
-  --url git@github.com:your-org/feeedme-api.git \
+  --url git@github.com:your-org/your-api.git \
   --product backend \
   --lang go \
   --kind generic \
@@ -485,7 +485,7 @@
 scripts/aiworks sync
 
 # Sync only one product
-scripts/aiworks sync feeed-me
+scripts/aiworks sync your-product
 
 # Preview what would run (no changes)
 scripts/aiworks sync --dry-run</code></pre>
@@ -496,13 +496,13 @@ scripts/aiworks sync --dry-run</code></pre>
       <div class="tab-panel" hidden>
         <p>Deregisters a repo: removes its entry from <code>mani.d/&lt;product&gt;.yaml</code>, from <code>workspace.config.yaml</code>, and from the workspace <code>.gitignore</code>. The clone is left on disk unless you add <code>--purge</code>.</p>
         <pre><code># Deregister (keep the clone)
-scripts/aiworks remove feeedme-api
+scripts/aiworks remove your-api
 
 # Deregister AND delete the clone
-scripts/aiworks remove feeedme-api --purge
+scripts/aiworks remove your-api --purge
 
 # Force-delete even if the tree is dirty
-scripts/aiworks remove feeedme-api --purge --force</code></pre>
+scripts/aiworks remove your-api --purge --force</code></pre>
         <div class="callout" data-variant="info" data-block="callout">
           <div class="callout-title">ℹ️ The dev-cycle CONFIG drops the repo automatically</div>
           <div>After deregistering, <code>remove</code> <strong>regenerates the <code>REPOS</code> map</strong> in <code>.claude/workflows/dev-cycle.js</code> from the updated <code>workspace.config.yaml</code> (the <code>aiworks config</code> step), so the repo disappears from the workflow mirror too — no hand-editing.</div>
@@ -527,9 +527,9 @@ scripts/aiworks config --dry-run</code></pre>
 
       <script type="application/json" class="export-data">
         {"type":"tabs","tabs":[
-          {"label":"add","md":"Register + onboard one repo. Clones it, builds the codegraph index, installs agent skill packs, seeds hooks/settings, and scaffolds `CLAUDE.md` + `scripts/dev.sh`. Idempotent.\n\n```\nscripts/aiworks add \\\n  --url git@github.com:your-org/feeedme-api.git \\\n  --product backend \\\n  --lang go \\\n  --kind generic \\\n  --distribute none\n```\n\n| Flag | What it does | Default |\n| --- | --- | --- |\n| `--url` | Clone URL (repo name → clone dir + mani key) | required |\n| `--product` | Product group | repo name |\n| `--lang` | Language (steers dev.sh scaffold) | auto-detected |\n| `--kind` | Free-form dev-context label (`frontend`, `backend`, `web-app`, `migration`, `generic`…); only `test-suite` is special (QA) | `generic` |\n| `--distribute` | `none` · `firebase` · `custom` | `none` |\n| `--force` | Re-clone + re-seed | — |\n| `-y` | Skip prompts | — |\n\nℹ️ After `add`, the `── CONFIG ──` block in `.claude/workflows/dev-cycle.js` is regenerated from `workspace.config.yaml` for you (the `aiworks config` step) — nothing to paste."},
-          {"label":"sync","md":"Reads every repo in `workspace.config.yaml` and runs `add` for each. Already-set-up repos just report SKIP.\n\n```\nscripts/aiworks sync              # all products\nscripts/aiworks sync feeed-me     # one product\nscripts/aiworks sync --dry-run    # preview, no changes\n```\n\nWorkflow: edit `workspace.config.yaml` first (add a URL under the right product's `repos:`), then run `sync`."},
-          {"label":"remove","md":"Deregisters a repo from `mani.d/`, `workspace.config.yaml`, and the workspace `.gitignore`. Clone stays on disk unless you add `--purge`.\n\n```\nscripts/aiworks remove feeedme-api\nscripts/aiworks remove feeedme-api --purge\nscripts/aiworks remove feeedme-api --purge --force\n```\n\nℹ️ The `REPOS` map in `.claude/workflows/dev-cycle.js` is regenerated from `workspace.config.yaml`, so the repo drops out of the workflow mirror automatically."},
+          {"label":"add","md":"Register + onboard one repo. Clones it, builds the codegraph index, installs agent skill packs, seeds hooks/settings, and scaffolds `CLAUDE.md` + `scripts/dev.sh`. Idempotent.\n\n```\nscripts/aiworks add \\\n  --url git@github.com:your-org/your-api.git \\\n  --product backend \\\n  --lang go \\\n  --kind generic \\\n  --distribute none\n```\n\n| Flag | What it does | Default |\n| --- | --- | --- |\n| `--url` | Clone URL (repo name → clone dir + mani key) | required |\n| `--product` | Product group | repo name |\n| `--lang` | Language (steers dev.sh scaffold) | auto-detected |\n| `--kind` | Free-form dev-context label (`frontend`, `backend`, `web-app`, `migration`, `generic`…); only `test-suite` is special (QA) | `generic` |\n| `--distribute` | `none` · `firebase` · `custom` | `none` |\n| `--force` | Re-clone + re-seed | — |\n| `-y` | Skip prompts | — |\n\nℹ️ After `add`, the `── CONFIG ──` block in `.claude/workflows/dev-cycle.js` is regenerated from `workspace.config.yaml` for you (the `aiworks config` step) — nothing to paste."},
+          {"label":"sync","md":"Reads every repo in `workspace.config.yaml` and runs `add` for each. Already-set-up repos just report SKIP.\n\n```\nscripts/aiworks sync              # all products\nscripts/aiworks sync your-product     # one product\nscripts/aiworks sync --dry-run    # preview, no changes\n```\n\nWorkflow: edit `workspace.config.yaml` first (add a URL under the right product's `repos:`), then run `sync`."},
+          {"label":"remove","md":"Deregisters a repo from `mani.d/`, `workspace.config.yaml`, and the workspace `.gitignore`. Clone stays on disk unless you add `--purge`.\n\n```\nscripts/aiworks remove your-api\nscripts/aiworks remove your-api --purge\nscripts/aiworks remove your-api --purge --force\n```\n\nℹ️ The `REPOS` map in `.claude/workflows/dev-cycle.js` is regenerated from `workspace.config.yaml`, so the repo drops out of the workflow mirror automatically."},
           {"label":"config","md":"Regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js` straight from `workspace.config.yaml` — `TICKET_PREFIX`, `STATUS`, `AUTO_MERGE`, `AUTO_APPROVE_PLAN`, `PLAN_TO_HTML`, and the `REPOS` registry. Workflow scripts can't read the filesystem at runtime, so they keep this in-source copy.\n\n```\nscripts/aiworks config            # rewrite the block from the config\nscripts/aiworks config --dry-run  # print it, don't write\n```\n\n`add` / `remove` / `sync` all run this at the end — call it directly only after hand-editing a non-repo field."}
         ]}
       </script>

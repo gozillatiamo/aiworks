@@ -53,7 +53,11 @@ for this org's ticket-id format, status names, and any read-only fields.
 - **A — File an Improvement from a gate finding** (autonomous; the dev-cycle
   guardian/perf gates call this). You already have the facts — **do NOT ask questions**.
   Default the type to a hardening/polish classification unless it's a clear bug or a new
-  feature. Go straight to compose.
+  feature. **Only MAJOR, nice-to-have findings reach this skill** — minor, mechanical
+  fixes are folded into the originating PR by the gates, not filed. So if the finding
+  handed to you is clearly trivial (a few-line, local, mechanical change with no design /
+  contract / QA scope), don't file it — return `skipped: minor — fold into source PR`
+  instead of creating a ticket. Otherwise go straight to compose.
 - **B — Clarify a request** (interactive; product-owner / user). Detect type → batch
   focused `AskUserQuestion`s (skip anything already known; use a shallow code skim for
   sharper questions) → summarize with `templates.md`. Don't invent — mark gaps

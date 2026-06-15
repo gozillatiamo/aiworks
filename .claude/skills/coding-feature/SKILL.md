@@ -19,7 +19,7 @@ allowed-tools:
     - Bash(dart *)
     - Bash(mkdir *)
     - Bash(xcrun *)
-    - mcp__plugin_figma_figma
+    - mcp__claude_ai_Figma
 model: sonnet[1m]
 effort: high
 ---
@@ -54,7 +54,7 @@ effort: high
 - Apply observability, mandatory motion, and localization per the three guides linked in **Reference** above — observability-sentry, animation, localization. Follow each in full; don't re-derive them here.
 - Run the tests, to ensure the feature is working as expected.
 - Fix bugs if exists. If a new issue surfaces, write a failing test first, then code the fix.
-- Verify the feature is **buildable, installable, and runable**: it builds (`flutter build`), installs, and launches/runs on Android and iOS without crashing. Behavioral and design-fidelity verification (matching the Figma, exercising the UI flows) is **not** done here — it is covered by the `feeed-me/feeedme-appium` E2E automation suite downstream.
+- Verify the feature is **buildable, installable, and runable**: it builds (`flutter build`), installs, and launches/runs on Android and iOS without crashing. Behavioral and design-fidelity verification (matching the Figma, exercising the UI flows) is **not** done here — it is covered by the `your-tests` E2E automation suite downstream.
 
 ## Observations
 - Write your implementation logs to `agent_logs/Noah_developer/<work-key>-<NN>.md` (work-key = the `FM-<n>` ticket) per the **Agent work logs** convention in `CLAUDE.md` — git-ignored, ≤~200 lines/file, sequential.

@@ -81,6 +81,53 @@ vcs_close_pr() {
   vcs_pr_view "$num"
 }
 
+# vcs_upload_media KEY FILE [DRY] -> host one file and print its embeddable markdown line.
+# GitHub has no token-scriptable "attach to the PR body" endpoint (the web drag-and-drop uses
+# a private browser session, unreachable from a token), so we host media as assets on a single
+# dedicated release (tag: $VCS_MEDIA_RELEASE, default "pr-media") and link the download URL.
+# This keeps media OUT of git history (unlike committing it to the branch, which a squash-merge
+# would bake into the repo). Images at a release-download URL render inline in markdown; video
+# shows as a download link — GitHub only inline-plays its own web uploads, so a link is honest.
+# Asset names are namespaced "<KEY>-<file>" and uploaded with --clobber so re-runs overwrite.
+# owner/repo for building a release-download URL: ask gh, falling back to parsing the
+# origin remote (so a --dry-run preview works offline, before auth or a real repo exists).
+_gh_nwo() {
+  local nwo url
+  nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+  [[ -n "$nwo" ]] && { printf '%s' "$nwo"; return 0; }
+  url="$(git remote get-url origin 2>/dev/null || true)"; url="${url%.git}"
+  case "$url" in *github.com[:/]*) printf '%s' "${url#*github.com[:\/]}" ;; *) printf '%s' "$url" ;; esac
+}
+
+vcs_upload_media() {
+  local key="$1" file="$2" dry="${3:-0}"
+  local base; base="$(basename "$file")"
+  local asset; asset="$(vcs_media_asset_name "$key" "$base")"
+  local label; label="$(printf '%s%s' "${key:+$key }" "$base")"
+  local tag="${VCS_MEDIA_RELEASE:-pr-media}"
+  local repo; repo="$(_gh_nwo)"
+  local url="https://github.com/${repo}/releases/download/${tag}/${asset}"
+  if [[ "$dry" -eq 1 ]]; then
+    vcs_media_md "$label" "$url" "$base"; return 0
+  fi
+  [[ -f "$file" ]] || { echo "warn: media file not found: $file" >&2; return 1; }
+  [[ -n "$repo" ]] || { echo "warn: could not resolve owner/repo via gh" >&2; return 1; }
+  # Ensure the media release exists (idempotent); ignore "already exists".
+  gh release view "$tag" >/dev/null 2>&1 \
+    || gh release create "$tag" --title "PR media" \
+         --notes "Auto-hosted media for PR visual results. Managed by scripts/vcs/." >/dev/null 2>&1 || true
+  # gh keys an asset by its on-disk filename, so stage a copy under the namespaced name.
+  local tmp; tmp="$(mktemp -d)"
+  cp "$file" "$tmp/$asset"
+  if gh release upload "$tag" "$tmp/$asset" --clobber >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    vcs_media_md "$label" "$url" "$base"
+  else
+    rm -rf "$tmp"
+    echo "warn: gh release upload failed for $file" >&2; return 1
+  fi
+}
+
 # vcs_merge_pr NUMBER SUBJECT [DRY] -> server-side squash-merge (PR shows Merged), then pr-view.
 vcs_merge_pr() {
   local num="$1" subject="$2" dry="${3:-0}"

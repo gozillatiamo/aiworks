@@ -12,8 +12,9 @@
 #   vcs_pr_comments NUMBER                      — print the PR/MR's comments as plain text
 #   vcs_merge_pr  NUMBER SUBJECT [DRY]          — server-side squash-merge, then print pr-view
 #   vcs_close_pr  NUMBER [DRY]                  — close without merging (branch kept), then pr-view
+#   vcs_upload_media KEY FILE [DRY]             — host one media file, print its embeddable markdown line
 #
-# default-branch is provider-neutral (git), so it lives here.
+# default-branch and the media helpers below are provider-neutral, so they live here.
 #
 # All commands run against the repo in the current working directory.
 
@@ -48,6 +49,40 @@ vcs_default_branch() {
   b="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@' || true)"
   [[ -n "$b" ]] || b="$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p' | head -n1 || true)"
   printf '%s' "${b:-main}"
+}
+
+# ── Media helpers (shared by the providers' vcs_upload_media) ─────────────────────
+# Images render inline in a PR/MR body; everything else (video, zip, log) is linked,
+# because most hosts only inline-play video for their own native web uploads — a link
+# is the honest, always-works fallback. Extension-based, lowercased.
+vcs_is_image() {
+  case "$(printf '%s' "${1##*.}" | tr '[:upper:]' '[:lower:]')" in
+    png|jpg|jpeg|gif|webp|svg|bmp|avif) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# A file is "media" worth attaching if it's an image or a common screen-capture video.
+vcs_is_media() {
+  vcs_is_image "$1" && return 0
+  case "$(printf '%s' "${1##*.}" | tr '[:upper:]' '[:lower:]')" in
+    mp4|mov|webm|m4v|mkv) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Render one embeddable markdown line: image syntax for images, a link otherwise.
+vcs_media_md() {
+  local label="$1" url="$2" name="$3"
+  if vcs_is_image "$name"; then printf '![%s](%s)\n' "$label" "$url"
+  else printf '[%s](%s)\n' "$label" "$url"; fi
+}
+
+# Asset names live in URLs/headers — keep them URL-safe and namespaced by ticket.
+vcs_media_asset_name() {
+  local key="$1" base="$2" name
+  name="$(printf '%s' "$base" | tr ' ' '-' | sed 's/[^A-Za-z0-9._-]//g')"
+  printf '%s%s' "${key:+${key}-}" "$name"
 }
 
 VCS_PROVIDER="${VCS_PROVIDER:-$(vcs_detect_provider)}"

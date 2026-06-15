@@ -23,6 +23,12 @@
 #   notify.enabled                   → const NOTIFY
 #   notify.provider                  → const NOTIFY_PROVIDER
 #   notify.channel                   → const NOTIFY_CHANNEL
+#   design.enabled                   → const DESIGN_ENABLED          (dev-cycle.js AND prd.js)
+#   design.figma_file_key            → const DESIGN_FIGMA_FILE_KEY   (prd.js only)
+#   design.page_naming               → const DESIGN_PAGE_NAMING      (prd.js only)
+#   image_generation.enabled         → const IMAGE_GEN_ENABLED          (prd.js only)
+#   image_generation.quality         → const IMAGE_GEN_QUALITY          (prd.js only)
+#   image_generation.max_per_request → const IMAGE_GEN_MAX_PER_REQUEST  (prd.js only)
 #   branch_model.{feature,fix}_base  → each repo's base.{feature,fix} (kind may override)
 #   products[].repos[]               → const REPOS  (one entry per repo)
 #       url               → the REPOS key (repo name) + path default
@@ -38,9 +44,10 @@
 # Usage:
 #   aiworks config [options]
 #
-#   --config <file>    workspace.config.yaml to read   (default: <workspace>/workspace.config.yaml)
-#   --target <file>    dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/dev-cycle.js)
-#   -n, --dry-run      print the generated block to stdout; do NOT write the target.
+#   --config <file>     workspace.config.yaml to read   (default: <workspace>/workspace.config.yaml)
+#   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/dev-cycle.js)
+#   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/prd.js)
+#   -n, --dry-run      print the generated block(s) to stdout; do NOT write the target(s).
 #   -q, --quiet        only print on change/error (suppress the "in sync" line).
 #   -h, --help         show this help.
 #
@@ -55,12 +62,13 @@ warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────
-WC="" TARGET="" DRY=0 QUIET=0
+WC="" TARGET="" PRD_TARGET="" DRY=0 QUIET=0
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)    WC="${2:-}"; shift 2 ;;
-    --target)    TARGET="${2:-}"; shift 2 ;;
+    --config)     WC="${2:-}"; shift 2 ;;
+    --target)     TARGET="${2:-}"; shift 2 ;;
+    --prd-target) PRD_TARGET="${2:-}"; shift 2 ;;
     -n|--dry-run) DRY=1; shift ;;
     -q|--quiet)  QUIET=1; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -71,8 +79,9 @@ done
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
-[[ -n "$WC" ]]     || WC="$ROOT/workspace.config.yaml"
-[[ -n "$TARGET" ]] || TARGET="$ROOT/.claude/workflows/dev-cycle.js"
+[[ -n "$WC" ]]         || WC="$ROOT/workspace.config.yaml"
+[[ -n "$TARGET" ]]     || TARGET="$ROOT/.claude/workflows/dev-cycle.js"
+[[ -n "$PRD_TARGET" ]] || PRD_TARGET="$ROOT/.claude/workflows/prd.js"
 [[ -f "$WC" ]]     || die "no workspace.config.yaml at $WC — declare your repos under products: first"
 [[ -f "$TARGET" ]] || die "no dev-cycle workflow at $TARGET"
 
@@ -81,6 +90,13 @@ END_RE='<<< AIWORKS:CONFIG END'
 if ! grep -qF "$START_RE" "$TARGET" || ! grep -qF "$END_RE" "$TARGET"; then
   warn "no AIWORKS:CONFIG markers in $(basename "$TARGET") — skipping (add the two marker comments once to enable auto-config)"
   exit 0
+fi
+# prd.js carries its OWN (design-only) AIWORKS:CONFIG block. Optional: regenerate it when
+# present, else skip just prd.js (dev-cycle still gets rewritten).
+PRD_OK=1
+if [[ ! -f "$PRD_TARGET" ]] || ! grep -qF "$START_RE" "$PRD_TARGET" || ! grep -qF "$END_RE" "$PRD_TARGET"; then
+  PRD_OK=
+  [[ -f "$PRD_TARGET" ]] && warn "no AIWORKS:CONFIG markers in $(basename "$PRD_TARGET") — skipping its design CONFIG (add the marker comments once to enable)"
 fi
 
 # ── escape a value for a JS single-quoted string ─────────────────────────────────
@@ -96,6 +112,8 @@ jsbool() { case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
 PREFIX='FM'; AM_RAW='true'; AA_RAW='true'; TH_RAW='false'
 FEATURE_BASE='develop'; FIX_BASE='main'
 NT_RAW='false'; NOTIFY_PROVIDER='slack'; NOTIFY_CHANNEL=''
+DESIGN_EN_RAW='false'; DESIGN_KEY=''; DESIGN_PAGE='{work_key} / {feature}'   # Figma OFF unless design.enabled: true
+IMG_EN_RAW='false'; IMG_QUALITY='balanced'; IMG_MAX='2'   # image-gen OFF unless image_generation.enabled: true
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -110,6 +128,12 @@ while IFS=$'\t' read -r k v; do
     NOTIFY_ENABLED)  NT_RAW="$v" ;;
     NOTIFY_PROVIDER) NOTIFY_PROVIDER="$v" ;;
     NOTIFY_CHANNEL)  NOTIFY_CHANNEL="$v" ;;
+    DESIGN_ENABLED)     DESIGN_EN_RAW="$v" ;;
+    DESIGN_FIGMA_KEY)   DESIGN_KEY="$v" ;;
+    DESIGN_PAGE_NAMING) DESIGN_PAGE="$v" ;;
+    IMG_ENABLED)        IMG_EN_RAW="$v" ;;
+    IMG_QUALITY)        IMG_QUALITY="$v" ;;
+    IMG_MAX)            IMG_MAX="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -130,12 +154,22 @@ done < <(
     sec=="notify"       && /^  enabled:/         { print "NOTIFY_ENABLED\t"  val($0); next }
     sec=="notify"       && /^  provider:/        { print "NOTIFY_PROVIDER\t" val($0); next }
     sec=="notify"       && /^  channel:/         { print "NOTIFY_CHANNEL\t"  val($0); next }
+    sec=="design"       && /^  enabled:/         { print "DESIGN_ENABLED\t"     val($0); next }
+    sec=="design"       && /^  figma_file_key:/  { print "DESIGN_FIGMA_KEY\t"   val($0); next }
+    sec=="design"       && /^  page_naming:/     { print "DESIGN_PAGE_NAMING\t" val($0); next }
+    sec=="image_generation" && /^  enabled:/         { print "IMG_ENABLED\t" val($0); next }
+    sec=="image_generation" && /^  quality:/         { print "IMG_QUALITY\t" val($0); next }
+    sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
 AUTO_APPROVE="$(jsbool "$AA_RAW" true)"
 TO_HTML="$(jsbool "$TH_RAW" false)"
 NOTIFY="$(jsbool "$NT_RAW" false)"
+DESIGN_ENABLED="$(jsbool "$DESIGN_EN_RAW" false)"   # Figma OFF by default — opt in with design.enabled: true
+IMAGE_GEN_ENABLED="$(jsbool "$IMG_EN_RAW" false)"   # image-gen OFF by default — opt in with image_generation.enabled: true
+case "$IMG_QUALITY" in fast|balanced|quality) ;; *) IMG_QUALITY='balanced' ;; esac   # clamp to the valid presets
+[[ "$IMG_MAX" =~ ^[0-9]+$ ]] || IMG_MAX='2'         # numeric budget cap; fall back to 2
 # Fall back to the historical 5-phase lifecycle when the org declared no statuses.
 if [[ -z "$STATUS_PAIRS" ]]; then
   STATUS_PAIRS=$'not_started\tNot started\nin_progress\tIn progress\nready_to_test\tReady to test\ntesting\tTesting\ndone\tDone\n'
@@ -236,56 +270,81 @@ while IFS=$'\t' read -r sk sv; do
   status_body+="  $sk: $(jsq "$sv"),"$'\n'
 done <<< "$STATUS_PAIRS"
 
-# ── 4. assemble the managed block ─────────────────────────────────────────────────
-BODY="const TICKET_PREFIX = $(jsq "$PREFIX")
+# ── 4. assemble the managed blocks ────────────────────────────────────────────────
+# dev-cycle.js carries the full mirror (prefix, flags, statuses, REPOS) + DESIGN_ENABLED
+# (the workspace-wide Figma kill-switch the dev/QA agents honor). prd.js carries ONLY the
+# design block (its design pipeline is the one that authors Figma).
+DEVCYCLE_BODY="const TICKET_PREFIX = $(jsq "$PREFIX")
 const AUTO_MERGE = ${AUTO_MERGE}        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = ${AUTO_APPROVE} // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = ${TO_HTML}     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
 const NOTIFY = ${NOTIFY}        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = $(jsq "$NOTIFY_PROVIDER") // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
 const NOTIFY_CHANNEL = $(jsq "$NOTIFY_CHANNEL")  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
+const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const STATUS = {
 ${status_body}}
 const REPOS = {
 ${repos_body}}
 "
 
+# prd.js design block (the canonical-file behavior the /prd design phase reads).
+PRD_BODY="const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ design phase skipped (no Figma)
+const DESIGN_FIGMA_FILE_KEY = $(jsq "$DESIGN_KEY") // from workspace.config.yaml design.figma_file_key; set ⇒ build into THIS file (new page/feature), never create_new_file; empty ⇒ orphan file + WARN
+const DESIGN_PAGE_NAMING = $(jsq "$DESIGN_PAGE")  // from workspace.config.yaml design.page_naming; tokens {work_key} {feature}
+const IMAGE_GEN_ENABLED = ${IMAGE_GEN_ENABLED}     // from workspace.config.yaml image_generation.enabled; false ⇒ graphic-designer generates no images (assets 'unavailable')
+const IMAGE_GEN_QUALITY = $(jsq "$IMG_QUALITY") // from workspace.config.yaml image_generation.quality (fast|balanced|quality)
+const IMAGE_GEN_MAX_PER_REQUEST = ${IMG_MAX}        // from workspace.config.yaml image_generation.max_per_request; the graphic-designer's per-request budget cap
+"
+
 if [[ "$DRY" -eq 1 ]]; then
-  printf '%s' "$BODY"
+  printf '%s\n%s' "// ── dev-cycle.js ──" "$DEVCYCLE_BODY"
+  [[ -n "$PRD_OK" ]] && printf '\n%s\n%s' "// ── prd.js (design) ──" "$PRD_BODY"
   exit 0
 fi
 
-# ── 5. splice BODY between the markers, validate, commit ──────────────────────────
+# ── 5. splice each BODY between its file's markers, validate, commit ───────────────
 # .js suffix so `node --check` validates the temp exactly as the real workflow is named:
 # the workflow mixes `export` with top-level `return` (the Workflow engine wraps it in an
 # async fn), which node accepts under .js but not under strict-ESM .mjs; an unknown/random
 # extension instead makes node's loader bail with ERR_UNKNOWN_FILE_EXTENSION.
-tmp="$(mktemp -t aiworks-devcycle.XXXXXX)" && mv "$tmp" "$tmp.js" && tmp="$tmp.js" || die "mktemp failed"
-if ! BODY="$BODY" awk -v s="$START_RE" -v e="$END_RE" '
-    index($0,s) { print; printf "%s", ENVIRON["BODY"]; inblk=1; next }
-    index($0,e) { inblk=0 }
-    inblk { next }
-    { print }
-  ' "$TARGET" > "$tmp"; then
-  rm -f "$tmp"; die "failed to rewrite $(basename "$TARGET")"
-fi
-
-# Guard: the spliced file must still carry the END marker (otherwise markers were malformed).
-grep -qF "$END_RE" "$tmp" || { rm -f "$tmp"; die "lost the END marker while rewriting — left $(basename "$TARGET") untouched"; }
-
-# Validate JS if node is around; refuse to install a broken workflow.
-if command -v node >/dev/null 2>&1; then
-  if ! node --check "$tmp" 2>/tmp/aiworks-nodecheck.$$; then
-    printf '%s%s%s\n' "$c_err" "$(cat /tmp/aiworks-nodecheck.$$ 2>/dev/null)" "$c_off" >&2
-    rm -f "$tmp" /tmp/aiworks-nodecheck.$$
-    die "generated CONFIG failed node --check — left $(basename "$TARGET") untouched (this is a bug in aiworks-config.sh)"
+commit_block() {   # <target-file> <body> <in-sync-msg> <changed-msg>
+  local target="$1" body="$2" insync_msg="$3" changed_msg="$4"
+  local base; base="$(basename "$target")"
+  local tmp; tmp="$(mktemp -t aiworks-config.XXXXXX)" && mv "$tmp" "$tmp.js" && tmp="$tmp.js" || die "mktemp failed"
+  if ! BODY="$body" awk -v s="$START_RE" -v e="$END_RE" '
+      index($0,s) { print; printf "%s", ENVIRON["BODY"]; inblk=1; next }
+      index($0,e) { inblk=0 }
+      inblk { next }
+      { print }
+    ' "$target" > "$tmp"; then
+    rm -f "$tmp"; die "failed to rewrite $base"
   fi
-  rm -f /tmp/aiworks-nodecheck.$$
-fi
+  # Guard: the spliced file must still carry the END marker (otherwise markers were malformed).
+  grep -qF "$END_RE" "$tmp" || { rm -f "$tmp"; die "lost the END marker while rewriting — left $base untouched"; }
+  # Validate JS if node is around; refuse to install a broken workflow.
+  if command -v node >/dev/null 2>&1; then
+    if ! node --check "$tmp" 2>/tmp/aiworks-nodecheck.$$; then
+      printf '%s%s%s\n' "$c_err" "$(cat /tmp/aiworks-nodecheck.$$ 2>/dev/null)" "$c_off" >&2
+      rm -f "$tmp" /tmp/aiworks-nodecheck.$$
+      die "generated CONFIG failed node --check — left $base untouched (this is a bug in aiworks-config.sh)"
+    fi
+    rm -f /tmp/aiworks-nodecheck.$$
+  fi
+  if cmp -s "$tmp" "$target"; then
+    rm -f "$tmp"
+    [[ "$QUIET" -eq 1 ]] || ok "$insync_msg"
+  else
+    mv "$tmp" "$target" && ok "$changed_msg"
+  fi
+}
 
-if cmp -s "$tmp" "$TARGET"; then
-  rm -f "$tmp"
-  [[ "$QUIET" -eq 1 ]] || ok "dev-cycle.js CONFIG already in sync with workspace.config.yaml (${repo_count} repo(s))"
-else
-  mv "$tmp" "$TARGET" && ok "regenerated dev-cycle.js CONFIG from workspace.config.yaml (${repo_count} repo(s), prefix ${PREFIX})"
+commit_block "$TARGET" "$DEVCYCLE_BODY" \
+  "dev-cycle.js CONFIG already in sync with workspace.config.yaml (${repo_count} repo(s))" \
+  "regenerated dev-cycle.js CONFIG from workspace.config.yaml (${repo_count} repo(s), prefix ${PREFIX})"
+
+if [[ -n "$PRD_OK" ]]; then
+  commit_block "$PRD_TARGET" "$PRD_BODY" \
+    "prd.js design/image-gen CONFIG already in sync with workspace.config.yaml (Figma ${DESIGN_ENABLED}, image-gen ${IMAGE_GEN_ENABLED})" \
+    "regenerated prd.js design/image-gen CONFIG from workspace.config.yaml (design.enabled=${DESIGN_ENABLED}, image_generation.enabled=${IMAGE_GEN_ENABLED})"
 fi

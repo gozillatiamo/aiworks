@@ -1,6 +1,6 @@
 Bug log — {{ Ticket Number }} ({{ run date }})
 
-{{ One-line summary: which run surfaced these, and the plan they were tested against (agent_logs/<FM>-appium-plan.md). }}
+{{ One-line summary: which run surfaced these, and the plan they were tested against (agent_logs/<FM>-automation-plan.md). }}
 
 <!-- One entry per reproducible APP bug — the automation is correct but the app's observable
      behaviour contradicts the test plan's `Then`. Automation/selector issues are NOT bugs:

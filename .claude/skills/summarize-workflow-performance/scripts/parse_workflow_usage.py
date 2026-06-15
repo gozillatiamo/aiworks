@@ -29,9 +29,21 @@ def parse_ts(s):
         return None
 
 
+def projects_root():
+    return os.path.expanduser("~/.claude/projects")
+
+
+def encode_project_path(path):
+    """Encode a filesystem path the way Claude Code names its project dir under
+    ~/.claude/projects/. It replaces BOTH '/' and '.' with '-' — so a worktree at
+    /Users/me/.superset/worktrees/<id>/x becomes -Users-me--superset-worktrees-<id>-x
+    (note the DOUBLE dash from '/.' → '--'). Replacing only '/' (the old bug) misses
+    the dot and points the scan at a dir that does not exist."""
+    return path.replace("/", "-").replace(".", "-")
+
+
 def default_project_dir():
-    cwd = os.getcwd()
-    return os.path.expanduser(f"~/.claude/projects/{cwd.replace('/', '-')}")
+    return os.path.join(projects_root(), encode_project_path(os.getcwd()))
 
 
 def first_user_text(o):
@@ -119,7 +131,12 @@ def main():
                     help="aggregate EVERY run of this ticket; default scopes to the latest run only")
     args = ap.parse_args()
 
-    pdir = args.project_dir or default_project_dir()
+    # Where to search. A workflow run can write its transcripts under a project dir we
+    # can't predict from cwd — notably when dev-cycle runs inside a git worktree (e.g.
+    # .superset/worktrees/<id>/...), whose encoded project dir differs from the launch
+    # cwd. So by DEFAULT scan the whole projects root recursively and let the (specific)
+    # marker filter below pick out this run. --project-dir narrows the search when given.
+    search_root = args.project_dir or projects_root()
     # e.g.  [dev-cycle FM-9 repo=app role=developer phase=build round=2]
     # repo= is optional so single-repo runs (no repo= in the marker) still parse.
     marker_re = re.compile(
@@ -129,10 +146,18 @@ def main():
     )
     plain = f"[{args.workflow} {args.ticket} "
 
-    # Recursive: workflow agent transcripts live deep under
-    # <pdir>/<session>/subagents/workflows/wf_*/agent-*.jsonl, not at the top level.
+    # Workflow agent transcripts live deep under
+    # <project>/<session>/subagents/workflows/wf_*/agent-*.jsonl. Target that layout
+    # first (fast + precise across every project dir, worktrees included); fall back to
+    # a broad recursive scan for older/other layouts.
+    candidates = glob.glob(
+        os.path.join(search_root, "**", "subagents", "workflows", "wf_*", "*.jsonl"),
+        recursive=True)
+    if not candidates:
+        candidates = glob.glob(os.path.join(search_root, "**", "*.jsonl"), recursive=True)
+    scanned = len(candidates)
     matched = []
-    for path in glob.glob(os.path.join(pdir, "**", "*.jsonl"), recursive=True):
+    for path in candidates:
         try:
             with open(path, encoding="utf-8", errors="ignore") as fh:
                 if plain in fh.read():
@@ -140,7 +165,15 @@ def main():
         except Exception:
             continue
     if not matched:
-        print(f"No '{args.workflow} {args.ticket}' transcripts in {pdir}", file=sys.stderr)
+        # FAIL LOUDLY: say exactly where we looked, how many transcripts we read, and the
+        # marker we searched for — so a genuine no-transcript run is unmistakable instead
+        # of silently producing an empty/absent usage table that reads as "no usage".
+        print(f"No '{args.workflow} {args.ticket}' transcripts found.\n"
+              f"  searched root : {search_root}\n"
+              f"  jsonl scanned : {scanned}\n"
+              f"  marker        : {plain!r}\n"
+              f"  hint          : pass --project-dir <dir> if the run wrote elsewhere.",
+              file=sys.stderr)
         sys.exit(1)
 
     # Scope to ONE run by default. The same ticket can be run through the workflow
@@ -166,8 +199,10 @@ def main():
     rows = [parse_file(f, marker_re) for f in sorted(files)]
     rows = [r for r in rows if r and r["turns"] > 0]
     if not rows:
-        print(f"Matched files but none carried a parseable marker for "
-              f"'{args.workflow} {args.ticket}'", file=sys.stderr)
+        print(f"Matched {len(matched)} file(s) containing '{plain}' (scoped to "
+              f"{len(files)} in the latest run dir) but NONE carried a parseable "
+              f"marker for '{args.workflow} {args.ticket}' (regex: {marker_re.pattern})",
+              file=sys.stderr)
         sys.exit(1)
 
     tot = {k: 0 for k in ("turns", "in", "cacheW", "cacheR", "out", "run")}

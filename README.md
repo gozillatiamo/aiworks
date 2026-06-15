@@ -92,7 +92,7 @@ The whole setup is "fill in one config, then run one command." Here's the full p
 6. **De-brand pass.** Replace the `{{ORG_NAME}}` / `{{PRODUCT_DESCRIPTION}}` placeholders
    in `CLAUDE.md`. The agents and workflows are already provider-agnostic, but a few
    **stack-specific** skills still ship with the reference stack's copy/tooling (a Flutter
-   app + an Appium test-suite repo). Adapt these to your stack:
+   app + an E2E automation test-suite repo). Adapt these to your stack:
    `.claude/skills/{coding-feature,coding-automate,plan-automate}` and the
    `coding-feature/*.md` references. (VCS/tracker wiring needs no further edits.)
 
@@ -116,15 +116,15 @@ does the rest.
 
 ```sh
 scripts/aiworks sync                       # onboard EVERY repo in the config
-scripts/aiworks sync feeed-me --dry-run    # preview one product (runs nothing)
+scripts/aiworks sync your-product --dry-run # preview one product (runs nothing)
 scripts/aiworks sync agent-db              # onboard ONLY one repo (by name)
 scripts/aiworks sync --repo agent-db,paotung-template   # …or several named repos
 
-scripts/aiworks add --url git@github.com:your-org/feeedme-api.git \
+scripts/aiworks add --url git@github.com:your-org/your-api.git \
                     --product backend --lang go --kind generic \
                     --desc "REST API + data layer"             # onboard one repo
-scripts/aiworks remove feeedme-api         # deregister (keeps the clone)
-scripts/aiworks remove feeedme-api --purge # also delete the clone (refuses if dirty/unpushed)
+scripts/aiworks remove your-api         # deregister (keeps the clone)
+scripts/aiworks remove your-api --purge # also delete the clone (refuses if dirty/unpushed)
 
 scripts/aiworks config                     # regen the dev-cycle.js CONFIG from the config
 ```
@@ -144,7 +144,7 @@ safe to re-run after adding a URL. Add `-n` / `--dry-run` to preview the command
 Onboards a single repo from flags **and** writes its entry back into the config. Defaults
 are derived from the URL:
 
-- **clone dir / mani key / config entry** ← the repo name from the URL (e.g. `feeedme-api/`)
+- **clone dir / mani key / config entry** ← the repo name from the URL (e.g. `your-api/`)
 - **`--product`** — its group under `products:` (and the `mani.d/<product>.yaml` file;
   default = the repo name)
 - **`--kind`** — drives the role/gate defaults
@@ -243,6 +243,11 @@ bash -n scripts/vcs/*.sh scripts/tracker/*.sh
 **The candidate is validated *before* merge.** Review and the cross-repo test-suite gate
 both run on the ticket's work branches pre-merge, so a failing candidate never reaches the
 base branch. Merge is the commit gate; distribution ships the *merged* build right after.
+The test-suite gate runs only when the ticket's scope includes the registered test-suite
+repo — needing end-to-end validation pulls that repo into scope (it builds + merges last).
+If the scope flags the gate but omits the repo, the run auto-adds it; if no test-suite repo
+is registered at all, the run ships with a loud warning (recorded in the summary) that the
+requested gate did not run — it never reports an unvalidated run as test-suite-validated.
 
 **Auto-merge** (`vcs.auto_merge`, default `true`) decides whether that merge happens
 automatically. Set it `false` — or override a single repo with

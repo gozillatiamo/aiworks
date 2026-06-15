@@ -60,12 +60,12 @@ Commands:
 Examples:
   # fast path — declare repos under products: in workspace.config.yaml, then:
   aiworks sync                          # onboard every repo in the config
-  aiworks sync feeed-me --dry-run       # preview just the feeed-me product
+  aiworks sync your-product --dry-run   # preview just the your-product product
   aiworks sync agent-db                 # onboard ONLY the agent-db repo (repo-name positional)
   aiworks sync --repo agent-db,paotung-template   # …or several named repos
   # or onboard one repo imperatively (also writes it into the config):
-  aiworks add --url git@github.com:your-org/feeedme-api.git --product backend --lang go
-  aiworks remove feeedme-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
+  aiworks add --url git@github.com:your-org/your-api.git --product backend --lang go
+  aiworks remove your-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
   aiworks remove --all                  # offboard EVERY onboarded repo (config-only; keeps clones)
   aiworks remove --all --purge --force  # …and delete every clone too (force past dirty/unpushed)
   # workspace lifecycle — pass straight through to the .superset hooks:

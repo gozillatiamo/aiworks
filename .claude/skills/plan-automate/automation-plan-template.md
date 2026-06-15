@@ -1,4 +1,4 @@
-Appium automation plan — {{ Ticket Number }}
+Automation plan — {{ Ticket Number }}
 
 {{ One-line summary: what this automates, and the test plan it builds on (agent_logs/<FM>-testcases.md) }}
 
@@ -39,7 +39,7 @@ Appium automation plan — {{ Ticket Number }}
 ## Project wiring & prerequisites
 
 - **Runner:** {{ e.g. run-tests.js runs only test.js today → add tests/ discovery, or import the new spec }}
-- **App under test:** build/install `com.feeedme.feeedme`; caps already in `config/capabilities.js`.
+- **App under test:** build/install the app's `app_id` from `workspace.config.yaml` (the mobile app repo's `app_id` under `products[].repos[]`); caps already in `config/capabilities.js` (must match it).
 - **Test data:** {{ e.g. clean reinstall precondition; any seed/reset needed }}
 
 ## Implementation checklist (in order)

@@ -40,13 +40,13 @@ vcs:
 #                                  is nothing left for a human to review — the notification is skipped).
 # The message is the open PR/MR per repo for the ticket:
 #     Please review, FM-12 Add the vet-visit reminder.
-#     - feeedme-app: https://github.com/your-org/feeedme-app/pull/42
-#     - feeedme-appium: https://github.com/your-org/feeedme-appium/pull/7
+#     - your-app: https://github.com/your-org/your-app/pull/42
+#     - your-tests: https://github.com/your-org/your-tests/pull/7
 # Posting goes through the notify adapter (scripts/notify/), provider-agnostic like vcs/tracker.
 notify:
   enabled: false                   # true → post the review-request when auto_merge is off (see above)
   provider: slack                  # slack (the only provider today)
-  channel: "#feeed-me-reviews"     # the Slack channel the digest is posted to (id or #name). The token/
+  channel: "#code-reviews"         # the Slack channel the digest is posted to (id or #name). The token/
                                    #   webhook live in scripts/notify/.env (seeded by `aiworks sync`).
 
 # ── Issue tracker ──────────────────────────────────────────────────────────────
@@ -88,6 +88,40 @@ planning:
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
 
+# ── Design (governs ALL Figma usage across the workspace) ──────────────────────
+# How the team works with Figma — see docs/agents/figma.md for the full convention.
+design:
+  enabled: false                   # MASTER Figma switch (default OFF). false → NO agent calls Figma:
+                                   #   the /prd design phase is skipped (tickets carry build-ready specs,
+                                   #   no frames) and the dev/QA agents build from the spec instead of a
+                                   #   Figma screenshot. true → the design pipeline runs (planner → assets
+                                   #   → designer) and needs a connected Figma MCP. Turn this ON to design.
+  figma_file_key: ""               # the org's ONE canonical design file — the key in
+                                   #   figma.com/design/<KEY>/…. Set → every /prd run builds its screens
+                                   #   as a NEW PAGE inside THIS file, reusing its variables/components
+                                   #   (zero orphan files); tickets link node URLs within it. Empty → each
+                                   #   run creates a NEW (orphan) file and the run WARNS how to configure
+                                   #   this. Only consulted when enabled: true.
+  page_naming: "{work_key} / {feature}"   # page-name template inside the canonical file. Tokens:
+                                   #   {work_key} (e.g. phase-2) and {feature}. The default gives one page
+                                   #   per feature so parallel designers don't collide; use "{work_key}"
+                                   #   for a single shared page per run.
+
+# ── Image generation (the graphic-designer's asset pipeline; feeds the design phase) ──
+# How Fiona (graphic-designer) makes assets via the mcp-image server — see
+# docs/agents/image-generation.md for setup (the GEMINI_API_KEY lives in the git-ignored
+# .claude/settings.local.json, never here).
+image_generation:
+  enabled: false                   # MASTER switch for mcp-image generation (default OFF). false →
+                                   #   the graphic-designer generates NO images (returns every asset
+                                   #   'unavailable'; the design phase stays specs/placeholder-only).
+                                   #   true → real assets via mcp-image, which needs GEMINI_API_KEY.
+                                   #   `aiworks sync` only wires up the mcp-image server when this is true.
+  quality: balanced                # fast | balanced | quality → the mcp-image IMAGE_QUALITY preset
+                                   #   (seeded into .claude/settings.local.json env by `aiworks sync`).
+  max_per_request: 2               # budget cap: the MOST generations the graphic-designer fires per
+                                   #   request (keeps Gemini spend bounded). Raise only when needed.
+
 # ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
 # A product groups the repos that ship together. Each product is ONE
 # mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit
@@ -100,6 +134,10 @@ planning:
 #                but recommended. Flows verbatim into the generated mani.d/<product>.yaml `desc:`
 #                (what `mani list projects` shows). Omitted → defaults to "The <repo-name> repo.".
 #                (`description:` is accepted as an alias.)
+#   app_id     → MOBILE APP REPOS ONLY — the application / bundle id of the app this repo builds
+#                (Android applicationId / iOS bundle identifier, e.g. com.acme.app). The QA /
+#                automation skills read it from here as the app-under-test id, and the test-suite repo's
+#                config/capabilities.js should match it. Omit for non-mobile repos.
 #   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
 #                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
 #                It selects one of two role/gate ARCHETYPES:
@@ -119,6 +157,7 @@ products:
         kind: frontend                              # any dev-context label; test-suite = QA archetype
         desc: The mobile app — offline-first, UI only.   # one-line repo responsibility (anatomy at a glance)
         lang: dart                                  # the TECH lives here; else auto-detected from the clone
+        app_id: com.example.app                     # mobile apps only — the app/bundle id the QA suite drives (matches config/capabilities.js)
         distribute: firebase                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
         # path: your-app                            # optional — clone dir (default: the repo name)
@@ -129,4 +168,8 @@ products:
         desc: Android/iOS E2E UI tests for the app.      # one-line repo responsibility
 
 # Repo dependency edges (build/merge order) are decided per-ticket by the scoping
-# stage; a typical chain is backend → app → test-suite.
+# stage; a typical chain is backend → app → test-suite. When a ticket needs end-to-end
+# validation the scoping stage pulls the test-suite repo INTO scope (last, depends_on the
+# app/service repos) — that is what makes the cross-repo test-suite (QA) gate run. Flagging
+# the gate without scoping that repo does nothing, so the dev-cycle backstops it by
+# auto-adding the registered test-suite repo when the scope flags the gate but omits it.

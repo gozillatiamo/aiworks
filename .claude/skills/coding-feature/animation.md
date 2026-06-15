@@ -1,6 +1,6 @@
 # Motion & Animation (mandatory)
 
-Motion is a core part of the "Feeed me" brand, not a finishing touch. **Nothing ships static.** Every page, every action, every transition, and every crucial branding element must be animated. A screen with no motion is treated as an incomplete feature.
+Motion is a core part of the app's brand, not a finishing touch. **Nothing ships static.** Every page, every action, every transition, and every crucial branding element must be animated. A screen with no motion is treated as an incomplete feature.
 
 ## The rule
 
@@ -48,4 +48,4 @@ Centralize durations and curves in `core/` (e.g. `core/theme`) and reference the
 - [ ] Any logo/icon/mascot on the screen is animated (entrance + interaction).
 - [ ] Durations/curves pulled from `core/` motion tokens — no magic numbers.
 - [ ] Reduced-motion path verified; controllers disposed; no jank.
-- [ ] Builds and runs on Android **and** iOS without crashing (animations wired per spec; live 60fps verification is covered by the performance gate / the appium E2E suite).
+- [ ] Builds and runs on Android **and** iOS without crashing (animations wired per spec; live 60fps verification is covered by the performance gate / the E2E automation suite).

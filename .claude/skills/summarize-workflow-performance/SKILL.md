@@ -22,7 +22,7 @@ python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usa
 
 - `<ticket>` — the work-key the run was launched with (e.g. `FM-9`). The script finds every transcript whose **first user message** carries the `[<workflow> <ticket> role=…]` marker.
 - `--workflow` — the workflow name in the marker (default `dev-cycle`). Set this if you tag another workflow with the same `[<name> <ticket> role=…]` convention.
-- `--project-dir` — the `~/.claude/projects/<encoded-cwd>` dir to scan. Defaults to the encoding of the current working directory (`/foo/bar` → `-foo-bar`).
+- `--project-dir` — narrow the scan to one `~/.claude/projects/<encoded>` dir. **By default the parser scans the whole projects root** (`~/.claude/projects`) recursively and filters by the run's marker, so it finds the transcripts even when the run wrote them under a project dir that doesn't match the current cwd — notably a **git-worktree run** (e.g. `dev-cycle` inside `.superset/worktrees/<id>/…`), whose encoded dir differs from the launch cwd. (Claude Code encodes a project path by replacing both `/` and `.` with `-`, so `/Users/me/.superset/x` → `-Users-me--superset-x`.) On zero matches the parser fails loudly with the root scanned, the count of transcripts read, and the marker — never an empty/absent table.
 - `--csv` — emit raw CSV instead of the paste-ready Markdown table.
 - **Default output is a paste-ready Markdown table** — a caveat line + one row per `role#round` (`Turns | Input | Cache-write | Cache-read | Output | Run | Alive`), ranked by Run spend, a bold **RUN TOTAL** row, and the run wall-clock. Drop it straight into the run-summary file.
 

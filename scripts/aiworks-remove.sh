@@ -21,7 +21,7 @@
 #   aiworks remove --all  [--purge] [--force] [-y]      # offboard EVERY onboarded repo
 #   aiworks remove all    [--purge] [--force] [-y]      # …same as --all
 #
-#   <repo>        Repo id / dir name as onboarded (the mani key, e.g. feeedme-api).
+#   <repo>        Repo id / dir name as onboarded (the mani key, e.g. your-api).
 #   --all, all    Offboard every repo declared in workspace.config.yaml products[].repos[]
 #                 / mani.d/*.yaml (the union, de-duplicated). Mutually exclusive with <repo>.
 #   --purge       Also delete the cloned working tree (<repo>/). Refuses on a dirty or

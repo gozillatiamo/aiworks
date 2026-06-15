@@ -1,19 +1,19 @@
 ---
 name: report-test-results
-description: Gather the Appium run results for a ticket and report them on the ticket as a concise, human-readable summary. Reads the run logs (logs/test-<platform>.log via `npm run why`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-scenario results table tied to the plan to agent_logs/<KEY>-report.md and posts it with scripts/tracker/add-ticket-comment.sh. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
+description: Gather the automation run results for a ticket and report them on the ticket as a concise, human-readable summary. Reads the run logs (logs/test-<platform>.log via `npm run why`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-scenario results table tied to the plan to agent_logs/<KEY>-report.md and posts it with scripts/tracker/add-ticket-comment.sh. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---
 
 # Report test results
 
-Turn a finished Appium run into a short, readable verdict on the ticket — a results table a non-engineer can read, tied scenario-by-scenario to the test plan. **Report only — never run `npm test` or write test code.** Build the report from artifacts that already exist (the run already happened in `coding-automate`), then post it with `add-ticket-comment.sh`. If the suite passed or failed, report **the same way** — same table, same structure; a failure just fills in the failure rows.
+Turn a finished automation run into a short, readable verdict on the ticket — a results table a non-engineer can read, tied scenario-by-scenario to the test plan. **Report only — never run `npm test` or write test code.** Build the report from artifacts that already exist (the run already happened in `coding-automate`), then post it with `add-ticket-comment.sh`. If the suite passed or failed, report **the same way** — same table, same structure; a failure just fills in the failure rows.
 
 ## 1. Resolve the ticket and gather the inputs
 
 - Resolve the ticket: `$ticket` (a key, e.g. `FM-9`/`OFB-123`) given → use it; already in context → reuse it; neither → ask for the key.
 - **Test plan — the row source / reference:** read **`agent_logs/<FM>-testcases.md`**. Its BDD scenarios are the rows of the results table and define what each scenario *should* do (its `Then`). If it says **"Nothing to test"**, there are no results to report — say so and stop. Keep any **Regressions** list for the coverage note.
-- **Coverage context:** read **`agent_logs/<FM>-appium-plan.md`** if present, to know which scenarios were **Automatable / Partial / Manual-only** — so an un-run scenario is reported as *not automated*, not silently dropped or counted as a pass.
+- **Coverage context:** read **`agent_logs/<FM>-automation-plan.md`** if present, to know which scenarios were **Automatable / Partial / Manual-only** — so an un-run scenario is reported as *not automated*, not silently dropped or counted as a pass.
 - **Bug details:** read **`agent_logs/<FM>-bugs.md`** if present — the reproducible app bugs `coding-automate` logged. These populate the failure rows and the Failures section.
 
 ## 2. Determine the results — `npm run why`

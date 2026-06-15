@@ -2,7 +2,7 @@
 
 The doc should *feel* like it came from the project it documents. A FinTech repo
 gets deep, trustworthy blues; a kids' app gets playful brights; a pet-health app
-(FeeedMe) gets warm, calm greens/teals. The reader should sense the brand before
+gets warm, calm greens/teals. The reader should sense the brand before
 reading a word. Plain black text on white is a failure state — always derive or
 generate a real palette.
 
@@ -26,9 +26,9 @@ text/border**, and any **semantic** colours (success/warning/danger). Note the
 **font** family if the project declares one, and the overall **vibe** (rounded vs
 sharp, dense vs airy, serious vs playful).
 
-For this workspace specifically: Flutter app theme lives under `feeedme-app`
-(`codegraph explore … -p feeedme-app`, or read `lib/**/theme*.dart`). FeeedMe is
-pet healthcare — expect warm, caring tones, not corporate grey.
+For a Flutter app in this workspace: the app theme usually lives in the app repo
+(`codegraph explore … -p <app-repo>`, or read `lib/**/theme*.dart`). Match the
+product's actual vibe — don't default to corporate grey.
 
 ## Step 2 — map detected values onto the template tokens
 

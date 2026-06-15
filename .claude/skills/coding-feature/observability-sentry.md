@@ -1,6 +1,6 @@
 # Observability with Sentry (logging · tracing · metrics)
 
-How "Feeed me" implements logging, tracing, and error/performance monitoring on Android + iOS. **Sentry is the single observability backend** — do not introduce a second one. Apply this whenever you add or modify a feature.
+How the app implements logging, tracing, and error/performance monitoring on Android + iOS. **Sentry is the single observability backend** — do not introduce a second one. Apply this whenever you add or modify a feature.
 
 > SDK moves fast — verify option names against https://docs.sentry.io/platforms/dart/guides/flutter/ before relying on anything here. Verified against `sentry_flutter` **9.21.0** (latest in the 9.x line).
 
@@ -42,7 +42,7 @@ Future<void> main() async {
       options.environment = kReleaseMode
           ? 'production'
           : (kProfileMode ? 'profile' : 'development');
-      // e.g. "feeedme@1.2.0+34" — pass via --dart-define at build time.
+      // e.g. "your-app@1.2.0+34" — pass via --dart-define at build time.
       options.release = const String.fromEnvironment('APP_RELEASE');
 
       // §4 Structured logs -> Sentry, and route dart:logging records in too.
@@ -139,7 +139,7 @@ Two complementary mechanisms, both enabled in §2:
 ## 6. Config conventions
 
 - **Environment** from build mode (see §2): `production` / `profile` / `development`.
-- **Release** via `--dart-define=APP_RELEASE=feeedme@<version>+<build>` so issues group by release.
+- **Release** via `--dart-define=APP_RELEASE=your-app@<version>+<build>` so issues group by release.
 - **Consistent tags / context** set once after init:
   ```dart
   Sentry.configureScope((scope) {
@@ -185,4 +185,4 @@ flutter build ipa   --release --obfuscate --split-debug-info=build/debug-info
 - [ ] `replay.onErrorSampleRate` set; replay masking left at defaults.
 - [ ] `sendDefaultPii = false`; PII scrubbed in `beforeSend`; replay/PII gated on EU consent.
 - [ ] Release builds use `--obfuscate --split-debug-info`; CI uploads symbols.
-- [ ] Builds and runs on Android **and** iOS; Sentry wiring is in place (error → Sentry, a log appears, a transaction is recorded). Runtime confirmation of this behavior is covered by the appium E2E suite / Sentry dashboards, not driven here.
+- [ ] Builds and runs on Android **and** iOS; Sentry wiring is in place (error → Sentry, a log appears, a transaction is recorded). Runtime confirmation of this behavior is covered by the E2E automation suite / Sentry dashboards, not driven here.

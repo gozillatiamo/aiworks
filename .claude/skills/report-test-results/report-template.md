@@ -26,5 +26,5 @@ Legend: ✅ pass · ❌ fail · — not automated (manual-only / partial)
 ## Coverage
 
 - **Automated:** {{ n }}/{{ total }} planned scenarios.
-- **Not automated:** {{ scenario(s) marked Manual-only/Partial in the appium plan + one-line reason, or "none" }}.
+- **Not automated:** {{ scenario(s) marked Manual-only/Partial in the automation plan + one-line reason, or "none" }}.
 - **Regressions:** {{ status of the test plan's regression checks, or "none requested" }}.

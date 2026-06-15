@@ -1,0 +1,44 @@
+{
+  "skill_name": "open-pr",
+  "notes": "The eval runs the skill end-to-end via open-pr.sh --dry-run because the sandbox has no reachable git remote/auth. The verifiable artifact is the assembled PR/MR body (saved to outputs/pr-body.txt), where the '## Visual results' attachment behavior is observable. Baseline = the pre-change skill+adapter snapshot.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "github-media",
+      "prompt": "QA approved FM-9 (the add-pet profile screen). I'm on the feature/FM-9 branch in this repo, everything's committed. Open the PR to develop. I dropped the simulator screenshots and a screen recording of the flow in agent_logs/FM-9-media/ — get them onto the PR so the reviewer can see it without checking out the branch. The remote isn't reachable from here, so use open-pr.sh's --dry-run and save its full output to outputs/pr-body.txt.",
+      "files": [],
+      "assertions": [
+        {"text": "PR body includes a '## Visual results' section"},
+        {"text": "Both screenshots are embedded as inline images (![...]) not bare links"},
+        {"text": "The .mp4 recording is a link, not an ![] image embed"},
+        {"text": "Image/video URLs point at the pr-media release download path"},
+        {"text": "Asset names are namespaced with the FM-9 ticket key"},
+        {"text": "The decoy notes.txt is NOT attached"},
+        {"text": "Title is Conventional Commits feat(FM-9): ... and base is develop"}
+      ]
+    },
+    {
+      "id": 1,
+      "name": "gitlab-media",
+      "prompt": "FM-9 passed QA. This repo's origin is GitLab. I'm on feature/FM-9 with the work committed; open the MR to develop. There are screenshots and a demo video in agent_logs/FM-9-media/ — attach them to the MR so reviewers see the new screen. The remote isn't reachable here, so use open-pr.sh --dry-run and save the full output to outputs/pr-body.txt.",
+      "files": [],
+      "assertions": [
+        {"text": "MR body includes a '## Visual results' section"},
+        {"text": "Media is embedded using GitLab's /uploads/ path (not a github releases URL)"},
+        {"text": "Screenshots are inline images (![...]); the video is a link"},
+        {"text": "Title is feat(FM-9): ... and base is develop"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "no-media",
+      "prompt": "FM-3 is approved — it's a pure refactor of the meal-calc logic, no UI change. I'm on feature/FM-3, committed. Open the PR to develop. The remote isn't reachable here, so use open-pr.sh --dry-run and save the full output to outputs/pr-body.txt.",
+      "files": [],
+      "assertions": [
+        {"text": "PR body does NOT contain a '## Visual results' section"},
+        {"text": "No fabricated/placeholder screenshots are invented"},
+        {"text": "The PR is still opened normally with title feat(FM-3): ... and base develop"}
+      ]
+    }
+  ]
+}

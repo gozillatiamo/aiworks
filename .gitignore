@@ -21,6 +21,14 @@ agent-paotung-cypress/
 # logs
 agent_logs/
 
+# skill-creator scratch workspaces (eval sandboxes, skill snapshots, benchmark runs).
+# Reproducible iteration artifacts — never committed to the workspace meta-repo.
+.claude/skills/*-workspace/
+
+# settings.local.json backup written by `aiworks sync` when it preps the image-gen config
+# (settings.local.json itself is ignored via the global gitignore).
+.claude/settings.local.json.bak
+
 # product repo clones (cloned by aiworks; not committed to the workspace meta-repo)
 backoffice/
 ofb-backoffice-cypress/
