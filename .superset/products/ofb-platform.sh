@@ -14,7 +14,7 @@
 
 DB_REPOS=(agent-db)
 BACKEND_REPOS=(agent-webservice)
-FRONTEND_REPOS=(paotung-template)
+FRONTEND_REPOS=(paotung-template backoffice)
 
 # ── 1. databases + migrations ─────────────────────────────────────────────────
 run_databases() {
@@ -49,10 +49,14 @@ run_frontends() {
   log "paotung-template: starting nginx (docker compose up -d nginx)…"
   (cd paotung-template && docker compose up -d nginx)
   start_node_app paotung-template dev 3004
+
+  # backoffice: next dev on :3001 (npm), no docker.
+  start_node_app backoffice dev 3001
 }
 
 # ── teardown (reverse order) ──────────────────────────────────────────────────
 down_frontends() {
+  stop_node_app backoffice 3001
   stop_node_app paotung-template 3004
   log "paotung-template: docker compose down…"
   (cd paotung-template && docker compose down --remove-orphans) || true
