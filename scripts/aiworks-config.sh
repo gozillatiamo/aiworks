@@ -39,7 +39,10 @@
 #
 # Idempotent and safe: it replaces only the region between the AIWORKS:CONFIG markers in
 # dev-cycle.js, validates the result with `node --check` (when node is present), and restores
-# the file untouched if anything goes wrong.
+# the file untouched on a genuine syntax error. A node --check KILLED BY A SIGNAL (exit >=128,
+# e.g. SIGSEGV=139 / SIGTRAP=133 / SIGABRT=134 under memory pressure or an EDR/security agent)
+# is a transient, machine-side CRASH — NOT a CONFIG defect: validation is skipped with a clear
+# warning and the regenerated block is still installed (so the mirror can't silently drift).
 #
 # Usage:
 #   aiworks config [options]
@@ -308,6 +311,11 @@ fi
 # the workflow mixes `export` with top-level `return` (the Workflow engine wraps it in an
 # async fn), which node accepts under .js but not under strict-ESM .mjs; an unknown/random
 # extension instead makes node's loader bail with ERR_UNKNOWN_FILE_EXTENSION.
+# node --check's EXIT STATUS is then CLASSIFIED, never just truthy-tested: 0 = valid; 1..127 =
+# a genuine syntax error (show stderr + abort — the CONFIG really is broken); >=128 = node was
+# KILLED BY A SIGNAL (sig = status-128) and CRASHED before it could judge the file (transient:
+# memory pressure / a security agent), so we never blame the CONFIG, warn + skip validation,
+# and still install the mechanically-generated block.
 commit_block() {   # <target-file> <body> <in-sync-msg> <changed-msg>
   local target="$1" body="$2" insync_msg="$3" changed_msg="$4"
   local base; base="$(basename "$target")"
@@ -322,14 +330,26 @@ commit_block() {   # <target-file> <body> <in-sync-msg> <changed-msg>
   fi
   # Guard: the spliced file must still carry the END marker (otherwise markers were malformed).
   grep -qF "$END_RE" "$tmp" || { rm -f "$tmp"; die "lost the END marker while rewriting — left $base untouched"; }
-  # Validate JS if node is around; refuse to install a broken workflow.
+  # Validate JS if node is around; refuse to install a workflow with a REAL syntax error — but
+  # branch on node's EXIT STATUS, never a bare truthiness test (see the note above the function):
+  #   exit 0     → valid; fall through and install.
+  #   exit >=128 → node was KILLED BY A SIGNAL (sig = status-128); it CRASHED, it did NOT find a
+  #                syntax error. Don't blame the CONFIG or this script: warn, skip validation,
+  #                and still install the (mechanically-generated) block so the mirror can't drift.
+  #   exit 1..127→ a genuine syntax error: show the captured stderr and abort, $base untouched.
   if command -v node >/dev/null 2>&1; then
-    if ! node --check "$tmp" 2>/tmp/aiworks-nodecheck.$$; then
+    local nrc
+    node --check "$tmp" 2>/tmp/aiworks-nodecheck.$$; nrc=$?
+    if [[ "$nrc" -ge 128 ]]; then
+      warn "node --check was killed by signal $((nrc - 128)) (likely memory pressure or a security agent on this machine) — could not validate $base; proceeding without validation (the block is mechanically generated) — re-run 'aiworks config' to retry the check"
+      rm -f /tmp/aiworks-nodecheck.$$
+    elif [[ "$nrc" -ne 0 ]]; then
       printf '%s%s%s\n' "$c_err" "$(cat /tmp/aiworks-nodecheck.$$ 2>/dev/null)" "$c_off" >&2
       rm -f "$tmp" /tmp/aiworks-nodecheck.$$
       die "generated CONFIG failed node --check — left $base untouched (this is a bug in aiworks-config.sh)"
+    else
+      rm -f /tmp/aiworks-nodecheck.$$
     fi
-    rm -f /tmp/aiworks-nodecheck.$$
   fi
   if cmp -s "$tmp" "$target"; then
     rm -f "$tmp"
