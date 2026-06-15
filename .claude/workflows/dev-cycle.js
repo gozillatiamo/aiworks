@@ -58,9 +58,9 @@ const TICKET_PREFIX = 'OFB'
 const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = false // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
 const PLAN_TO_HTML = true     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
-const NOTIFY = false        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
+const NOTIFY = true        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
-const NOTIFY_CHANNEL = '' // from workspace.config.yaml notify.channel; the chat channel the digest goes to
+const NOTIFY_CHANNEL = '#dev-oneforbet'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const STATUS = {
   to_do: 'TO DO',
   in_progress: 'IN PROGRESS',
@@ -85,7 +85,7 @@ const REPOS = {
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
-    green: 'tests via stroybook passed successfully',
+    green: 'tests via stroybook and lint passed successfully',
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
@@ -104,6 +104,24 @@ const REPOS = {
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
     green: 'tests via cypress passed successfully',
+    testSuite: true,
+    distribute: null,
+  },
+  'backoffice': {
+    path: 'backoffice', kind: 'web-app',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'tests via stroybook and lint passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
+  'ofb-backoffice-cypress': {
+    path: 'ofb-backoffice-cypress', kind: 'test-suite',
+    base: { feature: 'main', fix: 'main' },
+    plan: 'qa-planner', build: 'qa-runner', review: null,
+    guard: false, perf: false,
+    green: 'tests via cypress and newman passed successfully',
     testSuite: true,
     distribute: null,
   },

@@ -1,5 +1,15 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  ofb-backoffice-cypress:
+    desc: The cross-repo QA suite for the backoffice repo. It's contains the E2E UI tests for the backoffice. Including the Newman API tests for the platform.
+    url: git@gitlab.com:bluepicode/qa/ofb-backoffice-cypress.git
+    path: ../ofb-backoffice-cypress
+    tags: [ofb-platform, cypress, newman ]
+  backoffice:
+    desc: The backoffice CRM for Admins a Agents to manage the platform. Under the concept of Agency and sites with different theme and packages. currently it's gently convert into Bullet Proof React pattern.
+    url: git@gitlab.com:bluepicode/ofb/backoffice.git
+    path: ../backoffice
+    tags: [ofb-platform, next.js ]
   agent-webservice:
     desc: The agent-webservice repo.
     url: git@gitlab.com:bluepicode/ofb/agent-webservice.git

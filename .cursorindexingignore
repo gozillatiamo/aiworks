@@ -1,0 +1,7 @@
+# Re-include repos the root .gitignore hides, so Cursor can index + search them.
+!agent-db/
+!paotung-template/
+!agent-webservice/
+!agent-paotung-cypress/
+!backoffice/
+!ofb-backoffice-cypress/

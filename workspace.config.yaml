@@ -134,14 +134,14 @@ products:
         lang: cypress
         green: "tests via cypress passed successfully"
 
-      - url: git@gitlab.com:bluepicode/ofb/backoffice.git 
+      - url: git@gitlab.com:bluepicode/ofb/backoffice.git
         kind: web-app 
         desc: The backoffice CRM for Admins a Agents to manage the platform. Under the concept of Agency and sites with different theme and packages. currently it's gently convert into Bullet Proof React pattern.  # one-line repo responsibility (anatomy at a glance)
         lang: next.js 
         green: "tests via stroybook and lint passed successfully"
         guardian_focus: "secrets, data-protection"
 
-      - url: git@gitlab.com:bluepicode/qa/ofb-backoffice-cypress.git 
+      - url: git@gitlab.com:bluepicode/qa/ofb-backoffice-cypress.git
         kind: test-suite 
         desc: The cross-repo QA suite for the backoffice repo. It's contains the E2E UI tests for the backoffice. Including the Newman API tests for the platform.  # one-line repo responsibility (anatomy at a glance)
         lang: cypress, newman 

@@ -1,4 +1,14 @@
 {
-    "git.autoRepositoryDetection": true,
-    "git.repositoryScanMaxDepth": 3
+  "git.autoRepositoryDetection": true,
+  "git.repositoryScanMaxDepth": 3,
+  "search.useIgnoreFiles": false,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/agent_logs": true,
+    "**/.codegraph": true,
+    "**/.aiworks": true,
+    "**/.git": true,
+    "**/.env": true,
+    "agent-webservice/target": true
+  }
 }
