@@ -23,23 +23,39 @@ themes:
         rows: true
   
 tasks:
+  branchs:
+    desc: show current branch for all repos
+    spec: custom
+    target: all
+    cmd: git rev-parse --abbrev-ref HEAD
+
   git-status:
     desc: show working tree status
     spec: custom
     target: all
     cmd: git status
 
-  update-repos:
-    desc: pull latest for all repos
+  develop:
+    desc: checkout develop for all repos
+    spec: custom
     target: all
     cmd: |
-      current=$(git rev-parse --abbrev-ref HEAD)
-      if [[ -n $(git status -s) ]]; then
-        git fetch origin $branch
-        echo "FETCHED (dirty working tree on $current)"
-      elif [[ "$$current" != "$branch" ]]; then
-        git fetch origin $branch
-        echo "FETCHED (on branch $current, not $branch)"
-      else
-        git pull --rebase origin $branch
+      if [[ -n $(git status --porcelain) ]]; then
+        echo "⚠️ ⚠️ ⚠️  DIRTY WORKING TREE — SKIPPED CHECKOUT on $(git rev-parse --abbrev-ref HEAD)"
+        echo "⚠️  commit or stash your changes, then re-run 'mani run checkout-develop'"
+        exit 1
       fi
+      git checkout develop
+
+  pulls:
+    desc: fetch and pull latest for all repos
+    spec: custom
+    target: all
+    cmd: |
+      git fetch --all --prune
+      if [[ -n $(git status --porcelain) ]]; then
+        echo "⚠️ ⚠️ ⚠️  DIRTY WORKING TREE — SKIPPED PULL on $(git rev-parse --abbrev-ref HEAD)"
+        echo "⚠️  commit or stash your changes, then re-run 'mani run pulls'"
+        exit 1
+      fi
+      git pull --rebase --stat
