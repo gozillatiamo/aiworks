@@ -7,6 +7,12 @@
 #   • `scripts/aiworks sync` reads `products:` (the repo URLs) and sets EVERYTHING up —
 #     generates mani.d/<product>.yaml, clones each repo, builds the codegraph index,
 #     installs the skill packs, seeds hooks, scaffolds CLAUDE.md + scripts/dev.sh;
+#   • it ALSO generates a multi-root `<workspace-basename>.code-workspace` from `products:` —
+#     one folder root per repo (+ the meta-repo as the first root) — so VS Code / Cursor show
+#     EACH repo as its own Source Control panel (a gitignored clone is otherwise skipped by the
+#     folder-open git auto-detect). Open it with:  cursor <workspace>.code-workspace
+#     It is committed with the meta-repo (like mani.d/) and re-generated on every sync/add/remove;
+#     only its `folders` array is regenerated — any `settings` you add to it survive;
 #   • the adapters read their slice from scripts/{vcs,tracker}/.env;
 #   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
 #     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at

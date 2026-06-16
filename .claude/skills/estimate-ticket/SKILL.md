@@ -1,6 +1,6 @@
 ---
 name: estimate-ticket
-description: Estimate and set story points on a ticket based on its effort. Calibrates against 5–10 recently Done tickets from this board first (so a point means what it means HERE), then writes the estimate onto the target ticket — the effort property plus a comment splitting Developer points and QA points with the comparables that justify them. Goes through the tracker adapter (scripts/tracker/), provider-agnostic. Use whenever a ticket needs sizing, pointing, or estimation — the product-owner runs it right after /clarifying-ticket clarifies a ticket, and any user asking to "size", "point", or "estimate" a <KEY> ticket lands here too.
+description: Estimate and set story points on a ticket based on its effort. Calibrates against 5–10 recently Done tickets from this board first (so a point means what it means HERE), then writes the estimate onto the target ticket — the Developer-points and QA-points are written into the tracker's dedicated point FIELDS (not just a comment), plus the overall effort property, plus a comment carrying the comparables and reasoning that justify them. Goes through the tracker adapter (scripts/tracker/), provider-agnostic. Use whenever a ticket needs sizing, pointing, or estimation — the product-owner runs it right after /clarifying-ticket clarifies a ticket, and any user asking to "size", "point", or "estimate" a <KEY> ticket lands here too.
 argument-hint: "<KEY> (e.g. FM-12)"
 allowed-tools:
   - Bash(scripts/tracker/*)
@@ -28,15 +28,24 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
   find-tickets.sh         [--query <text>] [--type <name>] [--open] [--limit n] [--json]
   get-ticket-details.sh   <ref>            # title + props (incl. effort) + body
   get-ticket-comments.sh  <ref> [--deep]   # prior estimation notes live here
-  upsert-ticket-details.sh <ref> --effort <value> [--dry-run]
+  upsert-ticket-details.sh <ref> --effort <value> --dev-points <n> --qa-points <n> [--dry-run]
   add-ticket-comment.sh   <ref> "text"
 ```
 
-> **One effort field, two numbers.** The adapter exposes a single `--effort` property
-> (Notion "Effort level"; Jira `JIRA_EFFORT_FIELD`). So the **property** carries the
-> overall size (the board sorts/filters on it), and the **Dev/QA split lives in a
-> structured estimation comment** (step 5). Never write the split into the ticket body —
-> the body is the spec, owned by `/clarifying-ticket`, and this skill must not touch it.
+> **The numbers go in fields; only the reasoning goes in the comment.** The Dev and QA
+> points are first-class tracker fields — write them with `--dev-points` / `--qa-points`
+> (Notion "Developer Points" / "QA Points" number properties; Jira
+> `JIRA_DEV_POINTS_FIELD` / `JIRA_QA_POINTS_FIELD`). **Never leave the split living only
+> in a comment** — the board sorts, sums and reports on the fields, so a point a human
+> can't filter on is half a point. `--effort` still carries the overall size (Notion
+> "Effort level"; Jira `JIRA_EFFORT_FIELD`). The estimation **comment** (step 5) then
+> carries only what no field can hold: the comparables, the per-side drivers, the
+> assumptions and the confidence. Never write any of this into the ticket body — the body
+> is the spec, owned by `/clarifying-ticket`, and this skill must not touch it.
+>
+> If the adapter's `Changed:` line shows it did **not** write the point fields (a provider
+> with no point fields configured — e.g. Jira without `JIRA_*_POINTS_FIELD`), say so in
+> the output's `note:` rather than pretending the numbers persisted as fields.
 
 ## Flow
 
@@ -89,19 +98,26 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
    large QA. When torn between two values, take the higher: unknowns rarely shrink work.
 
 5. **Write the estimate to the ticket.**
-   - Set the effort property, using **exactly a value format seen on the reference
-     tickets** (numeric scale → the **total**; select scale like S/M/L → the matching
-     level). `--dry-run` first when unsure the value will be accepted:
+   - Write the points into their **fields** in one call — `--dev-points` and `--qa-points`
+     (plain integers), and `--effort` for the overall size using **exactly a value format
+     seen on the reference tickets** (numeric scale → the **total**; select scale like
+     S/M/L → the matching level). `--dry-run` first when unsure the effort value will be
+     accepted by a select property:
      ```sh
-     "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh <KEY> --effort "<value>"
+     "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh <KEY> \
+       --dev-points <X> --qa-points <Y> --effort "<value>"
      ```
-   - Post the breakdown as a **comment** (this is where the split and the reasoning
-     live — the part a human reads when they challenge the number):
+     Confirm the adapter's `Changed:` line lists the point fields (e.g.
+     `Developer Points, QA Points`). If it doesn't, the provider has no point fields
+     configured — note it in the output (see the callout above).
+   - Post the **reasoning** as a comment — *not* the numbers as the source of truth (those
+     now live in the fields), but the justification a human reads when they challenge the
+     estimate:
      ```
      Estimation — calibrated against <n> Done tickets
      Dev points: <X> — <one line: dominant effort driver>
      QA points:  <Y> — <one line: scenarios/platforms/regression driver>
-     Total: <Z>  (board scale: <observed values>)
+     Total: <Z>  (board scale: <observed values>)   # echoes the fields for readability
      Comparables: <KEY-a> (<pts>) — <why similar>; <KEY-b> (<pts>) — <why similar>
      Assumptions: <anything inferred; "none" if none>
      Confidence: high | medium | low
@@ -119,15 +135,17 @@ the tickets after them, so the honesty compounds.
 
 ## Re-estimation
 
-If the ticket already has an effort value, don't overwrite it silently. Change it only
-when the spec changed or the old value clearly contradicts the comparables — and record
-the move in the comment: `Re-estimated from <old> to <new> — <reason>`. Otherwise keep
-the existing value and note that it was confirmed.
+If the ticket already has an effort value or points set, don't overwrite them silently.
+Change them only when the spec changed or the old values clearly contradict the
+comparables — and record the move in the comment: `Re-estimated from <old> to <new> —
+<reason>`. Otherwise keep the existing values and note that they were confirmed (read the
+current point fields back with `get-ticket-details.sh` before deciding).
 
 ## Guardrails
 
 - **Estimation only.** Never change status, title, priority, or the spec body — this
-  skill owns exactly the effort property and its estimation comment.
+  skill owns exactly the effort property, the Dev/QA point fields, and its estimation
+  comment.
 - Estimate **effort, not value** — how important a ticket is belongs to priority, set
   elsewhere. Mixing the two corrupts both signals.
 - Don't ask the user to confirm a routine estimate; do flag (via the comment and the
@@ -139,10 +157,10 @@ Return a compact summary the caller (product-owner flow) can carry forward:
 
 ```
 ticket:      <KEY>
-dev_points:  <X>
-qa_points:   <Y>
-effort_set:  <value written to the property>
+dev_points:  <X>   (written to the Developer-points field)
+qa_points:   <Y>   (written to the QA-points field)
+effort_set:  <value written to the effort property>
 confidence:  high | medium | low
 comparables: <KEY-a>, <KEY-b>[, <KEY-c>]
-note:        <only if: low confidence / re-estimated / blocked on missing AC>
+note:        <only if: low confidence / re-estimated / blocked on missing AC / point fields not configured>
 ```

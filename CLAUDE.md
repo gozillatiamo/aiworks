@@ -10,6 +10,12 @@ repo.
 (the source of truth); `mani.yaml` imports the per-product `mani.d/<product>.yaml`
 files generated from it by `scripts/aiworks`. `mani list projects` for the full list.
 
+**Open in an IDE:** `scripts/aiworks` also generates a multi-root
+`<workspace-basename>.code-workspace` from `products[].repos[]` (one folder root per repo +
+the meta-repo root). Open the **file** (`cursor <workspace>.code-workspace`), not the folder,
+so each product repo gets its own Source Control panel — opening the folder makes Git skip the
+gitignored clones and only the meta-repo shows.
+
 **Cross-repo (`mani`):** `sync` (clone missing) · `list projects` ·
 `exec --all '<cmd>'` · `run <task>`
 

@@ -48,6 +48,7 @@ else changes.
 workspace.config.example.yaml      # the ONE file you fill in (org, providers, repos)
 CLAUDE.md                          # workspace instructions (templated)
 mani.yaml + mani.d/<product>.yaml  # repo registry — GENERATED from the config
+<workspace>.code-workspace         # multi-root VS Code/Cursor workspace — GENERATED from the config
 docs/agents/issue-tracker.md       # how agents read/write tickets
 .claude/{agents,skills,workflows,hooks,settings.json}
 scripts/vcs/                       # github | gitlab  PR/MR adapter
@@ -86,8 +87,11 @@ The whole setup is "fill in one config, then run one command." Here's the full p
    ```sh
    scripts/aiworks sync       # clone + fully set up every repo in the config
    mani list projects         # confirm
+   cursor aiworks.code-workspace   # open the multi-root workspace (each repo = its own SCM panel)
    ```
-   It's idempotent — re-run any time; already-onboarded repos just **SKIP**.
+   It's idempotent — re-run any time; already-onboarded repos just **SKIP**. `sync` also writes a
+   `<workspace>.code-workspace` (named after the workspace folder) so VS Code / Cursor show each
+   product repo as its own Source Control section — open the **file**, not the folder.
 
 6. **De-brand pass.** Replace the `{{ORG_NAME}}` / `{{PRODUCT_DESCRIPTION}}` placeholders
    in `CLAUDE.md`. The agents and workflows are already provider-agnostic, but a few
@@ -184,7 +188,9 @@ report, and a per-step `--claude-timeout` so a hung step can't stall the run), i
 
 Anything already done is skipped and reported. Any missing tool
 (mani / codegraph / claude / npx / jq) is skipped with a printed summary + manual
-follow-ups. At the end it **regenerates the `dev-cycle.js` CONFIG block** from the config.
+follow-ups. At the end it **regenerates the `dev-cycle.js` CONFIG block** and the multi-root
+**`<workspace>.code-workspace`** file (one folder root per declared repo + the meta-repo root,
+in declared order) from the config.
 
 ### `remove` — the inverse
 
@@ -195,14 +201,19 @@ last repo), from the workspace `.gitignore`, from the workspace `.cursorindexing
 `.vscode/settings.json` (this repo's `search.exclude` keys; the shared workspace-global keys
 stay). The clone stays unless you pass `--purge`
 (which refuses on a dirty/unpushed tree unless you also pass `--force`). It then
-regenerates the `dev-cycle.js` CONFIG block too, so the repo drops out of the workflow
-mirror automatically.
+regenerates the `dev-cycle.js` CONFIG block and the `<workspace>.code-workspace` `folders`
+array too, so the repo drops out of the workflow mirror **and** the multi-root workspace
+automatically (its `settings` block is left untouched).
 
 ### `config` — keep the workflow mirror in sync
 
-Regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js` straight from
-`workspace.config.yaml`. `sync` / `add` / `remove` all run it for you — call it directly
-only after hand-editing a **non-repo** field (ticket prefix, statuses, flags).
+Regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js` **and** the multi-root
+`<workspace>.code-workspace` `folders` array straight from `workspace.config.yaml`. `sync` /
+`add` / `remove` all run it for you — call it directly only after hand-editing a **non-repo**
+field (ticket prefix, statuses, flags) or to refresh the workspace file. The `.code-workspace`
+file name is the **workspace-root basename** (e.g. `aiworks.code-workspace`); it's committed with
+the meta-repo, only its `folders` array is regenerated, and any `settings` you add survive
+re-runs. Generating it needs `jq` (like the VS Code search-settings merge).
 
 ---
 

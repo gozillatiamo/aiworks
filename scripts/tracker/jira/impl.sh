@@ -9,6 +9,8 @@
 #                     create at id.atlassian.com/manage-profile/security/api-tokens
 #   JIRA_PROJECT_KEY  project key (e.g. OFB) — used to expand a bare number to KEY-n
 #   JIRA_EFFORT_FIELD optional custom-field id for --effort (e.g. customfield_10016 / story points)
+#   JIRA_DEV_POINTS_FIELD optional custom-field id for --dev-points (Developer points; number)
+#   JIRA_QA_POINTS_FIELD  optional custom-field id for --qa-points  (QA points; number)
 #
 # Status is set via a Jira transition (Jira moves by transition, not by writing the
 # field). --status must name the TARGET status (or the transition name); the impl finds
@@ -21,6 +23,8 @@ JIRA_EMAIL="${JIRA_EMAIL:-}"
 JIRA_API_TOKEN="${JIRA_API_TOKEN:-}"
 JIRA_PROJECT_KEY="${JIRA_PROJECT_KEY:-}"
 JIRA_EFFORT_FIELD="${JIRA_EFFORT_FIELD:-}"
+JIRA_DEV_POINTS_FIELD="${JIRA_DEV_POINTS_FIELD:-}"
+JIRA_QA_POINTS_FIELD="${JIRA_QA_POINTS_FIELD:-}"
 JIRA_DEFAULT_ISSUETYPE="${JIRA_DEFAULT_ISSUETYPE:-Task}"
 
 tracker_require_config() {
@@ -114,7 +118,8 @@ tracker_upsert() {
   # Map the abstract field set (minus status) to a Jira `fields` object. Jira has one
   # rich description field, so the full spec (--body, Markdown→ADF) populates it; a
   # bare --description (no --body) falls back to a plain-text ADF description.
-  jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" --arg ef "$JIRA_EFFORT_FIELD" --arg body "$body_md" '
+  jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" --arg ef "$JIRA_EFFORT_FIELD" \
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" '
     include "jira";
     {}
     + (if .title    then {summary: .title} else {} end)
@@ -122,7 +127,9 @@ tracker_upsert() {
     + ( if ($body | length) > 0 then {description: ($body | md_to_adf)}
         elif .description       then {description: (.description | text_to_adf)}
         else {} end )
-    + (if (.effort and ($ef | length > 0)) then {($ef): .effort} else {} end)
+    + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
+    + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
+    + (if (.qa_points  and ($qpf | length > 0)) then {($qpf): (.qa_points  | tonumber)} else {} end)
     ')"
 
   if [[ "$dry" -eq 1 ]]; then
@@ -153,14 +160,17 @@ jira_create() {
   [[ -n "$JIRA_PROJECT_KEY" ]] || die "creating a Jira issue needs JIRA_PROJECT_KEY (e.g. OFB)"
 
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" \
-    --arg proj "$JIRA_PROJECT_KEY" --arg itype "$JIRA_DEFAULT_ISSUETYPE" --arg ef "$JIRA_EFFORT_FIELD" --arg body "$body_md" '
+    --arg proj "$JIRA_PROJECT_KEY" --arg itype "$JIRA_DEFAULT_ISSUETYPE" --arg ef "$JIRA_EFFORT_FIELD" \
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" '
     include "jira";
     { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
     + (if .priority then {priority: {name: .priority}} else {} end)
     + ( if ($body | length) > 0 then {description: ($body | md_to_adf)}
         elif .description       then {description: (.description | text_to_adf)}
         else {} end )
-    + (if (.effort and ($ef | length > 0)) then {($ef): .effort} else {} end)
+    + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
+    + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
+    + (if (.qa_points  and ($qpf | length > 0)) then {($qpf): (.qa_points  | tonumber)} else {} end)
     ')"
   body="$(jq -n --argjson f "$jfields" '{fields: $f}')"
 

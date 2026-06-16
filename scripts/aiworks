@@ -46,8 +46,11 @@ Commands:
              the .gitignore, unlink the workspace adapters (optionally --purge the clone).
   config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)
              FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
-             an in-source mirror. add / remove / sync run this automatically; run it yourself
-             after hand-editing workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
+             an in-source mirror — AND the multi-root <workspace>.code-workspace `folders` array
+             (one root per repo + the meta-repo, so VS Code/Cursor show each repo as its own
+             Source Control panel; open it with `cursor <workspace>.code-workspace`). add /
+             remove / sync run this automatically; run it yourself after hand-editing
+             workspace.config.yaml (ticket_prefix, statuses, auto_merge, …).
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
              adapter .env, link adapters into each repo + git-exclude the links so they never
              dirty the product repo). Pass-through — forwards any extra args.

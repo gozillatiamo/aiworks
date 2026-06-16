@@ -21,6 +21,8 @@ NOTION_API="https://api.notion.com/v1"
 NOTION_PROP_STATUS="${NOTION_PROP_STATUS:-Status}"
 NOTION_PROP_PRIORITY="${NOTION_PROP_PRIORITY:-Priority}"
 NOTION_PROP_EFFORT="${NOTION_PROP_EFFORT:-Effort level}"
+NOTION_PROP_DEV_POINTS="${NOTION_PROP_DEV_POINTS:-Developer Points}"   # number; estimation Dev split
+NOTION_PROP_QA_POINTS="${NOTION_PROP_QA_POINTS:-QA Points}"            # number; estimation QA split
 NOTION_PROP_TITLE="${NOTION_PROP_TITLE:-Task name}"
 NOTION_PROP_DESCRIPTION="${NOTION_PROP_DESCRIPTION:-Description}"
 NOTION_PROP_TYPE="${NOTION_PROP_TYPE:-Task type}"   # multi_select used by find-tickets --type
@@ -213,12 +215,15 @@ tracker_upsert() {
   # one-line Description PROPERTY; the full spec (body_md) goes in the page BODY below.
   props="$(printf '%s' "$fields" | jq \
     --arg pStatus "$NOTION_PROP_STATUS" --arg pPriority "$NOTION_PROP_PRIORITY" \
-    --arg pEffort "$NOTION_PROP_EFFORT" --arg pTitle "$NOTION_PROP_TITLE" \
+    --arg pEffort "$NOTION_PROP_EFFORT" --arg pDevPts "$NOTION_PROP_DEV_POINTS" \
+    --arg pQaPts "$NOTION_PROP_QA_POINTS" --arg pTitle "$NOTION_PROP_TITLE" \
     --arg pDesc "$NOTION_PROP_DESCRIPTION" '
     {}
     + (if .status      then {($pStatus):   {status:    {name: .status}}} else {} end)
     + (if .priority    then {($pPriority): {select:    {name: .priority}}} else {} end)
     + (if .effort      then {($pEffort):   {select:    {name: .effort}}} else {} end)
+    + (if .dev_points  then {($pDevPts):   {number:    (.dev_points | tonumber)}} else {} end)
+    + (if .qa_points   then {($pQaPts):    {number:    (.qa_points  | tonumber)}} else {} end)
     + (if .title       then {($pTitle):    {title:     [{text: {content: .title}}]}} else {} end)
     + (if .description then {($pDesc):     {rich_text: [{text: {content: .description}}]}} else {} end)
     ')"

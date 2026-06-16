@@ -17,10 +17,18 @@ from `scripts/tracker/.env`:
 | Read a ticket | `scripts/tracker/get-ticket-details.sh <KEY>` |
 | Read comments | `scripts/tracker/get-ticket-comments.sh [--deep] <KEY>` |
 | Set status/fields | `scripts/tracker/upsert-ticket-details.sh <KEY> --status … --priority … --title … --description …` |
+| Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --effort …` |
 | Add a comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
 
 Both write scripts accept `--dry-run`. The flags are **abstract**; the adapter maps them
 to the provider (Notion properties; Jira fields + a status transition).
+
+**Estimate points are FIELDS, not a comment.** `--dev-points` / `--qa-points` write the
+estimation split into dedicated number fields (Notion "Developer Points" / "QA Points";
+Jira `JIRA_DEV_POINTS_FIELD` / `JIRA_QA_POINTS_FIELD`), and `--effort` the overall size
+(Notion "Effort level"; Jira `JIRA_EFFORT_FIELD`). `/estimate-ticket` owns these — see
+that skill. A provider with no point fields configured silently skips them, so check the
+adapter's `Changed:` line.
 
 ## This workspace's settings
 

@@ -30,7 +30,9 @@ Options:
   --status <name>      Set the workflow status. Use the org's real status name (see
                        docs/agents/issue-tracker.md). Jira moves via a transition.
   --priority <name>    Set Priority (e.g. High / Medium / Low).
-  --effort <name>      Set the effort/estimate field (provider-dependent; optional).
+  --effort <name>      Set the overall effort/size field (provider-dependent; optional).
+  --dev-points <n>     Set the Developer-points number field (estimation; optional).
+  --qa-points <n>      Set the QA-points number field (estimation; optional).
   --title <text>       Set the ticket title / summary.
   --description <text> Set the one-line description / summary field.
   --body <markdown>    Write the full spec (Markdown) into the ticket BODY. Notion
@@ -67,6 +69,8 @@ while [[ $# -gt 0 ]]; do
     --status)      need "${2:-}" "--status needs a value";      setf status      "$2"; shift 2 ;;
     --priority)    need "${2:-}" "--priority needs a value";    setf priority    "$2"; shift 2 ;;
     --effort)      need "${2:-}" "--effort needs a value";      setf effort      "$2"; shift 2 ;;
+    --dev-points)  need "${2:-}" "--dev-points needs a number"; setf dev_points  "$2"; shift 2 ;;
+    --qa-points)   need "${2:-}" "--qa-points needs a number";  setf qa_points   "$2"; shift 2 ;;
     --title)       need "${2:-}" "--title needs a value";       setf title       "$2"; shift 2 ;;
     --description) need "${2:-}" "--description needs a value"; setf description "$2"; shift 2 ;;
     --body)        need "${2:-}" "--body needs a value";        body_md="$2"; have_body=1; shift 2 ;;

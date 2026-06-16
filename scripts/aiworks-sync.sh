@@ -421,6 +421,6 @@ else
   if [[ "${#noted[@]}" -gt 0 ]]; then
     printf '%sNotes:%s\n' "$c_warn" "$c_off"; for n in "${noted[@]}"; do printf '  • %s\n' "$n"; done
   fi
-  printf '%sNext:%s `mani list projects` to see the set. (The .claude/workflows/dev-cycle.js CONFIG was regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off"
+  printf '%sNext:%s `mani list projects` to see the set, then `cursor %s.code-workspace` to open every repo as its own Source Control panel. (The .claude/workflows/dev-cycle.js CONFIG and %s.code-workspace were regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off" "$(basename "$ROOT")" "$(basename "$ROOT")"
 fi
 [[ "$failed" -eq 0 ]]

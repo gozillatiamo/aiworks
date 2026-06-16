@@ -37,6 +37,23 @@
 #                           for what each kind means in the workflow
 #       path / distribute / auto_merge / green / guardian_focus → optional per-repo overrides
 #
+# ALSO GENERATES — the multi-root <workspace>.code-workspace file (one folder root per repo)
+#   products[].repos[]               → the `folders` array of <workspace-basename>.code-workspace
+#       url               → the folder NAME (repo name = last URL segment, minus .git)
+#       path              → the folder PATH (the clone dir; the `path:` override, else the name)
+#   plus the meta-repo itself as the FIRST root ({ name:"🗂 <workspace> (meta)", path:"." }).
+#   WHY: opening the workspace FOLDER in VS Code/Cursor auto-detects nested git repos but SKIPS
+#   any subfolder the parent .gitignore hides (the product clones ARE gitignored) — so only the
+#   meta-repo shows in Source Control. Listing each repo as an explicit folder ROOT makes every
+#   repo its own Source Control provider (own staged/unstaged diff). Open it with:
+#       cursor <workspace>.code-workspace        (or: code <workspace>.code-workspace)
+#   File name = the workspace-root basename (deterministic). It is COMMITTED with the meta-repo,
+#   exactly like the other generated artifacts (mani.d/, .vscode/settings.json) — NOT gitignored —
+#   so a teammate who clones the meta-repo + runs `aiworks sync` gets it ready to open.
+#   NON-DESTRUCTIVE: only the `folders` array is regenerated each run (deterministic, declared
+#   order ⇒ no spurious diff); any user-added top-level keys (esp. `settings`) are PRESERVED. A
+#   `settings` block is seeded ONLY on first create, never overwritten on regen.
+#
 # Idempotent and safe: it replaces only the region between the AIWORKS:CONFIG markers in
 # dev-cycle.js, validates the result with `node --check` (when node is present), and restores
 # the file untouched on a genuine syntax error. A node --check KILLED BY A SIGNAL (exit >=128,
@@ -50,7 +67,8 @@
 #   --config <file>     workspace.config.yaml to read   (default: <workspace>/workspace.config.yaml)
 #   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/dev-cycle.js)
 #   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/prd.js)
-#   -n, --dry-run      print the generated block(s) to stdout; do NOT write the target(s).
+#   --workspace <file>  <name>.code-workspace to (re)generate (default: <workspace>/<basename>.code-workspace)
+#   -n, --dry-run      print the generated block(s) + the .code-workspace to stdout; write nothing.
 #   -q, --quiet        only print on change/error (suppress the "in sync" line).
 #   -h, --help         show this help.
 #
@@ -65,13 +83,14 @@ warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────
-WC="" TARGET="" PRD_TARGET="" DRY=0 QUIET=0
+WC="" TARGET="" PRD_TARGET="" WS_TARGET="" DRY=0 QUIET=0
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)     WC="${2:-}"; shift 2 ;;
     --target)     TARGET="${2:-}"; shift 2 ;;
     --prd-target) PRD_TARGET="${2:-}"; shift 2 ;;
+    --workspace)  WS_TARGET="${2:-}"; shift 2 ;;
     -n|--dry-run) DRY=1; shift ;;
     -q|--quiet)  QUIET=1; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -85,6 +104,10 @@ ROOT="$(cd "$DIR/.." && pwd)"
 [[ -n "$WC" ]]         || WC="$ROOT/workspace.config.yaml"
 [[ -n "$TARGET" ]]     || TARGET="$ROOT/.claude/workflows/dev-cycle.js"
 [[ -n "$PRD_TARGET" ]] || PRD_TARGET="$ROOT/.claude/workflows/prd.js"
+# The multi-root workspace file is named after the workspace-root basename (deterministic),
+# e.g. <root>/aiworks.code-workspace. Override the whole path with --workspace.
+WS_NAME="$(basename "$ROOT")"
+[[ -n "$WS_TARGET" ]]  || WS_TARGET="$ROOT/$WS_NAME.code-workspace"
 [[ -f "$WC" ]]     || die "no workspace.config.yaml at $WC — declare your repos under products: first"
 [[ -f "$TARGET" ]] || die "no dev-cycle workflow at $TARGET"
 
@@ -207,12 +230,17 @@ kind_defaults() {
 # ── 3. build the REPOS entries from products[].repos[] ────────────────────────────
 repos_body=""
 repo_count=0
+folders_tsv=""   # accumulates "<folder name>\t<folder path>\n" per repo, in declared order,
+                 # for the multi-root <name>.code-workspace `folders` array (built in step 6).
 while IFS=$'\037' read -r url kind path dist green gf am; do   # \037 (US): empty fields preserved
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
   kind="${kind:-generic}"
   path="${path:-$name}"
+
+  # one folder root per repo for the .code-workspace: NAME = repo name, PATH = clone dir.
+  folders_tsv+="$name"$'\t'"$path"$'\n'
 
   IFS=$'\t' read -r d_plan d_build d_review d_guard d_perf d_testsuite d_basef d_basex d_green d_gf \
     < <(kind_defaults "$kind")
@@ -266,6 +294,34 @@ done < <(
 
 [[ "$repo_count" -gt 0 ]] || warn "no products[].repos[] found in $(basename "$WC") — generating an EMPTY REPOS map (declare repos, then re-run)"
 
+# ── 3.5. build the .code-workspace `folders` JSON (meta root FIRST, then declared order) ──
+# Only needs jq (a documented dependency, like the .vscode/settings.json merge in `aiworks add`).
+# The meta-repo root is the workspace itself ("."); the rest are the product-repo clones. jq
+# builds the array from the TSV so repo names/paths are escaped correctly and the order is the
+# declared order ⇒ deterministic output (no spurious diff on re-run).
+META_NAME="🗂 $WS_NAME (meta)"
+FOLDERS_JSON=''
+# A sensible `settings` block seeded ONLY when the file is first created (never on regen):
+# search.exclude trims build/VCS noise across all roots; the git.* keys document the multi-root
+# intent (each listed root is its own repo — that is what surfaces a gitignored clone in SCM).
+SEED_SETTINGS='{
+  "git.autoRepositoryDetection": true,
+  "git.repositoryScanMaxDepth": 1,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.git": true,
+    "**/.codegraph": true,
+    "**/.aiworks": true,
+    "**/agent_logs": true
+  }
+}'
+if command -v jq >/dev/null 2>&1; then
+  FOLDERS_JSON="$(
+    { printf '%s\t.\n' "$META_NAME"; printf '%s' "$folders_tsv"; } \
+      | jq -R -s 'split("\n") | map(select(length>0) | split("\t") | {name: .[0], path: .[1]})'
+  )" || { warn "could not build the .code-workspace folders array — skipping it"; FOLDERS_JSON=''; }
+fi
+
 # build the STATUS object from EVERY declared status (declared order), one key per line.
 status_body=''
 while IFS=$'\t' read -r sk sv; do
@@ -300,9 +356,32 @@ const IMAGE_GEN_QUALITY = $(jsq "$IMG_QUALITY") // from workspace.config.yaml im
 const IMAGE_GEN_MAX_PER_REQUEST = ${IMG_MAX}        // from workspace.config.yaml image_generation.max_per_request; the graphic-designer's per-request budget cap
 "
 
+# ── render the would-be <name>.code-workspace JSON to stdout (jq required) ─────────
+# CREATE path: seed { folders, settings }. MERGE path (file exists): replace ONLY `.folders`,
+# preserving every other top-level key (esp. a user-edited `settings`). Both are deterministic.
+render_workspace() {   # <target-file> → JSON on stdout; rc!=0 if jq missing / file unparseable
+  local target="$1"
+  command -v jq >/dev/null 2>&1 || return 2
+  [[ -n "$FOLDERS_JSON" ]] || return 2
+  if [[ -f "$target" ]]; then
+    jq --argjson folders "$FOLDERS_JSON" '.folders = $folders' "$target"
+  else
+    jq -n --argjson folders "$FOLDERS_JSON" --argjson settings "$SEED_SETTINGS" \
+      '{folders: $folders, settings: $settings}'
+  fi
+}
+
 if [[ "$DRY" -eq 1 ]]; then
   printf '%s\n%s' "// ── dev-cycle.js ──" "$DEVCYCLE_BODY"
   [[ -n "$PRD_OK" ]] && printf '\n%s\n%s' "// ── prd.js (design) ──" "$PRD_BODY"
+  printf '\n// ── %s ──\n' "$(basename "$WS_TARGET")"
+  if ! render_workspace "$WS_TARGET"; then
+    if command -v jq >/dev/null 2>&1; then
+      printf '(existing %s is not valid JSON — it would be left untouched)\n' "$(basename "$WS_TARGET")"
+    else
+      printf "('jq' not found — %s would be skipped)\n" "$(basename "$WS_TARGET")"
+    fi
+  fi
   exit 0
 fi
 
@@ -368,3 +447,43 @@ if [[ -n "$PRD_OK" ]]; then
     "prd.js design/image-gen CONFIG already in sync with workspace.config.yaml (Figma ${DESIGN_ENABLED}, image-gen ${IMAGE_GEN_ENABLED})" \
     "regenerated prd.js design/image-gen CONFIG from workspace.config.yaml (design.enabled=${DESIGN_ENABLED}, image_generation.enabled=${IMAGE_GEN_ENABLED})"
 fi
+
+# ── 6. (re)generate the multi-root <name>.code-workspace from products[].repos[] ───
+# A deterministic, config-derived artifact COMMITTED with the meta-repo, exactly like mani.d/.
+# Folders = the meta-repo root first, then one root per declared repo (declared order). This is
+# what makes VS Code/Cursor show each repo as its OWN Source Control provider — a gitignored
+# nested clone is otherwise skipped by the folder-open git auto-detect, so only the meta-repo's
+# diff would show. NON-DESTRUCTIVE: only the `folders` array is regenerated; any user-added
+# top-level keys (esp. `settings`) survive. `settings` is seeded ONLY on first create.
+commit_workspace() {   # <target-file>
+  local target="$1" base; base="$(basename "$target")"
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "'jq' not found — skipping $base (install jq to generate/maintain the multi-root workspace file)"
+    return 0
+  fi
+  if [[ -z "$FOLDERS_JSON" ]]; then
+    warn "no folders array built — skipping $base"
+    return 0
+  fi
+  local tmp; tmp="$(mktemp -t aiworks-ws.XXXXXX)" || { warn "mktemp failed — skipping $base"; return 0; }
+  if [[ -f "$target" ]]; then
+    # MERGE: replace `.folders` in place, preserve every other top-level key (settings, …).
+    if ! jq --argjson folders "$FOLDERS_JSON" '.folders = $folders' "$target" > "$tmp" 2>/dev/null; then
+      rm -f "$tmp"; warn "$base exists but is not valid JSON — left it untouched (fix or delete it, then re-run)"; return 0
+    fi
+  else
+    # CREATE: seed folders + a sensible settings block (only here; never overwritten on regen).
+    if ! jq -n --argjson folders "$FOLDERS_JSON" --argjson settings "$SEED_SETTINGS" \
+           '{folders: $folders, settings: $settings}' > "$tmp" 2>/dev/null; then
+      rm -f "$tmp"; warn "could not generate $base"; return 0
+    fi
+  fi
+  if cmp -s "$tmp" "$target"; then
+    rm -f "$tmp"
+    [[ "$QUIET" -eq 1 ]] || ok "$base already in sync with workspace.config.yaml (${repo_count} repo root(s) + meta)"
+  else
+    mv "$tmp" "$target" && ok "regenerated $base (${repo_count} repo root(s) + meta) — open it with: cursor $base"
+  fi
+}
+
+commit_workspace "$WS_TARGET"
