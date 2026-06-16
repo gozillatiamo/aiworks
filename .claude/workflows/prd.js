@@ -1,10 +1,10 @@
 export const meta = {
   name: 'prd',
-  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker. Pass a brd work-key ("phase-2"), a doc-space URL, or a docs/brd/<key>.md path.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd skill instead for real frames). "intake" = CPO briefs only, returns features for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + figmaByFeature (the /prd skill builds frames in-session, then calls this). See .claude/skills/prd/SKILL.md.',
-  whenToUse: 'Turn an approved BRD into production-ready designs + a ready-for-dev backlog of tickets (each a PRD, with its Figma frame linked when UI-bearing). For real Figma frames, run via the /prd skill (in-session OAuth) — a raw Workflow(prd) call cannot author frames (the Figma MCP is unauthenticated inside the workflow runtime).',
+  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker. Pass a brd work-key ("phase-2"), a doc-space URL, or a docs/brd/<key>.md path.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd-design skill instead for real frames). "intake" = CPO briefs only, returns features for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + figmaByFeature (the /prd-design skill builds frames in-session, then calls this). See .claude/skills/prd-design/SKILL.md.',
+  whenToUse: 'Turn an approved BRD into production-ready designs + a ready-for-dev backlog of tickets (each a PRD, with its Figma frame linked when UI-bearing). For real Figma frames, run via the /prd-design skill (in-session OAuth) — a raw Workflow(prd) call cannot author frames (the Figma MCP is unauthenticated inside the workflow runtime).',
   phases: [
     { title: 'Intake', detail: 'CPO: read the BRD(if exists) → prioritized feature briefs, each flagged UI-bearing or not', model: 'opus' },
-    { title: 'Design', detail: 'CONDITIONAL — skipped entirely when no feature is UI-bearing, and skipped in stage=intake/ticketing (the /prd skill builds frames in-session because the Figma MCP is unauthenticated in the workflow runtime). Else per UI-bearing feature: ux-ui-planner plan → graphic-designer assets → ux-ui-designer Figma frames (all features in parallel)', model: 'opus/sonnet' },
+    { title: 'Design', detail: 'CONDITIONAL — skipped entirely when no feature is UI-bearing, and skipped in stage=intake/ticketing (the /prd-design skill builds frames in-session because the Figma MCP is unauthenticated in the workflow runtime). Else per UI-bearing feature: ux-ui-planner plan → graphic-designer assets → ux-ui-designer Figma frames (all features in parallel)', model: 'opus/sonnet' },
     { title: 'Ticketing', detail: 'Product Owner writes one self-contained FM ticket per feature onto the Notion board, linking the Figma frame', model: 'sonnet[1m]' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-role token/time table (summarize-workflow-performance)', model: 'haiku' },
   ],
@@ -66,7 +66,7 @@ const rawIn = (typeof args === 'string'
 if (!rawIn) throw new Error('prd needs a BRD ref: a work-key ("phase-2"), a doc-space URL, or a docs/brd/<key>.md path')
 
 // Stage gate (see meta.description): 'all' (legacy full headless), 'intake', or 'ticketing'.
-// The /prd skill drives 'intake' → in-session design → 'ticketing' so Figma frames are
+// The /prd-design skill drives 'intake' → in-session design → 'ticketing' so Figma frames are
 // authored where the OAuth Figma session is valid (it is stripped inside this runtime).
 const stage = (typeof args === 'object' && args?.stage) || 'all'
 
@@ -185,8 +185,8 @@ const tick = (label) => { const now = budget.spent(); spend.push({ label, out: n
 
 // ──────────────────────────────────────────────────────────────────────────
 // 1. INTAKE  (CPO: BRD → prioritized feature briefs, UI-bearing flagged)
-//    Runs for stage 'all' and 'intake'. For 'ticketing' the caller (the /prd
-//    skill) supplies the briefs in args.features — intake is not re-run.
+//    Runs for stage 'all' and 'intake'. For 'ticketing' the caller (the
+//    /prd-design skill) supplies the briefs in args.features — intake is not re-run.
 // ──────────────────────────────────────────────────────────────────────────
 let briefs, features, uiFeatures
 if (stage === 'all' || stage === 'intake') {
@@ -200,7 +200,7 @@ if (stage === 'all' || stage === 'intake') {
   log(`Intake: ${features.length} features (${uiFeatures.length} UI-bearing → design; ${features.length - uiFeatures.length} spec-only)`)
   tick('intake')
 
-  // Hybrid hand-off: stop after intake so the /prd skill can build Figma frames
+  // Hybrid hand-off: stop after intake so the /prd-design skill can build Figma frames
   // IN-SESSION (the OAuth Figma MCP is unauthenticated inside this runtime), then
   // call back with stage:'ticketing'.
   if (stage === 'intake') {
@@ -211,7 +211,7 @@ if (stage === 'all' || stage === 'intake') {
     }
   }
 } else {
-  // stage === 'ticketing' — briefs come from the orchestrating /prd skill.
+  // stage === 'ticketing' — briefs come from the orchestrating /prd-design skill.
   features = (typeof args === 'object' && Array.isArray(args?.features)) ? args.features : []
   uiFeatures = features.filter((f) => f.ui_bearing)
   briefs = { features }
@@ -222,8 +222,8 @@ if (stage === 'all' || stage === 'intake') {
 // 2. DESIGN  (legacy headless path — stage 'all' ONLY)
 //    CONDITIONAL — skipped ENTIRELY for non-UI missions. NOTE: a raw headless
 //    Workflow(prd) run cannot author Figma frames — the OAuth Figma MCP is
-//    stripped inside the workflow runtime (403). Real frames come from the /prd
-//    skill, which runs this chain IN-SESSION (stage intake → design → ticketing).
+//    stripped inside the workflow runtime (403). Real frames come from the
+//    /prd-design skill, which runs this chain IN-SESSION (stage intake → design → ticketing).
 //    This block is kept for the rare case a token-auth/local Figma MCP is wired
 //    into the workflow runtime; otherwise the designer step returns dev_ready=false.
 // ──────────────────────────────────────────────────────────────────────────
@@ -269,7 +269,7 @@ if (stage === 'all') {
     if (first) figmaByFeature[d.feature] = first
   }
 } else {
-  // stage === 'ticketing' — design happened in-session; the /prd skill passes the
+  // stage === 'ticketing' — design happened in-session; the /prd-design skill passes the
   // results in. `designed` is a light [{ feature, figma_url }] list for the summary.
   figmaByFeature = (typeof args === 'object' && args?.figmaByFeature && typeof args.figmaByFeature === 'object') ? args.figmaByFeature : {}
   designs = (typeof args === 'object' && Array.isArray(args?.designed)) ? args.designed : []

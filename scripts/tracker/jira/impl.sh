@@ -11,6 +11,15 @@
 #   JIRA_EFFORT_FIELD optional custom-field id for --effort (e.g. customfield_10016 / story points)
 #   JIRA_DEV_POINTS_FIELD optional custom-field id for --dev-points (Developer points; number)
 #   JIRA_QA_POINTS_FIELD  optional custom-field id for --qa-points  (QA points; number)
+#                     find the ids with jira/discover-fields.sh; when one is unset the
+#                     matching flag is WARNed + listed under "Skipped:" (not dropped silently).
+#   JIRA_SUBTASK_ISSUETYPE optional sub-task issue type NAME for --subtask (e.g. "Sub-task").
+#                     When unset, --subtask resolves the project's sub-task type from the API.
+#
+# Child issues (ref "new"): --parent <KEY> sets fields.parent; --subtask uses the project's
+# sub-task type (or --issuetype <name> for any type); --component <name> (repeatable) sets
+# fields.components after validating each against the project; --link <TYPE>:<KEY> (repeatable)
+# creates an issue link AFTER create, with the new issue as the outward (subject) side.
 #
 # Status is set via a Jira transition (Jira moves by transition, not by writing the
 # field). --status must name the TARGET status (or the transition name); the impl finds
@@ -26,6 +35,7 @@ JIRA_EFFORT_FIELD="${JIRA_EFFORT_FIELD:-}"
 JIRA_DEV_POINTS_FIELD="${JIRA_DEV_POINTS_FIELD:-}"
 JIRA_QA_POINTS_FIELD="${JIRA_QA_POINTS_FIELD:-}"
 JIRA_DEFAULT_ISSUETYPE="${JIRA_DEFAULT_ISSUETYPE:-Task}"
+JIRA_SUBTASK_ISSUETYPE="${JIRA_SUBTASK_ISSUETYPE:-}"   # --subtask type; "" → resolve from API
 
 tracker_require_config() {
   [[ -n "$JIRA_BASE_URL" ]]  || die "JIRA_BASE_URL is not set (e.g. https://acme.atlassian.net)"
@@ -102,9 +112,39 @@ tracker_get_comments() {
   printf '%s' "$resp" | jira_jqm 'comments_text'
 }
 
+# Warn LOUDLY when an estimation flag was supplied but its custom-field id env is unset,
+# so the value would otherwise be silently dropped from the Jira `fields` object. Prints
+# a WARN per offending flag to stderr AND a machine-detectable "Skipped: <flags>" line to
+# stdout so callers (e.g. /estimate-ticket) can see the field never persisted instead of
+# trusting a success exit. Maps each abstract field → its JIRA_*_FIELD env + the flag.
+jira_warn_dropped_fields() {
+  local fields="$1" spec key env flag envname present
+  local -a skipped=()
+  for spec in \
+    "effort|$JIRA_EFFORT_FIELD|--effort|JIRA_EFFORT_FIELD" \
+    "dev_points|$JIRA_DEV_POINTS_FIELD|--dev-points|JIRA_DEV_POINTS_FIELD" \
+    "qa_points|$JIRA_QA_POINTS_FIELD|--qa-points|JIRA_QA_POINTS_FIELD"; do
+    IFS='|' read -r key env flag envname <<<"$spec"
+    present="$(printf '%s' "$fields" | jq -r --arg k "$key" '((.[$k] // "") | tostring | length) > 0')"
+    if [[ "$present" == "true" && -z "$env" ]]; then
+      echo "WARN: $flag ignored — $envname not set in scripts/tracker/.env (run jira/discover-fields.sh to find the id)" >&2
+      skipped+=("$flag")
+    fi
+  done
+  if [[ ${#skipped[@]} -gt 0 ]]; then
+    local joined; joined="$(printf '%s, ' "${skipped[@]}")"
+    printf 'Skipped: %s\n' "${joined%, }"
+  fi
+  return 0
+}
+
 tracker_upsert() {
   local ticket="$1" dry="$2" fields="$3" body_md="${4:-}" key status jfields
   status="$(printf '%s' "$fields" | jq -r '.status // empty')"
+
+  # Surface any estimation flag whose field-id env is unset (loud + a "Skipped:" line)
+  # before doing anything — covers both the create ("new") and update paths, dry or not.
+  jira_warn_dropped_fields "$fields"
 
   # ref "new" → create a fresh issue in JIRA_PROJECT_KEY (the key is server-assigned,
   # mirroring Notion's auto-id create). Requires --title.
@@ -114,6 +154,18 @@ tracker_upsert() {
   fi
 
   key="$(jira_key "$ticket")"
+
+  # The child-issue flags (parent/issuetype/subtask/component/link) only apply when
+  # CREATING (ref "new"). On an update, say so loudly rather than dropping them silently.
+  local _createonly
+  _createonly="$(printf '%s' "$fields" | jq -r '
+    [ (if .parent    then "--parent"    else empty end),
+      (if .issuetype then "--issuetype" else empty end),
+      (if .subtask   then "--subtask"   else empty end),
+      (if (.components // [] | length) > 0 then "--component" else empty end),
+      (if (.links      // [] | length) > 0 then "--link"      else empty end)
+    ] | join(", ")')"
+  [[ -n "$_createonly" ]] && echo "WARN: $_createonly ignored — only applied when creating (ref \"new\"), not on updates" >&2
 
   # Map the abstract field set (minus status) to a Jira `fields` object. Jira has one
   # rich description field, so the full spec (--body, Markdown→ADF) populates it; a
@@ -152,18 +204,57 @@ tracker_upsert() {
 # A status, if given, is applied as a transition right after creation. A --body
 # (Markdown) populates the issue description as ADF (the full spec); a bare
 # --description falls back to a plain-text ADF description.
+#
+# Child-issue support: .parent → fields.parent; .subtask/.issuetype pick the issue type
+# (sub-task type resolved from the project unless JIRA_SUBTASK_ISSUETYPE is set); .components
+# are validated against the project then set on fields.components; .links create issue links
+# after the issue exists (the new issue is the outward/subject side).
 jira_create() {
-  local dry="$1" fields="$2" body_md="${3:-}" title status jfields body resp key
+  local dry="$1" fields="$2" body_md="${3:-}" title status parent itype subtask comps_json links_json jfields body resp key comp_fields
   title="$(printf '%s' "$fields" | jq -r '.title // empty')"
   status="$(printf '%s' "$fields" | jq -r '.status // empty')"
+  parent="$(printf '%s' "$fields" | jq -r '.parent // empty')"
+  itype="$(printf '%s' "$fields" | jq -r '.issuetype // empty')"
+  subtask="$(printf '%s' "$fields" | jq -r '.subtask // empty')"
+  comps_json="$(printf '%s' "$fields" | jq -c '.components // []')"
+  links_json="$(printf '%s' "$fields" | jq -c '.links // []')"
   [[ -n "$title" ]]            || die "creating a Jira issue (ref 'new') needs --title"
   [[ -n "$JIRA_PROJECT_KEY" ]] || die "creating a Jira issue needs JIRA_PROJECT_KEY (e.g. OFB)"
 
+  # Resolve the issue type: explicit --issuetype wins; --subtask resolves the project's
+  # sub-task type (needs a parent); otherwise the configured default.
+  if [[ -n "$itype" ]]; then
+    :
+  elif [[ "$subtask" == "true" ]]; then
+    [[ -n "$parent" ]] || die "--subtask needs --parent <KEY> (a Jira sub-task requires a parent issue)"
+    if [[ "$dry" -eq 1 ]]; then
+      itype="${JIRA_SUBTASK_ISSUETYPE:-<project sub-task type — resolved on a real run>}"
+    else
+      itype="$(jira_subtask_type_name)"
+    fi
+  else
+    itype="$JIRA_DEFAULT_ISSUETYPE"
+  fi
+
+  # Validate the requested components against the project (real run only) and build the
+  # canonical-cased fields.components array. An unknown component is a loud failure.
+  comp_fields='[]'
+  if [[ "$(printf '%s' "$comps_json" | jq 'length')" -gt 0 ]]; then
+    if [[ "$dry" -eq 1 ]]; then
+      comp_fields="$(printf '%s' "$comps_json" | jq '[.[] | {name: .}]')"   # unvalidated preview
+    else
+      comp_fields="$(jira_resolve_components "$comps_json")"
+    fi
+  fi
+
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" \
-    --arg proj "$JIRA_PROJECT_KEY" --arg itype "$JIRA_DEFAULT_ISSUETYPE" --arg ef "$JIRA_EFFORT_FIELD" \
-    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" '
+    --arg proj "$JIRA_PROJECT_KEY" --arg itype "$itype" --arg ef "$JIRA_EFFORT_FIELD" \
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" \
+    --arg parent "$parent" --argjson comps "$comp_fields" '
     include "jira";
     { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
+    + (if ($parent | length) > 0 then {parent: {key: $parent}} else {} end)
+    + (if ($comps  | length) > 0 then {components: $comps}     else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
     + ( if ($body | length) > 0 then {description: ($body | md_to_adf)}
         elif .description       then {description: (.description | text_to_adf)}
@@ -176,6 +267,7 @@ jira_create() {
 
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — POST /rest/api/3/issue\n%s\n' "$(printf '%s' "$body" | jq .)"
+    printf '%s' "$links_json" | jq -r '.[]? | "DRY RUN — then POST /rest/api/3/issueLink  (new \(.type) \(.key))"'
     [[ -n "$status" ]] && printf 'DRY RUN — then transition the new issue → %s\n' "$status"
     return 0
   fi
@@ -183,8 +275,90 @@ jira_create() {
   key="$(printf '%s' "$resp" | jq -r '.key // empty')"
   [[ -n "$key" ]] || die "issue create did not return a key"
   printf 'Created %s — %s\n' "$key" "$title"
+  [[ -n "$parent" ]] && printf 'Parent: %s\n' "$parent"
+  [[ "$(printf '%s' "$comp_fields" | jq 'length')" -gt 0 ]] \
+    && printf 'Components: %s\n' "$(printf '%s' "$comp_fields" | jq -r '[.[].name] | join(", ")')"
+  jira_create_links "$key" "$links_json"
   [[ -n "$status" ]] && jira_transition "$key" "$status"
   return 0
+}
+
+# Resolve the project's SUB-TASK issue type name. JIRA_SUBTASK_ISSUETYPE short-circuits the
+# lookup; otherwise ask the project's create-meta (the correct, project-scoped source) and
+# fall back to the global issue-type catalog. Every entry carries a `subtask` boolean.
+jira_subtask_type_name() {
+  [[ -n "$JIRA_SUBTASK_ISSUETYPE" ]] && { printf '%s' "$JIRA_SUBTASK_ISSUETYPE"; return; }
+  local resp name
+  resp="$(jira_api GET "/rest/api/3/issue/createmeta/$JIRA_PROJECT_KEY/issuetypes")"
+  name="$(printf '%s' "$resp" | jq -r '
+    (.values // .issueTypes // (if type == "array" then . else [] end))
+    | map(select(.subtask == true)) | (.[0].name // empty)')"
+  if [[ -z "$name" ]]; then
+    resp="$(jira_api GET "/rest/api/3/issuetype")"
+    name="$(printf '%s' "$resp" | jq -r 'map(select(.subtask == true)) | (.[0].name // empty)')"
+  fi
+  [[ -n "$name" ]] || die "no sub-task issue type found for project $JIRA_PROJECT_KEY — enable sub-tasks in Jira, or set JIRA_SUBTASK_ISSUETYPE / pass --issuetype <name>"
+  printf '%s' "$name"
+}
+
+# Validate requested component names against the project (case-insensitive) and echo the
+# Jira components field array [{name: <canonical>}] (canonical casing from the project). A
+# name with no match is a loud failure — never invent or silently skip a component.
+jira_resolve_components() {
+  local comps_json="$1" avail out missing
+  avail="$(jira_api GET "/rest/api/3/project/$JIRA_PROJECT_KEY/components")"
+  out="$(jq -n --argjson req "$comps_json" --argjson have "$avail" '
+    ($have | map({k: (.name | ascii_downcase), name: .name})) as $idx
+    | ($req | map(. as $r | ($idx | map(select(.k == ($r | ascii_downcase))) | (.[0].name // null)))) as $resolved
+    | { missing: ([$req, $resolved] | transpose | map(select(.[1] == null) | .[0])),
+        fields:  ($resolved | map(select(. != null) | {name: .})) }')"
+  missing="$(printf '%s' "$out" | jq -r '.missing | join(", ")')"
+  if [[ -n "$missing" ]]; then
+    die "component(s) not in project $JIRA_PROJECT_KEY: $missing — available: $(printf '%s' "$avail" | jq -r '[.[].name] | join(", ")' 2>/dev/null) (add them in Jira or omit --component)"
+  fi
+  printf '%s' "$out" | jq -c '.fields'
+}
+
+# Create each requested issue link with the NEW issue as the outward (subject) side:
+# "<new> <type> <other>" (e.g. a new sub-task Implements its parent). The link type name is
+# resolved against the project; on no exact match the closest type is used (and reported).
+jira_create_links() {
+  local child="$1" links_json="$2" n i ltype other resolved types
+  n="$(printf '%s' "$links_json" | jq 'length')"
+  [[ "$n" -gt 0 ]] || return 0
+  types="$(jira_api GET "/rest/api/3/issueLinkType")"
+  for (( i = 0; i < n; i++ )); do
+    ltype="$(printf '%s' "$links_json" | jq -r --argjson i "$i" '.[$i].type')"
+    other="$(printf '%s' "$links_json" | jq -r --argjson i "$i" '.[$i].key')"
+    resolved="$(jira_resolve_link_type "$types" "$ltype")"
+    jira_api POST "/rest/api/3/issueLink" "$(jq -n --arg t "$resolved" --arg c "$child" --arg o "$other" \
+      '{type: {name: $t}, outwardIssue: {key: $c}, inwardIssue: {key: $o}}')" >/dev/null
+    if [[ "$resolved" == "$ltype" ]]; then
+      printf 'Linked %s —[%s]→ %s\n' "$child" "$resolved" "$other"
+    else
+      printf 'Linked %s —[%s]→ %s  (requested "%s"; used closest match "%s")\n' "$child" "$resolved" "$other" "$ltype" "$resolved"
+    fi
+  done
+}
+
+# Map a requested link-type name to a real one: exact (case-insensitive) match first, then
+# the closest by substring (e.g. "Implements" → "Implement"), preferring the longest name.
+# No reasonable match → loud failure listing the available types.
+jira_resolve_link_type() {
+  local types="$1" want="$2" name
+  name="$(printf '%s' "$types" | jq -r --arg w "$want" '
+    [.issueLinkTypes[]? | select((.name | ascii_downcase) == ($w | ascii_downcase)) | .name][0] // empty')"
+  if [[ -z "$name" ]]; then
+    name="$(printf '%s' "$types" | jq -r --arg w "$want" '
+      ($w | ascii_downcase) as $lw
+      | [ .issueLinkTypes[]?
+          | (.name | ascii_downcase) as $ln
+          | select(($ln | startswith($lw)) or ($lw | startswith($ln)) or ($ln | inside($lw)) or ($lw | inside($ln)))
+          | .name ]
+      | sort_by(length) | reverse | (.[0] // empty)')"
+  fi
+  [[ -n "$name" ]] || die "issue link type '$want' not found in Jira — available: $(printf '%s' "$types" | jq -r '[.issueLinkTypes[]?.name] | join(", ")' 2>/dev/null)"
+  printf '%s' "$name"
 }
 
 # Move an issue to a target status by finding+posting the matching transition.
@@ -220,10 +394,17 @@ tracker_add_comment() {
 # Search the project via JQL and print one compact line per match (newest first):
 #   "<KEY> | <Status> | <Type> | <Summary>  ::  <Description>", or raw issues JSON.
 # The dedup lookup behind /clarifying-ticket. NOTE: Jira's `summary ~` is a word/text
-# match (not a raw substring); pick a distinctive whole token. Uses the classic
-# POST /rest/api/3/search; newer Cloud sites may need /rest/api/3/search/jql instead.
+# match (not a raw substring); pick a distinctive whole token.
+#
+# Uses POST /rest/api/3/search/jql — the enhanced search Atlassian migrated to after
+# REMOVING the classic POST /rest/api/3/search (changelog CHANGE-2046; the old endpoint
+# now returns HTTP 410). Differences this loop accounts for: pagination is TOKEN-based
+# (response carries `nextPageToken` + `isLast`, not `startAt`/`total`); `fields` MUST be
+# requested explicitly or the endpoint returns only `id`; and there is no `total` (use
+# /rest/api/3/search/approximate-count if a count is ever needed). --limit is sliced
+# client-side after the pages are collected.
 tracker_find() {
-  local opts="$1" query open limit as_json types_json jql startAt acc resp total got
+  local opts="$1" query open limit as_json types_json jql token acc resp body
   query="$(printf '%s' "$opts" | jq -r '.query // ""')"
   open="$(printf '%s' "$opts" | jq -r '.open // false')"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
@@ -239,16 +420,18 @@ tracker_find() {
     | (if length > 0 then join(" AND ") + " " else "" end) + "ORDER BY created DESC"
   ')"
 
-  startAt=0; acc="[]"
+  token=""; acc="[]"
   while :; do
-    body="$(jq -n --arg jql "$jql" --argjson sa "$startAt" \
-      '{jql: $jql, startAt: $sa, maxResults: 100, fields: ["summary","status","issuetype","priority","description"]}')"
-    resp="$(jira_api POST "/rest/api/3/search" "$body")"
+    body="$(jq -n --arg jql "$jql" --arg tok "$token" \
+      '{jql: $jql, maxResults: 100, fields: ["summary","status","issuetype","priority","description"]}
+       + (if $tok != "" then {nextPageToken: $tok} else {} end)')"
+    resp="$(jira_api POST "/rest/api/3/search/jql" "$body")"
     acc="$(jq -n --argjson a "$acc" --argjson b "$(printf '%s' "$resp" | jq '.issues // []')" '$a + $b')"
-    total="$(printf '%s' "$resp" | jq -r '.total // 0')"
-    got="$(printf '%s' "$acc" | jq 'length')"
-    [[ "$got" -lt "$total" && "$got" -gt 0 ]] || break
-    startAt="$got"
+    # Token-based pagination: stop when the page is flagged last, or no continuation
+    # token is returned. There is no startAt/total to compare against.
+    [[ "$(printf '%s' "$resp" | jq -r '.isLast // false')" == "true" ]] && break
+    token="$(printf '%s' "$resp" | jq -r '.nextPageToken // empty')"
+    [[ -n "$token" ]] || break
   done
 
   if [[ "$limit" =~ ^[0-9]+$ && "$limit" -gt 0 ]]; then

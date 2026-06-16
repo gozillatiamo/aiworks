@@ -98,12 +98,12 @@ planning:
 # How the team works with Figma — see docs/agents/figma.md for the full convention.
 design:
   enabled: false                   # MASTER Figma switch (default OFF). false → NO agent calls Figma:
-                                   #   the /prd design phase is skipped (tickets carry build-ready specs,
+                                   #   the /prd-design design phase is skipped (tickets carry build-ready specs,
                                    #   no frames) and the dev/QA agents build from the spec instead of a
                                    #   Figma screenshot. true → the design pipeline runs (planner → assets
                                    #   → designer) and needs a connected Figma MCP. Turn this ON to design.
   figma_file_key: ""               # the org's ONE canonical design file — the key in
-                                   #   figma.com/design/<KEY>/…. Set → every /prd run builds its screens
+                                   #   figma.com/design/<KEY>/…. Set → every /prd-design run builds its screens
                                    #   as a NEW PAGE inside THIS file, reusing its variables/components
                                    #   (zero orphan files); tickets link node URLs within it. Empty → each
                                    #   run creates a NEW (orphan) file and the run WARNS how to configure

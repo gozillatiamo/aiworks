@@ -18,6 +18,7 @@ from `scripts/tracker/.env`:
 | Read comments | `scripts/tracker/get-ticket-comments.sh [--deep] <KEY>` |
 | Set status/fields | `scripts/tracker/upsert-ticket-details.sh <KEY> --status … --priority … --title … --description …` |
 | Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --effort …` |
+| Create a child / sub-task | `scripts/tracker/upsert-ticket-details.sh new --parent <KEY> --subtask --title … --component <name> --link Implements:<KEY> --body-file …` |
 | Add a comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
 
 Both write scripts accept `--dry-run`. The flags are **abstract**; the adapter maps them
@@ -27,8 +28,16 @@ to the provider (Notion properties; Jira fields + a status transition).
 estimation split into dedicated number fields (Notion "Developer Points" / "QA Points";
 Jira `JIRA_DEV_POINTS_FIELD` / `JIRA_QA_POINTS_FIELD`), and `--effort` the overall size
 (Notion "Effort level"; Jira `JIRA_EFFORT_FIELD`). `/estimate-ticket` owns these — see
-that skill. A provider with no point fields configured silently skips them, so check the
-adapter's `Changed:` line.
+that skill. A provider with no point fields configured now **warns** and lists the flag
+under a `Skipped:` line (it no longer drops the value silently) — check `Changed:` /
+`Skipped:`.
+
+**Child issues are create-only flags through the same adapter.** `--parent`, `--subtask`
+(or `--issuetype`), `--component`, and `--link <TYPE>:<KEY>` on the ref `new` build a child
+issue — provider-agnostic, no Atlassian MCP/OAuth, so it runs headless. `/qa-subtasks` uses
+this to file per-tool QA sub-tasks (E2E→Cypress / API→Newman / Load→K6) under a parent with
+an Implements link. On Jira an unknown component fails loud and a missing link type falls
+back to the closest; see `scripts/tracker/README.md`.
 
 ## This workspace's settings
 

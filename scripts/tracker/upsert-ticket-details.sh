@@ -35,6 +35,19 @@ Options:
   --qa-points <n>      Set the QA-points number field (estimation; optional).
   --title <text>       Set the ticket title / summary.
   --description <text> Set the one-line description / summary field.
+  --parent <KEY>       Create the new issue as a CHILD of this parent ticket (Jira: the
+                       parent issue / sub-task parent; Notion: the parent-item relation).
+                       Create-only — use with the ref "new".
+  --issuetype <name>   Create with this issue type (Jira: fields.issuetype; Notion: the
+                       Type property). Create-only. Overrides --subtask if both given.
+  --subtask            Create the new issue as the project's SUB-TASK type under --parent
+                       (resolved from the provider). Create-only; requires --parent.
+  --component <name>   Add a component/tag (Jira: project component, validated;
+                       Notion: a multi_select option). Repeatable.
+  --link <TYPE>:<KEY>  Link the new issue to <KEY> as the outward subject — e.g.
+                       --link Implements:OFB-123 means "<new> implements OFB-123".
+                       Repeatable. Jira: an issue link (closest type if exact missing);
+                       Notion: a relation. Create-only.
   --body <markdown>    Write the full spec (Markdown) into the ticket BODY. Notion
                        appends page blocks; Jira renders it as the issue description.
                        Supports headings, bullet/numbered/to-do lists, quotes,
@@ -63,6 +76,11 @@ fields='{}'
 setf() { fields="$(jq -n --argjson cur "$fields" --arg k "$1" --arg v "$2" '$cur + {($k): $v}')"; }
 need() { [[ -n "${1:-}" ]] || die "$2"; }
 
+# Repeatable child-issue relations accumulate into arrays (merged into $fields below).
+components_json='[]'; links_json='[]'
+addcomp() { components_json="$(jq -n --argjson cur "$components_json" --arg v "$1" '$cur + [$v]')"; }
+addlink() { links_json="$(jq -n --argjson cur "$links_json" --arg t "$1" --arg k "$2" '$cur + [{type: $t, key: $k}]')"; }
+
 ticket=""; dry=0; body_md=""; have_body=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -73,6 +91,15 @@ while [[ $# -gt 0 ]]; do
     --qa-points)   need "${2:-}" "--qa-points needs a number";  setf qa_points   "$2"; shift 2 ;;
     --title)       need "${2:-}" "--title needs a value";       setf title       "$2"; shift 2 ;;
     --description) need "${2:-}" "--description needs a value"; setf description "$2"; shift 2 ;;
+    --parent)      need "${2:-}" "--parent needs a ticket key"; setf parent      "$2"; shift 2 ;;
+    --issuetype)   need "${2:-}" "--issuetype needs a value";   setf issuetype   "$2"; shift 2 ;;
+    --subtask)     setf subtask true; shift ;;
+    --component)   need "${2:-}" "--component needs a value";   addcomp "$2"; shift 2 ;;
+    --link)        need "${2:-}" "--link needs <TYPE>:<KEY>";
+                   _lt="${2%%:*}"; _lk="${2#*:}"
+                   [[ "$2" == *:* && -n "$_lt" && -n "$_lk" ]] \
+                     || die "--link must be TYPE:KEY (e.g. Implements:OFB-123)"
+                   addlink "$_lt" "$_lk"; shift 2 ;;
     --body)        need "${2:-}" "--body needs a value";        body_md="$2"; have_body=1; shift 2 ;;
     --body-file)   need "${2:-}" "--body-file needs a path";
                    if [[ "$2" == "-" ]]; then body_md="$(cat)"; else [[ -f "$2" ]] || die "--body-file: no such file: $2"; body_md="$(cat "$2")"; fi
@@ -83,6 +110,12 @@ while [[ $# -gt 0 ]]; do
     *)             ticket="$1"; shift ;;
   esac
 done
+
+# Fold the repeatable relations into the abstract field set (omit when empty).
+fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --argjson links "$links_json" \
+  '$cur
+   + (if ($comps | length) > 0 then {components: $comps} else {} end)
+   + (if ($links | length) > 0 then {links: $links}      else {} end)')"
 
 [[ -n "$ticket" ]] || die "usage: $(basename "$0") <ticket> [options]   (see -h)"
 [[ "$fields" != "{}" || "$have_body" -eq 1 ]] \

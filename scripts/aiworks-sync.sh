@@ -22,7 +22,7 @@
 # .claude/settings.local.json enables the `mcp-image` MCP server and carries a GEMINI_API_KEY
 # placeholder (the key the graphic-designer's asset pipeline needs). A non-empty key is never
 # clobbered. Fill it in (https://aistudio.google.com/apikey) to turn image generation on; until
-# then the /prd preflight detects the gap and fails loud instead of shipping placeholder art.
+# then the /prd-design preflight detects the gap and fails loud instead of shipping placeholder art.
 #
 # Usage:
 #   aiworks sync [<product>|<repo>] [options]
@@ -232,7 +232,7 @@ prepare_adapter_env() {
       if [[ -n "$design_file_key" ]]; then
         ok "Design: Figma ENABLED; canonical file ${design_file_key} (screens build there — new page per feature)"
       else
-        warn "Design: Figma ENABLED but design.figma_file_key is EMPTY — /prd runs will create NEW ORPHAN files. Set design.figma_file_key in workspace.config.yaml to build into the org's canonical file."
+        warn "Design: Figma ENABLED but design.figma_file_key is EMPTY — /prd-design runs will create NEW ORPHAN files. Set design.figma_file_key in workspace.config.yaml to build into the org's canonical file."
       fi ;;
     *) ok "Design: Figma DISABLED (design.enabled is off — the default). No agent calls Figma; set design.enabled: true to design." ;;
   esac
@@ -341,7 +341,7 @@ prepare_adapter_env
 
 # Prepare the image-generation config (enable mcp-image + seed a GEMINI_API_KEY placeholder
 # in the git-ignored settings.local.json) so the graphic-designer's asset pipeline can work
-# once the user supplies a key — and fails loud (via the /prd preflight) when it can't.
+# once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
 seed_image_gen_settings
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────

@@ -1,9 +1,9 @@
 ---
-name: prd
+name: prd-design
 description: Run the PRD pipeline (BRD → CPO briefs → in-session Figma design → tickets) as a main-agent-orchestrated hybrid so the Figma frames are actually built. Use this instead of a raw Workflow(prd) call whenever UI-bearing features need real Figma frames. Pass a BRD ref — a work-key ("phase-2"), a doc-space URL, or a docs/brd/<key>.md path.
 ---
 
-# /prd — orchestrated PRD pipeline (with working Figma writes)
+# /prd-design — orchestrated PRD pipeline (with working Figma writes)
 
 ## Why this skill exists (read first)
 

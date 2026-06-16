@@ -25,8 +25,16 @@ NOTION_PROP_DEV_POINTS="${NOTION_PROP_DEV_POINTS:-Developer Points}"   # number;
 NOTION_PROP_QA_POINTS="${NOTION_PROP_QA_POINTS:-QA Points}"            # number; estimation QA split
 NOTION_PROP_TITLE="${NOTION_PROP_TITLE:-Task name}"
 NOTION_PROP_DESCRIPTION="${NOTION_PROP_DESCRIPTION:-Description}"
-NOTION_PROP_TYPE="${NOTION_PROP_TYPE:-Task type}"   # multi_select used by find-tickets --type
+NOTION_PROP_TYPE="${NOTION_PROP_TYPE:-Task type}"   # multi_select used by find-tickets --type / --issuetype
 NOTION_STATUS_DONE="${NOTION_STATUS_DONE:-Done}"    # the "done" status name, for find-tickets --open
+# Child-issue mapping for the provider-agnostic --parent/--component/--link flags. Parent
+# and links are RELATION properties (they point at other pages); component is a multi_select.
+# Override per workspace; leave a name EMPTY to disable that flag for Notion (it then warns
+# instead of dropping silently). Links default OFF — Notion has no typed issue links, so the
+# parent relation already models the QA "Implements parent" case.
+NOTION_PROP_PARENT="${NOTION_PROP_PARENT:-Parent item}"      # relation → the parent (sub-item)
+NOTION_PROP_COMPONENT="${NOTION_PROP_COMPONENT:-Component}"  # multi_select → --component
+NOTION_PROP_LINKS="${NOTION_PROP_LINKS:-}"                   # relation → --link targets (off by default)
 
 tracker_require_config() {
   [[ -n "$NOTION_TOKEN" ]] || die "NOTION_TOKEN is not set — copy .env.example to .env and fill it in"
@@ -227,6 +235,57 @@ tracker_upsert() {
     + (if .title       then {($pTitle):    {title:     [{text: {content: .title}}]}} else {} end)
     + (if .description then {($pDesc):     {rich_text: [{text: {content: .description}}]}} else {} end)
     ')"
+
+  # Child-issue flags (provider-agnostic --parent/--issuetype/--component/--link). Component
+  # → multi_select; issuetype → the Type property; parent + links → relations (resolved to
+  # page ids on a real run; in --dry-run they're noted, not resolved, to stay offline). For
+  # Notion --subtask is a no-op — the parent relation already models the sub-item.
+  local comps_json links_json issuetype want_parent
+  comps_json="$(printf '%s' "$fields" | jq -c '.components // []')"
+  links_json="$(printf '%s' "$fields" | jq -c '.links // []')"
+  issuetype="$(printf '%s' "$fields" | jq -r '.issuetype // empty')"
+  want_parent="$(printf '%s' "$fields" | jq -r '.parent // empty')"
+
+  if [[ "$(printf '%s' "$comps_json" | jq 'length')" -gt 0 ]]; then
+    if [[ -n "$NOTION_PROP_COMPONENT" ]]; then
+      props="$(jq -n --argjson p "$props" --arg prop "$NOTION_PROP_COMPONENT" --argjson c "$comps_json" \
+        '$p + {($prop): {multi_select: ($c | map({name: .}))}}')"
+    else
+      echo "WARN: --component ignored — NOTION_PROP_COMPONENT not set in scripts/tracker/.env" >&2
+    fi
+  fi
+  if [[ -n "$issuetype" ]]; then
+    props="$(jq -n --argjson p "$props" --arg prop "$NOTION_PROP_TYPE" --arg t "$issuetype" \
+      '$p + {($prop): {multi_select: [{name: $t}]}}')"
+  fi
+  # parent + links → relations (page ids). Resolve only on a real run; note them when --dry-run.
+  if [[ "$dry" -eq 1 ]]; then
+    [[ -n "$want_parent" && -n "$NOTION_PROP_PARENT" ]] \
+      && printf 'DRY RUN — would set relation %s → %s\n' "$NOTION_PROP_PARENT" "$want_parent"
+    [[ "$(printf '%s' "$links_json" | jq 'length')" -gt 0 && -n "$NOTION_PROP_LINKS" ]] \
+      && printf 'DRY RUN — would set relation %s → %s\n' "$NOTION_PROP_LINKS" "$(printf '%s' "$links_json" | jq -r '[.[].key] | join(", ")')"
+  else
+    if [[ -n "$want_parent" ]]; then
+      if [[ -n "$NOTION_PROP_PARENT" ]]; then
+        props="$(jq -n --argjson p "$props" --arg prop "$NOTION_PROP_PARENT" --arg id "$(notion_resolve_page_id "$want_parent")" \
+          '$p + {($prop): {relation: [{id: $id}]}}')"
+      else
+        echo "WARN: --parent ignored — NOTION_PROP_PARENT not set in scripts/tracker/.env" >&2
+      fi
+    fi
+    if [[ "$(printf '%s' "$links_json" | jq 'length')" -gt 0 ]]; then
+      if [[ -n "$NOTION_PROP_LINKS" ]]; then
+        local lk link_pids='[]'
+        for lk in $(printf '%s' "$links_json" | jq -r '.[].key'); do
+          link_pids="$(jq -n --argjson cur "$link_pids" --arg id "$(notion_resolve_page_id "$lk")" '$cur + [$id]')"
+        done
+        props="$(jq -n --argjson p "$props" --arg prop "$NOTION_PROP_LINKS" --argjson ids "$link_pids" \
+          '$p + {($prop): {relation: ($ids | map({id: .}))}}')"
+      else
+        echo "WARN: --link ignored — NOTION_PROP_LINKS not set in scripts/tracker/.env (Notion has no typed issue links; set a relation property to enable --link)" >&2
+      fi
+    fi
+  fi
 
   # Build the page-body block array from the Markdown spec (empty array when no body).
   children='[]'

@@ -20,6 +20,26 @@ The two write scripts accept `--dry-run` to print the request instead of sending
 (Notion: a fresh page with an auto-assigned id; Jira: a new issue in `JIRA_PROJECT_KEY`
 of type `JIRA_DEFAULT_ISSUETYPE`). The created key is printed as `Created <KEY> — …`.
 
+**Child issues / sub-tasks (create-only):** the same `new` create accepts a set of
+relation flags so a caller (e.g. `/qa-subtasks`) can build a child issue without touching
+a provider API directly:
+
+| Flag | Meaning | Jira | Notion |
+|---|---|---|---|
+| `--parent <KEY>` | make it a child of `<KEY>` | `fields.parent` | the parent-item relation (`NOTION_PROP_PARENT`) |
+| `--subtask` | use the project's sub-task type (needs `--parent`) | resolved sub-task issue type (or `JIRA_SUBTASK_ISSUETYPE`) | no-op (the parent relation is the sub-item) |
+| `--issuetype <name>` | create with this type | `fields.issuetype` | the Type property (`NOTION_PROP_TYPE`) |
+| `--component <name>` (repeatable) | tag/component | project component, **validated** | a multi_select option (`NOTION_PROP_COMPONENT`) |
+| `--link <TYPE>:<KEY>` (repeatable) | link the new issue to `<KEY>` | an issue link, new issue = outward subject | a relation (`NOTION_PROP_LINKS`) |
+
+The new issue is always the **outward (subject)** side of a link, so
+`--link Implements:OFB-123` reads "*\<new\> implements OFB-123*". On Jira an unknown
+**component** is a loud failure (it lists the project's components) and an exact link type
+that's missing falls back to the **closest** name (e.g. `Implements` → `Implement`) with a
+note — neither is invented or silently skipped. Passing these flags to an *update* (a real
+key, not `new`) warns and ignores them on Jira; on Notion the relation/multi_select flags
+also work on an update.
+
 **Spec in the body:** `--body <md>` / `--body-file <path|->` writes the full clarified
 spec (Markdown — headings, bullet/numbered/to-do lists, quotes, dividers, pipe tables,
 fenced code, and inline **bold**/*italic*/`code`/[links]) into the ticket body, not a
@@ -88,6 +108,11 @@ Requires `bash`, `curl`, and `jq`.
 ./add-ticket-comment.sh    FM-9    "Moving to Testing — plan attached."
 ./add-ticket-comment.sh    OFB-123 < plan.md
 ./upsert-ticket-details.sh OFB-123 --status Done --dry-run   # preview, don't send
+
+# create a QA sub-task under a parent (component validated, Implements link added)
+./upsert-ticket-details.sh new --parent OFB-123 --subtask \
+    --title "[QA][E2E] Sign-in" --component Cypress --link Implements:OFB-123 \
+    --body-file scenarios.md
 ```
 
 The **status name** you pass is the org's real status. On Jira, `--status` is resolved
@@ -104,7 +129,26 @@ canonical workflow-phase → real-status mapping for this org lives in
   comment is coalesced and capped at 100 rich-text objects — beyond that it's truncated
   with a "see the ticket body" note; put large specs in the **body** (`--body`), not a comment.
 - **Jira**: a single comment stream (no `--deep`); description/comments are read+written
-  as ADF (common node types rendered to text). `--effort` is ignored unless
-  `JIRA_EFFORT_FIELD` is set. A bare number needs `JIRA_PROJECT_KEY` to form the key.
-  `--body` renders Markdown → ADF as the issue description. `find-tickets.sh` uses the
-  classic `POST /rest/api/3/search`; newer Cloud sites may need `/rest/api/3/search/jql`.
+  as ADF (common node types rendered to text). A bare number needs `JIRA_PROJECT_KEY` to
+  form the key. `--body` renders Markdown → ADF as the issue description.
+  - `--effort` / `--dev-points` / `--qa-points` write to the custom fields named by
+    `JIRA_EFFORT_FIELD` / `JIRA_DEV_POINTS_FIELD` / `JIRA_QA_POINTS_FIELD`. When a flag is
+    passed but its field id is **unset**, the adapter no longer drops the value silently —
+    it prints a `WARN:` to stderr and lists the flag under a `Skipped:` line on stdout (so
+    `/estimate-ticket` can report the point never persisted). Run
+    `jira/discover-fields.sh` to find the ids.
+  - `find-tickets.sh` searches via `POST /rest/api/3/search/jql` (the enhanced endpoint
+    Atlassian migrated to; the classic `POST /rest/api/3/search` was removed and now 410s,
+    changelog CHANGE-2046). Pagination is token-based and the result has no `total` (use
+    `/rest/api/3/search/approximate-count` for a count).
+  - **Sub-tasks**: `--subtask` resolves the project's sub-task issue type from
+    `GET /rest/api/3/issue/createmeta/{key}/issuetypes` (falling back to the global
+    issue-type catalog), unless `JIRA_SUBTASK_ISSUETYPE` pins a name. `--component` is
+    validated against `GET /rest/api/3/project/{key}/components`; `--link` resolves against
+    `GET /rest/api/3/issueLinkType` and is posted to `POST /rest/api/3/issueLink` after the
+    issue is created.
+- **Notion**: `--parent`/`--link` are **relation** properties (`NOTION_PROP_PARENT` /
+  `NOTION_PROP_LINKS`) and `--component` a **multi_select** (`NOTION_PROP_COMPONENT`);
+  `--link` is **off** unless `NOTION_PROP_LINKS` is set (Notion has no typed issue links, so
+  the parent relation already carries the QA "Implements parent" case). `--dry-run` notes
+  the parent/link relations rather than resolving their page ids, to stay offline.

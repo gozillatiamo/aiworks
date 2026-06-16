@@ -17,15 +17,15 @@ design:
   enabled: false   # default — Figma is OFF for the whole workspace
 ```
 
-- **`false` (default):** **no agent calls Figma.** The `/prd` design phase is
+- **`false` (default):** **no agent calls Figma.** The `/prd-design` design phase is
   **skipped entirely** (no planner/assets/designer spawned) — tickets carry
   build-ready written specs, not frame links. The dev/QA roles build from the ticket
   spec, **never** opening a Figma screenshot (the workflow appends an explicit "Figma
   is DISABLED — build from the spec" directive to their prompts).
 - **`true`:** the design pipeline runs and the read-side roles may consult Figma. This
-  needs a Figma MCP that is connected **in-session** — see the `/prd` skill preflight
+  needs a Figma MCP that is connected **in-session** — see the `/prd-design` skill preflight
   (`mcp.figma.com` OAuth is valid in-session but 403s inside a headless workflow, so
-  real frames come from the `/prd` skill, not a raw `Workflow(prd)`).
+  real frames come from the `/prd-design` skill, not a raw `Workflow(prd)`).
 
 An existing org that wants Figma must set `design.enabled: true` — it does not turn
 on by itself.
@@ -39,7 +39,7 @@ design:
 ```
 
 Teams keep ONE canonical "Design System / UI" file. When `figma_file_key` is **set**
-(and `enabled: true`), every `/prd` run builds its product screens **inside that
+(and `enabled: true`), every `/prd-design` run builds its product screens **inside that
 file** — never a fresh one:
 
 - **Build on a NEW PAGE**, named from `page_naming` (default → one page per feature,
@@ -57,7 +57,7 @@ plus how to configure the canonical one. This is a degraded mode, not the goal.
 
 | Role | When Figma is OFF (`enabled:false`) | When ON + canonical file set |
 |---|---|---|
-| **ux-ui-planner** | Not spawned by `/prd` (design phase skipped). | Reads the design system read-only; records the implementation target (file key + page name + tokens/components to reuse) in the plan. Never writes Figma. |
+| **ux-ui-planner** | Not spawned by `/prd-design` (design phase skipped). | Reads the design system read-only; records the implementation target (file key + page name + tokens/components to reuse) in the plan. Never writes Figma. |
 | **graphic-designer** | Not spawned. | Lays assets into the **canonical file's** Assets page. |
 | **ux-ui-designer** | Not spawned. | Builds into the canonical file on the new page named by the orchestrator; reuses its variables/components; adds new tokens to its collections; **never `create_new_file`**. |
 | **development-planner / developer / qa-planner / qa-runner** | Do **not** call Figma — build from the ticket spec / written plan. | May verify the linked design screen (read-only `get_screenshot`/`get_metadata`/`get_design_context`). |
@@ -65,7 +65,7 @@ plus how to configure the canonical one. This is a degraded mode, not the goal.
 
 ## 4. How it's enforced
 
-- **`/prd` skill** (in-session, has FS access): reads `design.*` from
+- **`/prd-design` skill** (in-session, has FS access): reads `design.*` from
   `workspace.config.yaml` at preflight; skips the whole design phase when off; passes
   the `fileKey` + per-feature page name to the planner/designer when on; warns on the
   empty-key orphan path.

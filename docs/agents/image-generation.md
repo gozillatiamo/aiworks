@@ -80,7 +80,7 @@ too (`[ -n "$GEMINI_API_KEY" ]`, or a non-empty value in `settings.local.json`).
 
 | Layer | Behavior |
 |---|---|
-| `/prd` preflight (step 0b) | **Checks `image_generation.enabled` first** — if off (default), image-gen is UNAVAILABLE by config and the run goes placeholder/specs-only. If on, detects whether `mcp-image` is connected **and** `GEMINI_API_KEY` is set; if not, warns the user and offers: **(a)** enable it, **(b)** proceed placeholder/specs-only with an explicit note, **(c)** abort. Never defaults into (b) silently. |
+| `/prd-design` preflight (step 0b) | **Checks `image_generation.enabled` first** — if off (default), image-gen is UNAVAILABLE by config and the run goes placeholder/specs-only. If on, detects whether `mcp-image` is connected **and** `GEMINI_API_KEY` is set; if not, warns the user and offers: **(a)** enable it, **(b)** proceed placeholder/specs-only with an explicit note, **(c)** abort. Never defaults into (b) silently. |
 | graphic-designer | Availability gate first. If the tool is absent or a call errors on auth/key/quota, returns every asset as **`unavailable`** with a reason + fix — never improvises a placeholder it then calls `created`. Each asset carries a `status`: `created` / `reused` / `placeholder` / `unavailable`. |
 | ux-ui-designer | A state depending on a `placeholder`/`unavailable` asset is **not dev-ready**: it goes in `asset_gaps` and forces `dev_ready:false`. |
 | PRD report | Lists any placeholder/unavailable assets and `asset_gaps` as **not dev-ready (placeholder art)**, and restates how to enable real generation. |

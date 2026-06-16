@@ -347,7 +347,7 @@ const REPOS = {
 ${repos_body}}
 "
 
-# prd.js design block (the canonical-file behavior the /prd design phase reads).
+# prd.js design block (the canonical-file behavior the /prd-design design phase reads).
 PRD_BODY="const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ design phase skipped (no Figma)
 const DESIGN_FIGMA_FILE_KEY = $(jsq "$DESIGN_KEY") // from workspace.config.yaml design.figma_file_key; set ⇒ build into THIS file (new page/feature), never create_new_file; empty ⇒ orphan file + WARN
 const DESIGN_PAGE_NAMING = $(jsq "$DESIGN_PAGE")  // from workspace.config.yaml design.page_naming; tokens {work_key} {feature}

@@ -54,7 +54,7 @@ export const meta = {
 //   merges + distributes itself, so there is nothing to review and the phase is skipped.
 // DESIGN_ENABLED — design.enabled (the workspace-wide Figma switch). false ⇒ Figma is OFF: the
 //   dev/QA agents do NOT call Figma — they build from the ticket spec, not a Figma screenshot
-//   (see FIGMA_DIRECTIVE below and docs/agents/figma.md). The /prd design phase is what authors
+//   (see FIGMA_DIRECTIVE below and docs/agents/figma.md). The /prd-design design phase is what authors
 //   Figma; this flag only governs the read-side here.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
