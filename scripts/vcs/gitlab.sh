@@ -62,7 +62,9 @@ vcs_pr_view() {
 # both are given — so review findings that need a code fix land on the exact line, not on
 # the MR overview. Falls back to a plain MR note (referencing PATH:LINE in its text) when
 # the position can't be set (e.g. the line isn't part of the diff, or it's a removed/context
-# line that needs old_line), so the reviewer's content is never lost.
+# line that needs old_line), so the reviewer's content is never lost. On that fallback it
+# WARNs to stderr with GitLab's actual error AND marks the stdout line NON-inline, so a
+# caller is NEVER told "posted inline" when the comment didn't anchor to the diff.
 vcs_pr_comment() {
   local num="$1" path="$2" line="$3" body="$4" dry="${5:-0}"
   local full="$body"
@@ -77,13 +79,16 @@ vcs_pr_comment() {
   fi
   # Try a positioned discussion first. GitLab's text-diff position needs the MR's three
   # diff refs (base/head/start SHAs) plus old_path+new_path; new_line anchors an added line.
+  # On ANY failure we DO NOT silently drop the anchor — we surface the reason on stderr and
+  # fall back to a plain note so the content is never lost AND the caller knows it isn't inline.
   if [[ -n "$path" && -n "$line" ]]; then
-    local refs base head start
+    local refs base head start err
     refs="$(glab api "projects/:fullpath/merge_requests/$num" 2>/dev/null \
             | jq -r '[.diff_refs.base_sha, .diff_refs.head_sha, .diff_refs.start_sha] | @tsv' 2>/dev/null || true)"
     IFS=$'\t' read -r base head start <<<"$refs"
-    if [[ -n "$base" && -n "$head" && -n "$start" ]] \
-       && glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" \
+    if [[ -z "$base" || -z "$head" || -z "$start" ]]; then
+      printf 'WARN: could not read diff refs for MR !%s — posting %s:%s as a NON-inline note\n' "$num" "$path" "$line" >&2
+    elif err="$(glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" \
             -f "body=$body" \
             -f "position[position_type]=text" \
             -f "position[base_sha]=$base" \
@@ -91,12 +96,19 @@ vcs_pr_comment() {
             -f "position[start_sha]=$start" \
             -f "position[old_path]=$path" \
             -f "position[new_path]=$path" \
-            -F "position[new_line]=$line" >/dev/null 2>&1; then
+            -F "position[new_line]=$line" 2>&1)"; then
       printf 'Inline comment posted on MR !%s at %s:%s\n' "$num" "$path" "$line"; return 0
+    else
+      printf 'WARN: inline anchor failed for %s:%s on MR !%s — falling back to a NON-inline note.\n  GitLab said: %s\n' \
+        "$path" "$line" "$num" "$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-300)" >&2
     fi
   fi
-  glab mr note "$num" --message "$full" >/dev/null
-  printf 'Comment posted on MR !%s\n' "$num"
+  glab mr note "$num" --message "$full" >/dev/null || die "failed to post note on MR !$num"
+  if [[ -n "$path" && -n "$line" ]]; then
+    printf 'Comment posted on MR !%s (NON-inline note — see WARN above for why %s:%s did not anchor)\n' "$num" "$path" "$line"
+  else
+    printf 'Comment posted on MR !%s\n' "$num"
+  fi
 }
 
 # vcs_pr_comments NUMBER -> prints the MR's notes as plain text.

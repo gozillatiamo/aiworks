@@ -73,9 +73,12 @@ Handled by the provider CLI, not this adapter:
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff
-  (using the MR's `diff_refs` + `old_path`/`new_path`/`new_line`). When the position
-  can't be set — the line isn't in the diff, or it's a removed/context line needing
-  `old_line` — the adapter falls back to a plain note that references `path:line`, so the
-  finding is never lost.
+  (using the MR's `diff_refs` + `old_path`/`new_path`/`new_line`). Inline anchoring
+  requires **both** `--path` **and** `--line`. When the position can't be set — the line
+  isn't in the diff, or it's a removed/context line needing `old_line` — the adapter
+  **WARNs to stderr** (with the host's actual error) and falls back to a plain note that
+  references `path:line`, so the finding is never lost. The fallback's stdout line says
+  **NON-inline** explicitly: the adapter no longer reports inline success when the comment
+  didn't anchor, so a caller/agent can never mistake a fallback note for an inline post.
 - `glab` flags target a recent version (~1.40+); if yours differs, `gitlab.sh` is the
   one file to adjust.

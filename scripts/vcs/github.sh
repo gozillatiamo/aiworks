@@ -45,8 +45,10 @@ vcs_pr_view() {
 }
 
 # vcs_pr_comment NUMBER PATH LINE BODY [DRY]
-# Posts an inline review comment at PATH:LINE when both are given (falls back to a
-# normal PR comment that references PATH:LINE if the inline API call fails).
+# Posts an inline review comment at PATH:LINE when both are given. On ANY failure we DO NOT
+# silently drop the anchor — we surface the reason on stderr (with GitHub's actual error)
+# and fall back to a normal PR comment that references PATH:LINE, so the content is never
+# lost AND the caller is never told "posted inline" when it didn't anchor to the diff.
 vcs_pr_comment() {
   local num="$1" path="$2" line="$3" body="$4" dry="${5:-0}"
   local full="$body"
@@ -55,15 +57,24 @@ vcs_pr_comment() {
     printf 'DRY RUN — comment on PR #%s: %s\n' "$num" "$full"; return 0
   fi
   if [[ -n "$path" && -n "$line" ]]; then
-    local sha
+    local sha err
     sha="$(gh pr view "$num" --json headRefOid -q .headRefOid 2>/dev/null || true)"
-    if [[ -n "$sha" ]] && gh api "repos/{owner}/{repo}/pulls/$num/comments" \
-        -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$line" -f side=RIGHT >/dev/null 2>&1; then
+    if [[ -z "$sha" ]]; then
+      printf 'WARN: could not read head SHA for PR #%s — posting %s:%s as a NON-inline comment\n' "$num" "$path" "$line" >&2
+    elif err="$(gh api "repos/{owner}/{repo}/pulls/$num/comments" \
+        -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$line" -f side=RIGHT 2>&1)"; then
       printf 'Inline comment posted on PR #%s at %s:%s\n' "$num" "$path" "$line"; return 0
+    else
+      printf 'WARN: inline anchor failed for %s:%s on PR #%s — falling back to a NON-inline comment.\n  GitHub said: %s\n' \
+        "$path" "$line" "$num" "$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-300)" >&2
     fi
   fi
-  gh pr comment "$num" --body "$full" >/dev/null
-  printf 'Comment posted on PR #%s\n' "$num"
+  gh pr comment "$num" --body "$full" >/dev/null || die "failed to post comment on PR #$num"
+  if [[ -n "$path" && -n "$line" ]]; then
+    printf 'Comment posted on PR #%s (NON-inline comment — see WARN above for why %s:%s did not anchor)\n' "$num" "$path" "$line"
+  else
+    printf 'Comment posted on PR #%s\n' "$num"
+  fi
 }
 
 # vcs_pr_comments NUMBER -> prints the PR's comments/review notes as plain text.
