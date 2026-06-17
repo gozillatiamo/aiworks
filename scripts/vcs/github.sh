@@ -71,6 +71,55 @@ vcs_pr_comments() {
   gh pr view "$1" --comments 2>/dev/null || die "could not read comments for PR #$1"
 }
 
+# vcs_pr_threads NUMBER -> list the PR's review threads, one block each:
+#   ● thread=<node_id>  [unresolved|resolved]  <path>:<line>  (<author>)
+#     <comment body…>
+# GitHub review threads are resolvable only over GraphQL, keyed by an opaque node id —
+# `vcs_pr_comments` (REST) doesn't expose it, so this is the companion read that lets a
+# fix be tied back to the exact thread for vcs_pr_resolve_thread.
+vcs_pr_threads() {
+  local num="$1" nwo owner repo out
+  nwo="$(_gh_nwo)"; owner="${nwo%%/*}"; repo="${nwo##*/}"
+  out="$(gh api graphql \
+      -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved path line comments(first:1){nodes{body author{login}}}}}}}}' \
+      -F o="$owner" -F r="$repo" -F n="$num" 2>/dev/null \
+    | jq -r '
+        .data.repository.pullRequest.reviewThreads.nodes[]
+        | . as $t
+        | ($t.comments.nodes[0] // {}) as $c
+        | (if $t.isResolved then "resolved" else "unresolved" end) as $state
+        | "● thread=\($t.id)  [\($state)]  "
+          + (if ($t.path // "") != "" then $t.path + (if ($t.line != null) then ":" + ($t.line|tostring) else "" end) else "(general)" end)
+          + "  (\($c.author.login // "?"))\n"
+          + "  " + (($c.body // "") | gsub("\n"; "\n  "))
+          + "\n"
+      ' 2>/dev/null)" || die "could not read threads for PR #$num"
+  if [[ -z "${out//[$'\n\t ']/}" ]]; then
+    printf 'No review threads on PR #%s\n' "$num"
+  else
+    printf '%s\n' "$out"
+  fi
+}
+
+# vcs_pr_resolve_thread NUMBER THREAD_ID [RESOLVED=true] [DRY]
+# Marks a PR review thread resolved (the "Resolve conversation" button) once the developer
+# has addressed it. RESOLVED=false reopens it. THREAD_ID is the GraphQL node id printed by
+# vcs_pr_threads. NUMBER is only used for the message — the node id is globally unique.
+vcs_pr_resolve_thread() {
+  local num="$1" tid="$2" resolved="${3:-true}" dry="${4:-0}"
+  local mutation word
+  if [[ "$resolved" == false ]]; then mutation=unresolveReviewThread; word=unresolved
+  else mutation=resolveReviewThread; word=resolved; fi
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh api graphql %s(threadId:%s)\n' "$mutation" "$tid"; return 0
+  fi
+  gh api graphql \
+      -f query="mutation(\$id:ID!){$mutation(input:{threadId:\$id}){thread{isResolved}}}" \
+      -f id="$tid" >/dev/null \
+    || die "could not mark thread $tid on PR #$num $word"
+  printf 'Thread %s on PR #%s marked %s\n' "$tid" "$num" "$word"
+}
+
 # vcs_close_pr NUMBER [DRY] -> close the PR without merging (branch kept), then pr-view.
 vcs_close_pr() {
   local num="$1" dry="${2:-0}"

@@ -57,15 +57,43 @@ vcs_pr_view() {
   printf 'state=%s\nmerge_sha=%s\n' "$up" "$sha"
 }
 
-# vcs_pr_comment NUMBER PATH LINE BODY [DRY] — posts an MR note (referencing PATH:LINE
-# in the text). Positioned inline discussions are GitLab-version-specific; a note is
-# the robust cross-version choice and keeps the reviewer's content intact.
+# vcs_pr_comment NUMBER PATH LINE BODY [DRY]
+# Posts a positioned (inline) MR discussion at PATH:LINE on the new side of the diff when
+# both are given — so review findings that need a code fix land on the exact line, not on
+# the MR overview. Falls back to a plain MR note (referencing PATH:LINE in its text) when
+# the position can't be set (e.g. the line isn't part of the diff, or it's a removed/context
+# line that needs old_line), so the reviewer's content is never lost.
 vcs_pr_comment() {
   local num="$1" path="$2" line="$3" body="$4" dry="${5:-0}"
   local full="$body"
   [[ -n "$path" ]] && full="${path}${line:+:$line} — ${body}"
   if [[ "$dry" -eq 1 ]]; then
-    printf 'DRY RUN — glab mr note %s --message %q\n' "$num" "$full"; return 0
+    if [[ -n "$path" && -n "$line" ]]; then
+      printf 'DRY RUN — glab api …/merge_requests/%s/discussions (inline %s:%s; falls back to a note)\n' "$num" "$path" "$line"
+    else
+      printf 'DRY RUN — glab mr note %s --message %q\n' "$num" "$full"
+    fi
+    return 0
+  fi
+  # Try a positioned discussion first. GitLab's text-diff position needs the MR's three
+  # diff refs (base/head/start SHAs) plus old_path+new_path; new_line anchors an added line.
+  if [[ -n "$path" && -n "$line" ]]; then
+    local refs base head start
+    refs="$(glab api "projects/:fullpath/merge_requests/$num" 2>/dev/null \
+            | jq -r '[.diff_refs.base_sha, .diff_refs.head_sha, .diff_refs.start_sha] | @tsv' 2>/dev/null || true)"
+    IFS=$'\t' read -r base head start <<<"$refs"
+    if [[ -n "$base" && -n "$head" && -n "$start" ]] \
+       && glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" \
+            -f "body=$body" \
+            -f "position[position_type]=text" \
+            -f "position[base_sha]=$base" \
+            -f "position[head_sha]=$head" \
+            -f "position[start_sha]=$start" \
+            -f "position[old_path]=$path" \
+            -f "position[new_path]=$path" \
+            -F "position[new_line]=$line" >/dev/null 2>&1; then
+      printf 'Inline comment posted on MR !%s at %s:%s\n' "$num" "$path" "$line"; return 0
+    fi
   fi
   glab mr note "$num" --message "$full" >/dev/null
   printf 'Comment posted on MR !%s\n' "$num"
@@ -79,6 +107,54 @@ vcs_pr_comments() {
   glab api "projects/:fullpath/merge_requests/$num/notes" 2>/dev/null \
     | jq -r '.[] | select(.system==false) | "\(.author.name)  \(.created_at)\n  \(.body)\n"' 2>/dev/null \
     || die "could not read notes for MR !$num"
+}
+
+# vcs_pr_threads NUMBER -> list the MR's RESOLVABLE discussion threads, one block each:
+#   ● thread=<discussion_id>  [unresolved|resolved]  <path>:<line>  (<author>)
+#     <author>: <note body…>
+# The `thread=<id>` is what vcs_pr_resolve_thread needs — plain `vcs_pr_comments` prints
+# the same notes but WITHOUT the discussion id, so a fix can't be tied back to its thread.
+# Only resolvable threads (review discussions) are listed; plain notes have no checkbox.
+vcs_pr_threads() {
+  local num="$1" out
+  out="$(glab api "projects/:fullpath/merge_requests/$num/discussions?per_page=100" 2>/dev/null \
+    | jq -r '
+        .[]
+        | select(any(.notes[]; .resolvable == true))
+        | . as $d
+        | ($d.notes | map(select(.resolvable))) as $rn
+        | $rn[0] as $first
+        | ($first.position // {}) as $pos
+        | ($pos.new_path // $pos.old_path // "") as $path
+        | ($pos.new_line // $pos.old_line // "") as $line
+        | (if ($rn | all(.resolved)) then "resolved" else "unresolved" end) as $state
+        | "● thread=\($d.id)  [\($state)]  "
+          + (if $path != "" then $path + (if ($line|tostring) != "" then ":" + ($line|tostring) else "" end) else "(general)" end)
+          + "  (\($first.author.name))\n"
+          + ($d.notes | map("  " + .author.name + ": " + (.body | gsub("\n"; "\n  "))) | join("\n"))
+          + "\n"
+      ' 2>/dev/null)" || die "could not read threads for MR !$num"
+  if [[ -z "${out//[$'\n\t ']/}" ]]; then
+    printf 'No resolvable threads on MR !%s\n' "$num"
+  else
+    printf '%s\n' "$out"
+  fi
+}
+
+# vcs_pr_resolve_thread NUMBER THREAD_ID [RESOLVED=true] [DRY]
+# Checks "Resolve thread" on a MR discussion once the developer has addressed it (PUT
+# resolved=true on the whole discussion). RESOLVED=false reopens it. THREAD_ID is the
+# discussion id printed by vcs_pr_threads.
+vcs_pr_resolve_thread() {
+  local num="$1" tid="$2" resolved="${3:-true}" dry="${4:-0}"
+  local word; word="$([[ "$resolved" == false ]] && echo unresolved || echo resolved)"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — glab api --method PUT …/merge_requests/%s/discussions/%s?resolved=%s\n' "$num" "$tid" "$resolved"
+    return 0
+  fi
+  glab api --method PUT "projects/:fullpath/merge_requests/$num/discussions/$tid?resolved=$resolved" >/dev/null \
+    || die "could not mark thread $tid on MR !$num $word"
+  printf 'Thread %s on MR !%s marked %s\n' "$tid" "$num" "$word"
 }
 
 # vcs_close_pr NUMBER [DRY] -> close the MR without merging (branch kept), then pr-view.

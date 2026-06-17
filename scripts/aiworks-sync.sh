@@ -24,6 +24,11 @@
 # clobbered. Fill it in (https://aistudio.google.com/apikey) to turn image generation on; until
 # then the /prd-design preflight detects the gap and fails loud instead of shipping placeholder art.
 #
+# It also ENSURES the workspace lifecycle hooks — .superset/{setup,run,teardown}.sh — exist and
+# that .superset/config.json registers all three (via scripts/aiworks-superset.sh). The hooks loop
+# over every cloned repo, so the synced set is covered automatically; this creates the run hook
+# (.superset/run.sh → each repo's `scripts/dev.sh run`) on workspaces that predate it.
+#
 # Usage:
 #   aiworks sync [<product>|<repo>] [options]
 #
@@ -344,6 +349,42 @@ prepare_adapter_env
 # once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
 seed_image_gen_settings
 
+# ── SonarQube onboarding scaffold (quality_gate.provider: sonarqube) ─────────────
+# Read the provider once, then seed a minimal sonar-project.properties into each CODE repo so the
+# dev-cycle guardian gate resolves a real project instead of silently hitting "no project for this
+# repo" (OFB-2141 §2.4). No-op unless the provider is sonarqube; skips the test-suite repo (no
+# guardian gate); never clobbers an existing file or a sonar.projectKey already defined in
+# pom.xml / build.gradle(.kts) / package.json / .sonarlint/connectedMode.json.
+QG_PROVIDER="$(awk '
+  /^[A-Za-z_][A-Za-z0-9_]*:/ { sec=$0; sub(/:.*/,"",sec) }
+  sec=="quality_gate" && /^  provider:/ { v=$0; sub(/^[^:]*:[ \t]*/,"",v); sub(/[ \t]+#.*$/,"",v);
+    gsub(/^[ \t"'\'']+|[ \t"'\'']+$/,"",v); print v; exit }
+' "$WC" 2>/dev/null)"
+QG_PROVIDER="${QG_PROVIDER:-none}"
+
+seed_sonar_scaffold() {
+  local prod="$1" key="$2" repokind="$3" reldir="$4"
+  [[ "$QG_PROVIDER" == "sonarqube" ]] || return 0
+  case "$repokind" in test-suite) return 0 ;; esac     # the QA repo has no guardian gate
+  local dir="$ROOT/${reldir:-$key}"
+  [[ -d "$dir" ]] || return 0
+  [[ -f "$dir/sonar-project.properties" ]] && return 0
+  # Don't double-define a key already configured elsewhere in the repo.
+  if grep -qs 'sonar\.projectKey' \
+       "$dir/pom.xml" "$dir/build.gradle" "$dir/build.gradle.kts" \
+       "$dir/package.json" "$dir/.sonarlint/connectedMode.json" 2>/dev/null; then
+    return 0
+  fi
+  local pkey="${prod:+${prod}_}${key}"
+  {
+    printf '# Seeded by `aiworks sync` (quality_gate.provider: sonarqube) so the dev-cycle guardian gate\n'
+    printf '# resolves a project. Set sonar.host.url + auth in CI/locally; tune sources/exclusions per repo.\n'
+    printf 'sonar.projectKey=%s\n' "$pkey"
+    printf 'sonar.projectName=%s\n' "$key"
+    printf 'sonar.sources=.\n'
+  } > "$dir/sonar-project.properties" && ok "seeded sonar-project.properties (projectKey=$pkey)"
+}
+
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
 total=0; synced=0; failed=0; noted=(); MATCHED=""
 while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) — empty fields aren't collapsed
@@ -381,7 +422,7 @@ while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) �
   # </dev/null so aiworks-add never consumes this loop's parse stream. Its own prompts read
   # /dev/tty (not stdin), so when -y is OMITTED they still fire here; with no tty they fall back
   # to defaults. Ctrl+C is signal-based, so it still stops the whole sweep.
-  if "${cmd[@]}" </dev/null; then synced=$((synced+1))
+  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path"
   else
     rc=$?
     [[ "$rc" -eq 130 ]] && { printf '\n%s✗ interrupted during %s/%s%s\n' "$c_warn" "$prod" "$key" "$c_off" >&2; exit 130; }
@@ -408,6 +449,16 @@ if [[ "$DRY" -ne 1 ]]; then
     step "Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
     "$GEN" || warn "could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand"
   fi
+fi
+
+# ── ensure the workspace lifecycle hooks (.superset/{setup,run,teardown}) cover the repo set ──
+# The hooks loop over every cloned repo, so the synced set is covered automatically — this just
+# makes sure the trio EXISTS and config.json registers all three (creating .superset/run.sh on
+# workspaces that predate the run hook). Idempotent; honoured in dry-run too.
+SUPGEN="$DIR/aiworks-superset.sh"
+if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle hooks…" header
+  if [[ "$DRY" -eq 1 ]]; then "$SUPGEN" -n || warn "could not preview .superset hooks"
+  else "$SUPGEN" || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi
 fi
 
 # ── summary ──────────────────────────────────────────────────────────────────────

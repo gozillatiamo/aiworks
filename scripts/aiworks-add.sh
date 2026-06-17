@@ -437,6 +437,20 @@ else
   skip "2.6. aiworks-config.sh not found next to aiworks-add.sh — mirror dev-cycle.js by hand"
 fi
 
+# ── 2.7. ensure the workspace lifecycle hooks (.superset/{setup,run,teardown}) cover this repo ─
+# The hooks are workspace-level and DYNAMIC — each loops over every cloned repo — so the new repo
+# is picked up with no per-repo edit. This just makes sure the trio EXISTS and config.json
+# registers all three (it creates .superset/run.sh on workspaces that predate the run hook). See
+# scripts/aiworks-superset.sh.
+step "2.7. Ensure .superset lifecycle hooks (setup/run/teardown) cover every repo"
+SUPGEN="$(cd "$(dirname "$0")" && pwd)/aiworks-superset.sh"
+if [[ -x "$SUPGEN" ]]; then
+  if out="$("$SUPGEN" -q 2>&1)"; then ok "lifecycle hooks present; config.json registers setup/run/teardown${out:+ — $out}"
+  else skip "2.7. could not ensure .superset hooks — run 'aiworks-superset.sh' by hand. Detail: ${out}"; fi
+else
+  skip "2.7. aiworks-superset.sh not found next to aiworks-add.sh — ensure .superset/{setup,run,teardown}.sh by hand"
+fi
+
 # ── 3. clone via mani + 3.1 gitignore ─────────────────────────────────────────
 step "3. Clone the repo (mani sync)"
 if ! have mani; then

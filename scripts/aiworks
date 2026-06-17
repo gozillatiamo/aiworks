@@ -32,7 +32,8 @@ Usage:
 Commands:
   add        Onboard ONE repo: register it (workspace.config.yaml products[] + mani.d +
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
-             seed hooks/permissions, scaffold scripts/dev.sh, run the skill generator.
+             seed hooks/permissions, scaffold scripts/dev.sh, run the skill generator, and
+             ensure the .superset lifecycle hooks (setup/run/teardown) exist + cover the repo.
   sync       Onboard every repo DECLARED in workspace.config.yaml products[].repos[]
              (optionally narrowed to one product, or one repo via a repo-name positional
              or --repo <name>) by running the `add` toolchain for each — reading
@@ -40,7 +41,8 @@ Commands:
              repo's URL to the config, then `aiworks sync`. Idempotent: already-onboarded
              repos just SKIP. Use -n to preview. Also seeds the adapter .env files
              (scripts/{tracker,vcs}/.env) when missing — from .env.example, pre-filled with
-             the providers/keys from workspace.config.yaml (an existing .env is left as-is).
+             the providers/keys from workspace.config.yaml (an existing .env is left as-is) —
+             and ensures the .superset lifecycle hooks (setup/run/teardown) cover every repo.
   remove     Offboard a repo (or every repo, with --all): deregister it from
              workspace.config.yaml products[].repos[], mani.d/<product>.yaml, mani.yaml and
              the .gitignore, unlink the workspace adapters (optionally --purge the clone).
@@ -73,6 +75,8 @@ Examples:
   aiworks remove --all --purge --force  # …and delete every clone too (force past dirty/unpushed)
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
+  aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
+  aiworks run agent-db                  # …run only the named repo(s)
   aiworks teardown                      # exec .superset/teardown.sh
 EOF
 }

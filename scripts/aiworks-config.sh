@@ -18,6 +18,7 @@
 #   tracker.ticket_prefix            → const TICKET_PREFIX
 #   tracker.statuses.*               → const STATUS
 #   vcs.auto_merge                   → const AUTO_MERGE
+#   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
 #   notify.enabled                   → const NOTIFY
@@ -140,6 +141,7 @@ FEATURE_BASE='develop'; FIX_BASE='main'
 NT_RAW='false'; NOTIFY_PROVIDER='slack'; NOTIFY_CHANNEL=''
 DESIGN_EN_RAW='false'; DESIGN_KEY=''; DESIGN_PAGE='{work_key} / {feature}'   # Figma OFF unless design.enabled: true
 IMG_EN_RAW='false'; IMG_QUALITY='balanced'; IMG_MAX='2'   # image-gen OFF unless image_generation.enabled: true
+QG_RAW='none'   # quality_gate.provider — 'none' (guardian gate skips+passes) unless the org declares sonarqube
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -160,6 +162,7 @@ while IFS=$'\t' read -r k v; do
     IMG_ENABLED)        IMG_EN_RAW="$v" ;;
     IMG_QUALITY)        IMG_QUALITY="$v" ;;
     IMG_MAX)            IMG_MAX="$v" ;;
+    QUALITY_GATE)       QG_RAW="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -186,6 +189,7 @@ done < <(
     sec=="image_generation" && /^  enabled:/         { print "IMG_ENABLED\t" val($0); next }
     sec=="image_generation" && /^  quality:/         { print "IMG_QUALITY\t" val($0); next }
     sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
+    sec=="quality_gate" && /^  provider:/            { print "QUALITY_GATE\t" val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
@@ -196,6 +200,8 @@ DESIGN_ENABLED="$(jsbool "$DESIGN_EN_RAW" false)"   # Figma OFF by default — o
 IMAGE_GEN_ENABLED="$(jsbool "$IMG_EN_RAW" false)"   # image-gen OFF by default — opt in with image_generation.enabled: true
 case "$IMG_QUALITY" in fast|balanced|quality) ;; *) IMG_QUALITY='balanced' ;; esac   # clamp to the valid presets
 [[ "$IMG_MAX" =~ ^[0-9]+$ ]] || IMG_MAX='2'         # numeric budget cap; fall back to 2
+QUALITY_GATE="${QG_RAW:-none}"
+case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # clamp to the supported providers
 # Fall back to the historical 5-phase lifecycle when the org declared no statuses.
 if [[ -z "$STATUS_PAIRS" ]]; then
   STATUS_PAIRS=$'not_started\tNot started\nin_progress\tIn progress\nready_to_test\tReady to test\ntesting\tTesting\ndone\tDone\n'
@@ -341,6 +347,7 @@ const NOTIFY = ${NOTIFY}        // from workspace.config.yaml notify.enabled; tr
 const NOTIFY_PROVIDER = $(jsq "$NOTIFY_PROVIDER") // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
 const NOTIFY_CHANNEL = $(jsq "$NOTIFY_CHANNEL")  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
+const QUALITY_GATE = $(jsq "$QUALITY_GATE")     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const STATUS = {
 ${status_body}}
 const REPOS = {

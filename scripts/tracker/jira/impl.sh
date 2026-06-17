@@ -401,10 +401,13 @@ tracker_add_comment() {
 # now returns HTTP 410). Differences this loop accounts for: pagination is TOKEN-based
 # (response carries `nextPageToken` + `isLast`, not `startAt`/`total`); `fields` MUST be
 # requested explicitly or the endpoint returns only `id`; and there is no `total` (use
-# /rest/api/3/search/approximate-count if a count is ever needed). --limit is sliced
-# client-side after the pages are collected.
+# /rest/api/3/search/approximate-count if a count is ever needed). Pages accumulate into
+# a temp file and are combined via stdin slurp (`jq -s`) — never on argv, which would
+# blow ARG_MAX once the result set grows. A positive --limit STOPS paging as soon as
+# enough issues are collected (only --limit 0 / "all" pages the whole board); the final
+# slice trims any overshoot from the last page.
 tracker_find() {
-  local opts="$1" query open limit as_json types_json jql token acc resp body
+  local opts="$1" query open limit as_json types_json jql token acc resp body count tmpdir
   query="$(printf '%s' "$opts" | jq -r '.query // ""')"
   open="$(printf '%s' "$opts" | jq -r '.open // false')"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
@@ -420,19 +423,29 @@ tracker_find() {
     | (if length > 0 then join(" AND ") + " " else "" end) + "ORDER BY created DESC"
   ')"
 
-  token=""; acc="[]"
+  tmpdir="$(mktemp -d)"; trap 'rm -rf "$tmpdir"' RETURN
+  token=""; count=0
   while :; do
     body="$(jq -n --arg jql "$jql" --arg tok "$token" \
       '{jql: $jql, maxResults: 100, fields: ["summary","status","issuetype","priority","description"]}
        + (if $tok != "" then {nextPageToken: $tok} else {} end)')"
     resp="$(jira_api POST "/rest/api/3/search/jql" "$body")"
-    acc="$(jq -n --argjson a "$acc" --argjson b "$(printf '%s' "$resp" | jq '.issues // []')" '$a + $b')"
+    # Append this page's issues array to the accumulator file (one JSON doc per line).
+    # The growing result set never touches argv — it is combined via stdin slurp below.
+    printf '%s' "$resp" | jq -c '.issues // []' >> "$tmpdir/pages.jsonl"
+    count=$(( count + $(printf '%s' "$resp" | jq '(.issues // []) | length') ))
+    # Honor a positive --limit DURING paging: once we have enough issues, stop fetching
+    # (only --limit 0 / "all" keeps paging the whole board into memory).
+    [[ "$limit" =~ ^[0-9]+$ && "$limit" -gt 0 && "$count" -ge "$limit" ]] && break
     # Token-based pagination: stop when the page is flagged last, or no continuation
     # token is returned. There is no startAt/total to compare against.
     [[ "$(printf '%s' "$resp" | jq -r '.isLast // false')" == "true" ]] && break
     token="$(printf '%s' "$resp" | jq -r '.nextPageToken // empty')"
     [[ -n "$token" ]] || break
   done
+
+  # Combine the per-page arrays via slurp over the file's contents (stdin), not argv.
+  acc="$(jq -s 'add // []' "$tmpdir/pages.jsonl")"
 
   if [[ "$limit" =~ ^[0-9]+$ && "$limit" -gt 0 ]]; then
     acc="$(printf '%s' "$acc" | jq --argjson n "$limit" '.[0:$n]')"

@@ -56,6 +56,10 @@ export const meta = {
 //   dev/QA agents do NOT call Figma — they build from the ticket spec, not a Figma screenshot
 //   (see FIGMA_DIRECTIVE below and docs/agents/figma.md). The /prd-design design phase is what authors
 //   Figma; this flag only governs the read-side here.
+// QUALITY_GATE — quality_gate.provider (the guardian's static-analysis gate). 'none' ⇒ the
+//   guardian gate is SKIPPED and auto-passes (no SonarQube attempt); 'sonarqube' ⇒ the guardian
+//   runs the gate. Editing workspace.config.yaml requires `scripts/aiworks config` to refresh THIS
+//   mirror (the workflow has no filesystem access to read the live config at runtime).
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const TICKET_PREFIX = 'OFB'
@@ -66,6 +70,7 @@ const NOTIFY = true        // from workspace.config.yaml notify.enabled; true + 
 const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
 const NOTIFY_CHANNEL = '#dev-oneforbet'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const DESIGN_ENABLED = false     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
+const QUALITY_GATE = 'none'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const STATUS = {
   to_do: 'TO DO',
   in_progress: 'IN PROGRESS',
@@ -161,6 +166,7 @@ if (!ticket) throw new Error(`dev-cycle needs a ticket number, e.g. args: "${TIC
 const opt = typeof args === 'object' && args ? args : {}
 const MAX_GATE_ROUNDS = opt.maxGateRounds || 3     // build↔gates loops, per repo
 const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 3 // review↔fix loops, per repo
+const MAX_BUILD_TRIAGE = opt.maxBuildTriage || 3   // fix attempts per failing test before a build agent must hand off (OFB-2141)
 // DRY RUN — run review + the (read-only) cross-repo test-suite gate, then STOP before the
 // outward/irreversible steps: NO Merge and NO Distribute (no squash-merge to the base branch,
 // no distribution). Lets a run confirm build/gate/test-suite behaviour safely.
@@ -182,6 +188,15 @@ const tag = (repo, role, phase, round) =>
 // title so the commit that lands on the base is itself a conventional commit.
 const ccType = (branch) => (/^fix\//i.test(branch ?? '') ? 'fix' : 'feat')
 const prTitle = (rp) => `${ccType(rp.work_branch)}(${ticket}): ${rp.title ?? '<Task name>'}`
+
+// Shared BUILD-AGENT DISCIPLINE (OFB-2141) — appended to EVERY build prompt (code + test-suite)
+// and the convergence retry. Three hard rules that stop an open-ended build loop from running
+// away (the agent-webservice build aborted 3× without ever handing off): always hand off, never
+// a repo-wide formatter, and a bounded red-test triage that tells a flaky harness from a real bug.
+const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory — OFB-2141):
+• ALWAYS HAND OFF. Ending WITHOUT calling StructuredOutput is a FAILURE. Even if the work is incomplete or the suite is red, you MUST end by returning the DEV_SCHEMA result with "status" set: "complete" (Definition of Done met — for the test-suite repo a red caused only by reported app bugs / expected pre-merge reds still counts as complete), "partial" (some slices landed, work remains), or "blocked" (cannot proceed). For "partial"/"blocked" put exactly WHAT REMAINS and WHY in "remaining". Never withhold the handoff to keep investigating.
+• NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
+• BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.`
 
 // ──────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -228,13 +243,50 @@ const REPO_PLAN_SCHEMA = {
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
   },
 }
+// Resolves the absolute workspace (org) root ONCE at Kickoff so the workflow can hand every
+// planner an absolute, repo-anchored artifact path (the engine runs all agents at the workspace
+// root and agent() has no cwd override — see the Kickoff anchoring block).
+const WS_ROOT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['workspace_root'],
+  properties: { workspace_root: { type: 'string' } }, // absolute pwd of the dir holding .claude/
+}
+// Post-plan placement guard report: per repo, which expected plan artifacts were already
+// correctly placed, which were relocated from the workspace root into the repo, and which
+// were missing everywhere. Drives the fail-loud / relocate-and-warn behaviour.
+const PLAN_GUARD_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['repos'],
+  properties: {
+    workspace_root: { type: 'string' },
+    repos: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['repo'],
+        properties: {
+          repo: { type: 'string' },
+          ok: { type: 'array', items: { type: 'string' } },        // already under <repo>/agent_logs/
+          relocated: { type: 'array', items: { type: 'string' } }, // moved workspace-root → <repo>/agent_logs/
+          missing: { type: 'array', items: { type: 'string' } },   // found neither under the repo nor at the root
+        },
+      },
+    },
+  },
+}
 const DEV_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['work_branch', 'summary'],
+  required: ['work_branch', 'summary', 'status'],
   properties: {
     work_branch: { type: 'string' }, handoff_path: { type: 'string' },
     summary: { type: 'string' }, commits: { type: 'number' },
     fixed: { type: 'array', items: { type: 'string' } },
+    // Convergence contract (OFB-2141): a build/fix handoff ALWAYS classifies its end state, so the
+    // workflow never has to treat a wall as a bare null/abort. complete = DoD met (test-suite repo:
+    // a red caused only by reported app bugs / expected pre-merge reds still counts as complete);
+    // partial = some slices landed, work remains; blocked = cannot proceed (flaky harness, missing
+    // fixture/seed, env). For partial|blocked, `remaining` MUST say what is left and why.
+    status: { type: 'string', enum: ['complete', 'partial', 'blocked'] },
+    remaining: { type: 'string' }, // what remains / why — required reading when status != complete
   },
 }
 // Guardian & performance share one gate shape. A finding is triaged into ONE of three
@@ -525,19 +577,33 @@ async function runRepoPipeline(rp, desc) {
    • genuine APP/feature bug → log it to agent_logs/${ticket}-bugs.md and comment it ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + repro, then move on. You are in the ${R} repo ONLY — NEVER read, reason about, or edit the app repo's source; root-causing app behaviour is the developer's job at the test-suite gate, not yours.
    • a brand-new feature spec red only because the app change is not built into this run yet is EXPECTED — note it and move on; it validates at the test-suite gate against the candidate build, not here.
 5. SCOPED RUN before handoff — once your automation is correct, run THIS ticket's scope ONCE on iOS AND Android: \`npm test -- <spec-token…>\` covering (a) the ticket's own spec(s) you built + (b) the ticket's regression spec(s) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)). Do NOT run the whole suite (\`npm test\` with no args): the full-suite run is ON-DEMAND only (the user triggers a full run separately), not part of this flow. ${desc.green} is the target — but a scoped red caused ONLY by reported app bugs or expected pre-merge reds is a VALID handoff state; record it, do not chase it.
-6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
-    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Run /karpathy-guidelines, then build it slice-by-slice with /tdd, commit each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.`
+6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, status="complete" (a green run, OR a red caused only by reported app bugs / expected pre-merge reds — both are a valid complete handoff for this phase) else "partial"/"blocked" with what's left in "remaining", and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
+    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /karpathy-guidelines, then build it slice-by-slice with /tdd, commit each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.`
   let dev = await safeAgent(
-    buildPrompt + FIGMA_DIRECTIVE,
+    buildPrompt + BUILD_DISCIPLINE + FIGMA_DIRECTIVE,
     { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
   )
-  // A null build means the agent never produced a structured handoff — for the test-suite
-  // repo this is the "runaway" failure (qa-runner kept root-causing a red instead of
-  // reporting + returning). Don't throw on dev.summary and abort the wave with a confusing
-  // error; return a clean diagnostic status and stop this repo here.
+  // CONVERGENCE RETRY (OFB-2141 §1.2) — a null build means the agent never produced a structured
+  // handoff (it ran away triaging a red / reformatting instead of returning). Don't abort the
+  // wave: retry ONCE with a bounded "stop working, hand off NOW" continuation, bumped to opus +
+  // xhigh so the wrap-up is reliable. It must emit DEV_SCHEMA with whatever state it reached
+  // (status partial/blocked is fine) — no new work.
   if (!dev) {
-    log(`⚠️ [${R}] build did not converge to a structured handoff (likely ran away triaging a red) — left mid-flight; downstream skipped.`)
-    return { repo: R, status: 'build-unresolved', plan: rp }
+    log(`⚠️ [${R}] build returned no structured handoff — retrying once (bounded: emit handoff now, no more work).`)
+    dev = await safeAgent(
+      `${tag(R, desc.build, 'build', 1)} Your build of ${ticket} in the ${R} repo (branch ${rp.work_branch}, plan ${rp.plan_path}) did NOT return a structured handoff last time — you likely ran away triaging a red or reformatting. STOP doing work now: run NO more tests, fixes, or formatters. In ONE step, summarize the state you have ALREADY reached and END by calling StructuredOutput with the DEV_SCHEMA result — work_branch=${rp.work_branch}, a one-line summary, commit count, the files you touched in "fixed", status="complete" ONLY if the Definition of Done is genuinely met else "partial" (slices landed, work remains) or "blocked" (cannot proceed), and in "remaining" exactly what is left and why (name a flaky/non-deterministic suite or missing fixture/seed if that blocked you). Returning this handoff IS the task — emit it immediately.`,
+      { agentType: desc.build, model: 'opus', effort: 'xhigh', phase: 'Build', label: `build-handoff:${ticket}:${R}`, schema: DEV_SCHEMA },
+    )
+  }
+  if (!dev) {
+    log(`⚠️ [${R}] build did not converge to a structured handoff even after the bounded retry — left mid-flight; downstream skipped.`)
+    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: 'blocked', summary: 'build agent never returned a structured handoff (2 attempts)', remaining: 'unknown — agent did not converge; needs human triage' } }
+  }
+  // A converged-but-not-complete handoff (partial/blocked) is a CLEAN stop for THIS repo: the whole
+  // change set must be ready before any merge, so we surface the handoff rather than pretend ready.
+  if (dev.status && dev.status !== 'complete') {
+    log(`⚠️ [${R}] build handoff status=${dev.status}: ${(dev.remaining || dev.summary || '(no detail)').slice(0, 140)} — repo not build-complete; downstream skipped.`)
+    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining } }
   }
   log(`[${R}] initial build: ${dev.summary?.slice(0, 70) ?? 'done'}`)
   tick(`${R}:build`)
@@ -566,9 +632,13 @@ async function runRepoPipeline(rp, desc) {
   // PR/MR; later rounds re-review only the changed scope; round-capped. A crashed
   // reviewer is INCONCLUSIVE (re-runs, never a silent pass). The test-suite repo has no
   // reviewers → it is ready as soon as the PR/MR is open.
+  // HONOR THE LIVE PROVIDER (OFB-2141 §2.3): when quality_gate.provider is 'none' the guardian
+  // gate is skipped entirely (auto-pass) — it never spins up an agent and so never attempts
+  // SonarQube nor risks tripping a usage-policy safeguard.
+  if (desc.guard && QUALITY_GATE === 'none') log(`[${R}] quality_gate.provider=none — guardian gate skipped (auto-pass, no SonarQube attempt).`)
   const reviewers = [
     desc.review && { key: 'review', role: desc.review, schema: REVIEW_SCHEMA, passed: (r) => r?.approved === true, open: (r) => r?.comments?.length || 0 },
-    desc.guard && { key: 'guard', role: 'guardian-engineer', schema: GATE_SCHEMA, passed: (r) => r?.passed === true, open: (r) => (r?.blocking?.length || 0) + (r?.fold_in?.length || 0) },
+    desc.guard && QUALITY_GATE !== 'none' && { key: 'guard', role: 'guardian-engineer', schema: GATE_SCHEMA, passed: (r) => r?.passed === true, open: (r) => (r?.blocking?.length || 0) + (r?.fold_in?.length || 0) },
     desc.perf && { key: 'perf', role: 'performance-engineer', schema: GATE_SCHEMA, passed: (r) => r?.passed === true, open: (r) => (r?.blocking?.length || 0) + (r?.fold_in?.length || 0) },
   ].filter(Boolean)
   if (!reviewers.length) {
@@ -593,12 +663,30 @@ async function runRepoPipeline(rp, desc) {
       rv.key === 'review'
         ? `${tag(R, rv.role, 'review', reviewRound)} Review ${onPr} Run /review (standards + spec) against the target. Return approved:true ONLY when every must-fix comment is resolved and the diff meets the bar; otherwise approved:false with the open comments.`
         : rv.key === 'guard'
-          ? `${tag(R, rv.role, 'review', reviewRound)} Quality-gate (static-analysis) review of ${ticket} in ${R} on ${onPr} Run the workspace's configured quality-gate tool (workspace.config.yaml: quality_gate.provider). If the provider is 'none', skip the scan and pass. Otherwise (SonarQube) run the gate by whichever channel is LIVE in THIS run-context: FIRST try the SonarQube MCP — if the mcp__sonarqube tools are not already in your toolset, load them with ToolSearch (e.g. \`select:mcp__sonarqube__get_project_quality_gate_status,mcp__sonarqube__search_sonar_issues_in_projects,mcp__sonarqube__search_security_hotspots\`) and read the quality-gate status + issues + security hotspots for the PR SHA; if the MCP is NOT reachable, FALL BACK to the installed \`sonar\` CLI over Bash (\`sonar analyze\` / \`sonar verify --file <changed-file>\`). GATE-UNAVAILABLE: if NEITHER channel can actually run the scan (no MCP AND no working CLI/auth), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason naming both channels you tried and why each failed, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the configured SonarQube gate could NOT run in this run-context; never fabricate a green status. You summarize the scanner's output, not author a security review. For each BLOCKING issue/hotspot post a PR/MR comment (rule + file:line + remediation) and list it under "blocking"; as a light secondary pass sanity-check this repo's sensitive spots against the scanner output: ${desc.guardianFocus}. Triage every NON-blocking finding into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR fix (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the exact remediation and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have hardening (needs its own design, touches multiple layers, changes a contract/permission model, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. Return passed:false while ANY blocking OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY obtained a green quality-gate result (or the provider is 'none') AND no fold_in item is left unresolved — NEVER passed:true for a scan you could not run (use gate_unavailable for that). Return the structured gate result.`
+          ? `${tag(R, rv.role, 'review', reviewRound)} AUTHORIZED, FIRST-PARTY, DEFENSIVE code review: you are reviewing the team's OWN internal codebase — a PR/MR the team authored — to HARDEN it before it ships. This is routine static-analysis triage of our own code, not offensive security work; frame every finding as "identify and remediate", never as an exploit or attack technique. Quality-gate (static-analysis) review of ${ticket} in ${R} on ${onPr} The workspace's configured quality-gate provider is quality_gate.provider="${QUALITY_GATE}" (mirrored from workspace.config.yaml — do NOT re-read the file). If it is 'none', skip the scan and pass cleanly. Otherwise (SonarQube) run the gate by whichever channel is LIVE in THIS run-context: FIRST try the SonarQube MCP — if the mcp__sonarqube tools are not already in your toolset, load them with ToolSearch (e.g. \`select:mcp__sonarqube__get_project_quality_gate_status,mcp__sonarqube__search_sonar_issues_in_projects,mcp__sonarqube__search_security_hotspots\`) and read the quality-gate status + issues + security hotspots for the PR SHA; if the MCP is NOT reachable, FALL BACK to the installed \`sonar\` CLI over Bash (\`sonar analyze\` / \`sonar verify --file <changed-file>\`). GATE-UNAVAILABLE: if NEITHER channel can actually run the scan (no MCP AND no working CLI/auth), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason naming both channels you tried and why each failed, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the configured SonarQube gate could NOT run in this run-context; never fabricate a green status. You summarize the scanner's output, not author a security review. For each BLOCKING issue/hotspot post a PR/MR comment (rule + file:line + remediation) and list it under "blocking"; as a light secondary pass sanity-check this repo's sensitive spots against the scanner output: ${desc.guardianFocus}. Triage every NON-blocking finding into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR fix (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the exact remediation and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have hardening (needs its own design, touches multiple layers, changes a contract/permission model, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. Return passed:false while ANY blocking OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY obtained a green quality-gate result (or the provider is 'none') AND no fold_in item is left unresolved — NEVER passed:true for a scan you could not run (use gate_unavailable for that). Return the structured gate result.`
           : `${tag(R, rv.role, 'review', reviewRound)} Performance review of ${ticket} in ${R} on ${onPr} Profile the changed flows with this repo's profiling tooling (e.g. for a Flutter app every profiling command goes through scripts/perf.sh, never raw flutter/dart: perf.sh build --profile, perf.sh run --profile + perf.sh devtools); measure jank, startup, memory, rebuild storms, unbounded lists, costly/unindexed queries; mandatory animations stay 60fps. For each CRITICAL regression post a PR/MR comment WITH the measurement as evidence and list it under "blocking". Triage every NON-blocking optimization into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR optimization (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope; e.g. MediaQuery.of(context).size → MediaQuery.sizeOf(context), or an O(n²) lookup → a Set) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the measurement/mechanism + exact fix direction and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have optimization (needs its own design, touches multiple layers, changes a query/index/schema, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have; e.g. a composite (status, createdAt) index) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. GATE-UNAVAILABLE: if your profiling tooling cannot actually run in this run-context (e.g. scripts/perf.sh / the profiler is unavailable so you could measure nothing), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason explaining what you tried and why it couldn't run, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the performance gate could NOT run; never fabricate a clean profile. Return passed:false while ANY blocking regression OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY profiled the changed flows AND found zero blocking regressions AND no fold_in item is left unresolved — NEVER passed:true for a profile you could not run (use gate_unavailable for that). Return the structured gate result.`
 
     const openReviewers = reviewers.filter((rv) => !done[rv.key])
     reviewers.filter((rv) => done[rv.key]).forEach((rv) => log(`[${R}] review round ${reviewRound}: ${rv.key} ${done[rv.key] === 'unavailable' ? 'UNAVAILABLE (gate could not run)' : 'already PASSED'} — frozen, not re-reviewed.`))
-    const results = await parallel(openReviewers.map((rv) => () => agent(promptFor(rv), { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })))
+    // A guard/perf gate that DIES — e.g. an Anthropic usage-policy safeguard tripping on the
+    // security-review phrasing, or a transient API error — must NOT read as a hard run failure.
+    // Map it to gate_unavailable so the run continues (fail-open) and surfaces it loudly, exactly
+    // like an un-runnable gate. The code reviewer has no gate_unavailable concept → stays null
+    // (inconclusive, re-run next round). (OFB-2141 §2.1)
+    const runReviewer = async (rv) => {
+      try {
+        return await agent(promptFor(rv), { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
+      } catch (e) {
+        const msg = String(e?.message || e).slice(0, 200)
+        if (rv.key === 'guard' || rv.key === 'perf') {
+          log(`⚠️ [${R}] ${rv.key} reviewer errored (${msg}) — mapped to gate_unavailable (possible usage-policy safeguard); run continues.`)
+          return { passed: false, gate_unavailable: true, unavailable_reason: `${rv.key} agent could not complete in this run-context: ${msg}` }
+        }
+        log(`⚠️ [${R}] ${rv.key} reviewer errored (${msg}) — inconclusive, will re-run.`)
+        return null
+      }
+    }
+    const results = await parallel(openReviewers.map((rv) => () => runReviewer(rv)))
     results.forEach((r, i) => { verdict[openReviewers[i].key] = r })
     // A gate that reports gate_unavailable is frozen as UNAVAILABLE — NOT a pass, but it
     // can't be "fixed" by the developer either, so we stop re-running it (fail-open: the
@@ -629,7 +717,7 @@ async function runRepoPipeline(rp, desc) {
 
     // Developer fixes the WHOLE combined batch (every open reviewer's PR comments) in ONE pass, pushing to the PR.
     const fix = await safeAgent(
-      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too. Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check. Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — reviewers re-review ONLY that scope next round.`,
+      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too. Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — reviewers re-review ONLY that scope next round. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.`,
       { agentType: desc.build, phase: 'Review', label: `pr-fix:${ticket}:${R}#${reviewRound}`, schema: DEV_SCHEMA },
     )
     if (fix) fixPasses++
@@ -690,33 +778,146 @@ tick('scope')
 phase('Kickoff')
 await moveTicket(['in_progress'], 'kickoff started', 'Kickoff')
 const branchKind = scope.type === 'bug' ? 'fix' : 'feature' // polish rides the feature flow
+
+// ── Per-repo plan artifacts MUST land under their repo clone, NOT the workspace root ──
+// The workflow engine runs every agent with cwd = the workspace (org) root and agent() exposes
+// NO cwd override, so we cannot rely on a planner voluntarily cd-ing into its repo before it
+// writes a bare `agent_logs/...` path — some do, some don't (OFB-2141: two planners dumped their
+// plan/.html/testcases at the workspace root). We make placement cwd-independent in three steps:
+//   (1) resolve the absolute workspace root ONCE here,
+//   (2) hand each planner an ABSOLUTE, repo-anchored output path (code repos write the plan
+//       themselves → absolute Write target; the test-suite repo's skills write a FIXED relative
+//       path → require cd-into-repo-first), and
+//   (3) run a post-plan guard that relocates anything a planner still misfiled and normalizes the
+//       recorded plan_path/plan_html. Workspace-level run summaries are never touched.
+const repoDirs = [...new Set(scoped.map((r) => REPOS[r.repo].path.replace(/\/+$/, '')))]
+const wsRootRes = await safeAgent(
+  `${tag('all', 'workspace', 'kickoff')} One-shot setup for the ${ticket} planning phase — touch NO git, NO tracker, write NO plan files. Your cwd IS the workspace (org) root (the dir that holds .claude/ and workspace.config.yaml).
+1. Print its ABSOLUTE path with \`pwd -P\` (resolve symlinks).
+2. Pre-create the plan-artifact dirs so later writes have a target UNDER each repo (paths are relative to your cwd — do NOT cd): \`mkdir -p ${repoDirs.map((d) => `"${d}/agent_logs" "${d}/agent_logs/development-planner"`).join(' ')}\`.
+Return workspace_root = the absolute path from step 1.`,
+  { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `ws-root:${ticket}`, schema: WS_ROOT_SCHEMA },
+)
+const WORKSPACE_ROOT = (wsRootRes?.workspace_root || '').trim().replace(/\/+$/, '')
+const haveAbs = WORKSPACE_ROOT.startsWith('/')
+if (!haveAbs) log(`⚠️ [kickoff] could NOT resolve an absolute workspace root (got ${JSON.stringify(wsRootRes?.workspace_root)}) — planners will anchor by cd-into-repo and the post-plan guard relocates any artifact still misfiled at the root.`)
+
+// Per-repo path bookkeeping (computed in JS, NOT from the agent, so it's consistent for every
+// repo). planRel/planHtmlRel are repo-ROOT-relative (the data-plan-md convention + what the
+// build/gate phases read from inside the repo); planPath/planHtmlPath are the ABSOLUTE forms we
+// hand the planner and record on the plan.
+const planMeta = {}
+for (const r of scoped) {
+  const desc = REPOS[r.repo]
+  const repoDir = desc.path.replace(/\/+$/, '')
+  const repoRoot = haveAbs ? `${WORKSPACE_ROOT}/${repoDir}` : null
+  const planRel = desc.kind === 'test-suite' ? `agent_logs/${ticket}-automation-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
+  const planHtmlRel = `agent_logs/${ticket}-${r.repo}-plan.html`
+  const testcasesRel = `agent_logs/${ticket}-testcases.md`
+  planMeta[r.repo] = {
+    kind: desc.kind, repoDir, repoRoot, planRel, planHtmlRel, testcasesRel,
+    planPath: repoRoot ? `${repoRoot}/${planRel}` : planRel,
+    planHtmlPath: repoRoot ? `${repoRoot}/${planHtmlRel}` : planHtmlRel,
+  }
+}
+
 const plans = (await parallel(scoped.map((r) => () => {
   const desc = REPOS[r.repo]
   const planner = desc.plan
   const baseBranch = desc.base[branchKind]
   const workBranch = `${branchKind}/${ticket}`
   const slice = r.summary || 'see ticket'
-  const planPath = desc.kind === 'test-suite' ? `agent_logs/${ticket}-automation-plan.md` : `agent_logs/development-planner/${ticket}-${r.repo}-plan.md`
-  const planHtmlPath = `agent_logs/${ticket}-${r.repo}-plan.html`
+  const m = planMeta[r.repo]
+  const { repoDir, repoRoot, planRel, planPath, planHtmlPath, testcasesRel } = m
+  // ANCHORING directive — front-loaded so a planner can't miss it. Code repos: the planner WRITES
+  // the plan itself, so an absolute target makes placement cwd-independent. Test-suite repo:
+  // /plan-testcases + /plan-automate write to FIXED relative `agent_logs/...` paths, so the agent
+  // MUST cd into the repo first (the guard relocates if it doesn't). Either way: never the root.
+  const anchor = desc.kind === 'test-suite'
+    ? (repoRoot
+        ? ` ARTIFACT ANCHORING (mandatory): the ${r.repo} clone is at ${repoRoot}. /plan-testcases and /plan-automate write to FIXED relative \`agent_logs/...\` paths, so your VERY FIRST action must be \`cd ${repoRoot}\` and you must run every planning skill from there — so ${testcasesRel} and ${planRel} land under ${repoRoot}/agent_logs/, NEVER at the workspace-root agent_logs/ (that dir is for run-level summaries only).`
+        : ` ARTIFACT ANCHORING (mandatory): your VERY FIRST action must be \`cd ${repoDir}\` (the ${r.repo} clone, relative to the workspace root) and run every planning skill from there, so /plan-testcases + /plan-automate write their fixed \`agent_logs/...\` files UNDER the repo, NEVER at the workspace-root agent_logs/.`)
+    : (repoRoot
+        ? ` ARTIFACT ANCHORING (mandatory): the ${r.repo} clone is at ${repoRoot}. Write the implementation plan (and, if asked below, its HTML) with the Write tool to the ABSOLUTE path(s) given — NEVER a bare \`agent_logs/...\` relative to your cwd, and NEVER to the workspace-root agent_logs/ (that dir is for run-level summaries only).`
+        : ` ARTIFACT ANCHORING (mandatory): \`cd ${repoDir}\` (the ${r.repo} clone) before writing the plan, so its \`agent_logs/...\` path lands UNDER the repo, NEVER at the workspace-root agent_logs/.`)
+  // --approve-plan PRESERVE (OFB-2141 §3): on an approved re-run a human may have hand-edited the
+  // plan/ADRs after a bad run. The planner must NOT regenerate or overwrite an existing plan —
+  // --approve-plan ("the plan is approved") implies "do not regenerate the approved plan". It runs
+  // /ticket-kickoff for BRANCH SETUP ONLY, reads the existing plan as-is (validated against current
+  // code + docs/adr/* + CONTEXT.md), and returns the structured plan FROM it. Only when NO plan
+  // file exists does it author one (no regression to the first-run flow).
+  const preserveCode = approvePlan
+    ? ` APPROVED RE-RUN (--approve-plan) — PRESERVE THE PLAN: FIRST, try to Read ${planPath}. If it EXISTS and is non-empty, the human may have hand-edited it — do NOT regenerate, rewrite, or overwrite it. Run /ticket-kickoff ${ticket} for BRANCH SETUP ONLY (create/checkout ${workBranch}); then READ the existing plan at ${planPath} together with this repo's docs/adr/* and CONTEXT.md, validate it against the CURRENT code (note any drift in your summary), and return the structured repo plan populated FROM the existing plan (its title/acceptance/summary) with plan_path=${planPath} byte-unchanged. ONLY if NO plan file exists at ${planPath} do you author one as described below.`
+    : ''
+  const preserveTest = approvePlan
+    ? ` APPROVED RE-RUN (--approve-plan) — PRESERVE THE PLAN: FIRST, try to Read ${planPath} (the automation plan) and ${testcasesRel}. If the automation plan EXISTS and is non-empty, the human may have edited it — do NOT re-run /plan-testcases or /plan-automate and do NOT re-publish to the ticket. Read both files as-is and return the structured repo plan FROM them, with plan_path=${planPath} byte-unchanged. ONLY if the automation plan does NOT exist do you run the full planning chain described below.`
+    : ''
   // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
   // The markdown at planPath stays the SOURCE OF TRUTH this workflow reads at build — the HTML
-  // is human-only. When auto_approve is OFF, turn on the skill's plan-approval mode so the
-  // reviewer's in-page decisions flow back into THAT markdown (approve downloads it to replace planPath).
+  // is human-only. data-plan-md stays REPO-ROOT-RELATIVE (planRel) per the in-HTML convention;
+  // the on-disk file is the absolute planPath. When auto_approve is OFF, turn on plan-approval mode.
   const approvalClause = !AUTO_APPROVE_PLAN
-    ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planPath}" (the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over ${planPath} before the re-run.`
+    ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planRel}" (the repo-root-relative path to the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over the on-disk plan at ${planPath} before the re-run.`
     : ''
   const htmlClause = PLAN_TO_HTML
-    ? ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`
+    ? (approvePlan
+        ? ` PLAN-TO-HTML is ON but this is an APPROVED RE-RUN: the interactive HTML at ${planHtmlPath} was already rendered on the first run — do NOT re-render it (wasted cost). Run /write-interactive-docs to create it ONLY if ${planHtmlPath} is MISSING. Set plan_html=${planHtmlPath}.`
+        : ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (write it to that ${repoRoot ? 'ABSOLUTE ' : ''}path UNDER the repo, NEVER the workspace root; it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`)
     : ''
   const prompt = desc.kind === 'test-suite'
-    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo. Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
-    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/). Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan.${htmlClause}`
+    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
+    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
   return agent(prompt + FIGMA_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
-// carry the dependency edges from scope onto the plans
-plans.forEach((p) => { p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || [] })
+// Normalize the recorded paths to the ABSOLUTE, repo-anchored forms — consistently for every
+// repo, regardless of what the planner echoed back (a planner that returned a bare-relative or
+// workspace-rooted path is overwritten with the canonical one) — and carry the dependency edges.
+plans.forEach((p) => {
+  const m = planMeta[p.repo]
+  if (m) { p.plan_path = m.planPath; if (PLAN_TO_HTML) p.plan_html = m.planHtmlPath }
+  p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || []
+})
+
+// (3) POST-PLAN GUARD — anchoring is the first line of defense; this is the guarantee. One agent
+// asserts each expected artifact sits under its repo clone, relocates any a planner still misfiled
+// at the workspace root, and reports anything missing. It never touches the workspace-level run
+// summaries. A source-of-truth plan markdown that is missing everywhere is fatal (build can't run).
+const guardRepos = plans.map((p) => {
+  const m = planMeta[p.repo]
+  const files = [m.planRel]
+  if (PLAN_TO_HTML) files.push(m.planHtmlRel)
+  if (m.kind === 'test-suite') files.push(m.testcasesRel) // /plan-testcases output, read by build + the gate
+  return { repo: p.repo, repoDir: m.repoDir, files }
+})
+const guard = await safeAgent(
+  `${tag('all', 'plan-guard', 'kickoff')} Plan-artifact placement guard for ${ticket}. Each planner was told to write its artifacts UNDER its own repo clone's agent_logs/, but some agents misfile them at the workspace root instead. Your cwd is the workspace (org) root${haveAbs ? ` (${WORKSPACE_ROOT})` : ''} — do NOT cd. For each repo + repo-relative file path below, make sure the file lives under the repo, NOT at the workspace root:
+${guardRepos.map((g) => `- repo ${g.repo} — clone dir "${g.repoDir}/":\n${g.files.map((f) => `    • ${f}`).join('\n')}`).join('\n')}
+For each file <f> of clone dir <dir>:
+  1. If "<dir>/<f>" already exists → correctly placed; add to that repo's "ok".
+  2. Else if the bare workspace-root "<f>" exists (a misfile) → \`mkdir -p\` the target's parent under "<dir>", \`mv "<f>" "<dir>/<f>"\`, and add to "relocated".
+  3. Else → missing everywhere; add to "missing".
+Use plain shell only (test -f, mkdir -p, mv). Touch NO git, NO tracker, and NO file other than the relocations above. Do NOT move or alter the workspace-root run summaries (e.g. ${ticket}-DEV-CYCLE-SUMMARY.md) or anything not listed. Return the per-repo { repo, ok, relocated, missing } report.`,
+  { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `plan-guard:${ticket}`, schema: PLAN_GUARD_SCHEMA },
+)
+const relocatedAll = (guard?.repos || []).flatMap((g) => (g.relocated || []).map((f) => `${g.repo}:${f}`))
+const missingAll = (guard?.repos || []).flatMap((g) => (g.missing || []).map((f) => `${g.repo}:${f}`))
+if (relocatedAll.length) log(`⚠️ [plan-guard] relocated ${relocatedAll.length} misfiled plan artifact(s) from the workspace root into their repo: ${relocatedAll.join(', ')}.`)
+if (!guard) log(`⚠️ [plan-guard] guard did not converge — plan-artifact placement for ${ticket} is UNVERIFIED; the recorded paths are the canonical ones but were not asserted on disk.`)
+else if (missingAll.length) log(`⚠️ [plan-guard] expected plan artifact(s) found NOWHERE (neither repo nor workspace root): ${missingAll.join(', ')}.`)
+// A missing source-of-truth plan markdown is fatal: the build phase reads it. Fail loud + stop.
+const missingPlans = plans.filter((p) => {
+  const rep = (guard?.repos || []).find((g) => g.repo === p.repo)
+  return rep ? (rep.missing || []).includes(planMeta[p.repo].planRel) : false
+}).map((p) => p.repo)
+if (missingPlans.length) {
+  log(`⛔ [plan-guard] source-of-truth plan markdown missing for ${missingPlans.join(', ')} — these repos have no plan to build from; stopping for human attention.`)
+  const summary = await writeSummary('plan-missing', { ticket, repos: plans.map((p) => p.repo), plans, missingPlans, guard, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: 'plan-missing', missingPlans, plans, guard, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+}
+
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
+log(`Plan artifacts: ${plans.map((p) => `${p.repo}=${p.plan_path}`).join(', ')}`)
 if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
 log(`Build: all ${plans.length} repo(s) in parallel · merge order: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
@@ -743,9 +944,18 @@ const buildRes = await parallel(buildIds.map((id) => () => runRepoPipeline(plans
 buildRes.forEach((r, i) => { if (r) repoResults[buildIds[i]] = r })
 const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
 if (aborted.length) {
-  log(`⚠️ ${aborted.join(', ')} did not reach 'ready' — the whole change set must be ready before any merge; stopping.`)
-  const summary = await writeSummary('repo-unresolved', { ticket, aborted, repoResults, testSuiteRequested, testSuiteGateUnavailable })
-  return { ticket, status: 'repo-unresolved', aborted, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+  // Surface each unresolved repo's partial/blocked HANDOFF (status + what remains) instead of a
+  // bare "aborted" — the run stops at the merge gate (the whole change set must be ready before any
+  // merge), but the human/summary sees what landed and what's missing per repo. (OFB-2141 §1.5)
+  const handoffs = aborted.map((id) => {
+    const r = repoResults[id]
+    const h = r?.handoff
+    log(`⚠️ [${id}] unresolved (${r?.status ?? 'no-result'})${h ? ` — handoff:${h.status}: ${h.remaining ?? h.summary ?? '(no detail)'}` : ''}`)
+    return `${id}: ${r?.status ?? 'no-result'}${h ? ` — handoff:${h.status}${h.remaining ? ` — remaining: ${h.remaining}` : ''}` : ''}`
+  })
+  log(`⚠️ ${aborted.join(', ')} did not reach 'ready' — the whole change set must be ready before any merge; stopping. Handoffs: ${handoffs.join(' | ')}`)
+  const summary = await writeSummary('repo-unresolved', { ticket, aborted, handoffs, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: 'repo-unresolved', aborted, handoffs, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.

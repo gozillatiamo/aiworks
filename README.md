@@ -53,7 +53,8 @@ docs/agents/issue-tracker.md       # how agents read/write tickets
 .claude/{agents,skills,workflows,hooks,settings.json}
 scripts/vcs/                       # github | gitlab  PR/MR adapter
 scripts/tracker/                   # notion | jira    ticket adapter
-.superset/                         # workspace setup/teardown (mani sync + .env seeding)
+.superset/                         # workspace setup/run/teardown hooks (setup: mani sync + .env
+                                   #   seeding; run: scripts/dev.sh run per repo; teardown: rm clones)
 ```
 
 ---
