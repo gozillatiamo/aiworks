@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  front-end:
+    desc: The web app for player users, it's one of the player site theme(OHANABET) concept in platform.
+    url: git@gitlab.com:bluepicode/ofb/front-end.git
+    path: ../front-end
+    tags: [ofb-platform, next.js]
   ofb-backoffice-cypress:
     desc: The cross-repo QA suite for the backoffice repo. It's contains the E2E UI tests for the backoffice. Including the Newman API tests for the platform.
     url: git@gitlab.com:bluepicode/qa/ofb-backoffice-cypress.git

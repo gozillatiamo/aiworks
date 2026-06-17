@@ -32,3 +32,4 @@ agent_logs/
 # product repo clones (cloned by aiworks; not committed to the workspace meta-repo)
 backoffice/
 ofb-backoffice-cypress/
+front-end/

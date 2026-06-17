@@ -1,12 +1,37 @@
 {
   "folders": [
-    { "name": "🗂 ai-workspace (meta)", "path": "." },
-    { "name": "agent-db", "path": "agent-db" },
-    { "name": "agent-webservice", "path": "agent-webservice" },
-    { "name": "paotung-template", "path": "paotung-template" },
-    { "name": "backoffice", "path": "backoffice" },
-    { "name": "agent-paotung-cypress", "path": "agent-paotung-cypress" },
-    { "name": "ofb-backoffice-cypress", "path": "ofb-backoffice-cypress" }
+    {
+      "name": "🗂 ai-workspace (meta)",
+      "path": "."
+    },
+    {
+      "name": "agent-db",
+      "path": "agent-db"
+    },
+    {
+      "name": "paotung-template",
+      "path": "paotung-template"
+    },
+    {
+      "name": "front-end",
+      "path": "front-end"
+    },
+    {
+      "name": "agent-webservice",
+      "path": "agent-webservice"
+    },
+    {
+      "name": "agent-paotung-cypress",
+      "path": "agent-paotung-cypress"
+    },
+    {
+      "name": "backoffice",
+      "path": "backoffice"
+    },
+    {
+      "name": "ofb-backoffice-cypress",
+      "path": "ofb-backoffice-cypress"
+    }
   ],
   "settings": {
     "git.autoRepositoryDetection": true,

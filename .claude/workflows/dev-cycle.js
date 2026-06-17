@@ -94,6 +94,15 @@ const REPOS = {
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
+  'front-end': {
+    path: 'front-end', kind: 'web-app',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'tests via stroybook and lint passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
   'agent-webservice': {
     path: 'agent-webservice', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },

@@ -116,7 +116,14 @@ products:
 
       - url: git@gitlab.com:bluepicode/ofb/paotung-template.git
         kind: web-app
-        desc: The web app for player users, it's one of the player site theme concept in platform.   # one-line repo responsibility (anatomy at a glance)
+        desc: The web app for player users, it's one of the player site theme(PAOTUNG) concept in platform.   # one-line repo responsibility (anatomy at a glance)
+        lang: next.js
+        green: "tests via stroybook and lint passed successfully"
+        guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/front-end.git
+        kind: web-app
+        desc: The web app for player users, it's one of the player site theme(OHANABET) concept in platform.   # one-line repo responsibility (anatomy at a glance)
         lang: next.js
         green: "tests via stroybook and lint passed successfully"
         guardian_focus: "secrets, data-protection"
