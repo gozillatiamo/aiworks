@@ -104,6 +104,11 @@ planning:
 products:
   - id: ofb-platform                          # → mani.d/<product-id>.yaml
     repos:
+      - url: git@gitlab.com:bluepicode/ofb/ofb-instruction.git
+        kind: document 
+        desc: Instruction for setup the product for the first time.  
+        lang: markdown
+
       - url: git@gitlab.com:bluepicode/ofb/agent-db.git   # ← all you must provide
         kind: migration                           # any dev-context label; test-suite = QA archetype
         desc: Data storage and Database migration for the platform, included all data storage kinds.   # one-line repo responsibility (anatomy at a glance)
@@ -117,6 +122,13 @@ products:
       - url: git@gitlab.com:bluepicode/ofb/paotung-template.git
         kind: web-app
         desc: The web app for player users, it's one of the player site theme(PAOTUNG) concept in platform.   # one-line repo responsibility (anatomy at a glance)
+        lang: next.js
+        green: "tests via stroybook and lint passed successfully"
+        guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/customization-widget.git 
+        kind: package 
+        desc: The package library for the player sites, to convert the template data into the real component.   # one-line repo responsibility (anatomy at a glance)
         lang: next.js
         green: "tests via stroybook and lint passed successfully"
         guardian_focus: "secrets, data-protection"

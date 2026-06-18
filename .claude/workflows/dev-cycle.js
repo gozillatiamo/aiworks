@@ -81,6 +81,15 @@ const STATUS = {
   done: 'DONE',
 }
 const REPOS = {
+  'ofb-instruction': {
+    path: 'ofb-instruction', kind: 'document',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: '<unit + integration tests>',
+    guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit',
+    distribute: null,
+  },
   'agent-db': {
     path: 'agent-db', kind: 'migration',
     base: { feature: 'develop', fix: 'main' },
@@ -92,6 +101,15 @@ const REPOS = {
   },
   'paotung-template': {
     path: 'paotung-template', kind: 'web-app',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'tests via stroybook and lint passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
+  'customization-widget': {
+    path: 'customization-widget', kind: 'package',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,

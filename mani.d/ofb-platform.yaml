@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  ofb-instruction:
+    desc: Instruction for setup the product for the first time.  
+    url: git@gitlab.com:bluepicode/ofb/ofb-instruction.git
+    path: ../ofb-instruction
+    tags: [ofb-platform, markdown]
   front-end:
     desc: The web app for player users, it's one of the player site theme(OHANABET) concept in platform.
     url: git@gitlab.com:bluepicode/ofb/front-end.git
