@@ -1,80 +1,127 @@
 ---
 name: review
-description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to "review since X".
+description: Review the changes since a fixed point (commit, branch, tag, or merge-base) and render one verdict — are the originating ticket's requirements genuinely met? Verifies the diff against the repo's own knowledge (structure, design patterns, docs, ADRs, standards) along two parallel axes — Spec (is the bar cleared?) and Standards (does the implementation hold up?) — reported side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to "review since X".
 ---
 
 # Review
 
-Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
+Review the diff between `HEAD` and a fixed point the user supplies, and render one
+verdict: **are the originating ticket's requirements genuinely met?**
 
-- **Standards** — does the code conform to this repo's documented coding standards?
-- **Spec** — does the code faithfully implement the originating issue / PRD / spec?
+Before judging anything, read the **verdict basis** — [`basis.md`](basis.md) — and hold
+it as the base context for everything below. In short:
 
-Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
+- **The requirements are the bar.** The ticket is what the change exists to achieve;
+  the verdict measures against it.
+- **The repo's knowledge is your instrument.** Structure, design patterns, docs, ADRs,
+  standards, and the codegraph index are how you verify that the bar is *genuinely*
+  cleared — not just superficially. Every finding cites the requirement it bears on or
+  the instrument that exposed it.
 
-The issue-tracker conventions (how to fetch the originating ticket, the id format) live in `docs/agents/issue-tracker.md`; reads/writes go through the tracker adapter (`scripts/tracker/`).
+The verdict runs along two axes, as **parallel sub-agents** (so they don't pollute each
+other's context), then this skill aggregates them:
+
+- **Spec** — is the bar cleared? Are the requirements present, complete, and correct?
+- **Standards** — does the implementation hold up against the repo's knowledge? (The
+  instruments applied as their own axis.)
+
+Either axis can pass while the other fails (see [Why two axes](#why-two-axes)), so they
+are reported side by side, never merged.
+
+Ticket conventions (how to fetch the originating ticket, the id format) live in
+`docs/agents/issue-tracker.md`; reads/writes go through the tracker adapter
+(`scripts/tracker/`).
 
 ## Process
 
 ### 1. Pin the fixed point
 
-Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. Don't be opinionated; pass it through. If they didn't specify one, ask: "Review against what — a branch, a commit, or `main`?" Don't proceed until you have it.
+Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`,
+`HEAD~5`, etc. Don't be opinionated; pass it through. If they didn't specify one, ask:
+"Review against what — a branch, a commit, or `main`?" Don't proceed until you have it.
 
-Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the
+comparison is against the merge-base). Note the commit list via
+`git log <fixed-point>..HEAD --oneline`, and the **changed symbols** (the
+functions/classes/methods the diff touches) — both sub-agents trace their blast radius
+with the codegraph instrument (`basis.md` §2).
 
-Also note the **changed symbols** (the functions/classes/methods the diff touches) — both sub-agents use the repo's codegraph index to trace their **blast radius** (`codegraph callers`/`codegraph impact`), so a change that breaks a dependent OUTSIDE the diff is caught, not just what the diff literally shows. Codegraph is the pre-built index for this repo; `Grep`/`Glob` are the last resort for a detail it didn't cover.
+### 2. Identify the spec source (the requirements — the bar)
 
-### 2. Identify the spec source
+Find the originating requirements, in this order:
 
-Look for the originating spec, in this order:
-
-1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `docs/agents/issue-tracker.md`.
+1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) —
+   fetch via the workflow in `docs/agents/issue-tracker.md`.
 2. A path the user passed as an argument.
-3. A PRD/spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
+3. A PRD/spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or
+   feature.
+4. If nothing is found, ask the user where the requirements are. If they say there are
+   none, the **Spec** sub-agent skips and reports "no spec available" — and without a
+   bar, the verdict is necessarily weaker. Say so.
 
-### 3. Identify the standards sources
+### 3. Identify the standards sources (the instruments)
 
-Anything in the repo that documents how code should be written. Common locations:
+The repo-knowledge files the **Standards** sub-agent verifies against (`basis.md` §2).
+Collect the list; common locations:
 
-- `CLAUDE.md`, `AGENTS.md`
-- `CONTRIBUTING.md`
+- `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`
 - `CONTEXT.md`, `CONTEXT-MAP.md`, per-context `CONTEXT.md` files
-- `docs/adr/` (architectural decisions are standards)
-- `.editorconfig`, `eslint.config.*`, `biome.json`, `prettier.config.*`, `tsconfig.json` (machine-enforced standards — note them but don't re-check what tooling already checks)
-- Any `STYLE.md`, `STANDARDS.md`, `STYLEGUIDE.md`, or similar at the repo root or under `docs/`
-
-Collect the list of files. The **Standards** sub-agent will read them.
+- `docs/adr/` — architectural decisions are standards
+- `STYLE.md`, `STANDARDS.md`, `STYLEGUIDE.md`, or similar at the repo root or under `docs/`
+- `.editorconfig`, `eslint.config.*`, `biome.json`, `prettier.config.*`, `tsconfig.json`
+  — machine-enforced; note them but don't re-check what tooling already checks.
 
 ### 4. Spawn both sub-agents in parallel
 
-Send a single message with two `Agent` tool calls. Use the `general-purpose` subagent for both. Tell **both** sub-agents to lean on the repo's codegraph index for lookups — `codegraph explore`/`codegraph search` to understand a touched area, and **`codegraph callers`/`codegraph impact` to trace the blast radius of changed symbols** (what depends on them OUTSIDE the diff). It is the pre-built index for this repo, so prefer it over a grep+read sweep; `Grep`/`Glob` are the last resort for a detail it didn't cover. (The `general-purpose` subagent already has the tools — no extra grant needed.)
+Send a single message with two `Agent` tool calls, both `general-purpose`. Give **each**
+the absolute path to `basis.md` and tell it to read that first as its grounding context
+(it already has the tools — no extra grant needed).
 
 **Standards sub-agent prompt** — include:
 
 - The full diff command and commit list.
-- The list of standards-source files you found in step 3.
-- The brief: "Read the standards docs. Then read the diff. For each changed symbol, run `codegraph callers`/`codegraph impact` to see its dependents before judging change-preventer/coupler smells and contract changes. Report — per file/hunk where relevant — every place the diff violates a documented standard (cite the standard: file + rule), plus any changed contract whose dependents (per codegraph) now break. Distinguish hard violations from judgement calls. Skip anything tooling enforces. Use `Grep`/`Glob` only as a last resort. Under 400 words."
+- The standards-source files from step 3.
+- The brief: "Read `basis.md`, then the standards docs, then the diff. Your axis is §2:
+  does the implementation hold up against the repo's knowledge? For each changed symbol,
+  run `codegraph callers`/`codegraph impact` to see its dependents before judging
+  change-preventer/coupler smells and contract changes. Report — per file/hunk where
+  relevant — every place the diff violates a documented standard or an ADR (cite the
+  instrument: file + rule), plus any changed contract whose dependents now break.
+  Distinguish hard violations from judgement calls. Skip what tooling enforces. Under
+  400 words."
 
 **Spec sub-agent prompt** — include:
 
 - The diff command and commit list.
-- The path or fetched contents of the spec.
-- The brief: "Read the spec. Then read the diff. Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong — use `codegraph callers`/`codegraph impact` on changed symbols to check the change didn't break a dependent the spec relies on, outside the diff. Quote the spec line for each finding. Use `Grep`/`Glob` only as a last resort. Under 400 words."
+- The path or fetched contents of the requirements.
+- The brief: "Read `basis.md`, then the requirements, then the diff. Your axis is §1: is
+  the bar genuinely cleared? Report (a) requirements missing or partial; (b) behaviour
+  not asked for (scope creep); (c) requirements that look implemented but are wrong or
+  superficial — use `codegraph callers`/`codegraph impact` on changed symbols to confirm
+  the change didn't break an out-of-diff dependent the requirement relies on. Quote the
+  requirement line for each finding. Under 400 words."
 
-If the spec is missing, skip the Spec sub-agent and note this in the final report.
+If there are no requirements (step 2), skip the Spec sub-agent and note it in the report.
 
 ### 5. Aggregate
 
-Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings — the two axes are deliberately separate so the user can see them independently.
+Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly
+cleaned. Do **not** merge or rerank findings — the axes are deliberately separate so the
+user sees them independently.
 
-End with a one-line summary: total findings per axis, and the worst single issue (if any) flagged.
+End with the **verdict**: are the requirements genuinely met? State it in one line —
+met / partially met / not met — then the per-axis finding count and the worst single
+issue. The Spec axis carries the verdict; the Standards axis is the evidence that "met"
+is real.
 
 ## Why two axes
 
-A change can pass one axis and fail the other:
+The bar (requirements) and the instruments (repo knowledge) can diverge:
 
-- Code that follows every standard but implements the wrong thing → **Standards pass, Spec fail.**
-- Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
+- Code that follows every standard but implements the wrong thing → **Standards pass,
+  Spec fail.**
+- Code that does exactly what the ticket asked but breaks the repo's conventions →
+  **Spec pass, Standards fail** — and a Standards failure is also a signal that a
+  requirement passing Spec may be only *superficially* met.
 
 Reporting them separately stops one axis from masking the other.
