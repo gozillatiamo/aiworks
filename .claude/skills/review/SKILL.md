@@ -13,17 +13,22 @@ it as the base context for everything below. In short:
 
 - **The requirements are the bar.** The ticket is what the change exists to achieve;
   the verdict measures against it.
+- **The coding standards are the bottom line.** The repo's coding-standards docs
+  (`.claude/rules/coding_standards/`, `CLAUDE.md`, `CONTRIBUTING.md`) are a hard floor —
+  a standards breach is a must-fix, not a judgement call, and caps a "met" verdict even
+  when the bar is cleared.
 - **The repo's knowledge is your instrument.** Structure, design patterns, docs, ADRs,
-  standards, and the codegraph index are how you verify that the bar is *genuinely*
-  cleared — not just superficially. Every finding cites the requirement it bears on or
-  the instrument that exposed it.
+  and the codegraph index are how you verify that the bar is *genuinely* cleared — not
+  just superficially. Every finding cites the requirement it bears on or the instrument
+  that exposed it.
 
 The verdict runs along two axes, as **parallel sub-agents** (so they don't pollute each
 other's context), then this skill aggregates them:
 
 - **Spec** — is the bar cleared? Are the requirements present, complete, and correct?
-- **Standards** — does the implementation hold up against the repo's knowledge? (The
-  instruments applied as their own axis.)
+- **Standards** — does the implementation hold up? Two duties: the **bottom line**
+  (`basis.md` §2 — coding-standards breaches, reported as must-fixes) and the
+  **instruments** (`basis.md` §3 — structure, ADRs, design patterns, blast radius).
 
 Either axis can pass while the other fails (see [Why two axes](#why-two-axes)), so they
 are reported side by side, never merged.
@@ -44,7 +49,7 @@ Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so th
 comparison is against the merge-base). Note the commit list via
 `git log <fixed-point>..HEAD --oneline`, and the **changed symbols** (the
 functions/classes/methods the diff touches) — both sub-agents trace their blast radius
-with the codegraph instrument (`basis.md` §2).
+with the codegraph instrument (`basis.md` §3).
 
 ### 2. Identify the spec source (the requirements — the bar)
 
@@ -81,14 +86,16 @@ the absolute path to `basis.md` and tell it to read that first as its grounding 
 
 - The full diff command and commit list.
 - The standards-source files from step 3.
-- The brief: "Read `basis.md`, then the standards docs, then the diff. Your axis is §2:
-  does the implementation hold up against the repo's knowledge? For each changed symbol,
-  run `codegraph callers`/`codegraph impact` to see its dependents before judging
-  change-preventer/coupler smells and contract changes. Report — per file/hunk where
-  relevant — every place the diff violates a documented standard or an ADR (cite the
-  instrument: file + rule), plus any changed contract whose dependents now break.
-  Distinguish hard violations from judgement calls. Skip what tooling enforces. Under
-  400 words."
+- The brief: "Read `basis.md`, then the standards docs, then the diff. Your axis has two
+  duties. **Bottom line (§2):** the repo's coding standards
+  (`.claude/rules/coding_standards/`, `CLAUDE.md`, `CONTRIBUTING.md`) are a hard floor —
+  report EVERY breach as a must-fix (cite the exact rule: file + section), not a
+  judgement call. **Instruments (§3):** does the implementation hold up against the
+  repo's knowledge? For each changed symbol, run `codegraph callers`/`codegraph impact`
+  to see its dependents before judging change-preventer/coupler smells and contract
+  changes; report any changed contract whose dependents now break (cite the ADR /
+  structure / codegraph dependent). Separate the bottom-line must-fixes from the
+  instrument judgement calls. Skip what tooling enforces. Under 400 words."
 
 **Spec sub-agent prompt** — include:
 
@@ -111,8 +118,9 @@ user sees them independently.
 
 End with the **verdict**: are the requirements genuinely met? State it in one line —
 met / partially met / not met — then the per-axis finding count and the worst single
-issue. The Spec axis carries the verdict; the Standards axis is the evidence that "met"
-is real.
+issue. The Spec axis carries the verdict — **but a bottom-line breach (a coding-standards
+must-fix, `basis.md` §2) caps the verdict at "partially met" no matter how clean Spec
+is.** The instrument findings are the evidence that a "met" is real.
 
 ## Why two axes
 
@@ -121,7 +129,9 @@ The bar (requirements) and the instruments (repo knowledge) can diverge:
 - Code that follows every standard but implements the wrong thing → **Standards pass,
   Spec fail.**
 - Code that does exactly what the ticket asked but breaks the repo's conventions →
-  **Spec pass, Standards fail** — and a Standards failure is also a signal that a
-  requirement passing Spec may be only *superficially* met.
+  **Spec pass, Standards fail.** When the Standards failure is a coding-standards breach
+  it is a bottom-line breach — blocking, not advisory (it caps the verdict, see above);
+  a Standards failure is also a signal that a requirement passing Spec may be only
+  *superficially* met.
 
 Reporting them separately stops one axis from masking the other.
