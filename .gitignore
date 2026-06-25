@@ -20,6 +20,7 @@ agent-paotung-cypress/
 
 # logs
 agent_logs/
+docs/brd/
 
 # skill-creator scratch workspaces (eval sandboxes, skill snapshots, benchmark runs).
 # Reproducible iteration artifacts — never committed to the workspace meta-repo.
