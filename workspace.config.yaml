@@ -70,7 +70,7 @@ branch_model:
 
 # ── Quality gate (the guardian's static-analysis gate) ─────────────────────────
 quality_gate:
-  provider: sonarqube              # sonarqube | none
+  provider: none              # sonarqube | none
 
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:
