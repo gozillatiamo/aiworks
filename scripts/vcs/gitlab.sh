@@ -57,14 +57,48 @@ vcs_pr_view() {
   printf 'state=%s\nmerge_sha=%s\n' "$up" "$sha"
 }
 
+# _gl_diff_line_kind NUMBER PATH NEW_LINE -> classify a NEW-side line in the MR diff:
+#   "added"               the line was ADDED (+) — anchor with position[new_line] only
+#   "context<TAB><old>"   the line is UNCHANGED — GitLab needs BOTH new_line AND old_line
+#                         to anchor it (the #1 reason review comments fell to the overview:
+#                         most findings sit on context lines, and new_line-alone is rejected)
+#   ""                    the line isn't in the MR's diff at all — can't be anchored
+# Reads GitLab's OWN diff (the /diffs endpoint) so the computed position matches exactly
+# what the server will accept. Walks the unified hunks tracking old/new line counters.
+_gl_diff_line_kind() {
+  local num="$1" path="$2" target="$3" diff
+  diff="$(glab api "projects/:fullpath/merge_requests/$num/diffs?per_page=100" 2>/dev/null \
+          | jq -r --arg p "$path" '.[] | select(.new_path==$p) | .diff' 2>/dev/null || true)"
+  [[ -n "$diff" ]] || return 0
+  printf '%s' "$diff" | awk -v target="$target" '
+    /^@@/ {
+      h=$0; sub(/^@@ -/,"",h); split(h, a, " ")
+      split(a[1], o, ","); oln=o[1]+0
+      nb=a[2]; sub(/^\+/,"",nb); split(nb, n, ","); nln=n[1]+0
+      inhunk=1; next
+    }
+    !inhunk { next }
+    {
+      c=substr($0,1,1)
+      if (c=="+")      { if (nln==target){print "added"; exit} nln++ }
+      else if (c=="-") { oln++ }
+      else if (c=="\\"){ }                                  # "\ No newline at end of file"
+      else             { if (nln==target){print "context\t" oln; exit} oln++; nln++ }
+    }
+  '
+}
+
 # vcs_pr_comment NUMBER PATH LINE BODY [DRY]
 # Posts a positioned (inline) MR discussion at PATH:LINE on the new side of the diff when
 # both are given — so review findings that need a code fix land on the exact line, not on
-# the MR overview. Falls back to a plain MR note (referencing PATH:LINE in its text) when
-# the position can't be set (e.g. the line isn't part of the diff, or it's a removed/context
-# line that needs old_line), so the reviewer's content is never lost. On that fallback it
-# WARNs to stderr with GitLab's actual error AND marks the stdout line NON-inline, so a
-# caller is NEVER told "posted inline" when the comment didn't anchor to the diff.
+# the MR overview. The target line is FIRST classified against the MR's own diff
+# (_gl_diff_line_kind): an added line anchors with new_line; an UNCHANGED/context line
+# anchors with BOTH new_line and old_line (GitLab rejects new_line-alone for those — the
+# main reason comments used to fall to the overview). Falls back to a plain MR note
+# (referencing PATH:LINE in its text) only when the position genuinely can't be set (the
+# line isn't part of the diff at all), so the reviewer's content is never lost. On that
+# fallback it WARNs to stderr with GitLab's actual error AND marks the stdout line
+# NON-inline, so a caller is NEVER told "posted inline" when the comment didn't anchor.
 vcs_pr_comment() {
   local num="$1" path="$2" line="$3" body="$4" dry="${5:-0}"
   local full="$body"
@@ -78,29 +112,55 @@ vcs_pr_comment() {
     return 0
   fi
   # Try a positioned discussion first. GitLab's text-diff position needs the MR's three
-  # diff refs (base/head/start SHAs) plus old_path+new_path; new_line anchors an added line.
+  # diff refs (base/head/start SHAs) plus old_path+new_path, and the RIGHT line key:
+  # new_line for an added line, BOTH new_line+old_line for an unchanged/context line.
   # On ANY failure we DO NOT silently drop the anchor — we surface the reason on stderr and
   # fall back to a plain note so the content is never lost AND the caller knows it isn't inline.
   if [[ -n "$path" && -n "$line" ]]; then
-    local refs base head start err
+    local refs base head start kind err
     refs="$(glab api "projects/:fullpath/merge_requests/$num" 2>/dev/null \
             | jq -r '[.diff_refs.base_sha, .diff_refs.head_sha, .diff_refs.start_sha] | @tsv' 2>/dev/null || true)"
     IFS=$'\t' read -r base head start <<<"$refs"
     if [[ -z "$base" || -z "$head" || -z "$start" ]]; then
       printf 'WARN: could not read diff refs for MR !%s — posting %s:%s as a NON-inline note\n' "$num" "$path" "$line" >&2
-    elif err="$(glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" \
-            -f "body=$body" \
-            -f "position[position_type]=text" \
-            -f "position[base_sha]=$base" \
-            -f "position[head_sha]=$head" \
-            -f "position[start_sha]=$start" \
-            -f "position[old_path]=$path" \
-            -f "position[new_path]=$path" \
-            -F "position[new_line]=$line" 2>&1)"; then
-      printf 'Inline comment posted on MR !%s at %s:%s\n' "$num" "$path" "$line"; return 0
     else
-      printf 'WARN: inline anchor failed for %s:%s on MR !%s — falling back to a NON-inline note.\n  GitLab said: %s\n' \
-        "$path" "$line" "$num" "$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-300)" >&2
+      # Classify the line against the MR's own diff so we send the position key GitLab accepts.
+      kind="$(_gl_diff_line_kind "$num" "$path" "$line")"
+      # CRITICAL: the position MUST go as multipart form (--form), NOT --field/--raw-field.
+      # glab's -f/-F encode params into a JSON body, where "position[new_line]" becomes a
+      # FLAT key GitLab doesn't understand — so GitLab accepts the note but SILENTLY DROPS
+      # the position, landing every comment on the overview. --form sends Rails-style
+      # bracketed fields that parse into the nested `position` object the API expects.
+      local -a pos=(
+        --form "body=$body"
+        --form "position[position_type]=text"
+        --form "position[base_sha]=$base"
+        --form "position[head_sha]=$head"
+        --form "position[start_sha]=$start"
+        --form "position[old_path]=$path"
+        --form "position[new_path]=$path"
+      )
+      case "$kind" in
+        # Unchanged/context line: GitLab needs BOTH new_line and old_line to anchor it.
+        context*) pos+=( --form "position[new_line]=$line" --form "position[old_line]=${kind#context$'\t'}" ) ;;
+        # Added line (or a line we couldn't classify): new_line alone.
+        added|*)  pos+=( --form "position[new_line]=$line" ) ;;
+      esac
+      if err="$(glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" "${pos[@]}" 2>&1)"; then
+        # POST succeeded — but GitLab can accept the note while dropping an invalid position,
+        # so confirm the created note actually carries a position before claiming "inline".
+        if [[ -n "$(printf '%s' "$err" | jq -r '.notes[0].position // empty' 2>/dev/null)" ]]; then
+          printf 'Inline comment posted on MR !%s at %s:%s (%s)\n' "$num" "$path" "$line" "${kind%%$'\t'*}"; return 0
+        fi
+        # Accepted but un-anchored: the note already exists on the overview — don't double-post.
+        printf 'WARN: MR !%s accepted %s:%s but DROPPED the diff position — it landed on the overview, not inline (diff-kind=%s).\n' \
+          "$num" "$path" "$line" "${kind:-not-in-diff}" >&2
+        printf 'Comment posted on MR !%s (NON-inline — position dropped for %s:%s)\n' "$num" "$path" "$line"
+        return 0
+      else
+        printf 'WARN: inline anchor failed for %s:%s on MR !%s (diff-kind=%s) — falling back to a NON-inline note.\n  GitLab said: %s\n' \
+          "$path" "$line" "$num" "${kind:-not-in-diff}" "$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-300)" >&2
+      fi
     fi
   fi
   glab mr note "$num" --message "$full" >/dev/null || die "failed to post note on MR !$num"

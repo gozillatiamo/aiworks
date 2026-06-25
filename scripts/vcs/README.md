@@ -74,11 +74,22 @@ Handled by the provider CLI, not this adapter:
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff
   (using the MR's `diff_refs` + `old_path`/`new_path`/`new_line`). Inline anchoring
-  requires **both** `--path` **and** `--line`. When the position can't be set — the line
-  isn't in the diff, or it's a removed/context line needing `old_line` — the adapter
+  requires **both** `--path` **and** `--line`. For GitLab the adapter then classifies the
+  target line against the MR's own diff: an **added** line anchors with `new_line` alone;
+  an **unchanged/context** line needs **both** `new_line` **and** `old_line` (GitLab rejects
+  context lines that omit `old_line`). When the line isn't in the diff at all, the adapter
   **WARNs to stderr** (with the host's actual error) and falls back to a plain note that
   references `path:line`, so the finding is never lost. The fallback's stdout line says
   **NON-inline** explicitly: the adapter no longer reports inline success when the comment
   didn't anchor, so a caller/agent can never mistake a fallback note for an inline post.
+- **GitLab positions MUST be sent as multipart `--form`, never `--field`/`--raw-field`.**
+  glab's `-f`/`-F` encode params into a **JSON body**, where `position[new_line]` becomes a
+  flat top-level key GitLab doesn't understand — so the API accepts the note but **silently
+  drops the position**, landing the comment on the **Overview** instead of the diff line.
+  `--form` sends Rails-style bracketed fields that parse into the nested `position` object.
+  Because GitLab can still return 200 while dropping a bad position, `vcs_pr_comment` also
+  re-reads the created note's `.position` and only reports "Inline comment posted" when a
+  position is actually present (else it WARNs and reports NON-inline). This was the root
+  cause of reviewer comments landing on the overview; see `gitlab.sh` `vcs_pr_comment`.
 - `glab` flags target a recent version (~1.40+); if yours differs, `gitlab.sh` is the
   one file to adjust.
