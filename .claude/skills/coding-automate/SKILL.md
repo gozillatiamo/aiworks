@@ -26,7 +26,7 @@ Turn the approved automation implementation plan into **working test code** the 
 
 ## 3. Implement — strictly POM
 
-Follow `CLAUDE.md`'s POM rules without exception:
+Follow `CLAUDE.md`'s POM rules without exception. Hold to the workspace **coding style** too — **storytelling** code (no body comments), files ≤500 lines, and the **flow → side-effect → pure** split, which maps straight onto POM: a spec is **flow** (the scenario story), a Page Object action method is **side-effect** (it drives the driver), and any non-trivial logic (data builders, computed expectations) goes in a **pure** helper. Rules + example: the shared `../coding-style.md` beside this skill (read before your first edit).
 
 1. **Screens → Page Objects.** Reuse an existing `pages/*.js` or add `pages/<Screen>Page.js`, named after the screen the user sees. Selectors live **only** here, as getters. No assertions, no test logic in a Page Object.
 2. **Interactions → action methods** on the Page Object — intent, not mechanics (`tapLetsGo()`, `enterWeight(kg)`), returning elements/values or another Page Object. Handle android/ios differences **inside** the Page Object so specs stay platform-agnostic.

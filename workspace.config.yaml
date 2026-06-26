@@ -78,7 +78,7 @@ planning:
                                    #   plan (no review). false → after a plan is produced the run
                                    #   STOPS for a human to review + APPROVE before execution (build);
                                    #   re-run the dev-cycle with --approve-plan to proceed past the gate.
-  to_html: true                   # plan-to-html. true → each plan is ALSO rendered to a self-contained
+  to_html: false                   # plan-to-html. true → each plan is ALSO rendered to a self-contained
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
 
