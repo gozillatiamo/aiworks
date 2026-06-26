@@ -2,10 +2,14 @@
 #
 # Product definition: ofb-platform (the default product).
 #
-# A product file declares the repos per tier and the six lifecycle hooks the
+# A product file declares the repos per tier and the lifecycle hooks the
 # orchestrators call (helpers come from .superset/lib.sh):
 #
 #   run_databases / run_backends / run_frontends      — called by run.sh, in order
+#   run_aggregator_setup / wait_backends_ready / fetch_games
+#                                                     — called by run.sh, optional
+#                                                       (skipped if a product omits them)
+#   down_aggregator_setup                             — called by teardown.sh, optional
 #   down_frontends / down_backends / down_databases   — called by teardown.sh, in order
 #
 # To add a product variant: copy this file to .superset/products/<id>.sh and
@@ -14,7 +18,7 @@
 
 DB_REPOS=(agent-db)
 BACKEND_REPOS=(agent-webservice)
-FRONTEND_REPOS=(paotung-template backoffice)
+FRONTEND_REPOS=(paotung-template front-end backoffice)
 
 # ── 1. databases + migrations ─────────────────────────────────────────────────
 run_databases() {
@@ -50,13 +54,68 @@ run_frontends() {
   (cd paotung-template && docker compose up -d nginx)
   start_node_app paotung-template dev 3004
 
+  # front-end: OHANABET theme — next dev on :3002 (pnpm), no docker.
+  start_node_app front-end dev 3002
+
   # backoffice: next dev on :3001 (npm), no docker.
   start_node_app backoffice dev 3001
 }
 
+# ── 4. aggregator setup (AMB) ─────────────────────────────────────────────────
+run_aggregator_setup() {
+  # Wire the AMB aggregator product callback to THIS machine (ngrok -> :3000) so
+  # a game is playable locally. The script is idempotent (skips when the IP is
+  # already whitelisted and the callback already points here), starts its own
+  # ngrok if none is on :3000, and needs jq + agent-webservice/.env.amb. Never
+  # fatal to the run — warn and carry on. See agent-webservice/docs/amb_setup_flow.md.
+  local script=agent-webservice/scripts/amb_setup.sh
+  if [[ ! -f "$script" ]]; then
+    warn "agent-webservice: $script not found — skipping AMB setup."
+    return 0
+  fi
+  if [[ ! -f agent-webservice/.env.amb ]]; then
+    warn "agent-webservice/.env.amb is missing — skipping AMB setup (see docs/amb_setup_flow.md)."
+    return 0
+  fi
+  log "agent-webservice: AMB aggregator setup (scripts/amb_setup.sh)…"
+  (cd agent-webservice && bash scripts/amb_setup.sh) \
+    || warn "agent-webservice: AMB setup did not complete cleanly — continuing."
+}
+
+# ── 5. wait for backend readiness ─────────────────────────────────────────────
+wait_backends_ready() {
+  # agent-webservice serves the main API on :3000. Under docker `cargo watch`
+  # the first compile can take several minutes, so poll generously (120×5s ≈ 10m).
+  # Non-fatal: if it never answers we still let Phase 6 surface the real error.
+  wait_for_http "http://localhost:3000/" 120 5 "agent-webservice (:3000)" \
+    || warn "agent-webservice did not become ready — Phase 6 may fail."
+}
+
+# ── 6. fetch games ────────────────────────────────────────────────────────────
+fetch_games() {
+  # Prime the platform's game catalogue via the server-to-server endpoint.
+  local url="http://localhost:3000/aggregators/fetch-games"
+  local out="$LOG_DIR/fetch-games.json" code
+  log "agent-webservice: fetching all games ($url)…"
+  code="$(curl -s -o "$out" -w '%{http_code}' --max-time 120 "$url" 2>/dev/null || true)"
+  if [[ "$code" == "200" ]]; then
+    log "fetch-games OK (HTTP 200) — response saved to $out"
+  else
+    warn "fetch-games returned HTTP ${code:-<no response>} — see $out"
+  fi
+}
+
 # ── teardown (reverse order) ──────────────────────────────────────────────────
+down_aggregator_setup() {
+  # Stop the ngrok tunnel that Phase 4 (amb_setup.sh) started. Only the tunnel
+  # WE started is tracked (via the pidfile amb_setup.sh writes); a pre-existing
+  # ngrok that amb_setup.sh merely reused was never tracked, so it is left alone.
+  stop_pidfile /tmp/ngrok-amb.pid "ngrok (AMB tunnel)"
+}
+
 down_frontends() {
   stop_node_app backoffice 3001
+  stop_node_app front-end 3002
   stop_node_app paotung-template 3004
   log "paotung-template: docker compose down…"
   (cd paotung-template && docker compose down --remove-orphans) || true

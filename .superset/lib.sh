@@ -87,6 +87,24 @@ stop_node_app() {  # <repo> [port]
   fi
 }
 
+# Stop a background process recorded in a pidfile (TERM the pid + its tree), then
+# remove the pidfile. For host-level helpers started outside the node-app scheme
+# (e.g. the ngrok tunnel amb_setup.sh starts). No pidfile → nothing to do, so a
+# process we did NOT start (and never tracked) is left untouched.
+stop_pidfile() {  # <pidfile> <label>
+  local pidfile="$1" label="$2" pid
+  [[ -f "$pidfile" ]] || return 0
+  pid="$(cat "$pidfile" 2>/dev/null || true)"
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    log "$label: stopped (pid $pid)."
+  else
+    log "$label: not running (stale pidfile) — cleaning up."
+  fi
+  rm -f "$pidfile"
+}
+
 # Wait until a postgres service inside a repo's compose stack answers pg_isready.
 wait_for_postgres() {  # <repo> <compose-service> [profile] [tries]
   local repo="$1" svc="$2" profile="${3:-all}" tries="${4:-30}"
@@ -100,6 +118,28 @@ wait_for_postgres() {  # <repo> <compose-service> [profile] [tries]
     sleep 2
   done
   log "$repo: '$svc' is ready."
+}
+
+# Wait until an HTTP endpoint answers — i.e. the listener is accepting requests.
+# Success = curl gets ANY HTTP status back (http_code != 000), not a specific
+# code, so a service that boots into a 404/401 still counts as "up". Returns 0
+# when ready, 1 on timeout (the caller decides whether that is fatal).
+wait_for_http() {  # <url> [tries] [sleep-secs] [label]
+  local url="$1" tries="${2:-60}" nap="${3:-5}" label="${4:-$1}" code
+  log "waiting for $label ($url)…"
+  while :; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null || true)"
+    if [[ -n "$code" && "$code" != "000" ]]; then
+      log "$label is up (HTTP $code)."
+      return 0
+    fi
+    tries=$((tries - 1))
+    if [[ "$tries" -le 0 ]]; then
+      err "$label did not answer after the wait window: $url"
+      return 1
+    fi
+    sleep "$nap"
+  done
 }
 
 # Run a one-shot migration compose file (e.g. liquibase runner) and propagate

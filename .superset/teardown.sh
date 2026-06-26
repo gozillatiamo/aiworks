@@ -42,6 +42,13 @@ load_product "$PRODUCT"
 
 log "Tearing down product '$PRODUCT'…"
 
+# Host-level helpers first (ngrok etc.) — these don't depend on docker, so stop
+# them whether or not docker is up. Optional per product (guarded).
+if declare -f down_aggregator_setup >/dev/null 2>&1; then
+  log "── Stopping aggregator helpers (ngrok) ──"
+  down_aggregator_setup
+fi
+
 if docker info >/dev/null 2>&1; then
   log "── Phase 1/3: frontends ──"
   down_frontends
