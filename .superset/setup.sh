@@ -9,9 +9,10 @@
 #    — repos are gitignored and don't travel with a new git worktree. Full onboard
 #    toolchain (codegraph index, skill packs, adapter symlinks, Cursor/VS Code
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
-# 2. Copies the REAL .env / .env.local files from the root workspace into this
-#    worktree, recursively (every repo + adapter + .superset/.env) — a fresh
-#    worktree has none of its own. Runs before the MCP services so they get real config.
+# 2. Copies the REAL local state from the root workspace into this worktree — a fresh
+#    worktree carries none of its own: every .env / .env.* (every repo + adapter +
+#    .superset/.env) recursively, AND agent-db's seeded db-data Postgres cluster. Runs
+#    before the MCP services so they come up on real config + a seeded DB.
 # 3. Installs Node dependencies in every repo that has a package.json
 #    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this).
 # 4. Starts the shared MCP service containers, then reports which repos still
@@ -38,16 +39,20 @@ fi
 log "aiworks sync -y (clone + fully onboard every product repo)…"
 scripts/aiworks sync -y
 
-# ── 2. Copy the REAL local env files (.env / .env.local) from the root workspace into this
-# worktree, recursively, preserving each file's relative path — every repo's + adapter's env
-# AND .superset/.env (read by the MCP service containers in step 4). A fresh worktree clones
-# the repos but carries NONE of its git-ignored env, so we pull the actual secrets from the
-# root checkout. Runs BEFORE the MCP services start so they come up on the real config, not
-# defaults. SUPERSET_ROOT_PATH is set by Superset to the root workspace path. The copy
-# overwrites (root is the source of truth) and prunes build/dependency dirs.
+# ── 2. Copy the REAL local state (git-ignored, so a fresh worktree carries NONE of it) from
+# the root workspace into this worktree:
+#   • every .env / .env.* file (except .env.example, which is committed upstream and already
+#     travels with the clone), recursively, preserving each file's relative path — every
+#     repo's + adapter's env AND .superset/.env (read by the MCP service containers in step 4);
+#   • agent-db/db-data — the seeded local Postgres cluster the agent-db containers bind-mount
+#     (master :5432, shard-1 :5433, …); without it the local DB comes up empty.
+# We pull the actual secrets + data from the root checkout. Runs BEFORE the MCP services start
+# so they come up on real config + a seeded DB, not defaults. SUPERSET_ROOT_PATH is set by
+# Superset to the root workspace path. The copy overwrites (root is the source of truth) and
+# prunes build/dependency dirs.
 root_ws="${SUPERSET_ROOT_PATH:-}"
 if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; then
-  log "Copying .env / .env.local from the root workspace ($root_ws)…"
+  log "Copying .env / .env.* from the root workspace ($root_ws)…"
   copied=0
   while IFS= read -r -d '' rel; do
     rel="${rel#./}"
@@ -56,8 +61,28 @@ if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; 
     else warn "could not copy $rel"; fi
   done < <(cd "$root_ws" && find . \
       \( -name node_modules -o -name .git -o -name .next -o -name dist -o -name build -o -name target -o -name .venv \) -prune \
-      -o -type f \( -name '.env' -o -name '.env.local' \) -print0)
+      -o -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print0)
   log "Copied $copied env file(s) from the root workspace."
+
+  # agent-db/db-data — the seeded local Postgres cluster (~1G, git-ignored). The agent-db
+  # containers bind-mount its subdirs (./db-data/master → :5432, ./db-data/shard-1 → :5433,
+  # master-lotto, cache), so a fresh clone's empty data dir means an unseeded local DB. Mirror
+  # it from the root with rsync (only transfers diffs — cheap on re-run); cp -R as a fallback.
+  # Trailing "/" (rsync) and "/." (cp) copy the CONTENTS in, so re-runs don't nest the dir.
+  db_src="$root_ws/agent-db/db-data"
+  if [[ -d "$db_src" && -d agent-db ]]; then
+    log "Copying agent-db/db-data (seeded local DB) from the root workspace…"
+    mkdir -p agent-db/db-data
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a "$db_src/" agent-db/db-data/ && log "agent-db/db-data is in place."
+    else
+      cp -R "$db_src/." agent-db/db-data/ && log "agent-db/db-data is in place."
+    fi
+  elif [[ ! -d agent-db ]]; then
+    warn "agent-db not cloned here — skipping db-data copy."
+  else
+    warn "No db-data in the root workspace ($db_src) — skipping the seeded-DB copy."
+  fi
 else
   warn "SUPERSET_ROOT_PATH unset or equals this workspace — skipping the root env copy (running in the root workspace itself?)."
 fi
