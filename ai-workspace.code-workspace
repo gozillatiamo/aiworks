@@ -5,12 +5,20 @@
       "path": "."
     },
     {
+      "name": "ofb-instruction",
+      "path": "ofb-instruction"
+    },
+    {
       "name": "agent-db",
       "path": "agent-db"
     },
     {
       "name": "paotung-template",
       "path": "paotung-template"
+    },
+    {
+      "name": "customization-widget",
+      "path": "customization-widget"
     },
     {
       "name": "front-end",
