@@ -7,6 +7,7 @@
 #
 #   vcs_require_config                          — ensure the provider CLI is installed
 #   vcs_open_pr   BASE HEAD TITLE BODY [DRY]    — create (or reuse) a PR/MR; print URL + number=
+#   vcs_find_prs  KEY                           — print URLs of OPEN PRs/MRs whose title/branch contains KEY (read-only)
 #   vcs_pr_view   NUMBER                        — print state=<MERGED|OPEN|CLOSED> + merge_sha=
 #   vcs_pr_comment NUMBER PATH LINE BODY [DRY]  — comment (inline at PATH:LINE where supported)
 #   vcs_pr_comments NUMBER                      — print the PR/MR's comments as plain text

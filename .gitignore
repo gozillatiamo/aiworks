@@ -24,6 +24,7 @@ docs/brd/
 
 # skill-creator scratch workspaces (eval sandboxes, skill snapshots, benchmark runs).
 # Reproducible iteration artifacts — never committed to the workspace meta-repo.
+.claude/skills/**/evals/
 .claude/skills/*-workspace/
 
 # settings.local.json backup written by `aiworks sync` when it preps the image-gen config
@@ -35,3 +36,4 @@ backoffice/
 ofb-backoffice-cypress/
 front-end/
 ofb-instruction/
+customization-widget/

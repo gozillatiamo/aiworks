@@ -39,6 +39,21 @@ vcs_open_pr() {
   printf '%s\nnumber=%s\n' "$url" "$iid"
 }
 
+# vcs_find_prs KEY -> print the web_url (one per line) of every OPEN MR whose TITLE or
+# source BRANCH contains KEY (case-insensitive). Read-only — never creates anything.
+# Relies on the team convention that a ticket's MR carries the ticket key in its
+# Conventional-Commit title (e.g. feat(OFB-2141): …) and/or branch (feature/OFB-2141).
+vcs_find_prs() {
+  local key="$1"
+  glab api "projects/:fullpath/merge_requests?state=opened&per_page=100" 2>/dev/null \
+    | jq -r --arg k "$key" '
+        ($k | ascii_downcase) as $kk
+        | .[]
+        | select(((.title // "")         | ascii_downcase | contains($kk))
+              or  ((.source_branch // "") | ascii_downcase | contains($kk)))
+        | .web_url' 2>/dev/null || true
+}
+
 # vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
 vcs_pr_view() {
   local num="$1" json state sha up

@@ -9,6 +9,7 @@ remote** when unset. All commands run against the repo in the current directory.
 |---|---|
 | `default-branch.sh` | Print the repo's default/parent branch |
 | `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=`. `--media <ref>` (repeatable) attaches visual results to the body |
+| `find-prs.sh`       | Print the URL of every OPEN PR/MR in the current repo whose **title or source branch contains the ticket key** — one per line (read-only; never pushes/creates) |
 | `upload-media.sh`   | Host media (image/video files, a dir of them, or http(s) URLs) and print an embeddable **## Visual results** markdown section |
 | `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` |
 | `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |

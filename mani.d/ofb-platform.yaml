@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  customization-widget:
+    desc: The package library for the player sites, to convert the template data into the real component.
+    url: git@gitlab.com:bluepicode/ofb/customization-widget.git
+    path: ../customization-widget
+    tags: [ofb-platform, next.js]
   ofb-instruction:
     desc: Instruction for setup the product for the first time.  
     url: git@gitlab.com:bluepicode/ofb/ofb-instruction.git

@@ -29,7 +29,7 @@ tasks:
     target: all
     cmd: git rev-parse --abbrev-ref HEAD
 
-  git-status:
+  status:
     desc: show working tree status
     spec: custom
     target: all

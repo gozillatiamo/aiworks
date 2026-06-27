@@ -12,7 +12,7 @@ export const meta = {
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet[1m]' },
     { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
-    { title: 'Notify', detail: 'OPTIONAL — only when notify.enabled AND auto-merge is off: post a "please review" digest of the open PR/MR per repo to the configured chat channel (scripts/notify/). With auto-merge on, the run merges + distributes itself, so nothing is left to review and this phase is skipped.', model: 'haiku' },
+    { title: 'Notify', detail: 'OPTIONAL — only when notify.enabled AND auto-merge is off: post a "please review" digest of the open PR/MR per repo to the configured chat channel via the /notify skill (scripts/notify/). With auto-merge on, the run merges + distributes itself, so nothing is left to review and this phase is skipped.', model: 'haiku' },
   ],
 }
 
@@ -535,32 +535,26 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
 // human to merge — so we ping the team to review them. Gated on notify.enabled (NOTIFY). With
 // auto-merge ON the run merges + distributes itself (nothing to review), so this is never
 // reached. Best-effort: a send failure NEVER changes the run's outcome — the PRs are already
-// open + validated. Message format (the user-specified template):
-//   Please review, <KEY> <title>.
-//   - <repo>: <pr_url>
-//   - <repo>: <pr_url>
-// `reposInOrder` = repo ids in dependency order; their PR/MR URLs come from repoResults[id].pr.
+// open + validated. The /notify skill owns the digest: `scripts/notify/send.sh --review <KEY>`
+// GATHERS the ticket's open PR/MR across every workspace repo, composes the message, and sends —
+// one source of truth for format + gather (no repo missed, nothing hand-assembled here). This
+// phase only decides WHETHER to notify: repoResults gives a cheap "is there any open PR?" check
+// so we don't spawn an agent for nothing. `reposInOrder` = repo ids in dependency order.
 async function notifyReview(reposInOrder) {
   if (!NOTIFY) return null
   phase('Notify')
   const title = scope?.title || plans.find((p) => p?.title)?.title || ''
-  const rows = reposInOrder
-    .map((id) => ({ id, url: repoResults[id]?.pr?.pr_url }))
-    .filter((r) => r.url)
-  if (!rows.length) { log('[notify] no open PR/MR URL to announce — Notify skipped.'); return null }
-  const message = `Please review, ${ticket}${title ? ` ${title}` : ''}.\n` +
-    rows.map((r) => `- ${r.id}: ${r.url}`).join('\n')
+  if (!reposInOrder.some((id) => repoResults[id]?.pr?.pr_url)) {
+    log('[notify] no open PR/MR to announce — Notify skipped.'); return null
+  }
   const channelArg = NOTIFY_CHANNEL ? ` --channel ${JSON.stringify(NOTIFY_CHANNEL)}` : ''
-  const msgPath = `agent_logs/${ticket}-notify.txt`
+  const titleArg = title ? ` --title ${JSON.stringify(title)}` : ''
   const r = await safeAgent(
-    `${tag('all', 'notifier', 'notify')} Post a "please review" notification for ${ticket} to the team chat via the notify adapter. This is a one-shot send — do NOT touch git, the tracker, or any product repo; stay at the WORKSPACE (org) ROOT (the dir holding .claude/), never cd into a repo.
-1. With the Write tool, write the message below VERBATIM (everything between the «MSG» fences, fences EXCLUDED — keep the line breaks exactly) to ${msgPath}:
-«MSG»
-${message}
-«MSG»
-2. Send it (pipe the file on stdin so the newlines survive — do NOT retype the message inline):
-\`scripts/notify/send.sh${channelArg} < ${msgPath}\`
-The adapter reads NOTIFY_PROVIDER (${NOTIFY_PROVIDER}) + creds from scripts/notify/.env and posts to ${NOTIFY_CHANNEL || 'its default channel'}; on success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY if the command exited 0 (printed ok=1) — include the permalink if one was printed and channel="${NOTIFY_CHANNEL}"; on ANY failure return sent:false with the adapter's stderr in note. Do NOT reword the message and do NOT retry more than once.`,
+    `${tag('all', 'notifier', 'notify')} Post the review-request notification for ${ticket} via the /notify skill. ONE command does it all — it gathers the ticket's open PR/MR across every workspace repo, composes the digest, and sends. Run it from the WORKSPACE (org) ROOT (the dir holding .claude/); do NOT cd into a repo, touch git, or the tracker.
+
+scripts/notify/send.sh --review ${ticket}${titleArg}${channelArg}
+
+On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY if it exited 0 (printed ok=1), with the permalink + channel="${NOTIFY_CHANNEL}" when printed; on ANY failure (including "no open PR/MR found … nothing to announce") return sent:false with the command's stderr in note. Do NOT retry more than once.`,
     { agentType: 'documentor', model: 'haiku', phase: 'Notify', label: `notify:${ticket}`, schema: NOTIFY_SCHEMA },
   )
   tick('notify')

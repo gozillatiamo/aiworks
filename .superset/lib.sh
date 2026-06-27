@@ -58,7 +58,13 @@ start_node_app() {  # <repo> <script> [port]
     return 0
   fi
   pm="$(node_pm "$repo")"
-  (cd "$repo" && nohup "$pm" run "$script" >"$logfile" 2>&1 & echo $! >"$pidfile")
+  # Launched under nohup (no TTY). Before `run`, pnpm runs a deps-status check;
+  # when node_modules is out of sync with the lockfile it tries to purge+reinstall,
+  # which needs a TTY to confirm and otherwise aborts the launch with
+  # ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY (the app never starts). CI=true makes
+  # that purge/reinstall non-interactive — pnpm's own documented remedy — so the app
+  # self-heals instead of failing. Harmless to `npm run` (npm does not purge on run).
+  (cd "$repo" && CI=true nohup "$pm" run "$script" >"$logfile" 2>&1 & echo $! >"$pidfile")
   pid="$(cat "$pidfile")"
   log "$repo: started '$pm run $script' (pid $pid${port:+, port $port}) — log: $LOG_DIR/$repo.log"
 }

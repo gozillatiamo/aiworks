@@ -126,7 +126,7 @@ products:
         green: "tests via stroybook and lint passed successfully"
         guardian_focus: "secrets, data-protection"
 
-      - url: git@gitlab.com:bluepicode/ofb/customization-widget.git 
+      - url: git@gitlab.com:bluepicode/ofb/customization-widget.git
         kind: package 
         desc: The package library for the player sites, to convert the template data into the real component.   # one-line repo responsibility (anatomy at a glance)
         lang: next.js

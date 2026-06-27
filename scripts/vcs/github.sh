@@ -33,6 +33,21 @@ vcs_open_pr() {
   printf '%s\nnumber=%s\n' "$url" "$num"
 }
 
+# vcs_find_prs KEY -> print the url (one per line) of every OPEN PR whose TITLE or head
+# BRANCH contains KEY (case-insensitive). Read-only — never creates anything. Relies on
+# the team convention that a ticket's PR carries the ticket key in its Conventional-Commit
+# title (e.g. feat(OFB-2141): …) and/or branch (feature/OFB-2141).
+vcs_find_prs() {
+  local key="$1"
+  gh pr list --state open --limit 100 --json url,title,headRefName 2>/dev/null \
+    | jq -r --arg k "$key" '
+        ($k | ascii_downcase) as $kk
+        | .[]
+        | select(((.title // "")       | ascii_downcase | contains($kk))
+              or  ((.headRefName // "") | ascii_downcase | contains($kk)))
+        | .url' 2>/dev/null || true
+}
+
 # vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
 vcs_pr_view() {
   local num="$1" json state sha
