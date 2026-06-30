@@ -65,17 +65,20 @@ log "aiworks sync -y (clone + fully onboard every product repo)…"
 sync_args=(-y); [[ "$VERBOSE" == 1 ]] && sync_args+=(--verbose)
 scripts/aiworks sync "${sync_args[@]}"
 
-# ── 2. Copy the REAL local state (git-ignored, so a fresh worktree carries NONE of it) from
-# the root workspace into this worktree:
+# ── 2. Bring the REAL local state (git-ignored, so a fresh worktree carries NONE of it) into
+# this worktree from the root workspace — by DEFAULT as symlinks (one source of truth; cheap):
 #   • every .env / .env.* file (except .env.example, which is committed upstream and already
 #     travels with the clone), recursively, preserving each file's relative path — every
-#     repo's + adapter's env AND .superset/.env (read by the MCP service containers in step 4);
+#     repo's + adapter's env AND .superset/.env (read by the MCP service containers in step 4).
+#     SUPERSET_ENV (default symlink) → symlink each at the root's (edit once, every worktree
+#     sees it), =copy for an independent per-worktree snapshot, or =skip to manage them yourself.
 #   • agent-db/db-data — the seeded local Postgres cluster the agent-db containers bind-mount
-#     (master :5432, shard-1 :5433, …); without it the local DB comes up empty.
-# We pull the actual secrets + data from the root checkout. Runs BEFORE the MCP services start
-# so they come up on real config + a seeded DB, not defaults. SUPERSET_ROOT_PATH is set by
-# Superset to the root workspace path. The copy overwrites (root is the source of truth) and
-# prunes build/dependency dirs.
+#     (master :5432, shard-1 :5433, …); without it the local DB comes up empty. SUPERSET_DB_DATA
+#     (default symlink — instant, no ~1G copy, no sudo) → symlink the root's, =copy for an
+#     isolated per-worktree copy, or =skip to manage it yourself.
+# Runs BEFORE the MCP services start so they come up on real config + a seeded DB, not defaults.
+# SUPERSET_ROOT_PATH is set by Superset to the root workspace path; the root stays the source of
+# truth (an existing file/link at the destination is replaced to match it).
 # Superset sets SUPERSET_ROOT_PATH. For a MANUAL `git worktree` (no Superset) it's unset, so
 # fall back to git's MAIN worktree — that's the root checkout holding the real git-ignored state
 # (the main worktree is always the first entry of `git worktree list`). When this IS the main
@@ -87,25 +90,78 @@ if [[ -z "$root_ws" ]]; then
     && log "Not under Superset — copying git-ignored state from git's main worktree: $root_ws"
 fi
 if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; then
-  log "Copying .env / .env.* from the root workspace ($root_ws)…"
-  copied=0
-  while IFS= read -r -d '' rel; do
-    rel="${rel#./}"
-    mkdir -p "$(dirname "$rel")"
-    if cp "$root_ws/$rel" "$rel" 2>/dev/null; then echo "    copied $rel"; copied=$((copied + 1))
-    else warn "could not copy $rel"; fi
-  done < <(cd "$root_ws" && find . \
-      \( -name node_modules -o -name .git -o -name .next -o -name dist -o -name build -o -name target -o -name .venv -o -name db-data \) -prune \
-      -o -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print0)
-  log "Copied $copied env file(s) from the root workspace."
+  # Env provisioning mode → SUPERSET_ENV (default: symlink). symlink keeps ONE source of truth
+  # (the root's file); copy snapshots it per-worktree; skip leaves the worktree's env alone.
+  env_mode="${SUPERSET_ENV:-symlink}"
+  if [[ "$env_mode" == skip ]]; then
+    log "env files: SUPERSET_ENV=skip — leaving them as-is."
+  else
+    if [[ "$env_mode" == symlink ]]; then log "Symlinking .env / .env.* from the root workspace ($root_ws)…"
+    else                                  log "Copying .env / .env.* from the root workspace ($root_ws)…"; fi
+    env_count=0
+    while IFS= read -r -d '' rel; do
+      rel="${rel#./}"
+      mkdir -p "$(dirname "$rel")"
+      if [[ "$env_mode" == symlink ]]; then
+        if [[ -L "$rel" && "$(readlink "$rel")" == "$root_ws/$rel" ]]; then env_count=$((env_count + 1)); continue; fi
+        rm -f "$rel" 2>/dev/null   # replace any stale link / copied file with the link
+        if ln -s "$root_ws/$rel" "$rel" 2>/dev/null; then echo "    linked $rel"; env_count=$((env_count + 1))
+        else warn "could not symlink $rel"; fi
+      else
+        [[ -L "$rel" ]] && rm -f "$rel"   # was a symlink → drop it before copying the file in
+        if cp "$root_ws/$rel" "$rel" 2>/dev/null; then echo "    copied $rel"; env_count=$((env_count + 1))
+        else warn "could not copy $rel"; fi
+      fi
+    done < <(cd "$root_ws" && find . \
+        \( -name node_modules -o -name .git -o -name .next -o -name dist -o -name build -o -name target -o -name .venv -o -name db-data \) -prune \
+        -o -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print0)
+    env_verb="linked"; [[ "$env_mode" == copy ]] && env_verb="copied"
+    log "$env_verb $env_count env file(s) from the root workspace."
+  fi
 
   # agent-db/db-data — the seeded local Postgres cluster (~1G, git-ignored). The agent-db
-  # containers bind-mount its subdirs (./db-data/master → :5432, ./db-data/shard-1 → :5433,
-  # master-lotto, cache), so a fresh clone's empty data dir means an unseeded local DB. Mirror
-  # it from the root with rsync (only transfers diffs — cheap on re-run); cp -R as a fallback.
-  # Trailing "/" (rsync) and "/." (cp) copy the CONTENTS in, so re-runs don't nest the dir.
+  # containers bind-mount its subdirs (./db-data/master → :5432, shard-1 :5433, master-lotto,
+  # cache), so without it the local DB comes up empty. Provisioning mode → SUPERSET_DB_DATA
+  # (default: symlink). See the step-2 header above for the symlink/copy/skip trade-offs.
+  db_mode="${SUPERSET_DB_DATA:-symlink}"
   db_src="$root_ws/agent-db/db-data"
-  if [[ -d "$db_src" && -d agent-db ]]; then
+  if [[ ! -d agent-db ]]; then
+    warn "agent-db not cloned here — skipping db-data provisioning."
+  elif [[ "$db_mode" == skip ]]; then
+    log "agent-db/db-data: SUPERSET_DB_DATA=skip — leaving it as-is."
+  elif [[ ! -d "$db_src" ]]; then
+    warn "No db-data in the root workspace ($db_src) — skipping the seeded-DB step."
+  elif [[ "$db_mode" == symlink ]]; then
+    # Point this worktree's db-data at the root's seeded cluster. Docker (Linux native) resolves
+    # the symlink when it sets up the bind mounts, so the containers read the root's PGDATA — no
+    # ~1G copy and no sudo to read the 0700 dirs. All worktrees + root then share ONE physical DB.
+    if [[ -L agent-db/db-data && "$(readlink agent-db/db-data)" == "$db_src" ]]; then
+      log "agent-db/db-data already symlinked to the root workspace ($db_src)."
+    else
+      # A real dir in the way must go first — likely root-owned (PGDATA = container uid), so its
+      # removal may need sudo. Best-effort; never abort setup.
+      if [[ -e agent-db/db-data && ! -L agent-db/db-data ]]; then
+        if ! rm -rf agent-db/db-data 2>/dev/null; then
+          if command -v sudo >/dev/null 2>&1; then
+            warn "agent-db/db-data: removing the existing per-worktree copy needs root (PGDATA owned by the container uid) — sudo may prompt…"
+            sudo rm -rf agent-db/db-data || warn "agent-db/db-data: could not remove the existing copy — remove it by hand, then re-run."
+          else
+            warn "agent-db/db-data: a real copy is in the way and can't be removed (no sudo). Remove it by hand, or set SUPERSET_DB_DATA=copy."
+          fi
+        fi
+      fi
+      rm -f agent-db/db-data 2>/dev/null   # drop any stale / wrong-target symlink
+      if [[ ! -e agent-db/db-data ]] && ln -s "$db_src" agent-db/db-data; then
+        log "agent-db/db-data → $db_src (symlinked; shared with the root workspace)."
+      else
+        warn "agent-db/db-data: could not symlink to the root workspace (a real dir may remain). Remove it and re-run, or use SUPERSET_DB_DATA=copy."
+      fi
+    fi
+  else
+    # copy mode — an ISOLATED per-worktree DB. Mirror with rsync (diffs only — cheap on re-run);
+    # cp -a as a fallback. Trailing "/" (rsync) and "/." (cp) copy the CONTENTS in so re-runs
+    # don't nest the dir.
+    [[ -L agent-db/db-data ]] && rm -f agent-db/db-data   # was a symlink → drop it before copying in
     log "Copying agent-db/db-data (seeded local DB) from the root workspace…"
     mkdir -p agent-db/db-data
     # On LINUX, native Docker bind-mounts preserve the postgres CONTAINER uid/gid on the host:
@@ -125,10 +181,6 @@ if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; 
     else
       warn "agent-db/db-data: permission denied and 'sudo' not available. Copy it by hand (root needed — PGDATA is owned by the container uid):  rsync -a \"$db_src/\" \"$PWD/agent-db/db-data/\"  (run as root, or stop the agent-db containers first)."
     fi
-  elif [[ ! -d agent-db ]]; then
-    warn "agent-db not cloned here — skipping db-data copy."
-  else
-    warn "No db-data in the root workspace ($db_src) — skipping the seeded-DB copy."
   fi
 else
   # No separate root to copy from: this IS the root/main worktree (so the git-ignored state is

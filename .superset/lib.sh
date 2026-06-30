@@ -18,40 +18,48 @@ conclude() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 # GLANCE_MAX=N). The debug/verbose mode ignores this and streams everything.
 GLANCE_MAX="${GLANCE_MAX:-5}"
 
-# Run ONE slow command with adaptive output:
-#   • VERBOSE=1 (debug)      → print the label, then stream the command's FULL output verbatim.
-#   • quiet (default) + TTY  → print the label, then a live "glance": only the last GLANCE_MAX
-#                              output lines, dim + truncated to the terminal width and redrawn
-#                              IN PLACE so the terminal never scrolls. On success the glance is
-#                              erased (just the label remains); on failure it's kept so the
-#                              error tail stays visible.
-#   • quiet + no TTY (CI)    → can't redraw: stay silent, and dump only the last GLANCE_MAX
-#                              lines (to stderr) if the command fails.
-# Combined stdout+stderr is what's shown. Returns the command's OWN exit status. macOS bash 3.2
-# safe. Pass an optional-sudo prefix UNQUOTED ($SUDO) — an empty value simply drops out.
-run_glance() {  # <label> <cmd> [args…]
-  local label="$1"; shift
+# Render ONE slow command as a docker-build-style SECTION: a bold topic title, with the
+# command's output streaming beneath it in GRAY as a live "glance" — like watching a package
+# install scroll inside a build step. The title carries the status marker (▸ running, then ✓ /
+# ✗ with elapsed time on completion).
+#   • VERBOSE=1 (debug)      → title, the command's FULL output verbatim, then the ✓/✗ status.
+#   • quiet (default) + TTY  → title, then ONLY the last GLANCE_MAX lines in gray, truncated to
+#                              the terminal width and redrawn IN PLACE so nothing scrolls. On
+#                              success the gray glance collapses away and the title becomes
+#                              "✓ <title> (Ns)"; on failure the last lines stay put under a
+#                              "✗ <title>" so the error is visible.
+#   • quiet + no TTY (CI)    → title + ✓/✗ status line; the tail is dumped (stderr) on failure.
+# Combined stdout+stderr is shown. Returns the command's OWN exit status. macOS bash 3.2 safe.
+# Pass an optional-sudo prefix UNQUOTED ($SUDO) — an empty value simply drops out.
+run_glance() {  # <title> <cmd> [args…]
+  local title="$1"; shift
+  local start="$SECONDS" rc=0 i
+  # palette: bold cyan marker + bold title; green/red status; gray (90m) for the glance body.
+  local MK='\033[1;36m' TI='\033[1m' OK='\033[1;32m' ER='\033[1;31m' GY='\033[90m' OFF='\033[0m'
 
   if [[ "$VERBOSE" == 1 ]]; then
-    printf '\033[1;36m==>\033[0m %s\n' "$label"
-    "$@"
-    return $?
-  fi
-
-  # Announce the step even in quiet mode — this is the whole point: no more dead-silent waits.
-  printf '\033[1;36m==>\033[0m %s\n' "$label"
-
-  if [[ ! -t 1 ]]; then
-    local out rc=0
-    out="$("$@" 2>&1)" || rc=$?
-    [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | tail -n "$GLANCE_MAX" >&2
+    printf '%b▸%b %b%s%b\n' "$MK" "$OFF" "$TI" "$title" "$OFF"
+    "$@" || rc=$?
+    if [[ "$rc" -eq 0 ]]; then printf '%b✓%b %b%s%b %b(%ds)%b\n'    "$OK" "$OFF" "$TI" "$title" "$OFF" "$GY" "$((SECONDS - start))" "$OFF"
+    else                       printf '%b✗%b %b%s%b %b(exit %d)%b\n' "$ER" "$OFF" "$TI" "$title" "$OFF" "$GY" "$rc" "$OFF"; fi
     return "$rc"
   fi
 
-  local rcfile width line rc printed=0 i
+  # Always print the topic title — quiet mode is no longer dead-silent for the slow bits.
+  printf '%b▸%b %b%s%b\n' "$MK" "$OFF" "$TI" "$title" "$OFF"
+
+  if [[ ! -t 1 ]]; then  # no TTY (CI / piped): can't redraw — status line, tail only on failure.
+    local out; out="$("$@" 2>&1)" || rc=$?
+    if [[ "$rc" -eq 0 ]]; then printf '%b  ✓ done (%ds)%b\n' "$GY" "$((SECONDS - start))" "$OFF"
+    else printf '%s\n' "$out" | tail -n "$GLANCE_MAX" >&2; printf '%b  ✗ failed (exit %d)%b\n' "$ER" "$rc" "$OFF"; fi
+    return "$rc"
+  fi
+
+  # quiet + TTY: gray glance of the last GLANCE_MAX lines, redrawn in place beneath the title.
+  local rcfile width line printed=0
   rcfile="$(mktemp 2>/dev/null)" || rcfile=""
   width="${COLUMNS:-$(tput cols 2>/dev/null || echo 100)}"
-  [[ "$width" =~ ^[0-9]+$ && "$width" -ge 20 ]] || width=100
+  [[ "$width" =~ ^[0-9]+$ && "$width" -ge 24 ]] || width=100
   local -a ring=()
   # tr '\r' '\n' turns carriage-return progress updates (curl/apt) into discrete lines so the
   # glance shows live progress; $? of the command is stashed in rcfile, off the display pipe.
@@ -64,16 +72,26 @@ run_glance() {  # <label> <cmd> [args…]
     [[ "$printed" -gt 0 ]] && printf '\033[%dA' "$printed" # cursor up over the old block
     printed=0
     for i in "${ring[@]}"; do
-      printf '\033[2K\033[90m   │ %s\033[0m\n' "$i"        # clear line, dim, reprint
+      printf '\033[2K%b   │ %s%b\n' "$GY" "$i" "$OFF"      # clear line, gray, reprint
       printed=$((printed + 1))
     done
   done < <( { "$@" 2>&1; printf '%s' "$?" > "${rcfile:-/dev/null}"; } | tr '\r' '\n' )
   rc=0; [[ -n "$rcfile" ]] && { rc="$(cat "$rcfile" 2>/dev/null || echo 1)"; rm -f "$rcfile"; }
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=1
-  if [[ "$rc" -eq 0 && "$printed" -gt 0 ]]; then           # success → erase the transient block
-    printf '\033[%dA' "$printed"
-    for ((i = 0; i < printed; i++)); do printf '\033[2K\n'; done
-    printf '\033[%dA' "$printed"
+
+  if [[ "$rc" -eq 0 ]]; then
+    # success → restamp the title with ✓ + elapsed, then collapse the gray glance away.
+    printf '\033[%dA' "$((printed + 1))"
+    printf '\033[2K%b✓%b %b%s%b %b(%ds)%b\n' "$OK" "$OFF" "$TI" "$title" "$OFF" "$GY" "$((SECONDS - start))" "$OFF"
+    if [[ "$printed" -gt 0 ]]; then
+      for ((i = 0; i < printed; i++)); do printf '\033[2K\n'; done
+      printf '\033[%dA' "$printed"
+    fi
+  else
+    # failure → restamp the title with ✗ but KEEP the gray glance (the error tail) on screen.
+    printf '\033[%dA' "$((printed + 1))"
+    printf '\033[2K%b✗%b %b%s%b %b(exit %d)%b\n' "$ER" "$OFF" "$TI" "$title" "$OFF" "$GY" "$rc" "$OFF"
+    [[ "$printed" -gt 0 ]] && printf '\033[%dB' "$printed"
   fi
   return "$rc"
 }
