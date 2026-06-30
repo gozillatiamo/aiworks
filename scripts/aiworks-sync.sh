@@ -24,6 +24,11 @@
 # clobbered. Fill it in (https://aistudio.google.com/apikey) to turn image generation on; until
 # then the /prd-design preflight detects the gap and fails loud instead of shipping placeholder art.
 #
+# It also ENSURES codegraph (https://github.com/colbymchenry/codegraph) — the per-repo index the
+# build/review agents grep through — is installed: a machine-wide CLI installed once for the whole
+# sweep (npm i -g @colbymchenry/codegraph, else the bundled curl|sh installer). A no-op when it's
+# already on PATH; best-effort, so a failed install just makes the repos' index steps SKIP.
+#
 # It also ENSURES the workspace lifecycle hooks — .superset/{setup,run,teardown}.sh — exist and
 # that .superset/config.json registers all three (via scripts/aiworks-superset.sh). The hooks loop
 # over every cloned repo, so the synced set is covered automatically; this creates the run hook
@@ -51,20 +56,62 @@
 #                         existing CLAUDE.md, read from /dev/tty). With no controlling terminal
 #                         (CI/headless) `add` proceeds with its defaults either way — never blocks.
 #   -n, --dry-run         List what WOULD be synced (and the add command per repo); run nothing.
+#                         (implies --verbose — the preview is the whole point.)
+#   -v, --verbose         Show the full step-by-step log. Output is QUIET by default — only
+#                         warnings, errors, and the closing sync-summary section print (and -v
+#                         is propagated to each per-repo `aiworks add`).
 #   -h, --help            Show this help.
 #
 set -uo pipefail
 
 # ── logging ─────────────────────────────────────────────────────────────────────
+# QUIET by default: progress chatter (step/ok/dim) prints only with -v/--verbose (VERBOSE=1).
+# warn/die ALWAYS print (problems must surface); the final sync-summary section is printed with
+# raw printf below — unconditional — so the run always ENDS with its conclusion. A dry-run forces
+# VERBOSE on (the preview IS the output), wired up right after arg parsing.
 c_step=$'\033[1;36m'; c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
 [[ -t 1 ]] || { c_step=; c_ok=; c_warn=; c_err=; c_dim=; c_off=; }
-step() { printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; }
-ok()   { printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; }
+VERBOSE=0
+step() { [[ "$VERBOSE" -eq 1 ]] || return 0; printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; }
+ok()   { [[ "$VERBOSE" -eq 1 ]] || return 0; printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; }
+dim()  { [[ "$VERBOSE" -eq 1 ]] || return 0; printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
 warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # Ctrl+C / kill stops the whole sweep, not just the current repo.
 trap 'printf "\n%s✗ sync interrupted%s\n" "$c_warn" "$c_off" >&2; exit 130' INT TERM
+
+# ── codegraph: install it once for the whole sweep if missing ─────────────────────
+# codegraph (https://github.com/colbymchenry/codegraph) builds the per-repo index the
+# build/review agents grep through. It's a MACHINE-WIDE CLI — installed once, not per repo —
+# so we do it here as a workspace-level prep step (the per-repo `aiworks add` also self-installs
+# at its step 4 for standalone runs; called from here it just finds it on PATH and skips).
+# Prefer npm (any Node, all platforms); fall back to the bundled installer (curl … | sh —
+# vendored runtime, no Node needed), which drops the binary in ~/.local/bin WITHOUT editing
+# PATH, so we surface that dir on PATH (and export it to the child `aiworks add` runs).
+# Best-effort: a failed install is reported and the repos' index steps SKIP, never aborting.
+ensure_codegraph() {
+  step "Ensure codegraph is installed (the per-repo index the build/review agents use)"
+  if command -v codegraph >/dev/null 2>&1; then ok "codegraph already on PATH ($(command -v codegraph))"; return 0; fi
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould install codegraph (npm i -g @colbymchenry/codegraph, or the bundled installer)%s\n' "$c_dim" "$c_off"
+    return 0
+  fi
+  if command -v npm >/dev/null 2>&1; then
+    dim "npm i -g @colbymchenry/codegraph"
+    npm i -g @colbymchenry/codegraph >/dev/null 2>&1 || true
+  fi
+  if ! command -v codegraph >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+    dim "curl -fsSL …/install.sh | sh"
+    curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh >/dev/null 2>&1 || true
+  fi
+  # The bundled installer symlinks into ~/.local/bin (or $CODEGRAPH_BIN_DIR) without editing
+  # PATH — surface it so this sweep AND the child `aiworks add` runs (which inherit our env) see it.
+  local cg_bin="${CODEGRAPH_BIN_DIR:-$HOME/.local/bin}"
+  if [[ -x "$cg_bin/codegraph" ]]; then case ":$PATH:" in *":$cg_bin:"*) ;; *) export PATH="$cg_bin:$PATH" ;; esac; fi
+  if command -v codegraph >/dev/null 2>&1; then ok "codegraph installed ($(command -v codegraph))"
+  else warn "could not install codegraph automatically (need npm or curl + network) — install it by hand (https://github.com/colbymchenry/codegraph); repos' index steps will SKIP until then"; fi
+}
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ADD="$DIR/aiworks-add.sh"
@@ -86,11 +133,15 @@ while [[ $# -gt 0 ]]; do
     --force)           FORCE=1; shift ;;
     -y|--yes)          YES=1; shift ;;
     -n|--dry-run)      DRY=1; shift ;;
+    -v|--verbose)      VERBOSE=1; shift ;;
     -h|--help)         usage; exit 0 ;;
     -*)                die "unknown option: $1   (see -h)" ;;
     *)                 [[ -z "$SELECTOR" ]] || die "unexpected argument: $1 (one <product>|<repo> only)"; SELECTOR="$1"; shift ;;
   esac
 done
+
+# A dry run is all about its preview, so show the full output regardless of the quiet default.
+[[ "$DRY" -eq 1 ]] && VERBOSE=1
 
 # ── locate the workspace root ───────────────────────────────────────────────────
 ROOT="$(cd "$DIR/.." && pwd)"
@@ -337,8 +388,12 @@ REPO_FILTER="${REPO_FILTER# }"   # trim the leading space the appends leave behi
 in_repo_filter() { case " $REPO_FILTER " in *" $1 "*) return 0 ;; esac; return 1; }
 
 sel="${PRODUCT:+ (product: $PRODUCT)}${REPO_FILTER:+ (repo: $REPO_FILTER)}"
-printf '%sSyncing repos declared in workspace.config.yaml%s%s\n' "$c_step" "$sel" "$c_off"
+[[ "$VERBOSE" -eq 1 ]] && printf '%sSyncing repos declared in workspace.config.yaml%s%s\n' "$c_step" "$sel" "$c_off"
 [[ "$DRY" -eq 1 ]] && printf '  %s(dry run — nothing will be executed)%s\n' "$c_dim" "$c_off"
+
+# Ensure codegraph is installed once for the whole sweep (so the per-repo index steps don't
+# each skip on a missing CLI). The child `aiworks add` runs inherit our PATH, so this covers them.
+ensure_codegraph
 
 # Seed the adapter .env files (idempotent; never overwrites an existing .env) before the
 # per-repo work, so the adapters the onboarded repos link to are already configured.
@@ -411,6 +466,7 @@ while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) �
   [[ -n "$CLAUDE_TIMEOUT" ]] && cmd+=(--claude-timeout "$CLAUDE_TIMEOUT")
   [[ "$SAFE" -eq 1 ]]        && cmd+=(--safe-perms)
   [[ "$FORCE" -eq 1 ]]       && cmd+=(--force)
+  [[ "$VERBOSE" -eq 1 ]]     && cmd+=(--verbose)   # quiet by default; propagate -v so add is verbose too
 
   if [[ "$DRY" -eq 1 ]]; then
     printf '  %s%s/%s%s (kind %s) → ' "$c_step" "$prod" "$key" "$c_off" "$repokind"
@@ -447,7 +503,9 @@ if [[ "$DRY" -ne 1 ]]; then
   GEN="$DIR/aiworks-config.sh"
   if [[ -x "$GEN" ]]; then
     step "Regenerate the dev-cycle.js CONFIG from workspace.config.yaml"
-    "$GEN" || warn "could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand"
+    # quiet by default — swallow the sub-tool's own chatter (keep stderr) unless -v.
+    if [[ "$VERBOSE" -eq 1 ]]; then "$GEN" || warn "could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand"
+    else "$GEN" >/dev/null || warn "could not regenerate dev-cycle.js CONFIG — run 'aiworks config' by hand"; fi
   fi
 fi
 
@@ -457,8 +515,9 @@ fi
 # workspaces that predate the run hook). Idempotent; honoured in dry-run too.
 SUPGEN="$DIR/aiworks-superset.sh"
 if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle hooks…" header
-  if [[ "$DRY" -eq 1 ]]; then "$SUPGEN" -n || warn "could not preview .superset hooks"
-  else "$SUPGEN" || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi
+  if   [[ "$DRY" -eq 1 ]];     then "$SUPGEN" -n || warn "could not preview .superset hooks"
+  elif [[ "$VERBOSE" -eq 1 ]]; then "$SUPGEN"    || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"
+  else "$SUPGEN" >/dev/null || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi   # quiet by default
 fi
 
 # ── summary ──────────────────────────────────────────────────────────────────────

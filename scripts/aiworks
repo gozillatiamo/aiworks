@@ -29,6 +29,9 @@ aiworks — multi-repo agent workspace CLI
 Usage:
   aiworks <command> [options]
 
+Output is QUIET by default for sync / setup / run / teardown — only warnings, errors, and
+the closing summary print. Pass -v/--verbose to any of them for the full step-by-step log.
+
 Commands:
   add        Onboard ONE repo: register it (workspace.config.yaml products[] + mani.d +
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,

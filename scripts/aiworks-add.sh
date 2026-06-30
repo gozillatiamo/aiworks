@@ -4,7 +4,8 @@
 #
 # Runs the per-repo setup so the workspace agents (dev-cycle planner → developer →
 # QA → reviewers → guardian/perf) can work the repo: registers it with mani, clones
-# it, builds the codegraph index, installs the agent skill packs, seeds a hardcoded
+# it, installs codegraph (https://github.com/colbymchenry/codegraph) if it's missing —
+# machine-wide, once — then builds the codegraph index, installs the agent skill packs, seeds a hardcoded
 # (sonar-free) hook + permission baseline, and — best-effort, via Claude — scaffolds a
 # language-appropriate CLAUDE.md and scripts/dev.sh shaped by the repo's own anatomy.
 #
@@ -49,6 +50,8 @@
 #                          instead of the default --dangerously-skip-permissions.
 #   --force                Re-clone / re-seed hooks / regenerate dev.sh + CLAUDE.md if present.
 #   -y, --yes              Don't prompt; assume yes (and, for an existing CLAUDE.md, skip).
+#   -v, --verbose          Show the full step-by-step log. Output is QUIET by default — only
+#                          warnings and the closing onboarding summary print.
 #   -h, --help             Show this help.
 #
 set -uo pipefail   # NOT -e: this script is best-effort and summarizes failures itself.
@@ -59,17 +62,54 @@ c_step=$'\033[1;36m'; c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;3
 DONE=(); SKIPPED=(); FOLLOWUP=(); SUMMARY_DONE=0
 TOK_IN=0; TOK_OUT=0; TOK_CR=0; TOK_CW=0; TOK_COST=0   # accumulated Claude usage across the run
 CLAUDE_RC=0; CLAUDE_UNDER_TIMEOUT=0                    # last claude_run's exit status + whether it ran under `timeout`
-step()  { printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; }
-ok()    { printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; DONE+=("$*"); }
+# QUIET by default: step/ok/skip/glance print only with -v/--verbose (VERBOSE=1, set in arg
+# parsing below). They STILL record into DONE/SKIPPED so print_summary — which always prints —
+# carries the full picture. warn/die ALWAYS print. So a quiet run shows only warnings + the
+# closing onboarding summary (the conclusion); -v restores the full step-by-step log.
+VERBOSE=0
+step()  { [[ "$VERBOSE" -eq 1 ]] && printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; return 0; }
+ok()    { [[ "$VERBOSE" -eq 1 ]] && printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; DONE+=("$*"); return 0; }
 warn()  { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
-skip()  { printf '    %s⤼ SKIP: %s%s\n' "$c_warn" "$*" "$c_off"; SKIPPED+=("$*"); }
-glance(){ printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
+skip()  { [[ "$VERBOSE" -eq 1 ]] && printf '    %s⤼ SKIP: %s%s\n' "$c_warn" "$*" "$c_off"; SKIPPED+=("$*"); return 0; }
+glance(){ [[ "$VERBOSE" -eq 1 ]] && printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; return 0; }
 die()   { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 have()  { command -v "$1" >/dev/null 2>&1; }
 # A repo is codegraph-"initialized" only when the graph DB exists — a bare .codegraph/ dir
 # (just its .gitignore, e.g. from an interrupted init) is NOT initialized and `codegraph sync`
 # rejects it. Both the init (step 4) and sync (step 10.6) steps gate on THIS, so they agree.
 cg_indexed() { local f; for f in "$1"/.codegraph/*.db; do [[ -e "$f" ]] && return 0; done; return 1; }
+
+# ── codegraph: install it once if missing ───────────────────────────────────────
+# codegraph (https://github.com/colbymchenry/codegraph) builds the per-repo index the
+# build/review agents grep through. It's a MACHINE-WIDE CLI — installed once, not per repo —
+# so this is a no-op whenever it's already on PATH (and after the first repo in a sync).
+# Prefer npm (any Node, all platforms); fall back to the bundled installer (curl … | sh —
+# vendored runtime, no Node needed), which drops the binary in ~/.local/bin WITHOUT editing
+# PATH, so we surface that dir on PATH for the in-session re-check + the init/sync steps that
+# follow. Best-effort: a failed install just leaves `have codegraph` false and the caller
+# SKIPs the index step. Prints nothing when codegraph is already present; otherwise emits its
+# glance/ok/skip lines nested under whatever step() called it (no header of its own). Sets
+# CG_INSTALL_TRIED so the two codegraph touchpoints (step 4 + 10.6) don't double-install.
+CG_INSTALL_TRIED=0
+ensure_codegraph() {
+  have codegraph && return 0
+  [[ "$CG_INSTALL_TRIED" -eq 1 ]] && return 1
+  CG_INSTALL_TRIED=1
+  if have npm; then
+    glance "codegraph not on PATH — installing (npm i -g @colbymchenry/codegraph)"
+    npm i -g @colbymchenry/codegraph >/dev/null 2>&1 || true
+  fi
+  if ! have codegraph && have curl; then
+    glance "codegraph not on PATH — installing (bundled installer: curl … | sh)"
+    curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh >/dev/null 2>&1 || true
+  fi
+  # The bundled installer symlinks the binary into ~/.local/bin (or $CODEGRAPH_BIN_DIR) but
+  # does NOT edit PATH — surface it for THIS process so the re-check + init/sync below find it.
+  local cg_bin="${CODEGRAPH_BIN_DIR:-$HOME/.local/bin}"
+  if [[ -x "$cg_bin/codegraph" ]]; then case ":$PATH:" in *":$cg_bin:"*) ;; *) export PATH="$cg_bin:$PATH" ;; esac; fi
+  if have codegraph; then ok "codegraph installed ($(command -v codegraph))"; return 0
+  else skip "could not install codegraph automatically (need npm or curl + network) — install it by hand: https://github.com/colbymchenry/codegraph"; return 1; fi
+}
 
 # ── classify a spawned child's exit status: a SIGNAL-kill ≠ a genuine failure ───
 # On some machines (memory pressure, an EDR/security agent) a freshly-spawned binary (node,
@@ -140,6 +180,18 @@ trap on_interrupt INT TERM
 # the lack of set -e). Guarded so it prints at most once. Reads only top-level state.
 print_summary() {
   [[ "${SUMMARY_DONE:-0}" -eq 1 ]] && return; SUMMARY_DONE=1
+  # QUIET (default): a one-line conclusion + any follow-ups (the action items). The full Done/
+  # Skipped breakdown + token usage + Next pointer are detail, shown only with -v/--verbose.
+  if [[ "$VERBOSE" -ne 1 ]]; then
+    printf '\n%s✓ %s onboarded%s (product %s) — done %d, skipped %d%s\n' \
+      "$c_ok" "${REPO_NAME:-?}" "$c_off" "${PRODUCT:-?}" "${#DONE[@]}" "${#SKIPPED[@]}" \
+      "$([[ "${#FOLLOWUP[@]}" -gt 0 ]] && printf ', %d follow-up(s)' "${#FOLLOWUP[@]}")"
+    if [[ "${#FOLLOWUP[@]}" -gt 0 ]]; then
+      printf '%sFollow-ups:%s\n' "$c_warn" "$c_off"
+      for f in "${FOLLOWUP[@]}"; do printf '  • %s\n' "$f"; done
+    fi
+    return
+  fi
   printf '\n%s──────── onboarding summary: %s (product %s) ────────%s\n' "$c_step" "${REPO_NAME:-?}" "${PRODUCT:-?}" "$c_off"
   printf '%sDone (%d):%s\n' "$c_ok" "${#DONE[@]}" "$c_off"; for d in "${DONE[@]:-}"; do [[ -n "$d" ]] && printf '  ✓ %s\n' "$d"; done
   if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
@@ -278,6 +330,7 @@ while [[ $# -gt 0 ]]; do
     --safe-perms)      PERM_FLAG="--permission-mode acceptEdits"; shift ;;
     --force)           FORCE=1; shift ;;
     -y|--yes)          YES=1; shift ;;
+    -v|--verbose)      VERBOSE=1; shift ;;
     -h|--help)         usage; exit 0 ;;
     *)                 die "unknown argument: $1   (see -h)" ;;
   esac
@@ -328,13 +381,16 @@ tags_yaml=""; for t in "${tags_list[@]}"; do tags_yaml+="${tags_yaml:+, }$t"; do
 # mapping lives in ONE place — scripts/aiworks-config.sh — applied when the dev-cycle.js CONFIG is
 # regenerated at the end of this run (step 2.6). Here we only note which archetype the kind selects.
 case "$KIND" in
-  test-suite)  printf '%s  kind "%s" → QA archetype (qa-runner builds the suite; no code review)%s\n' "$c_dim" "$KIND" "$c_off" ;;
+  test-suite)  glance "kind \"$KIND\" → QA archetype (qa-runner builds the suite; no code review)" ;;
   ''|generic)  ;;
-  *)           printf '%s  kind "%s" → code repo (plan→build→review + guard/perf); tune via green/guardian_focus%s\n' "$c_dim" "$KIND" "$c_off" ;;
+  *)           glance "kind \"$KIND\" → code repo (plan→build→review + guard/perf); tune via green/guardian_focus" ;;
 esac
 
-printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
-printf '  url=%s  tags=[%s]\n  workspace root=%s\n' "$URL" "$tags_yaml" "$ROOT"
+# Intro banner — verbose-only chatter (the closing summary restates repo + product).
+if [[ "$VERBOSE" -eq 1 ]]; then
+  printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
+  printf '  url=%s  tags=[%s]\n  workspace root=%s\n' "$URL" "$tags_yaml" "$ROOT"
+fi
 if [[ "$YES" -ne 1 && -t 0 ]]; then
   read -r -p "Proceed? [y/N] " a; [[ "$a" =~ ^[Yy]$ ]] || die "aborted"
 fi
@@ -578,10 +634,12 @@ done
 
 # ── 4. codegraph index ────────────────────────────────────────────────────────
 step "4. Initialize the codegraph index (in $PATH_REL/)"
+ensure_codegraph || true   # install codegraph once if it's missing (no-op when already on PATH)
 if ! have codegraph; then skip "4. 'codegraph' not installed — run 'codegraph init' in $PATH_REL/ later"
 elif cg_indexed "$REPO_DIR" && [[ "$FORCE" -ne 1 ]]; then skip "4. .codegraph index already built"
 else
-  codegraph init "$REPO_DIR"; cg_rc=$?   # recovers a bare/partial .codegraph/ too
+  # quiet by default — swallow codegraph's own progress UI (keep stderr); -v shows it.
+  if [[ "$VERBOSE" -eq 1 ]]; then codegraph init "$REPO_DIR"; else codegraph init "$REPO_DIR" >/dev/null; fi; cg_rc=$?   # recovers a bare/partial .codegraph/ too
   if [[ "$cg_rc" -eq 0 ]]; then ok "codegraph index built"
   else skip "4. 'codegraph init' $(describe_rc "$cg_rc") — re-run 'codegraph init $PATH_REL' to retry"; fi
 fi
@@ -831,7 +889,8 @@ fi
 step "10.6. Sync the codegraph index (in $PATH_REL/)"
 if ! have codegraph; then skip "10.6. 'codegraph' not installed — run 'codegraph sync $PATH_REL' later"
 elif ! cg_indexed "$REPO_DIR"; then skip "10.6. no .codegraph index to sync (step 4 didn't build one) — run 'codegraph init $PATH_REL' first"
-elif codegraph sync "$REPO_DIR"; then ok "codegraph index synced"
+# quiet by default — swallow codegraph's own progress UI (keep stderr); -v shows it.
+elif { [[ "$VERBOSE" -eq 1 ]] && codegraph sync "$REPO_DIR"; } || { [[ "$VERBOSE" -ne 1 ]] && codegraph sync "$REPO_DIR" >/dev/null; }; then ok "codegraph index synced"
 else skip "10.6. 'codegraph sync' failed"; fi
 
 # ── 11. back to the workspace root ─────────────────────────────────────────────

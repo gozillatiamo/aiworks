@@ -2,10 +2,11 @@
 #
 # Workspace run — start a product's full local stack.
 #
-#   .superset/run.sh [product] [-G]   (default product: ofb-platform)
+#   .superset/run.sh [product] [-G] [-v]   (default product: ofb-platform)
 #
 # Options:
 #   -G, --no-games   skip Phase 6 (fetch games).
+#   -v, --verbose    show the full step-by-step log (quiet by default).
 #   -h, --help       show this help.
 #
 # Sequence (defined per product in .superset/products/<product>.sh):
@@ -29,13 +30,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source .superset/lib.sh
 
-usage() { sed -n '4,9p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '4,10p' "$0" | sed 's/^# \{0,1\}//'; }
 
+# Quiet by default; -v/--verbose shows the full step log (exported for lib.sh's log()).
+export VERBOSE="${VERBOSE:-0}"
 PRODUCT=""
 SKIP_FETCH_GAMES=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -G|--no-games) SKIP_FETCH_GAMES=1; shift ;;
+    -v|--verbose)  export VERBOSE=1; shift ;;
     -h|--help)     usage; exit 0 ;;
     --)            shift; break ;;
     -*)            err "unknown option: $1"; usage >&2; exit 2 ;;
@@ -85,4 +89,5 @@ else
   run_phase "Phase 6/6: fetch games" fetch_games
 fi
 
-log "Product '$PRODUCT' is up. Teardown with: .superset/teardown.sh $PRODUCT"
+# ── conclusion (always shown, even when quiet) ──────────────────────────────────
+conclude "Product '$PRODUCT' is up. Teardown with: .superset/teardown.sh $PRODUCT"

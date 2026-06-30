@@ -2,7 +2,9 @@
 #
 # Workspace teardown — stop a product's full local stack.
 #
-#   .superset/teardown.sh [product] [--purge-repos]      (default: ofb-platform)
+#   .superset/teardown.sh [product] [--purge-repos] [-v|--verbose]   (default: ofb-platform)
+#
+# Output is QUIET by default; pass -v/--verbose for the full step log.
 #
 # Downs every service in reverse run order (defined per product in
 # .superset/products/<product>.sh):
@@ -24,18 +26,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source .superset/lib.sh
 
+export VERBOSE="${VERBOSE:-0}"   # quiet by default; -v/--verbose shows the full step log
 PRODUCT="ofb-platform"
 PURGE_REPOS=false
 for arg in "$@"; do
   case "$arg" in
     --purge-repos) PURGE_REPOS=true ;;
+    -v|--verbose)  export VERBOSE=1 ;;
     *) PRODUCT="$arg" ;;
   esac
 done
 
-echo "==> Stopping shared MCP services…"
-./.superset/mcp-services.sh down || true
-./.superset/mcp-services.sh reap || true
+log "Stopping shared MCP services…"
+if [[ "$VERBOSE" == 1 ]]; then ./.superset/mcp-services.sh down || true; ./.superset/mcp-services.sh reap || true
+else ./.superset/mcp-services.sh down >/dev/null 2>&1 || true; ./.superset/mcp-services.sh reap >/dev/null 2>&1 || true; fi
 
 runtime_dirs "$PRODUCT"
 load_product "$PRODUCT"
@@ -66,10 +70,10 @@ else
 fi
 
 rm -rf ".superset/run/$PRODUCT"
-log "Product '$PRODUCT' is down."
 
 # Optional: remove the cloned product repos so Superset can delete the
 # worktree cleanly (they are untracked, gitignored clones).
+purged_note=""
 if [[ "$PURGE_REPOS" == true ]]; then
   removed=0
   for repo in */; do
@@ -78,4 +82,8 @@ if [[ "$PURGE_REPOS" == true ]]; then
     rm -rf "$repo" && log "Removed cloned repo: $repo" && removed=$((removed + 1))
   done
   log "Purged $removed cloned repo(s)."
+  purged_note=" — purged $removed cloned repo(s)"
 fi
+
+# ── conclusion (always shown, even when quiet — the last line) ──────────────────────
+conclude "Product '$PRODUCT' is down.${purged_note}"
