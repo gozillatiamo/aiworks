@@ -43,6 +43,9 @@ gitignored clones and only the meta-repo shows.
   `scripts/tracker/` (tickets via `notion`|`jira`), and `scripts/notify/` (chat via
   `slack`). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack
   directly.**
+- **Test environment:** automated runs target **local** by default; staging is an
+  explicit, QA-reserved opt-in (`CYPRESS_ENV=staging`). Defer to each repo's default —
+  never hardcode an environment in agents/skills/workflow.
 
 ## Product Overview
 {{PRODUCT_DESCRIPTION}}

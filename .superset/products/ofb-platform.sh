@@ -18,7 +18,30 @@
 
 DB_REPOS=(agent-db)
 BACKEND_REPOS=(agent-webservice)
-FRONTEND_REPOS=(paotung-template front-end backoffice)
+
+# ── frontend profile ──────────────────────────────────────────────────────────
+# Each Next.js dev server costs ~2 GB RAM, and you normally play ONE player site
+# at a time — so running all three at once needlessly eats ~40% of a 16 GB box and
+# forces the machine into swap. The default therefore runs ONE player site + the
+# backoffice. Pick which with OFB_PLAYER_SITE (default: paotung):
+#
+#   OFB_PLAYER_SITE=paotung   .superset/run.sh   → paotung-template + backoffice   (default)
+#   OFB_PLAYER_SITE=ohanabet  .superset/run.sh   → front-end        + backoffice
+#   OFB_PLAYER_SITE=all       .superset/run.sh   → paotung-template + front-end + backoffice  (old behaviour)
+#
+# Or set OFB_FRONTENDS to a custom space-separated list to override entirely, e.g.
+#   OFB_FRONTENDS="paotung-template"  .superset/run.sh   → player site only, no backoffice
+if [[ -n "${OFB_FRONTENDS:-}" ]]; then
+  read -r -a FRONTEND_REPOS <<< "$OFB_FRONTENDS"
+else
+  case "${OFB_PLAYER_SITE:-paotung}" in
+    paotung)  FRONTEND_REPOS=(paotung-template backoffice) ;;
+    ohanabet) FRONTEND_REPOS=(front-end backoffice) ;;
+    all)      FRONTEND_REPOS=(paotung-template front-end backoffice) ;;
+    *) echo "WARN: unknown OFB_PLAYER_SITE='${OFB_PLAYER_SITE:-}', using 'paotung' (paotung-template + backoffice)." >&2
+       FRONTEND_REPOS=(paotung-template backoffice) ;;
+  esac
+fi
 
 # ── 1. databases + migrations ─────────────────────────────────────────────────
 run_databases() {
@@ -49,16 +72,26 @@ run_backends() {
 
 # ── 3. frontends ──────────────────────────────────────────────────────────────
 run_frontends() {
-  # paotung-template: nginx (docker, :80) + next dev on :3004 (pnpm).
-  log "paotung-template: starting nginx (docker compose up -d nginx)…"
-  (cd paotung-template && docker compose up -d nginx)
-  start_node_app paotung-template dev 3004
-
-  # front-end: OHANABET theme — next dev on :3002 (pnpm), no docker.
-  start_node_app front-end dev 3002
-
-  # backoffice: next dev on :3001 (npm), no docker.
-  start_node_app backoffice dev 3001
+  # Start only the frontends the profile selected (FRONTEND_REPOS, set above).
+  # Ports/commands are unchanged; paotung additionally needs its nginx (docker).
+  local repo
+  for repo in "${FRONTEND_REPOS[@]}"; do
+    case "$repo" in
+      paotung-template)
+        # paotung-template: nginx (docker, :80) + next dev on :3004 (pnpm).
+        log "paotung-template: starting nginx (docker compose up -d nginx)…"
+        (cd paotung-template && docker compose up -d nginx)
+        start_node_app paotung-template dev 3004 ;;
+      front-end)
+        # front-end: OHANABET theme — next dev on :3002 (pnpm), no docker.
+        start_node_app front-end dev 3002 ;;
+      backoffice)
+        # backoffice: next dev on :3001 (npm), no docker.
+        start_node_app backoffice dev 3001 ;;
+      *)
+        warn "run_frontends: unknown frontend '$repo' — skipping." ;;
+    esac
+  done
 }
 
 # ── 4. aggregator setup (AMB) ─────────────────────────────────────────────────
@@ -94,14 +127,19 @@ wait_backends_ready() {
 # ── 6. fetch games ────────────────────────────────────────────────────────────
 fetch_games() {
   # Prime the platform's game catalogue via the server-to-server endpoint.
+  # NB: this is a long, silent server-side fetch (the backend pulls the whole catalogue
+  # from every aggregator). The old version paired quiet-only log() with `curl -s`, so in
+  # the default quiet run the phase went completely DARK for up to 2 min and looked frozen.
+  # run_glance shows a visible titled section + a live progress glance + ✓/elapsed even in
+  # quiet mode; `-fS` makes curl fail (non-zero) on HTTP >=400 so the ✓/✗ is accurate; the
+  # body is still saved to $out for inspection. --max-time 300: a cold catalogue can exceed 120s.
   local url="http://localhost:3000/aggregators/fetch-games"
-  local out="$LOG_DIR/fetch-games.json" code
-  log "agent-webservice: fetching all games ($url)…"
-  code="$(curl -s -o "$out" -w '%{http_code}' --max-time 120 "$url" 2>/dev/null || true)"
-  if [[ "$code" == "200" ]]; then
-    log "fetch-games OK (HTTP 200) — response saved to $out"
+  local out="$LOG_DIR/fetch-games.json"
+  if run_glance "agent-webservice: fetching all games ($url)" \
+       curl -fS --max-time 300 -o "$out" "$url"; then
+    log "fetch-games OK — response saved to $out"
   else
-    warn "fetch-games returned HTTP ${code:-<no response>} — see $out"
+    warn "fetch-games failed — see $out (re-run with -v for the full response)"
   fi
 }
 

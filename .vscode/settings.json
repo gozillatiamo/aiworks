@@ -8,7 +8,6 @@
     "**/.codegraph": true,
     "**/.aiworks": true,
     "**/.git": true,
-    "**/.env": true,
     "agent-webservice/target": true,
     "agent-paotung-cypress/dist": true,
     "agent-paotung-cypress/coverage": true,
