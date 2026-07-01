@@ -165,6 +165,12 @@ products:
         desc: The cross-repo QA suite for the backoffice repo. It's contains the E2E UI tests for the backoffice. Including the Newman API tests for the platform.  # one-line repo responsibility (anatomy at a glance)
         lang: cypress, newman 
         green: "tests via cypress and newman passed successfully"
+      
+      - url: git@gitlab.com:bluepicode/ofb/mock-agency-api.git
+        kind: backend 
+        desc: The mock API service that user for simulate the agency service for any site that using package S.
+        lang: json 
+        green: "The service is running with healthy"
 
 # Repo dependency edges (build/merge order) are decided per-ticket by the scoping
 # stage; a typical chain is backend → app → test-suite.

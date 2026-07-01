@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  mock-agency-api:
+    desc: The mock API service that user for simulate the agency service for any site that using package S.
+    url: git@gitlab.com:bluepicode/ofb/mock-agency-api.git
+    path: ../mock-agency-api
+    tags: [ofb-platform, json ]
   customization-widget:
     desc: The package library for the player sites, to convert the template data into the real component.
     url: git@gitlab.com:bluepicode/ofb/customization-widget.git

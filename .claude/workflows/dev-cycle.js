@@ -162,6 +162,15 @@ const REPOS = {
     testSuite: true,
     distribute: null,
   },
+  'mock-agency-api': {
+    path: 'mock-agency-api', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'The service is running with healthy',
+    guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit',
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 

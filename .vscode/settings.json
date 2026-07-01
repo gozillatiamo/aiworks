@@ -23,6 +23,7 @@
     "ofb-backoffice-cypress/.expo": true,
     "paotung-template/dist": true,
     "paotung-template/coverage": true,
-    "paotung-template/.expo": true
+    "paotung-template/.expo": true,
+    "**/.env": true
   }
 }

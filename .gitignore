@@ -39,3 +39,4 @@ ofb-instruction/
 customization-widget/
 *.code-workspace
 !ai-workspace.code-workspace
+mock-agency-api/

@@ -39,6 +39,10 @@
     {
       "name": "ofb-backoffice-cypress",
       "path": "ofb-backoffice-cypress"
+    },
+    {
+      "name": "mock-agency-api",
+      "path": "mock-agency-api"
     }
   ],
   "settings": {
