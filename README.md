@@ -1,309 +1,201 @@
-# AI Agents Workspace(aiworks) — multi-repo agent orchestration
+<h1 align="center">⚡ OFB AI Workspace</h1>
 
-A reusable, provider-agnostic starting point for running a **"product team" of Claude
-agents** across multiple repos.
+<p align="center">
+  <em>The bluePi workspace for running a <strong>team of Claude agents</strong> across every OFB repo.</em><br/>
+  One command takes a Jira ticket through the whole delivery cycle.
+</p>
 
-The team is flat but role-based — CEO → CPO/CTO → planners → developer/QA → reviewers →
-guardian/perf → documentor — and it takes a single ticket all the way through:
+<p align="center">
+  <img alt="Claude" src="https://img.shields.io/badge/Claude-agents-D97757?logo=anthropic&logoColor=white">
+  <img alt="GitLab" src="https://img.shields.io/badge/GitLab-MRs-FC6D26?logo=gitlab&logoColor=white">
+  <img alt="Jira" src="https://img.shields.io/badge/Jira-tickets-0052CC?logo=jira&logoColor=white">
+  <img alt="Slack" src="https://img.shields.io/badge/Slack-notify-4A154B?logo=slack&logoColor=white">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-backend-000000?logo=rust&logoColor=white">
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-web-000000?logo=nextdotjs&logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/Postgres-data-4169E1?logo=postgresql&logoColor=white">
+</p>
 
-> **plan → build → PR/MR → review → cross-repo test-suite gate → merge → distribute**
+<p align="center">
+  <code>plan</code> → <code>build</code> → <code>PR/MR</code> → <code>review</code> → <code>test gate</code> → <code>merge</code> → <code>distribute</code>
+</p>
 
-across every repo the ticket touches. The `dev-cycle` workflow drives the whole thing.
-
-> ## 📖 Start here: <a href="docs/aiworks.html" target="_blank" rel="noopener noreferrer"><code>docs/aiworks.html</code></a>
->
-> **That interactive guide is the authoritative, human-friendly walkthrough** of this
-> workspace — the setup flow, the `aiworks` CLI, and the dev-cycle, with diagrams and
-> examples. Open it in a browser and read it first. This README is just a quick map; when
-> the two ever disagree, trust the doc.
-
----
-
-## Why this exists
-
-Most of this orchestration is identical from org to org. What changes is *your* stack:
-which VCS you use, which tracker, whether merges are automatic, where builds get shipped.
-
-So everything org-specific is **swappable from one config file**, and the agents/workflows
-never call a provider tool directly — they go through a small adapter with a stable CLI.
-Want to add Linear or Bitbucket? Drop one new file under `scripts/<axis>/` and nothing
-else changes.
-
-| What's swappable | Choices | Where you set it |
-|---|---|---|
-| **VCS** | `github` (`gh`) · `gitlab` (`glab`) | `scripts/vcs/` adapter + `vcs.provider` |
-| **Auto-merge** | `true` · `false` (per-repo override) | `vcs.auto_merge` + `products[].repos[].auto_merge` |
-| **Plan approval** | auto · human approves before build | `planning.auto_approve` (+ `--approve-plan`) |
-| **Plan → HTML** | `true` · `false` | `planning.to_html` (write-interactive-docs) |
-| **Tracker** | `notion` · `jira` (both shell + curl + jq) | `scripts/tracker/` adapter + `tracker.*` |
-| **Quality gate** | `sonarqube` · `none` | `quality_gate.provider` + per-repo `guard` |
-| **Distribution** | `firebase` · `none` · `custom` | per-repo `distribute` |
-| **Repos / identity** | yours — just the URLs | `workspace.config.yaml` `products[].repos[]` |
+<p align="center">
+  📖 <strong>Full guide with diagrams:</strong> <a href="docs/aiworks.html">docs/aiworks.html</a> —
+  open it in a browser. This README is the quick start; when they disagree, trust the doc.
+</p>
 
 ---
 
-## What's in here
+Everything org-specific (GitLab, Jira, Slack, the repo list) lives in one file —
+`workspace.config.yaml`. Agents never call providers directly; they go through the
+adapters in `scripts/{vcs,tracker,notify}/`.
+
+## 📦 What's inside
 
 ```
-workspace.config.example.yaml      # the ONE file you fill in (org, providers, repos)
-CLAUDE.md                          # workspace instructions (templated)
-mani.yaml + mani.d/<product>.yaml  # repo registry — GENERATED from the config
-<workspace>.code-workspace         # multi-root VS Code/Cursor workspace — GENERATED from the config
-docs/agents/issue-tracker.md       # how agents read/write tickets
-.claude/{agents,skills,workflows,hooks,settings.json}
-scripts/vcs/                       # github | gitlab  PR/MR adapter
-scripts/tracker/                   # notion | jira    ticket adapter
-.superset/                         # workspace setup/run/teardown hooks (setup: mani sync + .env
-                                   #   seeding; run: scripts/dev.sh run per repo; teardown: rm clones)
+workspace.config.yaml       # source of truth: providers, repos, statuses, policies
+CLAUDE.md                   # workspace instructions for the agents
+aiworks                     # workspace CLI (sync · add · remove · config · setup · run)
+scripts/vcs|tracker|notify  # GitLab · Jira · Slack adapters
+.claude/                    # agents, skills, workflows (dev-cycle, prd, brd)
+mani.yaml + mani.d/         # repo registry — generated, do not hand-edit
+ai-workspace.code-workspace # multi-root IDE workspace — generated
 ```
 
----
+The product repos clone **into** this folder but stay git-ignored — each is its own
+independent clone.
 
-## Get started (new org)
+## ✅ Prerequisites
 
-The whole setup is "fill in one config, then run one command." Here's the full path:
+| Tool | Install |
+|------|---------|
+| **git** | [git-scm.com/downloads](https://git-scm.com/downloads) |
+| **SSH key on GitLab** (access to `gitlab.com/bluepicode`) | [docs.gitlab.com/user/ssh](https://docs.gitlab.com/user/ssh/) |
+| **Node.js** | [nodejs.org/en/download](https://nodejs.org/en/download) |
+| **Docker** | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
+| **mani** | [github.com/alajmo/mani](https://github.com/alajmo/mani#install) |
+| **Claude Code** | [claude.com/claude-code](https://claude.com/claude-code) |
+| **gcloud CLI** | [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install) |
 
-1. **Copy** this directory into your new workspace repo (or use it directly as one).
+> 🔧 `jq`, `glab` (GitLab CLI), and `ngrok` are installed by `setup` if missing — just run
+> `glab auth login` once after. You'll also need a
+> [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens) and access
+> to the `#dev-oneforbet` Slack channel.
 
-2. **Fill in the config.**
-   ```sh
-   cp workspace.config.example.yaml workspace.config.yaml
-   ```
-   Set your org name/product, `vcs.provider` + `vcs.auto_merge`, `tracker.provider` +
-   `ticket_prefix` + `statuses`, `branch_model`, `quality_gate`, and `planning`. Then add
-   your repos — **just the URL (+ `kind`)** under `products[].repos[]`. That `products:`
-   block is the only repo list you maintain; `mani.d/` is generated from it.
+## 🚀 First run
 
-3. **Add tracker credentials.**
-   ```sh
-   cp scripts/tracker/.env.example scripts/tracker/.env
-   ```
-   Set `TRACKER_PROVIDER` and that provider's block, then fill in
-   `docs/agents/issue-tracker.md` (ids, status names).
+**1. Clone this repo and enter it.**
 
-4. **Log in to your VCS** — `gh auth login` or `glab auth login`. The provider
-   auto-detects from the `origin` remote; override it in `scripts/vcs/.env` if needed.
-
-5. **Onboard your repos** — one command does it all:
-   ```sh
-   scripts/aiworks sync       # clone + fully set up every repo in the config
-   mani list projects         # confirm
-   cursor aiworks.code-workspace   # open the multi-root workspace (each repo = its own SCM panel)
-   ```
-   It's idempotent — re-run any time; already-onboarded repos just **SKIP**. `sync` also writes a
-   `<workspace>.code-workspace` (named after the workspace folder) so VS Code / Cursor show each
-   product repo as its own Source Control section — open the **file**, not the folder.
-
-6. **De-brand pass.** Replace the `{{ORG_NAME}}` / `{{PRODUCT_DESCRIPTION}}` placeholders
-   in `CLAUDE.md`. The agents and workflows are already provider-agnostic, but a few
-   **stack-specific** skills still ship with the reference stack's copy/tooling (a Flutter
-   app + an E2E automation test-suite repo). Adapt these to your stack:
-   `.claude/skills/{coding-feature,coding-automate,plan-automate}` and the
-   `coding-feature/*.md` references. (VCS/tracker wiring needs no further edits.)
-
-> **You never hand-edit the workflow.** `.claude/workflows/dev-cycle.js` keeps a mirrored
-> `── CONFIG ──` block (the `REPOS` registry, `TICKET_PREFIX`, `AUTO_MERGE`,
-> `AUTO_APPROVE_PLAN`, `PLAN_TO_HTML`, status names) only because Workflow scripts can't
-> read the filesystem at runtime. `scripts/aiworks sync` — and every `add` / `remove` —
-> regenerates that block from `workspace.config.yaml` for you. (`prd.js` / `brd.js` use
-> the same FS-mirror trick.)
-
----
-
-## Managing repos — `scripts/aiworks`
-
-`aiworks` is the workspace CLI. The golden rule: **`workspace.config.yaml`
-`products[].repos[]` is the source of truth.** Declare a repo's URL there and `aiworks`
-does the rest.
-
-> For the full, illustrated walkthrough of `aiworks` and everything below, read
-> **<a href="docs/aiworks.html" target="_blank" rel="noopener noreferrer"><code>docs/aiworks.html</code></a>** — the quick reference here is intentionally short.
+**2. Set up the adapter env files.** Copy each example and fill in your credentials
+(fastest path: ask a teammate for working values):
 
 ```sh
-scripts/aiworks sync                       # onboard EVERY repo in the config
-scripts/aiworks sync your-product --dry-run # preview one product (runs nothing)
-scripts/aiworks sync agent-db              # onboard ONLY one repo (by name)
-scripts/aiworks sync --repo agent-db,paotung-template   # …or several named repos
-
-scripts/aiworks add --url git@github.com:your-org/your-api.git \
-                    --product backend --lang go --kind generic \
-                    --desc "REST API + data layer"             # onboard one repo
-scripts/aiworks remove your-api         # deregister (keeps the clone)
-scripts/aiworks remove your-api --purge # also delete the clone (refuses if dirty/unpushed)
-
-scripts/aiworks config                     # regen the dev-cycle.js CONFIG from the config
+cp scripts/tracker/.env.example scripts/tracker/.env   # Jira token
+cp scripts/vcs/.env.example     scripts/vcs/.env       # GitLab (defaults usually fine)
+cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 ```
 
-(Each subcommand has its own `-h`, e.g. `aiworks add -h`.)
-
-### `sync` — the fast path
-
-Reads `products[].repos[]` (optionally just one product) and runs the full per-repo
-toolchain for each, pulling `url` / `kind` / `desc` / `lang` / `distribute` / `path` straight
-from the config so you never retype them (`desc` is the one-line repo responsibility, surfaced
-by `mani list projects`). Idempotent, so already-set-up repos report **SKIP** —
-safe to re-run after adding a URL. Add `-n` / `--dry-run` to preview the commands.
-
-### `add` — onboard one repo imperatively
-
-Onboards a single repo from flags **and** writes its entry back into the config. Defaults
-are derived from the URL:
-
-- **clone dir / mani key / config entry** ← the repo name from the URL (e.g. `your-api/`)
-- **`--product`** — its group under `products:` (and the `mani.d/<product>.yaml` file;
-  default = the repo name)
-- **`--kind`** — drives the role/gate defaults
-- **`--lang` / `--distribute` / `--path`** — optional; `lang` is auto-detected if omitted
-
-Under the hood, both `add` and `sync` will, for each repo:
-
-- write a minimal entry under `products[].repos[]` (creating the config from the example
-  if missing)
-- generate its `mani.d/<product>.yaml` entry + `mani.yaml` `import:`, then clone via `mani sync`
-- initialize git submodules first (`git submodule update --init --recursive`) when the repo
-  declares a `.gitmodules` (a no-op otherwise)
-- git-ignore the clone in the workspace `.gitignore` (and `agent_logs/` inside the repo)
-- re-include the clone for **Cursor** indexing via a workspace-root `.cursorindexingignore`
-  (`!<repo>/`) — Cursor honours `.gitignore` as a hard baseline and would otherwise skip the
-  whole clone, so this negated entry keeps it git-ignored yet searchable (best-effort; varies
-  by Cursor version). `.cursorignore` can't do this — its negations don't override `.gitignore`.
-- make the clone searchable in **VS Code** via a workspace-root `.vscode/settings.json`
-  (jq-merged, preserving your own keys): `search.useIgnoreFiles: false` so VS Code search
-  stops honouring `.gitignore` (which hid the clones), plus `search.exclude` globs that
-  re-exclude the noise — a few workspace-global `**/` keys and this repo's language-derived,
-  repo-scoped build dirs (e.g. `<repo>/build`, `<repo>/.dart_tool`)
-- build the codegraph index
-- install the agent skill packs **at project scope** (karpathy plugin installed *and*
-  enabled via `--scope project`; mattpocock skills installed one `--skill` per call)
-
-Then, best-effort via `claude -p` (with live docker-style "glance" logs, a per-step token
-report, and a per-step `--claude-timeout` so a hung step can't stall the run), it:
-
-- scaffolds a **`CLAUDE.md`** from the repo's anatomy (≤60 lines; overflow goes into
-  `.claude/rules/<topic>.md`; if one already exists it asks *regenerate / combine / skip*)
-- runs the `/setup-matt-pocock-skills` skill
-- seeds a **hardcoded, sonar-free hook + permission baseline** (`.claude/hooks` copied from
-  the workspace; `settings.json` jq-merged so existing plugin enablement is preserved)
-- scaffolds a **`scripts/dev.sh`** shaped by the repo's own toolchain, and runs the skill
-  generator
-
-Anything already done is skipped and reported. Any missing tool
-(mani / codegraph / claude / npx / jq) is skipped with a printed summary + manual
-follow-ups. At the end it **regenerates the `dev-cycle.js` CONFIG block** and the multi-root
-**`<workspace>.code-workspace`** file (one folder root per declared repo + the meta-repo root,
-in declared order) from the config.
-
-### `remove` — the inverse
-
-Deregisters the repo from `workspace.config.yaml` (matched by repo name in its URL), from
-`mani.d/<product>.yaml` (deleting the file + its `mani.yaml` import if it was the product's
-last repo), from the workspace `.gitignore`, from the workspace `.cursorindexingignore`
-(the Cursor re-include line; the shared header comment is left behind), and from the workspace
-`.vscode/settings.json` (this repo's `search.exclude` keys; the shared workspace-global keys
-stay). The clone stays unless you pass `--purge`
-(which refuses on a dirty/unpushed tree unless you also pass `--force`). It then
-regenerates the `dev-cycle.js` CONFIG block and the `<workspace>.code-workspace` `folders`
-array too, so the repo drops out of the workflow mirror **and** the multi-root workspace
-automatically (its `settings` block is left untouched).
-
-### `config` — keep the workflow mirror in sync
-
-Regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js` **and** the multi-root
-`<workspace>.code-workspace` `folders` array straight from `workspace.config.yaml`. `sync` /
-`add` / `remove` all run it for you — call it directly only after hand-editing a **non-repo**
-field (ticket prefix, statuses, flags) or to refresh the workspace file. The `.code-workspace`
-file name is the **workspace-root basename** (e.g. `aiworks.code-workspace`); it's committed with
-the meta-repo, only its `folders` array is regenerated, and any `settings` you add survive
-re-runs. Generating it needs `jq` (like the VS Code search-settings merge).
-
----
-
-## Run it
+**3. Set up the workspace** — clones + onboards every OFB repo, installs node
+dependencies, and starts the shared MCP services. Idempotent, safe to re-run:
 
 ```sh
-/dev-cycle FM-12                 # one ticket, end to end across every repo it touches
-/dev-cycle FM-12 --dry-run       # review + test-suite gate, then STOP before merge + distribute
-/dev-cycle FM-12 --approve-plan  # proceed past the plan-approval gate (when auto_approve is off)
+./aiworks setup
 ```
 
-A ticket that touches only one repo collapses to a simple single-repo flow.
+**4. Fill the repo env files.** Setup ends with an **ACTION REQUIRED** list of the
+`.env` files still needing real values — fill each one (ask your manager or a teammate):
 
----
+| File | Purpose |
+|------|---------|
+| `agent-webservice/.env` + `.env.local` | backend (`.env.local` required by docker-compose) |
+| `backoffice/.env` · `front-end/.env` · `paotung-template/.env` | web apps |
+| `agent-webservice/.env.amb` | AMB aggregator — without it `run` skips the AMB phase ([docs](agent-webservice/docs/amb_setup_flow.md)) |
 
-## Verify the wiring (nothing destructive)
+**5. Run the product** — starts the full local stack (databases + migrations, backend,
+backoffice, **one** player site, AMB aggregator):
 
 ```sh
-# Tracker (after .env) — reads print plain text; writes preview with --dry-run
-scripts/tracker/get-ticket-details.sh <KEY>
-scripts/tracker/find-tickets.sh --query "<keyword>" --open
-scripts/tracker/upsert-ticket-details.sh <KEY> --status "<your in-progress name>" --dry-run
-scripts/tracker/upsert-ticket-details.sh new --title "TEST" --body-file spec.md --dry-run
-
-# VCS — provider auto-detect + dry-run the commands
-scripts/vcs/default-branch.sh
-scripts/vcs/open-pr.sh --title "TEST" --dry-run
-
-# Sanity — workflows parse, adapters lint
-node --check .claude/workflows/dev-cycle.js
-bash -n scripts/vcs/*.sh scripts/tracker/*.sh
+./aiworks run                    # PAOTUNG theme (default)
+./aiworks run --site ohanabet    # OHANABET theme instead
+./aiworks run --site all         # both player sites (each Next dev ≈ 2 GB RAM)
 ```
 
----
+**6. Claim your admin & agent accounts.** The DB ships with placeholder accounts —
+point them at your own Google account. Full steps in
+[`ofb-instruction/README.md`](ofb-instruction/README.md); the short version:
 
-## Good to know
+<details>
+<summary><strong>Show the claim steps (one-time)</strong></summary>
 
-**The candidate is validated *before* merge.** Review and the cross-repo test-suite gate
-both run on the ticket's work branches pre-merge, so a failing candidate never reaches the
-base branch. Merge is the commit gate; distribution ships the *merged* build right after.
-The test-suite gate runs only when the ticket's scope includes the registered test-suite
-repo — needing end-to-end validation pulls that repo into scope (it builds + merges last).
-If the scope flags the gate but omits the repo, the run auto-adds it; if no test-suite repo
-is registered at all, the run ships with a loud warning (recorded in the summary) that the
-requested gate did not run — it never reports an unvalidated run as test-suite-validated.
+```sh
+# Get your Google sub (sign in with your @bluepi.co.th account)
+gcloud auth login
+curl -s "https://oauth2.googleapis.com/tokeninfo?id_token=$(gcloud auth print-identity-token)" | jq -r .sub
+```
 
-**Auto-merge** (`vcs.auto_merge`, default `true`) decides whether that merge happens
-automatically. Set it `false` — or override a single repo with
-`products[].repos[].auto_merge: false` — and the run still reviews + runs the test-suite
-gate, then **stops and leaves the PR/MR open** for a human to merge. Nothing is merged or
-distributed. (`--dry-run` stops at the same point.)
+Then, on the **MAD** database (`localhost:5432`, `postgres/postgres`):
 
-**Plan approval** (`planning.auto_approve`, default `true`) gates the *planning* step the
-same way auto-merge gates the *merge* step. Set it `false` and the run produces the
-plan(s), then stops for a human to approve — re-run with `--approve-plan` to continue.
-With **Plan → HTML** (`planning.to_html`, default `false`) on, each plan is also rendered
-to a self-contained interactive HTML doc (via write-interactive-docs) next to its
-markdown — handy for sharing when approval is required.
+```sql
+-- OWNER admin → your @bluepi.co.th account
+UPDATE bo_auth_google SET email = '<your @bluepi.co.th email>', sub = '<your google sub>'
+WHERE email = 'local.admin@bluepi.co.th';
+UPDATE admin SET email = '<your @bluepi.co.th email>'
+WHERE email = 'local.admin@bluepi.co.th';
 
-**Ticket status is owned by the workflow**, not the per-repo agents. The dev-cycle moves
-the ticket forward (monotonically) only at aggregate milestones, so a multi-repo ticket
-can't thrash its status. It uses whatever you declare under `tracker.statuses`, picking
-the best match per milestone (e.g. `ready_to_merge` if you have it, else `ready_to_test`).
+-- AGENT → a personal (non-bluepi) Google account
+UPDATE bo_auth_google SET email = '<your personal email>'
+WHERE email = 'local.agent@gmail.com';
+```
 
-**The reference impls are optional.** SonarQube (quality gate) and Firebase (distribution)
-are just defaults — set `quality_gate.provider: none` and per-repo `distribute: none` to
-skip them.
+</details>
 
-**Shared MCP services.** Container-backed MCP servers run as ONE long-lived, shared
-container instead of a per-client `docker run` in `.mcp.json`. An stdio MCP server is
-spawned once per client process, so the fan-out workflow's many subagents each spawned
-their own container — and a crashed agent never closes the pipe, so `--rm` never fires and
-the container orphans. The shared model fixes both: `.superset/mcp-compose.yml` defines the
-stack (currently `postgres-mcp` over SSE on `127.0.0.1:8000`), `.mcp.json` points every
-client at the SSE URL, and one container serves them all.
+**7. Play with the product.** 🎉
 
-- **Lifecycle:** `scripts/aiworks setup` starts it (`up -d`, idempotent); `restart:
-  unless-stopped` keeps it alive across reboots; `scripts/aiworks teardown` stops it and
-  reaps any stray per-client MCP containers left by the old model.
-- **Manual:** `.superset/mcp-services.sh up | down | reap | status`. `reap` kills orphan
-  `postgres-mcp` / `mcp/sonarqube` containers while leaving the shared stack running.
-- **Config:** override `DATABASE_URI` / `MCP_POSTGRES_PORT` in `.superset/.env` (git-ignored).
-  If you change the port, update the URL in `.mcp.json` to match.
-- **Not converted:** `redis` (run via `uvx`, not a container — upstream is stdio-only, no
-  orphan problem) and `sonarqube` (managed by the `sonar` CLI). Their orphans, if any, are
-  cleaned by `reap`.
-- **Optional zero-touch start:** to bring the stack up automatically whenever a session
-  begins (not just on `setup`), add a `SessionStart` hook to `.claude/settings.json` that
-  runs `.superset/mcp-services.sh up` in the background.
+| Service | URL | Sign in with |
+|---------|-----|--------------|
+| 🛠️ **Backoffice** | http://localhost:3001 | your `@bluepi.co.th` → OWNER admin · personal Google → agent |
+| 🎰 **Player site — PAOTUNG** | http://localhost:3004 | test player below |
+| 🎲 **Player site — OHANABET** | http://localhost:3002 | test player below |
+| 🔌 **API** | http://localhost:3000 | — |
 
-**More docs:** `scripts/tracker/README.md` and `scripts/vcs/README.md` explain each
-adapter and how to add a new provider.
+Seeded **test player** → phone `0800000000` · PIN `888` · funded wallet. Plain
+`localhost` resolves to the default site.
+
+<details>
+<summary><strong>Visit a site by its site code</strong> (host-based theme resolution)</summary>
+
+A player site picks its theme + config from the hostname. We standardize the local
+domain on **`oneforbet.local`** — set `OFB_DOMAIN_NAME=oneforbet.local` in
+`agent-webservice/.env`, then add the seeded subdomains to `/etc/hosts`:
+
+```
+127.0.0.1 paotl.oneforbet.local ohnbl.oneforbet.local
+```
+
+- `http://paotl.oneforbet.local:3004` → PAOTUNG site (code `PAOTL`)
+- `http://ohnbl.oneforbet.local:3002` → OHANABET site (code `OHNBL`)
+
+</details>
+
+## 🎫 Run a ticket
+
+Open the IDE workspace — the **file**, not the folder, so every repo gets its own
+Source Control panel — then start a Claude Code session in this folder:
+
+```sh
+cursor ai-workspace.code-workspace
+/dev-cycle OFB-<n>       # one ticket, end to end across every repo it touches
+```
+
+**How a run behaves here:**
+
+- 🧭 **Plan approval is on** — the run stops after planning. Review, then re-run with
+  `--approve-plan` to continue.
+- 🔒 **Auto-merge is off** — the run reviews + tests, then leaves the PR/MR open for a
+  human to merge, and posts a review digest to `#dev-oneforbet`.
+- 🎯 **Jira status** is moved by the workflow itself — don't touch it by hand mid-run.
+
+## 🗂️ Managing repos
+
+`workspace.config.yaml` → `products[].repos[]` is the only repo list you edit.
+
+```sh
+./aiworks sync                 # onboard everything declared in the config
+./aiworks sync <repo-name>     # onboard just one repo
+./aiworks add --url <git-url> --product ofb-platform --kind backend
+./aiworks remove <repo-name>   # deregister (add --purge to delete the clone)
+./aiworks config               # regen generated files after editing the config
+```
+
+> 💡 Symlink the CLI onto your PATH once — `ln -s "$PWD/aiworks" ~/.local/bin/aiworks` —
+> and run plain `aiworks run` from anywhere.
+
+> ⚠️ Never hand-edit `mani.d/`, the `.code-workspace` file, or the CONFIG block in
+> `.claude/workflows/dev-cycle.js` — all generated from the config.
+
+## 📚 Learn more
+
+- [`docs/aiworks.html`](docs/aiworks.html) — the full walkthrough (setup, CLI, dev-cycle)
+- [`ofb-instruction/README.md`](ofb-instruction/README.md) — full local-env guide (DBs, Redis, games, accounts)
+- [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) — how agents read/write Jira tickets
+- [`scripts/tracker/README.md`](scripts/tracker/README.md) · [`scripts/vcs/README.md`](scripts/vcs/README.md) — adapter details

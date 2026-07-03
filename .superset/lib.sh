@@ -285,6 +285,102 @@ install_glab_tarball() {
   return 0
 }
 
+# Ensure the `jq` CLI is installed. aiworks itself (the .code-workspace generation and the
+# VS Code search-settings merge) and the tracker/notify adapters all drive jq. Best-effort +
+# idempotent: present → no-op; otherwise install per OS. NEVER fatal to setup — the steps
+# that need jq each warn and carry on. macOS bash 3.2 safe.
+ensure_jq() {
+  if command -v jq >/dev/null 2>&1; then
+    log "jq already installed ($(jq --version 2>/dev/null))."
+    return 0
+  fi
+  log "jq not found — installing…"
+  case "$(uname -s)" in
+    Darwin)
+      # Homebrew is the canonical macOS install (brew is already assumed — setup needs
+      # `mani` via brew). Fall back to the official static binary if brew is absent.
+      if command -v brew >/dev/null 2>&1; then
+        run_glance "jq: brew install" brew install jq \
+          || { warn "brew install jq failed — falling back to the static binary."; install_jq_binary; }
+      else
+        warn "Homebrew not found on macOS — falling back to the static jq binary."
+        install_jq_binary
+      fi
+      ;;
+    Linux)
+      # Debian/Ubuntu: jq ships in the standard repos (needs root/sudo). Anything else, or
+      # apt/root missing: the official static binary into /usr/local/bin (or ~/.local/bin).
+      if command -v apt-get >/dev/null 2>&1; then
+        install_jq_apt || install_jq_binary
+      else
+        install_jq_binary
+      fi
+      ;;
+    *)
+      warn "unsupported OS '$(uname -s)' for jq auto-install — install it by hand: https://jqlang.org/download/"
+      ;;
+  esac
+  if command -v jq >/dev/null 2>&1; then
+    log "jq installed ($(jq --version 2>/dev/null))."
+  else
+    warn "jq still not on PATH after install — aiworks (.code-workspace generation, VS Code settings merge) and the tracker adapter need it. Install it by hand: https://jqlang.org/download/"
+  fi
+  return 0
+}
+
+# Install jq from the standard apt repos (Debian/Ubuntu). Returns non-zero (so the caller
+# can fall back to the static binary) when root/sudo is unavailable or any apt step fails.
+install_jq_apt() {
+  local SUDO=""
+  if [[ "$(id -u)" -ne 0 ]]; then
+    if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; else
+      warn "jq: apt install needs root and 'sudo' is unavailable — trying the static binary."
+      return 1
+    fi
+  fi
+  # Prime sudo's credential cache OUTSIDE the glance, so its password prompt isn't tangled in
+  # the in-place redraw and the apt steps below then run non-interactively.
+  if [[ -n "$SUDO" ]]; then $SUDO -v || { warn "jq: sudo authentication failed."; return 1; }; fi
+  run_glance "jq: apt-get install jq" $SUDO apt-get install -y jq || return 1
+}
+
+# Install jq from the official static binary (github.com/jqlang/jq releases) — the
+# cross-distro fallback (and the no-Homebrew macOS path). Installs onto PATH:
+# /usr/local/bin when writable or via sudo, else ~/.local/bin. Returns non-zero on any
+# failure so ensure_jq's final PATH check warns.
+install_jq_binary() {
+  local os arch url tmp rc=0
+  case "$(uname -s)" in
+    Darwin) os=macos ;;
+    Linux)  os=linux ;;
+    *) warn "jq: no static build for '$(uname -s)'."; return 1 ;;
+  esac
+  case "$(uname -m)" in
+    x86_64|amd64)  arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) warn "jq: unknown CPU arch '$(uname -m)' — install by hand: https://jqlang.org/download/"; return 1 ;;
+  esac
+  url="https://github.com/jqlang/jq/releases/latest/download/jq-${os}-${arch}"
+  tmp="$(mktemp -d 2>/dev/null)" || { warn "jq: mktemp failed."; return 1; }
+  if ! run_glance "jq: downloading the static binary" curl -fL --progress-bar "$url" -o "$tmp/jq"; then
+    warn "jq: download failed — install by hand: https://jqlang.org/download/"
+    rm -rf "$tmp"; return 1
+  fi
+  if [[ -w /usr/local/bin ]]; then
+    install -m 0755 "$tmp/jq" /usr/local/bin/jq || rc=$?
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo install -m 0755 "$tmp/jq" /usr/local/bin/jq || rc=$?
+  else
+    mkdir -p "$HOME/.local/bin"
+    install -m 0755 "$tmp/jq" "$HOME/.local/bin/jq" || rc=$?
+    [[ ":$PATH:" == *":$HOME/.local/bin:"* ]] \
+      || warn "jq installed to ~/.local/bin, which is not on PATH — add it (e.g. export PATH=\"\$HOME/.local/bin:\$PATH\")."
+  fi
+  rm -rf "$tmp"
+  [[ "$rc" -eq 0 ]] || { warn "jq: install step failed (exit $rc)."; return 1; }
+  return 0
+}
+
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>
@@ -425,13 +521,16 @@ wait_for_postgres() {  # <repo> <compose-service> [profile] [tries]
 # Success = curl gets ANY HTTP status back (http_code != 000), not a specific
 # code, so a service that boots into a 404/401 still counts as "up". Returns 0
 # when ready, 1 on timeout (the caller decides whether that is fatal).
+# Emits one PLAIN progress line per poll (elapsed + attempt count) — call it
+# through run_glance (as Phase 5 does) so the poll lines become the live gray
+# glance under a titled section instead of raw chatter.
 wait_for_http() {  # <url> [tries] [sleep-secs] [label]
   local url="$1" tries="${2:-60}" nap="${3:-5}" label="${4:-$1}" code
-  log "waiting for $label ($url)…"
+  local total="$tries" start="$SECONDS"
   while :; do
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null || true)"
     if [[ -n "$code" && "$code" != "000" ]]; then
-      log "$label is up (HTTP $code)."
+      printf '%s is up (HTTP %s, after %ds).\n' "$label" "$code" "$((SECONDS - start))"
       return 0
     fi
     tries=$((tries - 1))
@@ -439,6 +538,8 @@ wait_for_http() {  # <url> [tries] [sleep-secs] [label]
       err "$label did not answer after the wait window: $url"
       return 1
     fi
+    printf 'no answer yet from %s — %ds elapsed (poll %d/%d, next in %ds)\n' \
+      "$label" "$((SECONDS - start))" "$((total - tries))" "$total" "$nap"
     sleep "$nap"
   done
 }

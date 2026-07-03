@@ -29,6 +29,9 @@ BACKEND_REPOS=(agent-webservice)
 #   OFB_PLAYER_SITE=ohanabet  .superset/run.sh   → front-end        + backoffice
 #   OFB_PLAYER_SITE=all       .superset/run.sh   → paotung-template + front-end + backoffice  (old behaviour)
 #
+# Or the friendlier spelling — `aiworks run --site <paotung|ohanabet|all>` sets
+# OFB_PLAYER_SITE for you (run.sh -s/--site).
+#
 # Or set OFB_FRONTENDS to a custom space-separated list to override entirely, e.g.
 #   OFB_FRONTENDS="paotung-template"  .superset/run.sh   → player site only, no backoffice
 if [[ -n "${OFB_FRONTENDS:-}" ]]; then
@@ -119,8 +122,12 @@ run_aggregator_setup() {
 wait_backends_ready() {
   # agent-webservice serves the main API on :3000. Under docker `cargo watch`
   # the first compile can take several minutes, so poll generously (120×5s ≈ 10m).
+  # run_glance gives this long wait a visible title + a live elapsed/attempt
+  # glance even in the default quiet run — before, the wait was log()-only, so
+  # right after AMB setup printed "done" the run went DARK for up to 10 min.
   # Non-fatal: if it never answers we still let Phase 6 surface the real error.
-  wait_for_http "http://localhost:3000/" 120 5 "agent-webservice (:3000)" \
+  run_glance "agent-webservice: waiting for the backend on :3000 (first cargo build can take ~10 min)" \
+       wait_for_http "http://localhost:3000/" 120 5 "agent-webservice (:3000)" \
     || warn "agent-webservice did not become ready — Phase 6 may fail."
 }
 

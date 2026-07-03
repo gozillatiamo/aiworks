@@ -2,9 +2,11 @@
 #
 # Workspace run — start a product's full local stack.
 #
-#   .superset/run.sh [product] [-G] [-v]   (default product: ofb-platform)
+#   .superset/run.sh [product] [-s <site>] [-G] [-v]   (default product: ofb-platform)
 #
 # Options:
+#   -s, --site <name>  player-site profile for the product (e.g. paotung | ohanabet | all;
+#                      default: paotung). Sets OFB_PLAYER_SITE for the product file.
 #   -G, --no-games   skip Phase 6 (fetch games).
 #   -v, --verbose    show the full step-by-step log (quiet by default).
 #   -h, --help       show this help.
@@ -30,7 +32,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source .superset/lib.sh
 
-usage() { sed -n '4,10p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '4,12p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # Quiet by default; -v/--verbose shows the full step log (exported for lib.sh's log()).
 export VERBOSE="${VERBOSE:-0}"
@@ -38,6 +40,10 @@ PRODUCT=""
 SKIP_FETCH_GAMES=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -s|--site)
+      [[ $# -ge 2 ]] || { err "--site needs a value (e.g. paotung | ohanabet | all)"; exit 2; }
+      export OFB_PLAYER_SITE="$2"; shift 2 ;;
+    --site=*)      export OFB_PLAYER_SITE="${1#*=}"; shift ;;
     -G|--no-games) SKIP_FETCH_GAMES=1; shift ;;
     -v|--verbose)  export VERBOSE=1; shift ;;
     -h|--help)     usage; exit 0 ;;

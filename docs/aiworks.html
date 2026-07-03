@@ -7,6 +7,19 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    /* Apply saved / OS-preferred theme before first paint (avoids a flash of the wrong theme). */
+    (function () {
+      try {
+        var saved = localStorage.getItem("aiworks-theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.setAttribute("data-theme", saved);
+        } else if (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      } catch (e) {}
+    })();
+  </script>
   <style>
     /* ===== THEME: "mission control" — deep navy, electric indigo + cyan ===== */
     :root{
@@ -14,26 +27,55 @@
       --font-sans:"Inter", system-ui, sans-serif;
       --font-mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
 
+      /* shared brand hues + geometry (theme-independent) */
+      --c-info:#38bdf8; --c-tip:#2dd4bf; --c-warning:#f5a623; --c-danger:#f4496b; --c-success:#34d399;
+      --radius:16px;
+      --maxw:920px;
+
+      /* ---- DARK is the default theme (also used when no data-theme is set) ---- */
+      color-scheme:dark;
       --color-bg:#0b0e17;
       --color-surface:#141926;
       --color-surface-2:#1c2334;
       --color-text:#e8ecf8;
       --color-muted:#95a0bd;
       --color-border:#28314c;
-
+      --color-heading:#ffffff;
+      --color-lead:#cdd5ec;
+      --color-code-bg:#0d1119;
+      --color-code-text:#c7d0ee;
       --color-primary:#7c6cff;       /* agents / AI */
       --color-primary-ink:#ffffff;
       --color-accent:#22d3ee;        /* signal / flow / "recommended" */
-
-      --c-info:#38bdf8; --c-tip:#2dd4bf; --c-warning:#f5a623; --c-danger:#f4496b; --c-success:#34d399;
-
-      --radius:16px;
+      --color-accent-ink:var(--color-accent-ink);
+      --grad-hi:#ffffff;             /* hero gradient high-tone */
       --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(3,6,16,.5);
+      --shadow-lg:0 2px 4px rgba(0,0,0,.4), 0 18px 44px rgba(3,6,16,.55);
       --glow:0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 8px 40px color-mix(in srgb, var(--color-primary) 22%, transparent);
-      --maxw:920px;
+    }
+    /* ---- LIGHT theme (opt-in via the toggle; also auto-picked from OS preference) ---- */
+    :root[data-theme="light"]{
+      color-scheme:light;
+      --color-bg:#f6f8fc;
+      --color-surface:#ffffff;
+      --color-surface-2:#eef2f9;
+      --color-text:#1c2536;
+      --color-muted:#586178;
+      --color-border:#dde3ee;
+      --color-heading:#0c1424;
+      --color-lead:#2b3752;
+      --color-code-bg:#f1f4fa;
+      --color-code-text:#334063;
+      --color-primary:#5b45e0;
+      --color-primary-ink:#ffffff;
+      --color-accent:#0e7490;
+      --color-accent-ink:#ffffff;
+      --grad-hi:#0c1424;
+      --shadow:0 1px 2px rgba(16,24,40,.06), 0 10px 30px rgba(16,24,40,.10);
+      --shadow-lg:0 2px 4px rgba(16,24,40,.08), 0 18px 44px rgba(16,24,40,.14);
     }
     *{box-sizing:border-box}
-    html{scroll-behavior:smooth; color-scheme:dark}
+    html{scroll-behavior:smooth}
     body{
       margin:0; background:
         radial-gradient(1200px 600px at 80% -10%, color-mix(in srgb,var(--color-primary) 16%, transparent), transparent 60%),
@@ -52,7 +94,7 @@
       letter-spacing:.16em; font-size:12px; font-weight:600; color:var(--color-accent);
       border:1px solid var(--color-border); padding:5px 12px; border-radius:999px; background:var(--color-surface)}
     .doc-hero h1{font-size:clamp(34px,6vw,56px); line-height:1.04; margin:18px 0 10px;
-      background:linear-gradient(120deg,#fff 10%, var(--color-primary) 60%, var(--color-accent));
+      background:linear-gradient(120deg,var(--grad-hi) 10%, var(--color-primary) 60%, var(--color-accent));
       -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
     .doc-hero p{color:var(--color-muted); font-size:20px; margin:0; max-width:62ch}
 
@@ -60,21 +102,21 @@
     .doc-section{padding:34px 0; border-bottom:1px solid var(--color-border); position:relative}
     .doc-section h2{font-size:28px; margin:6px 0 14px; scroll-margin-top:80px}
     .doc-section h2 .num{color:var(--color-primary); font-family:var(--font-mono); font-size:18px; margin-right:10px}
-    .doc-section h3{font-size:19px; margin:24px 0 8px; color:#fff}
+    .doc-section h3{font-size:19px; margin:24px 0 8px; color:var(--color-heading)}
     p{margin:12px 0} a{color:var(--color-accent)}
-    .lead{font-size:18.5px; color:#cdd5ec}
+    .lead{font-size:18.5px; color:var(--color-lead)}
 
-    code{font-family:var(--font-mono); font-size:.88em; background:var(--color-surface-2); padding:2px 6px; border-radius:6px; color:#c7d0ee}
-    pre{background:#0d1119; border:1px solid var(--color-border); border-radius:var(--radius); padding:16px; overflow:auto}
+    code{font-family:var(--font-mono); font-size:.88em; background:var(--color-surface-2); padding:2px 6px; border-radius:6px; color:var(--color-code-text)}
+    pre{background:var(--color-code-bg); border:1px solid var(--color-border); border-radius:var(--radius); padding:16px; overflow:auto}
     pre code{background:none; padding:0}
 
     table{width:100%; border-collapse:collapse; margin:16px 0; font-size:15px;
       background:var(--color-surface); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow)}
     th,td{text-align:left; padding:11px 14px; border-bottom:1px solid var(--color-border); vertical-align:top}
-    thead th{background:var(--color-surface-2); font-weight:600; font-family:var(--font-display); color:#fff}
+    thead th{background:var(--color-surface-2); font-weight:600; font-family:var(--font-display); color:var(--color-heading)}
     tbody tr:last-child td{border-bottom:none}
     tbody tr:hover{background:color-mix(in srgb,var(--color-primary) 7%, transparent)}
-    td b, td strong{color:#fff}
+    td b, td strong{color:var(--color-heading)}
 
     /* callouts */
     .callout{border-radius:var(--radius); padding:14px 16px; margin:18px 0; border-left:4px solid var(--c-info);
@@ -83,7 +125,7 @@
     .callout[data-variant="warning"]{border-color:var(--c-warning); background:color-mix(in srgb,var(--c-warning) 13%,var(--color-surface))}
     .callout[data-variant="danger"]{border-color:var(--c-danger); background:color-mix(in srgb,var(--c-danger) 12%,var(--color-surface))}
     .callout[data-variant="success"]{border-color:var(--c-success); background:color-mix(in srgb,var(--c-success) 12%,var(--color-surface))}
-    .callout .callout-title{font-weight:600; margin-bottom:2px; color:#fff}
+    .callout .callout-title{font-weight:600; margin-bottom:2px; color:var(--color-heading)}
 
     /* KPI row */
     .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin:22px 0}
@@ -106,14 +148,14 @@
     .tab-panel{padding:18px}
     .tab-panel[hidden]{display:none}
     .tab-panel ol{margin:0; padding-left:20px} .tab-panel li{margin:7px 0}
-    .tab-panel li b{color:#fff; font-family:var(--font-display)}
+    .tab-panel li b{color:var(--color-heading); font-family:var(--font-display)}
 
     /* comparison */
     .compare{display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); margin:20px 0}
     .compare-card{border:1px solid var(--color-border); border-radius:var(--radius); padding:18px; background:var(--color-surface); box-shadow:var(--shadow); position:relative}
     .compare-card.is-recommended{border-color:var(--color-accent); box-shadow:var(--glow)}
-    .compare-card .badge{position:absolute; top:-12px; right:14px; background:var(--color-accent); color:#04222a; font-size:12px; font-weight:700; padding:3px 11px; border-radius:999px; font-family:var(--font-display)}
-    .compare-card h4{margin:0 0 10px; color:#fff}
+    .compare-card .badge{position:absolute; top:-12px; right:14px; background:var(--color-accent); color:var(--color-accent-ink); font-size:12px; font-weight:700; padding:3px 11px; border-radius:999px; font-family:var(--font-display)}
+    .compare-card h4{margin:0 0 10px; color:var(--color-heading)}
     .compare-card ul{margin:6px 0; padding-left:20px}
     .pros li::marker{content:"✓ "; color:var(--c-success)}
     .cons li::marker{content:"✕ "; color:var(--c-danger)}
@@ -122,7 +164,7 @@
     .plan{border:1px dashed color-mix(in srgb,var(--color-primary) 65%, transparent); border-radius:var(--radius);
       background:color-mix(in srgb,var(--color-primary) 9%, var(--color-surface)); padding:20px; margin:18px 0}
     .plan ol{margin:0; padding-left:22px} .plan li{margin:11px 0}
-    .plan li b{color:#fff; font-family:var(--font-display)}
+    .plan li b{color:var(--color-heading); font-family:var(--font-display)}
     .plan .target{font-family:var(--font-mono); font-size:13px; color:var(--color-accent)}
 
     /* export-engine UI */
@@ -136,12 +178,38 @@
     .wid-section-tools{position:absolute; top:34px; right:0; display:flex; gap:4px; opacity:0; transition:opacity .15s}
     .doc-section:hover .wid-section-tools, .doc-section:focus-within .wid-section-tools{opacity:1}
     .wid-toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
-      background:var(--color-accent); color:#04222a; font-weight:600; padding:10px 18px; border-radius:999px; font-size:14px;
+      background:var(--color-accent); color:var(--color-accent-ink); font-weight:600; padding:10px 18px; border-radius:999px; font-size:14px;
       opacity:0; pointer-events:none; transition:all .2s; z-index:60}
     .wid-toast.is-on{opacity:1; transform:translateX(-50%) translateY(0)}
 
     .foot{color:var(--color-muted); font-size:14px; padding-top:26px}
     @media (max-width:560px){ .wid-toolbar-label{display:none} body{font-size:16px} }
+
+    /* ===== interaction polish + accessibility ===== */
+    a{transition:color .15s ease}
+    a:hover{color:color-mix(in srgb, var(--color-accent) 78%, var(--color-heading))}
+    .kpi, .compare-card, figure.diagram, .callout,
+    .tabs-nav button, .wid-btn, table tbody tr{
+      transition:color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    /* lift interactive surfaces on hover — consistent elevation scale */
+    .kpi:hover, figure.diagram:hover{transform:translateY(-2px); box-shadow:var(--shadow-lg);
+      border-color:color-mix(in srgb, var(--color-primary) 40%, var(--color-border))}
+    .compare-card:hover{transform:translateY(-2px); box-shadow:var(--shadow-lg)}
+    .kpi:hover .v{color:color-mix(in srgb, var(--color-accent) 85%, var(--color-heading))}
+    /* visible keyboard focus everywhere (skill priority #1) */
+    :focus-visible{outline:2px solid var(--color-accent); outline-offset:2px; border-radius:8px}
+    .tabs-nav button:focus-visible, .wid-btn:focus-visible{outline-offset:-2px}
+    /* diagrams are rendered on a dark canvas — keep them on a dark inset panel in light mode
+       so they read as intentional, not broken */
+    :root[data-theme="light"] figure.diagram{background:#0f1522; border-color:#26324b}
+    :root[data-theme="light"] figure.diagram figcaption{color:#8b96b3}
+    /* respect reduced-motion */
+    @media (prefers-reduced-motion:reduce){
+      html{scroll-behavior:auto}
+      *,*::before,*::after{transition:none !important; animation:none !important}
+      .kpi:hover, .compare-card:hover, figure.diagram:hover{transform:none}
+    }
   </style>
 </head>
 
@@ -430,15 +498,21 @@
   <!-- 6. HOW TO USE aiworks CLI -->
   <section class="doc-section" data-section data-section-title="How to use the aiworks CLI" data-section-id="aiworks-cli">
     <h2><span class="num">06</span>How to use the aiworks CLI</h2>
-    <p class="lead">Three commands cover the full repo lifecycle. Run them from the workspace root — they're all <strong>idempotent</strong>, so re-running is safe.</p>
+    <p class="lead">The CLI covers two families: <strong>repo lifecycle</strong> (<code>add</code> · <code>sync</code> · <code>remove</code> · <code>config</code>) to onboard and manage repos, and <strong>workspace lifecycle</strong> (<code>setup</code> · <code>run</code> · <code>teardown</code>) to stand up, run, and tear down the whole local stack. All are <strong>idempotent</strong>, so re-running is safe.</p>
 
     <div class="kpis" data-block="kpis">
-      <div class="kpi"><div class="v">add</div><div class="l">onboard a new repo</div></div>
-      <div class="kpi"><div class="v">sync</div><div class="l">bring up all declared repos</div></div>
-      <div class="kpi"><div class="v">remove</div><div class="l">deregister a repo</div></div>
+      <div class="kpi"><div class="v">setup</div><div class="l">first run — onboard + start</div></div>
+      <div class="kpi"><div class="v">run</div><div class="l">start the local stack</div></div>
+      <div class="kpi"><div class="v">sync</div><div class="l">onboard declared repos</div></div>
       <script type="application/json" class="export-data">
-        {"type":"kpis","items":[{"value":"add","label":"onboard a new repo"},{"value":"sync","label":"bring up all declared repos"},{"value":"remove","label":"deregister a repo"}]}
+        {"type":"kpis","items":[{"value":"setup","label":"first run — onboard + start"},{"value":"run","label":"start the local stack"},{"value":"sync","label":"onboard declared repos"}]}
       </script>
+    </div>
+
+    <div class="callout" data-variant="tip" data-block="callout">
+      <div class="callout-title">💡 Run it from anywhere</div>
+      <div>A root launcher lets you run <code>./aiworks &lt;cmd&gt;</code> straight from the workspace root (it delegates to <code>scripts/aiworks</code>). Symlink it onto your PATH once — <code>ln -s "$PWD/aiworks" ~/.local/bin/aiworks</code> — and run plain <code>aiworks run</code> from any directory; it always resolves back to this workspace.</div>
+      <script type="application/json" class="export-data">{"type":"callout","variant":"tip","md":"**Run it from anywhere** — a root launcher lets you run `./aiworks <cmd>` straight from the workspace root (it delegates to `scripts/aiworks`). Symlink it onto your PATH once — `ln -s \"$PWD/aiworks\" ~/.local/bin/aiworks` — and run plain `aiworks run` from any directory; it always resolves back to this workspace."}</script>
     </div>
 
     <div class="tabs" data-block="tabs">
@@ -447,6 +521,9 @@
         <button aria-selected="false">sync</button>
         <button aria-selected="false">remove</button>
         <button aria-selected="false">config</button>
+        <button aria-selected="false">setup</button>
+        <button aria-selected="false">run</button>
+        <button aria-selected="false">teardown</button>
       </div>
 
       <!-- add -->
@@ -525,12 +602,43 @@ scripts/aiworks config
 scripts/aiworks config --dry-run</code></pre>
       </div>
 
+      <!-- setup -->
+      <div class="tab-panel" hidden>
+        <p>The <strong>first-run entry point</strong>. A pass-through to <code>.superset/setup.sh</code> that: ensures host tooling (<code>jq</code>, <code>ngrok</code>, <code>glab</code>), runs <code>sync -y</code> to clone + onboard every declared repo, copies the git-ignored local state (<code>.env</code> files, seeded DB) into place, installs node dependencies, and starts the shared MCP services. Idempotent — safe to re-run.</p>
+        <pre><code>./aiworks setup
+</code></pre>
+        <p>It finishes with an <strong>ACTION REQUIRED</strong> list of the repo <code>.env</code> files that still need real values — fill those, then <code>run</code>.</p>
+      </div>
+
+      <!-- run -->
+      <div class="tab-panel" hidden>
+        <p>Starts a product's full local stack — a pass-through to <code>.superset/run.sh</code>: databases + migrations, backend, one web app / player site, and any product hooks (e.g. the AMB aggregator). Default product is <code>ofb-platform</code>.</p>
+        <pre><code>./aiworks run                    # default product + default site
+./aiworks run --site ohanabet    # pick the player-site profile (paotung | ohanabet | all)
+./aiworks run -G                 # skip the fetch-games phase
+./aiworks run --verbose          # full step-by-step log</code></pre>
+        <div class="callout" data-variant="info" data-block="callout">
+          <div class="callout-title">ℹ️ Product-specific run options live in <code>.superset/products/&lt;product&gt;.sh</code></div>
+          <div>The phases and options (<code>--site</code>, port map, AMB) come from the product file, so a different product exposes its own. For the OFB local URLs and seeded accounts, see the workspace <code>README.md</code>.</div>
+          <script type="application/json" class="export-data">{"type":"callout","variant":"info","md":"**Product-specific run options live in `.superset/products/<product>.sh`** — the phases and options (`--site`, port map, AMB) come from the product file, so a different product exposes its own. For the OFB local URLs and seeded accounts, see the workspace `README.md`."}</script>
+        </div>
+      </div>
+
+      <!-- teardown -->
+      <div class="tab-panel" hidden>
+        <p>Stops the local stack and removes the cloned product repos — a pass-through to <code>.superset/teardown.sh</code>. The inverse of <code>setup</code>.</p>
+        <pre><code>./aiworks teardown</code></pre>
+      </div>
+
       <script type="application/json" class="export-data">
         {"type":"tabs","tabs":[
           {"label":"add","md":"Register + onboard one repo. Clones it, builds the codegraph index, installs agent skill packs, seeds hooks/settings, and scaffolds `CLAUDE.md` + `scripts/dev.sh`. Idempotent.\n\n```\nscripts/aiworks add \\\n  --url git@github.com:your-org/your-api.git \\\n  --product backend \\\n  --lang go \\\n  --kind generic \\\n  --distribute none\n```\n\n| Flag | What it does | Default |\n| --- | --- | --- |\n| `--url` | Clone URL (repo name → clone dir + mani key) | required |\n| `--product` | Product group | repo name |\n| `--lang` | Language (steers dev.sh scaffold) | auto-detected |\n| `--kind` | Free-form dev-context label (`frontend`, `backend`, `web-app`, `migration`, `generic`…); only `test-suite` is special (QA) | `generic` |\n| `--distribute` | `none` · `firebase` · `custom` | `none` |\n| `--force` | Re-clone + re-seed | — |\n| `-y` | Skip prompts | — |\n\nℹ️ After `add`, the `── CONFIG ──` block in `.claude/workflows/dev-cycle.js` is regenerated from `workspace.config.yaml` for you (the `aiworks config` step) — nothing to paste."},
           {"label":"sync","md":"Reads every repo in `workspace.config.yaml` and runs `add` for each. Already-set-up repos just report SKIP.\n\n```\nscripts/aiworks sync              # all products\nscripts/aiworks sync your-product     # one product\nscripts/aiworks sync --dry-run    # preview, no changes\n```\n\nWorkflow: edit `workspace.config.yaml` first (add a URL under the right product's `repos:`), then run `sync`."},
           {"label":"remove","md":"Deregisters a repo from `mani.d/`, `workspace.config.yaml`, and the workspace `.gitignore`. Clone stays on disk unless you add `--purge`.\n\n```\nscripts/aiworks remove your-api\nscripts/aiworks remove your-api --purge\nscripts/aiworks remove your-api --purge --force\n```\n\nℹ️ The `REPOS` map in `.claude/workflows/dev-cycle.js` is regenerated from `workspace.config.yaml`, so the repo drops out of the workflow mirror automatically."},
-          {"label":"config","md":"Regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js` straight from `workspace.config.yaml` — `TICKET_PREFIX`, `STATUS`, `AUTO_MERGE`, `AUTO_APPROVE_PLAN`, `PLAN_TO_HTML`, and the `REPOS` registry. Workflow scripts can't read the filesystem at runtime, so they keep this in-source copy.\n\n```\nscripts/aiworks config            # rewrite the block from the config\nscripts/aiworks config --dry-run  # print it, don't write\n```\n\n`add` / `remove` / `sync` all run this at the end — call it directly only after hand-editing a non-repo field."}
+          {"label":"config","md":"Regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js` straight from `workspace.config.yaml` — `TICKET_PREFIX`, `STATUS`, `AUTO_MERGE`, `AUTO_APPROVE_PLAN`, `PLAN_TO_HTML`, and the `REPOS` registry. Workflow scripts can't read the filesystem at runtime, so they keep this in-source copy.\n\n```\nscripts/aiworks config            # rewrite the block from the config\nscripts/aiworks config --dry-run  # print it, don't write\n```\n\n`add` / `remove` / `sync` all run this at the end — call it directly only after hand-editing a non-repo field."},
+          {"label":"setup","md":"The first-run entry point. Pass-through to `.superset/setup.sh`: ensures host tooling (`jq`, `ngrok`, `glab`), runs `sync -y` to clone + onboard every declared repo, copies git-ignored local state (`.env` files, seeded DB), installs node deps, and starts the shared MCP services. Idempotent.\n\n```\n./aiworks setup\n```\n\nEnds with an ACTION REQUIRED list of repo `.env` files still needing values — fill those, then `run`."},
+          {"label":"run","md":"Starts a product's full local stack — pass-through to `.superset/run.sh`: databases + migrations, backend, one web app / player site, and product hooks (e.g. AMB). Default product `ofb-platform`.\n\n```\n./aiworks run                    # default product + site\n./aiworks run --site ohanabet    # player-site profile (paotung | ohanabet | all)\n./aiworks run -G                 # skip fetch-games\n./aiworks run --verbose          # full log\n```\n\nℹ️ Run options (`--site`, ports, AMB) come from `.superset/products/<product>.sh`. For OFB local URLs + seeded accounts, see the workspace `README.md`."},
+          {"label":"teardown","md":"Stops the local stack and removes the cloned product repos — pass-through to `.superset/teardown.sh`. The inverse of `setup`.\n\n```\n./aiworks teardown\n```"}
         ]}
       </script>
     </div>
@@ -1141,7 +1249,20 @@ scripts/aiworks config --dry-run</code></pre>
     const lab = document.createElement("span");
     lab.className = "wid-toolbar-label";
     lab.textContent = "Export page:";
+    const themeGlyph = () =>
+      document.documentElement.getAttribute("data-theme") === "light" ? "◑ Light" : "◐ Dark";
+    const themeToggle = btn(themeGlyph(), "Toggle light / dark theme", () => {
+      const next =
+        document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("aiworks-theme", next); } catch (e) {}
+      themeToggle.textContent = themeGlyph();
+      themeToggle.setAttribute("aria-pressed", String(next === "light"));
+    });
+    themeToggle.setAttribute("aria-pressed",
+      String(document.documentElement.getAttribute("data-theme") === "light"));
     bar.append(
+      themeToggle,
       lab,
       btn("⧉ MD", "Copy whole page as Markdown", () => exportPage("md", "copy")),
       btn("↓ MD", "Download whole page as Markdown", () => exportPage("md", "download")),

@@ -1,11 +1,11 @@
 export const meta = {
   name: 'prd',
-  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker. Pass a brd work-key ("phase-2"), a doc-space URL, or a docs/brd/<key>.md path.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd-design skill instead for real frames). "intake" = CPO briefs only, returns features for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + figmaByFeature (the /prd-design skill builds frames in-session, then calls this). See .claude/skills/prd-design/SKILL.md.',
+  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker. Pass a brd work-key ("phase-2"), a doc-space URL, a docs/brd/<key>.md path — or an EXISTING ticket key (e.g. OFB-123, "complete detail for ticket OFB-123") to enter TICKET MODE: the run completes THAT ticket in place (full spec written onto it) and creates NO new tickets unless the work demonstrably cannot ship under it.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd-design skill instead for real frames). "intake" = CPO briefs only, returns features for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + figmaByFeature (the /prd-design skill builds frames in-session, then calls this). See .claude/skills/prd-design/SKILL.md.',
   whenToUse: 'Turn an approved BRD into production-ready designs + a ready-for-dev backlog of tickets (each a PRD, with its Figma frame linked when UI-bearing). For real Figma frames, run via the /prd-design skill (in-session OAuth) — a raw Workflow(prd) call cannot author frames (the Figma MCP is unauthenticated inside the workflow runtime).',
   phases: [
     { title: 'Intake', detail: 'CPO: read the BRD(if exists) → prioritized feature briefs, each flagged UI-bearing or not', model: 'opus' },
     { title: 'Design', detail: 'CONDITIONAL — skipped entirely when no feature is UI-bearing, and skipped in stage=intake/ticketing (the /prd-design skill builds frames in-session because the Figma MCP is unauthenticated in the workflow runtime). Else per UI-bearing feature: ux-ui-planner plan → graphic-designer assets → ux-ui-designer Figma frames (all features in parallel)', model: 'opus/sonnet' },
-    { title: 'Ticketing', detail: 'Product Owner writes one self-contained FM ticket per feature onto the Notion board, linking the Figma frame', model: 'sonnet[1m]' },
+    { title: 'Ticketing', detail: 'Product Owner writes one self-contained FM ticket per feature onto the Notion board, linking the Figma frame (TICKET MODE: completes the given existing ticket in place instead — no new tickets)', model: 'sonnet[1m]' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-role token/time table (summarize-workflow-performance)', model: 'haiku' },
   ],
 }
@@ -73,11 +73,20 @@ const stage = (typeof args === 'object' && args?.stage) || 'all'
 const isUrl = /^https?:\/\//i.test(rawIn)
 const isPath = !isUrl && (/\.md$/i.test(rawIn) || rawIn.includes('/'))
 const phaseMatch = rawIn.match(/phase\s*-?\s*(\d+)/i)
-const workKey = phaseMatch ? `phase-${phaseMatch[1]}`
+// TICKET MODE — the input names an EXISTING tracker ticket (e.g. "OFB-2193", or a
+// directive like "complete detail for bug ticket OFB-2193"). The mission then is to
+// COMPLETE that one ticket in place — enrich its spec — NOT to mint new per-feature
+// tickets. "phase-N" refs are stripped before matching so "phase-2" never reads as a key.
+const ticketMatch = !isUrl && !isPath
+  && rawIn.replace(/phase\s*-?\s*\d+/gi, '').match(/\b([A-Za-z][A-Za-z0-9]{1,9}-\d+)\b/)
+const ticketKey = ticketMatch ? ticketMatch[1].toUpperCase() : null
+const workKey = ticketKey ? ticketKey.toLowerCase()
+  : phaseMatch ? `phase-${phaseMatch[1]}`
   : isPath ? (rawIn.split('/').pop().replace(/\.md$/i, '') || 'brd')
   : isUrl ? 'brd-import'
   : (rawIn.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'brd')
-const brdRef = isUrl ? `the doc-space URL ${rawIn} — fetch it`
+const brdRef = ticketKey ? `the EXISTING tracker ticket ${ticketKey} — fetch it (scripts/tracker/get-ticket-details.sh ${ticketKey} and get-ticket-comments.sh ${ticketKey}); the requirement source is that ticket's current content PLUS the caller's directive "${rawIn}"`
+  : isUrl ? `the doc-space URL ${rawIn} — fetch it`
   : isPath ? `the repo file ${rawIn} — Read it`
   : phaseMatch ? `roadmap ${workKey}: Read docs/brd/${workKey}.md (and/or its page in the team doc space, if any)`
   : `"${rawIn}": resolve as a BRD work-key — Read docs/brd/${workKey}.md (or the team doc space's BRD page)`
@@ -192,7 +201,7 @@ let briefs, features, uiFeatures
 if (stage === 'all' || stage === 'intake') {
   phase('Intake')
   briefs = await agent(
-    `${tag('cpo', 'intake')} As CPO, read the BRD (${brdRef}) and break it into a prioritized set of feature briefs for ${workKey}. For EACH feature give: name, whether it is UI-bearing — true ONLY if the feature adds or changes screens/flows/widgets the user actually sees and taps; false for pure logic/data/infra (e.g. business/advisory engines, repositories & persistence, DTOs/serialization, data migrations, background services). When uncertain, mark it FALSE — designers (planner→assets→Figma) are spawned ONLY for genuinely UI-bearing features, so a non-UI mission must pull in NO designers at all; over-flagging burns a full design chain. Then a short brief, user value, acceptance intent (verifiable, not yet ticket ACs), Priority (High/Medium/Low), Effort (Small/Medium/Large), and dependencies on other features. Keep features small enough to become one ticket each. Use the product's own vocabulary from the BRD / workspace.config.yaml / CLAUDE.md.`,
+    `${tag('cpo', 'intake')} As CPO, read the BRD (${brdRef}) and break it into a prioritized set of feature briefs for ${workKey}.${ticketKey ? ` TICKET MODE: these briefs are NOT future tickets — they are the aspects/sections of ONE complete spec the Product Owner will write back onto the existing ticket ${ticketKey}. Keep the set minimal and scoped to what ${ticketKey} itself needs to be complete and actionable; do not expand into a roadmap of adjacent work.` : ''} For EACH feature give: name, whether it is UI-bearing — true ONLY if the feature adds or changes screens/flows/widgets the user actually sees and taps; false for pure logic/data/infra (e.g. business/advisory engines, repositories & persistence, DTOs/serialization, data migrations, background services). When uncertain, mark it FALSE — designers (planner→assets→Figma) are spawned ONLY for genuinely UI-bearing features, so a non-UI mission must pull in NO designers at all; over-flagging burns a full design chain. Then a short brief, user value, acceptance intent (verifiable, not yet ticket ACs), Priority (High/Medium/Low), Effort (Small/Medium/Large), and dependencies on other features. Keep features small enough to become one ticket each. Use the product's own vocabulary from the BRD / workspace.config.yaml / CLAUDE.md.`,
     { agentType: 'cpo', phase: 'Intake', label: `intake:${workKey}`, schema: BRIEFS_SCHEMA },
   )
   features = briefs.features || []
@@ -205,7 +214,7 @@ if (stage === 'all' || stage === 'intake') {
   // call back with stage:'ticketing'.
   if (stage === 'intake') {
     return {
-      workKey, brdRef: rawIn, stage: 'intake', status: 'intake-done', maxRounds: MAX_ROUNDS,
+      workKey, ticketKey, brdRef: rawIn, stage: 'intake', status: 'intake-done', maxRounds: MAX_ROUNDS,
       featureCount: features.length, uiFeatureCount: uiFeatures.length,
       features, uiFeatures, briefs, spend,
     }
@@ -282,14 +291,26 @@ if (stage === 'all') {
 //    the frame URL strings supplied above — so it is headless-safe.
 // ──────────────────────────────────────────────────────────────────────────
 phase('Ticketing')
+// Briefs JSON for the Product Owner — no silent caps: warn when the slice actually cuts
+// features (a 4000-char cap once dropped 2 of 7 briefs without a trace).
+const briefsJsonFull = JSON.stringify(features)
+if (briefsJsonFull.length > 12000) log(`Ticketing: WARN — feature-brief JSON is ${briefsJsonFull.length} chars, truncated to 12000; later features may be cut from the Product Owner's context`)
+const briefsJson = briefsJsonFull.slice(0, 12000)
 const tickets = await agent(
-  `${tag('product-owner', 'ticketing')} As Product Owner, create one self-contained ticket per feature for ${workKey} in the issue tracker — via /clarifying-ticket (which uses the tracker adapter; see docs/agents/issue-tracker.md) and /to-prd. For each ticket: clear goal + user value, verifiable acceptance criteria, scope boundaries + edge cases, Priority and Effort from the brief, a "feature" type, and the org's not-started status (see issue-tracker.md; never set read-only id fields). For UI-bearing features, link the backing Figma frame in the ticket body/spec. Sequence tickets by dependency so the pipeline picks them up in order, and confirm full coverage (every feature → a ticket).
-  Feature briefs: ${JSON.stringify(features).slice(0, 4000)}.
+  ticketKey
+    ? `${tag('product-owner', 'ticketing')} As Product Owner, COMPLETE the EXISTING ticket ${ticketKey} IN PLACE — via /update-ticket (the tracker adapter; see docs/agents/issue-tracker.md). Synthesize ALL the briefs below into ONE self-contained spec and write it onto ${ticketKey}'s description: clear goal + user value, reproduction steps and expected-vs-actual if it is a bug, root-cause hypothesis, affected repos, verifiable acceptance criteria, scope boundaries + edge cases, and a dependency-ordered work breakdown as sections INSIDE the ticket. Do NOT create any new ticket unless the work demonstrably cannot ship under ${ticketKey} alone — and then explain why in coverage_note. Keep the ticket's existing Type (a Bug stays a Bug) and Status; never set read-only id fields; adjust Priority/Effort only when clearly warranted. For UI-bearing aspects, link the backing Figma frame inside the spec.
+  Feature briefs: ${briefsJson}.
+  Figma frame per feature: ${JSON.stringify(figmaByFeature).slice(0, 2000)}.
+  Return the updated ticket (task_name + ticket URL) — plus any ticket you genuinely had to create — and the board URL.`
+    : `${tag('product-owner', 'ticketing')} As Product Owner, create one self-contained ticket per feature for ${workKey} in the issue tracker — via /clarifying-ticket (which uses the tracker adapter; see docs/agents/issue-tracker.md) and /to-prd. For each ticket: clear goal + user value, verifiable acceptance criteria, scope boundaries + edge cases, Priority and Effort from the brief, a "feature" type, and the org's not-started status (see issue-tracker.md; never set read-only id fields). For UI-bearing features, link the backing Figma frame in the ticket body/spec. Sequence tickets by dependency so the pipeline picks them up in order, and confirm full coverage (every feature → a ticket).
+  Feature briefs: ${briefsJson}.
   Figma frame per feature: ${JSON.stringify(figmaByFeature).slice(0, 2000)}.
   Return every created ticket (task_name + ticket URL + figma_link) and the board URL.`,
   { agentType: 'product-owner', phase: 'Ticketing', label: `tickets:${workKey}`, schema: TICKETS_SCHEMA },
 )
-log(`Ticketing: ${tickets.tickets?.length ?? 0} tickets created on the board`)
+log(ticketKey
+  ? `Ticketing: ${ticketKey} completed in place (${tickets.tickets?.length ?? 0} ticket(s) touched)`
+  : `Ticketing: ${tickets.tickets?.length ?? 0} tickets created on the board`)
 tick('ticketing')
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -304,7 +325,7 @@ tick('summary')
 log(`Run summary: ${summary.summary_path}`)
 
 return {
-  workKey, brdRef: rawIn, stage, status: 'tickets-ready', maxRounds: MAX_ROUNDS,
+  workKey, ticketKey, brdRef: rawIn, stage, status: 'tickets-ready', maxRounds: MAX_ROUNDS,
   featureCount: features.length, uiDesigned: Object.keys(figmaByFeature).length,
   tickets: tickets.tickets, board_url: tickets.board_url,
   briefs, designs, figmaByFeature, summary, spend,

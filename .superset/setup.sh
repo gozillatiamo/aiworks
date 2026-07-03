@@ -7,9 +7,11 @@
 # Output is QUIET by default (only warnings, errors, and the closing summary). Pass
 # -v/--verbose for the full step-by-step log when debugging.
 #
-# 0. Ensures the host CLI tooling is present — installs (if missing) ngrok, used by the run
+# 0. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
+#    itself (.code-workspace generation, VS Code settings merge) and the tracker/notify
+#    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
 #    phase's AMB aggregator (run.sh Phase 4 tunnels :3000 through it; macOS: Homebrew, Linux:
-#    the official apt repo, else a static binary), and glab, the GitLab CLI the VCS adapter
+#    the official apt repo, else a static binary); and glab, the GitLab CLI the VCS adapter
 #    (scripts/vcs/) drives (Homebrew, else the official release tarball). Best-effort.
 # 1. `aiworks sync -y` clones + FULLY onboards every product repo declared under
 #    products[] in workspace.config.yaml (via the generated mani.d/<product>.yaml)
@@ -49,10 +51,12 @@ if ! command -v mani >/dev/null 2>&1; then
   exit 1
 fi
 
-# ── 0. Host CLI prerequisites (mac/linux). ngrok so the run phase's AMB aggregator can tunnel
-# :3000; glab (GitLab CLI) for the VCS adapter. Best-effort — guarded so a failure never
-# aborts setup.
-log "Ensuring host tooling (ngrok, glab)…"
+# ── 0. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
+# VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
+# phase's AMB aggregator can tunnel :3000; glab (GitLab CLI) for the VCS adapter. Best-effort —
+# guarded so a failure never aborts setup.
+log "Ensuring host tooling (jq, ngrok, glab)…"
+ensure_jq || true
 ensure_ngrok || true
 ensure_glab || true
 
