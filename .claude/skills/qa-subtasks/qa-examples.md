@@ -23,7 +23,7 @@ Do **not** reshape the scenarios for API or Load — only re-aim the `Then` asse
 ```
 Feature: Username and Password Authentication
 Scope: End-to-End (E2E)
-Parent: OFB-123 — Username & password sign-in
+Parent: APP-123 — Username & password sign-in
 
 User story / context:
 As a returning user I want to sign in with my username/email and password so that I can

@@ -1,18 +1,17 @@
-<h1 align="center">⚡ OFB AI Workspace</h1>
+<h1 align="center">⚡ AI Workspace</h1>
 
 <p align="center">
-  <em>The bluePi workspace for running a <strong>team of Claude agents</strong> across every OFB repo.</em><br/>
-  One command takes a Jira ticket through the whole delivery cycle.
+  <em>A multi-repo workspace template for running a <strong>team of Claude agents</strong> across every repo of your product.</em><br/>
+  One command takes a ticket through the whole delivery cycle.
 </p>
 
 <p align="center">
   <img alt="Claude" src="https://img.shields.io/badge/Claude-agents-D97757?logo=anthropic&logoColor=white">
+  <img alt="GitHub" src="https://img.shields.io/badge/GitHub-PRs-181717?logo=github&logoColor=white">
   <img alt="GitLab" src="https://img.shields.io/badge/GitLab-MRs-FC6D26?logo=gitlab&logoColor=white">
   <img alt="Jira" src="https://img.shields.io/badge/Jira-tickets-0052CC?logo=jira&logoColor=white">
+  <img alt="Notion" src="https://img.shields.io/badge/Notion-tickets-000000?logo=notion&logoColor=white">
   <img alt="Slack" src="https://img.shields.io/badge/Slack-notify-4A154B?logo=slack&logoColor=white">
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-backend-000000?logo=rust&logoColor=white">
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-web-000000?logo=nextdotjs&logoColor=white">
-  <img alt="PostgreSQL" src="https://img.shields.io/badge/Postgres-data-4169E1?logo=postgresql&logoColor=white">
 </p>
 
 <p align="center">
@@ -26,20 +25,22 @@
 
 ---
 
-Everything org-specific (GitLab, Jira, Slack, the repo list) lives in one file —
+Everything org-specific (VCS, tracker, chat, the repo list) lives in one file —
 `workspace.config.yaml`. Agents never call providers directly; they go through the
 adapters in `scripts/{vcs,tracker,notify}/`.
 
 ## 📦 What's inside
 
 ```
-workspace.config.yaml       # source of truth: providers, repos, statuses, policies
+workspace.config.yaml       # source of truth: providers, repos, statuses, policies (yours; gitignored)
+workspace.config.example.yaml  # the template you copy it from
 CLAUDE.md                   # workspace instructions for the agents
 aiworks                     # workspace CLI (sync · add · remove · config · setup · run)
-scripts/vcs|tracker|notify  # GitLab · Jira · Slack adapters
+scripts/vcs|tracker|notify  # GitHub/GitLab · Jira/Notion · Slack adapters
 .claude/                    # agents, skills, workflows (dev-cycle, prd, brd)
 mani.yaml + mani.d/         # repo registry — generated, do not hand-edit
-ai-workspace.code-workspace # multi-root IDE workspace — generated
+<workspace>.code-workspace  # multi-root IDE workspace — generated
+.superset/products/         # local-stack definitions (copy example.sh; yours are gitignored)
 ```
 
 The product repos clone **into** this folder but stay git-ignored — each is its own
@@ -50,112 +51,54 @@ independent clone.
 | Tool | Install |
 |------|---------|
 | **git** | [git-scm.com/downloads](https://git-scm.com/downloads) |
-| **SSH key on GitLab** (access to `gitlab.com/bluepicode`) | [docs.gitlab.com/user/ssh](https://docs.gitlab.com/user/ssh/) |
+| **SSH key on your VCS host** (access to your org's repos) | GitHub / GitLab SSH docs |
 | **Node.js** | [nodejs.org/en/download](https://nodejs.org/en/download) |
 | **Docker** | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 | **mani** | [github.com/alajmo/mani](https://github.com/alajmo/mani#install) |
 | **Claude Code** | [claude.com/claude-code](https://claude.com/claude-code) |
-| **gcloud CLI** | [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install) |
 
 > 🔧 `jq`, `glab` (GitLab CLI), and `ngrok` are installed by `setup` if missing — just run
-> `glab auth login` once after. You'll also need a
-> [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens) and access
-> to the `#dev-oneforbet` Slack channel.
+> `glab auth login` once after (GitLab orgs). You'll also need an API token for your
+> tracker (e.g. a [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens))
+> and access to the Slack channel you configure under `notify.channel`.
 
 ## 🚀 First run
 
 **1. Clone this repo and enter it.**
 
-**2. Set up the adapter env files.** Copy each example and fill in your credentials
-(fastest path: ask a teammate for working values):
+**2. Describe your org.** Copy the example config and fill in your providers + repos —
+this one file drives everything:
 
 ```sh
-cp scripts/tracker/.env.example scripts/tracker/.env   # Jira token
-cp scripts/vcs/.env.example     scripts/vcs/.env       # GitLab (defaults usually fine)
+cp workspace.config.example.yaml workspace.config.yaml
+```
+
+**3. Set up the adapter env files.** Copy each example and fill in your credentials:
+
+```sh
+cp scripts/tracker/.env.example scripts/tracker/.env   # Jira/Notion token
+cp scripts/vcs/.env.example     scripts/vcs/.env       # GitHub/GitLab
 cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 ```
 
-**3. Set up the workspace** — clones + onboards every OFB repo, installs node
+**4. Set up the workspace** — clones + onboards every declared repo, installs node
 dependencies, and starts the shared MCP services. Idempotent, safe to re-run:
 
 ```sh
 ./aiworks setup
 ```
 
-**4. Fill the repo env files.** Setup ends with an **ACTION REQUIRED** list of the
-`.env` files still needing real values — fill each one (ask your manager or a teammate):
+**5. Fill the repo env files.** Setup ends with an **ACTION REQUIRED** list of the
+`.env` files still needing real values — fill each one (ask a teammate for working values).
 
-| File | Purpose |
-|------|---------|
-| `agent-webservice/.env` + `.env.local` | backend (`.env.local` required by docker-compose) |
-| `backoffice/.env` · `front-end/.env` · `paotung-template/.env` | web apps |
-| `agent-webservice/.env.amb` | AMB aggregator — without it `run` skips the AMB phase ([docs](agent-webservice/docs/amb_setup_flow.md)) |
-
-**5. Run the product** — starts the full local stack (databases + migrations, backend,
-backoffice, **one** player site, AMB aggregator):
+**6. Define + run your local stack** (optional). Copy
+`.superset/products/example.sh` to `.superset/products/<product-id>.sh`, declare your
+repos per tier (databases / backends / frontends), then:
 
 ```sh
-./aiworks run                    # PAOTUNG theme (default)
-./aiworks run --site ohanabet    # OHANABET theme instead
-./aiworks run --site all         # both player sites (each Next dev ≈ 2 GB RAM)
+./aiworks run                    # the default frontend profile
+./aiworks run --site <profile>   # another profile your product file defines
 ```
-
-**6. Claim your admin & agent accounts.** The DB ships with placeholder accounts —
-point them at your own Google account. Full steps in
-[`ofb-instruction/README.md`](ofb-instruction/README.md); the short version:
-
-<details>
-<summary><strong>Show the claim steps (one-time)</strong></summary>
-
-```sh
-# Get your Google sub (sign in with your @bluepi.co.th account)
-gcloud auth login
-curl -s "https://oauth2.googleapis.com/tokeninfo?id_token=$(gcloud auth print-identity-token)" | jq -r .sub
-```
-
-Then, on the **MAD** database (`localhost:5432`, `postgres/postgres`):
-
-```sql
--- OWNER admin → your @bluepi.co.th account
-UPDATE bo_auth_google SET email = '<your @bluepi.co.th email>', sub = '<your google sub>'
-WHERE email = 'local.admin@bluepi.co.th';
-UPDATE admin SET email = '<your @bluepi.co.th email>'
-WHERE email = 'local.admin@bluepi.co.th';
-
--- AGENT → a personal (non-bluepi) Google account
-UPDATE bo_auth_google SET email = '<your personal email>'
-WHERE email = 'local.agent@gmail.com';
-```
-
-</details>
-
-**7. Play with the product.** 🎉
-
-| Service | URL | Sign in with |
-|---------|-----|--------------|
-| 🛠️ **Backoffice** | http://localhost:3001 | your `@bluepi.co.th` → OWNER admin · personal Google → agent |
-| 🎰 **Player site — PAOTUNG** | http://localhost:3004 | test player below |
-| 🎲 **Player site — OHANABET** | http://localhost:3002 | test player below |
-| 🔌 **API** | http://localhost:3000 | — |
-
-Seeded **test player** → phone `0800000000` · PIN `888` · funded wallet. Plain
-`localhost` resolves to the default site.
-
-<details>
-<summary><strong>Visit a site by its site code</strong> (host-based theme resolution)</summary>
-
-A player site picks its theme + config from the hostname. We standardize the local
-domain on **`oneforbet.local`** — set `OFB_DOMAIN_NAME=oneforbet.local` in
-`agent-webservice/.env`, then add the seeded subdomains to `/etc/hosts`:
-
-```
-127.0.0.1 paotl.oneforbet.local ohnbl.oneforbet.local
-```
-
-- `http://paotl.oneforbet.local:3004` → PAOTUNG site (code `PAOTL`)
-- `http://ohnbl.oneforbet.local:3002` → OHANABET site (code `OHNBL`)
-
-</details>
 
 ## 🎫 Run a ticket
 
@@ -163,17 +106,20 @@ Open the IDE workspace — the **file**, not the folder, so every repo gets its 
 Source Control panel — then start a Claude Code session in this folder:
 
 ```sh
-cursor ai-workspace.code-workspace
-/dev-cycle OFB-<n>       # one ticket, end to end across every repo it touches
+cursor <workspace>.code-workspace
+/dev-cycle <PREFIX>-<n>     # one ticket, end to end across every repo it touches
 ```
 
-**How a run behaves here:**
+**How a run behaves (with the default policies):**
 
 - 🧭 **Plan approval is on** — the run stops after planning. Review, then re-run with
   `--approve-plan` to continue.
 - 🔒 **Auto-merge is off** — the run reviews + tests, then leaves the PR/MR open for a
-  human to merge, and posts a review digest to `#dev-oneforbet`.
-- 🎯 **Jira status** is moved by the workflow itself — don't touch it by hand mid-run.
+  human to merge, and posts a review digest to your `notify.channel`.
+- 🎯 **Ticket status** is moved by the workflow itself — don't touch it by hand mid-run.
+
+Flip these in `workspace.config.yaml` (`planning.auto_approve`, `vcs.auto_merge`,
+`notify.*`).
 
 ## 🗂️ Managing repos
 
@@ -182,7 +128,7 @@ cursor ai-workspace.code-workspace
 ```sh
 ./aiworks sync                 # onboard everything declared in the config
 ./aiworks sync <repo-name>     # onboard just one repo
-./aiworks add --url <git-url> --product ofb-platform --kind backend
+./aiworks add --url <git-url> --product <product-id> --kind backend
 ./aiworks remove <repo-name>   # deregister (add --purge to delete the clone)
 ./aiworks config               # regen generated files after editing the config
 ```
@@ -196,6 +142,5 @@ cursor ai-workspace.code-workspace
 ## 📚 Learn more
 
 - [`docs/aiworks.html`](docs/aiworks.html) — the full walkthrough (setup, CLI, dev-cycle)
-- [`ofb-instruction/README.md`](ofb-instruction/README.md) — full local-env guide (DBs, Redis, games, accounts)
-- [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) — how agents read/write Jira tickets
+- [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) — how agents read/write tickets
 - [`scripts/tracker/README.md`](scripts/tracker/README.md) · [`scripts/vcs/README.md`](scripts/vcs/README.md) — adapter details

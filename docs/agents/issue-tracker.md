@@ -44,7 +44,7 @@ back to the closest; see `scripts/tracker/README.md`.
 > Fill these in from `workspace.config.yaml`.
 
 - **Provider:** `<notion | jira>`
-- **Ticket id format:** `<PREFIX>-<n>` (e.g. `FM-9`, `OFB-123`). The id regex is
+- **Ticket id format:** `<PREFIX>-<n>` (e.g. `FM-9`, `APP-123`). The id regex is
   `<PREFIX>-\d+`. A bare number is accepted (Notion: looked up by the unique-id
   property; Jira: expanded with `JIRA_PROJECT_KEY`).
 - **Notion only:** tasks database id = `<NOTION_DB_ID>`; unique-id property =

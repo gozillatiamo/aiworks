@@ -26,7 +26,7 @@ Testing) — just run the two scripts.
 
 ## 1. Resolve the ticket
 
-`$ticket` accepts a full key (`FM-9` / `OFB-123`), a bare number (`9`), a tracker page
+`$ticket` accepts a full key (`FM-9` / `APP-123`), a bare number (`9`), a tracker page
 id, or a tracker URL — all work as the first argument to either script. If nothing in
 `$request` or context names a ticket, ask the user for the key. Don't guess.
 

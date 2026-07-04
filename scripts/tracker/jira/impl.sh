@@ -82,13 +82,13 @@ jira_api() {
 # number (expanded with JIRA_PROJECT_KEY), or a browse URL.
 jira_key() {
   local raw="$1" tail num
-  # a browse URL like https://x.atlassian.net/browse/OFB-12 -> take the last path segment
+  # a browse URL like https://x.atlassian.net/browse/APP-12 -> take the last path segment
   tail="${raw##*/}"
   if [[ "$tail" =~ ^[A-Za-z][A-Za-z0-9_]*-[0-9]+$ ]]; then
     printf '%s' "$(printf '%s' "$tail" | tr '[:lower:]' '[:upper:]')"; return
   fi
   num="${raw//[^0-9]/}"
-  [[ -n "$num" ]] || die "could not parse a Jira key from '$raw' (try OFB-123 or 123)"
+  [[ -n "$num" ]] || die "could not parse a Jira key from '$raw' (try APP-123 or 123)"
   [[ -n "$JIRA_PROJECT_KEY" ]] || die "bare number '$raw' needs JIRA_PROJECT_KEY set to build the key (e.g. OFB)"
   printf '%s-%s' "$JIRA_PROJECT_KEY" "$num"
 }

@@ -3,9 +3,9 @@
 # PreToolUse(Bash) hook — block a relative `cd` at the START of a command.
 #
 # The Bash tool's working directory PERSISTS between calls. A leading
-# `cd agent-webservice` works the first time, but the next tool call starts
+# `cd your-app` works the first time, but the next tool call starts
 # *inside* that repo, so the same relative cd resolves against the moved cwd
-# (`agent-webservice/agent-webservice`) and dies with "no such file or
+# (`your-app/your-app`) and dies with "no such file or
 # directory". In this multi-repo workspace that has bitten real review/agent
 # runs more than once — so we forbid the pattern and steer to absolute paths.
 #
@@ -14,7 +14,7 @@
 #
 # Allowed (exit 0): cd /abs · cd ~/x · cd "$VAR/x" · cd $HOME · cd -
 #                   bare `cd` (→ home) · any command not starting with cd
-# Blocked (exit 2): cd agent-webservice · cd ./x · cd ../x · cd foo/bar
+# Blocked (exit 2): cd your-app · cd ./x · cd ../x · cd foo/bar
 #
 # Exit 0 = allow. Exit 2 = block, stderr is shown to the model as feedback.
 
@@ -54,7 +54,7 @@ esac
   echo "The Bash tool's cwd PERSISTS across calls, so a leading relative cd"
   echo "breaks on the next call (it resolves against the already-moved cwd)."
   echo "Use one of these instead:"
-  echo "  • an ABSOLUTE path:   cd /Users/.../og-419-pgsoft-aggregator/agent-webservice && …"
+  echo "  • an ABSOLUTE path:   cd /Users/.../<workspace>/<repo> && …"
   echo "  • git, scoped:        git -C /abs/path <git-subcommand>"
   echo "  • a subshell:         ( cd /abs/path && … )   # leaves the persisted cwd clean"
 } >&2

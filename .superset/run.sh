@@ -2,11 +2,11 @@
 #
 # Workspace run — start a product's full local stack.
 #
-#   .superset/run.sh [product] [-s <site>] [-G] [-v]   (default product: ofb-platform)
+#   .superset/run.sh [product] [-s <site>] [-G] [-v]   (default: the ONE product file)
 #
 # Options:
-#   -s, --site <name>  player-site profile for the product (e.g. paotung | ohanabet | all;
-#                      default: paotung). Sets OFB_PLAYER_SITE for the product file.
+#   -s, --site <name>  frontend profile for the product (product-defined names;
+#                      see your product file). Sets PRODUCT_SITE for the product file.
 #   -G, --no-games   skip Phase 6 (fetch games).
 #   -v, --verbose    show the full step-by-step log (quiet by default).
 #   -h, --help       show this help.
@@ -41,9 +41,9 @@ SKIP_FETCH_GAMES=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -s|--site)
-      [[ $# -ge 2 ]] || { err "--site needs a value (e.g. paotung | ohanabet | all)"; exit 2; }
-      export OFB_PLAYER_SITE="$2"; shift 2 ;;
-    --site=*)      export OFB_PLAYER_SITE="${1#*=}"; shift ;;
+      [[ $# -ge 2 ]] || { err "--site needs a value (a profile your product file defines)"; exit 2; }
+      export PRODUCT_SITE="$2"; shift 2 ;;
+    --site=*)      export PRODUCT_SITE="${1#*=}"; shift ;;
     -G|--no-games) SKIP_FETCH_GAMES=1; shift ;;
     -v|--verbose)  export VERBOSE=1; shift ;;
     -h|--help)     usage; exit 0 ;;
@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
       PRODUCT="$1"; shift ;;
   esac
 done
-PRODUCT="${PRODUCT:-ofb-platform}"
+PRODUCT="${PRODUCT:-$(default_product)}" || exit 2
 
 runtime_dirs "$PRODUCT"
 load_product "$PRODUCT"

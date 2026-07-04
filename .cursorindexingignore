@@ -1,11 +1,3 @@
 # Re-include repos the root .gitignore hides, so Cursor can index + search them.
-!agent-db/
-!paotung-template/
-!agent-webservice/
-!agent-paotung-cypress/
-!backoffice/
-!ofb-backoffice-cypress/
-!front-end/
-!ofb-instruction/
-!customization-widget/
-!mock-agency-api/
+# `aiworks add` appends one `!<repo-dir>/` line per onboarded repo below this comment,
+# and `aiworks remove` drops it again — no hand-editing needed.

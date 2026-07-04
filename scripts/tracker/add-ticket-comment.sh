@@ -3,7 +3,7 @@
 #
 #   ./add-ticket-comment.sh FM-9 "Looks good — moving to Testing."
 #   ./add-ticket-comment.sh FM-9 < notes.md       # comment text from stdin
-#   cat plan.md | ./add-ticket-comment.sh OFB-123
+#   cat plan.md | ./add-ticket-comment.sh APP-123
 #   ./add-ticket-comment.sh FM-9 "..." --dry-run  # preview, don't send
 #
 set -euo pipefail
@@ -17,7 +17,7 @@ Add an open comment to a ticket in the configured tracker (TRACKER_PROVIDER). Th
 comment text comes from the [text] argument, or from stdin when none is given.
 
 Arguments:
-  <ticket>      Ticket key (FM-9, OFB-123, a number), a page id, or a URL.
+  <ticket>      Ticket key (FM-9, APP-123, a number), a page id, or a URL.
   [text]        The comment body. If omitted, it is read from stdin.
 
 Options:

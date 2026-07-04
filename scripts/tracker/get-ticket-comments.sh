@@ -19,7 +19,7 @@ Print a ticket's open comments as plain text, from the tracker selected by
 TRACKER_PROVIDER (notion | jira).
 
 Arguments:
-  <ticket>            Ticket key (FM-9, OFB-123, a number), a page id, or a URL.
+  <ticket>            Ticket key (FM-9, APP-123, a number), a page id, or a URL.
 
 Options:
   --deep              Also gather inline (block-anchored) comments where the
@@ -51,5 +51,5 @@ for a in "$@"; do
     *)      ticket="$a" ;;
   esac
 done
-[[ -n "$ticket" ]] || die "usage: $(basename "$0") [--deep] <ticket>   e.g. FM-9, OFB-123, 9, or a URL"
+[[ -n "$ticket" ]] || die "usage: $(basename "$0") [--deep] <ticket>   e.g. FM-9, APP-123, 9, or a URL"
 tracker_get_comments "$deep" "$ticket"

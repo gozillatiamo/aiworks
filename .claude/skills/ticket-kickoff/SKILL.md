@@ -1,6 +1,6 @@
 ---
 name: ticket-kickoff
-description: Resolve a <PREFIX>-<n> ticket from the issue tracker, classify it (Bug vs Feature/Polish), move it to the "in progress" status, and create + check out the correct development branch. Use at the very start of working any ticket. Pass the ticket number as an arg (e.g. FM-12 / OFB-123).
+description: Resolve a <PREFIX>-<n> ticket from the issue tracker, classify it (Bug vs Feature/Polish), move it to the "in progress" status, and create + check out the correct development branch. Use at the very start of working any ticket. Pass the ticket number as an arg (e.g. FM-12 / APP-123).
 argument-hint: [ticket-number]
 allowed-tools:
   - Bash(git *)
@@ -17,7 +17,7 @@ directly.
 
 ## Input
 
-A ticket reference (e.g. `FM-12` / `OFB-123`, or a bare number). The id prefix is set in
+A ticket reference (e.g. `FM-12` / `APP-123`, or a bare number). The id prefix is set in
 `workspace.config.yaml` (`tracker.ticket_prefix`).
 
 ## Steps

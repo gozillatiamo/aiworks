@@ -1,5 +1,6 @@
-import:
-  - mani.d/ofb-platform.yaml
+# Per-product project files are GENERATED into mani.d/ by `scripts/aiworks sync`
+# (from workspace.config.yaml products[]), which also maintains this import list.
+import: []
 
 sync_gitignore: false
 
