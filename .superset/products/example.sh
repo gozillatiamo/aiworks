@@ -6,10 +6,10 @@
 # orchestrators call (helpers come from .superset/lib.sh):
 #
 #   run_databases / run_backends / run_frontends      — called by run.sh, in order
-#   run_aggregator_setup / wait_backends_ready / fetch_games
+#   run_thirdparty_setup / wait_backends_ready / seed_data
 #                                                     — called by run.sh, optional
 #                                                       (skipped if a product omits them)
-#   down_aggregator_setup                             — called by teardown.sh, optional
+#   down_thirdparty_setup                             — called by teardown.sh, optional
 #   down_frontends / down_backends / down_databases   — called by teardown.sh, in order
 #
 # To define YOUR product: copy this file to .superset/products/<product-id>.sh
@@ -75,13 +75,13 @@ run_frontends() {
   done
 }
 
-# ── 4. third-party/aggregator setup (optional hook) ───────────────────────────
-# run_aggregator_setup() {
+# ── 4. third-party setup (optional hook) ───────────────────────────
+# run_thirdparty_setup() {
 #   # Wire any third-party callback to THIS machine (e.g. ngrok -> your backend
 #   # port) so the integration is testable locally. Keep it idempotent and never
 #   # fatal to the run — warn and carry on.
-#   (cd your-api && bash scripts/aggregator_setup.sh) \
-#     || warn "your-api: aggregator setup did not complete cleanly — continuing."
+#   (cd your-api && bash scripts/thirdparty_setup.sh) \
+#     || warn "your-api: third-party setup did not complete cleanly — continuing."
 # }
 
 # ── 5. wait for backend readiness (optional hook) ─────────────────────────────
@@ -94,16 +94,16 @@ wait_backends_ready() {
 }
 
 # ── 6. seed/prime data (optional hook) ────────────────────────────────────────
-# fetch_games() {
+# seed_data() {
 #   # Prime any catalogue/seed data via a server-to-server endpoint.
 #   run_glance "your-api: priming seed data" \
 #     curl -fS --max-time 300 -o "$LOG_DIR/seed.json" "http://localhost:3000/seed"
 # }
 
 # ── teardown (reverse order) ──────────────────────────────────────────────────
-# down_aggregator_setup() {
+# down_thirdparty_setup() {
 #   # Stop only helpers WE started (tracked via pidfiles).
-#   stop_pidfile /tmp/ngrok-aggregator.pid "ngrok (aggregator tunnel)"
+#   stop_pidfile /tmp/ngrok-thirdparty.pid "ngrok (third-party tunnel)"
 # }
 
 down_frontends() {

@@ -10,7 +10,7 @@
 # 0. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
 #    itself (.code-workspace generation, VS Code settings merge) and the tracker/notify
 #    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
-#    phase's optional aggregator hook (run.sh Phase 4 can tunnel a port through it; macOS: Homebrew, Linux:
+#    phase's optional third-party hook (run.sh Phase 4 can tunnel a port through it; macOS: Homebrew, Linux:
 #    the official apt repo, else a static binary); and glab, the GitLab CLI the VCS adapter
 #    (scripts/vcs/) drives (Homebrew, else the official release tarball). Best-effort.
 # 1. `aiworks sync -y` clones + FULLY onboards every product repo declared under
@@ -53,7 +53,7 @@ fi
 
 # ── 0. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
-# phase's optional aggregator hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter. Best-effort —
+# phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter. Best-effort —
 # guarded so a failure never aborts setup.
 log "Ensuring host tooling (jq, ngrok, glab)…"
 ensure_jq || true

@@ -97,7 +97,7 @@ run_glance() {  # <title> <cmd> [args…]
 }
 
 # ── host tooling prerequisites ─────────────────────────────────────────────────
-# Ensure the `ngrok` CLI is installed. An aggregator/third-party phase (run.sh Phase 4,
+# Ensure the `ngrok` CLI is installed. A third-party phase (run.sh Phase 4,
 # a product hook — see .superset/products/example.sh) may tunnel a local port through
 # ngrok so an external callback reaches this machine. Best-effort + idempotent: present → no-op; otherwise
 # install per OS. NEVER fatal to setup — a missing ngrok only breaks that one optional
@@ -137,7 +137,7 @@ ensure_ngrok() {
   if command -v ngrok >/dev/null 2>&1; then
     log "ngrok installed ($(ngrok version 2>/dev/null | head -1))."
   else
-    warn "ngrok still not on PATH after install — the aggregator phase (run.sh Phase 4) will be skipped. Install it by hand: https://ngrok.com/download"
+    warn "ngrok still not on PATH after install — the third-party phase (run.sh Phase 4) will be skipped. Install it by hand: https://ngrok.com/download"
   fi
   return 0
 }
@@ -486,7 +486,7 @@ stop_node_app() {  # <repo> [port]
 
 # Stop a background process recorded in a pidfile (TERM the pid + its tree), then
 # remove the pidfile. For host-level helpers started outside the node-app scheme
-# (e.g. an ngrok tunnel an aggregator-setup hook starts). No pidfile → nothing to do, so a
+# (e.g. an ngrok tunnel a third-party-setup hook starts). No pidfile → nothing to do, so a
 # process we did NOT start (and never tracked) is left untouched.
 stop_pidfile() {  # <pidfile> <label>
   local pidfile="$1" label="$2" pid
