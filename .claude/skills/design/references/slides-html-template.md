@@ -15,7 +15,7 @@ Complete HTML structure with navigation, tokens, and Chart.js integration.
     <style>
         /* Paste embed-tokens.cjs output here */
         :root {
-            --color-primary: #FF6B6B;
+            --color-primary: #2563EB;
             --color-background: #0D0D0D;
             /* ... more tokens */
         }
@@ -80,10 +80,10 @@ Complete HTML structure with navigation, tokens, and Chart.js integration.
         }
 
         /* Typography */
-        h1, h2 { font-family: var(--typography-font-heading, 'Space Grotesk', sans-serif); }
+        h1, h2 { font-family: var(--typography-font-heading, 'Inter', sans-serif); }
         .slide-title {
             font-size: clamp(32px, 6vw, 80px);
-            background: var(--primitive-gradient-primary, linear-gradient(135deg, #FF6B6B, #FF8E53));
+            background: var(--primitive-gradient-primary, linear-gradient(135deg, #2563EB, #8B5CF6));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             line-height: 1.1;
@@ -216,7 +216,7 @@ new Chart(document.getElementById('revenueChart'), {
         datasets: [{
             label: 'MRR ($K)',
             data: [5, 12, 28, 45],
-            borderColor: '#FF6B6B',
+            borderColor: '#2563EB',
             backgroundColor: 'rgba(255, 107, 107, 0.1)',
             borderWidth: 3,
             fill: true,

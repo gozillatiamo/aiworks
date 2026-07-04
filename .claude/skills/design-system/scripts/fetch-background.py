@@ -69,9 +69,9 @@ def load_brand_colors():
                 }
 
         # Fallback: find first color palette with 500 value (primary)
-        primary_keys = ['ocean-blue', 'coral', 'blue', 'primary']
-        secondary_keys = ['golden-amber', 'purple', 'amber', 'secondary']
-        accent_keys = ['emerald', 'mint', 'green', 'accent']
+        primary_keys = ['primary', 'brand', 'blue']
+        secondary_keys = ['secondary', 'purple', 'amber']
+        accent_keys = ['accent', 'green', 'emerald']
 
         primary_color = None
         secondary_color = None
