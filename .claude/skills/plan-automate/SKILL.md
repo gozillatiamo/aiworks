@@ -11,7 +11,7 @@ Turn an approved test plan into an implementation plan for automating it the way
 
 ## 1. Read the test plan — the input
 
-- Resolve the ticket: `$ticket` (a key, e.g. `FM-9`/`OFB-123`) given → use it; already in context → reuse it; neither → ask for the key.
+- Resolve the ticket: `$ticket` (a key, e.g. `FM-9`/`APP-123`) given → use it; already in context → reuse it; neither → ask for the key.
 - Read **`agent_logs/<KEY>-testcases.md`** (the `plan-testcases` output) — it is the source of scenarios. If it's missing, stop and tell the user to run `/plan-testcases <KEY>` first; **don't invent scenarios.**
 - If the test plan says **"Nothing to test"**, there's nothing to automate — write that one line to the plan file and stop.
 - Need ticket context (preconditions, data, app area)? Read it via `scripts/tracker/get-ticket-details.sh <KEY>` — but the scenarios come from the test plan, not re-derived from the ticket.

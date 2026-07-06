@@ -29,7 +29,7 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
   add-ticket-comment.sh   <ref> "text"     # add a comment (chunks long text)
 ```
 
-`<ref>` = a full key (`FM-9`/`OFB-123`), a bare number, a page id, a URL, or the literal
+`<ref>` = a full key (`FM-9`/`APP-123`), a bare number, a page id, a URL, or the literal
 **`new`** to create. Provider + auth + the project/db come from `scripts/tracker/.env` —
 you don't pass them. See `scripts/tracker/README.md` and `docs/agents/issue-tracker.md`
 for this org's ticket-id format, status names, and any read-only fields.

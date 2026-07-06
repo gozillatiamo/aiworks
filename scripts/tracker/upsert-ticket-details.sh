@@ -2,7 +2,7 @@
 # Upsert a ticket's details in the configured tracker — update it, or create it if missing.
 #
 #   ./upsert-ticket-details.sh FM-9 --status Testing
-#   ./upsert-ticket-details.sh OFB-123 --status "In Review" --priority High
+#   ./upsert-ticket-details.sh APP-123 --status "In Review" --priority High
 #   ./upsert-ticket-details.sh FM-9 --title "New title" --description "Some text"
 #   ./upsert-ticket-details.sh FM-30 --title "New ticket" --status "Not started"   # missing → created (Notion)
 #   ./upsert-ticket-details.sh FM-9 --status Done --dry-run     # preview, don't send
@@ -24,7 +24,7 @@ Update a ticket's properties in the configured tracker (TRACKER_PROVIDER), or cr
 it if missing where the provider supports it. Pass at least one property flag.
 
 Arguments:
-  <ticket>             Ticket key (FM-9, OFB-123, a number), a page id, or a URL.
+  <ticket>             Ticket key (FM-9, APP-123, a number), a page id, or a URL.
 
 Options:
   --status <name>      Set the workflow status. Use the org's real status name (see
@@ -45,7 +45,7 @@ Options:
   --component <name>   Add a component/tag (Jira: project component, validated;
                        Notion: a multi_select option). Repeatable.
   --link <TYPE>:<KEY>  Link the new issue to <KEY> as the outward subject — e.g.
-                       --link Implements:OFB-123 means "<new> implements OFB-123".
+                       --link Implements:APP-123 means "<new> implements APP-123".
                        Repeatable. Jira: an issue link (closest type if exact missing);
                        Notion: a relation. Create-only.
   --body <markdown>    Write the full spec (Markdown) into the ticket BODY. Notion
@@ -98,7 +98,7 @@ while [[ $# -gt 0 ]]; do
     --link)        need "${2:-}" "--link needs <TYPE>:<KEY>";
                    _lt="${2%%:*}"; _lk="${2#*:}"
                    [[ "$2" == *:* && -n "$_lt" && -n "$_lk" ]] \
-                     || die "--link must be TYPE:KEY (e.g. Implements:OFB-123)"
+                     || die "--link must be TYPE:KEY (e.g. Implements:APP-123)"
                    addlink "$_lt" "$_lk"; shift 2 ;;
     --body)        need "${2:-}" "--body needs a value";        body_md="$2"; have_body=1; shift 2 ;;
     --body-file)   need "${2:-}" "--body-file needs a path";

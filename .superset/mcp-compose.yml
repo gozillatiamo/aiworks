@@ -19,23 +19,30 @@
 #   manual: `.superset/mcp-services.sh up | down | reap | status`
 #
 # CONFIG (override in `.superset/.env` — git-ignored — or the environment)
-#   DATABASE_URI       host Postgres the postgres-mcp server talks to
-#   MCP_POSTGRES_PORT  host port the SSE endpoint is published on (default 8000;
-#                      if you change it, update the URL in .mcp.json to match)
+#   DATABASE_URI_MAIN / DATABASE_URI_SECONDARY
+#                      host Postgres each postgres-mcp server talks to
+#   MCP_POSTGRES_MAIN_PORT / MCP_POSTGRES_SECONDARY_PORT
+#                      host port each SSE endpoint is published on (defaults
+#                      25432 / 25433; if you change one, update the matching
+#                      URL in .mcp.json)
+#
+# The `secondary` service is for stacks with a SECOND host Postgres (e.g. a
+# separate analytics/shard DB). One database? Delete it, plus the
+# `postgres_secondary` entry in .mcp.json.
 # ─────────────────────────────────────────────────────────────────────────────
 name: aiworks-mcp                       # fixed project name → ONE shared stack regardless of cwd
 
 services:
-  postgres-mad-mcp:
+  postgres-main-mcp:
     image: crystaldba/postgres-mcp
-    container_name: aiworks-mcp-postgres-mad
+    container_name: aiworks-mcp-postgres-main
     command: ["--access-mode=unrestricted", "--transport=sse"]
     environment:
       # Inside the container `localhost` is the container itself — reach the HOST
       # Postgres via host.docker.internal (mapped to the host gateway below).
-      DATABASE_URI: ${DATABASE_URI:-postgresql://postgres:postgres@host.docker.internal:5432/postgres}
+      DATABASE_URI: ${DATABASE_URI_MAIN:-postgresql://postgres:postgres@host.docker.internal:5432/postgres}
     ports:
-      - "127.0.0.1:${MCP_POSTGRES_PORT:-25432}:8000"
+      - "127.0.0.1:${MCP_POSTGRES_MAIN_PORT:-25432}:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
     restart: unless-stopped
@@ -48,16 +55,16 @@ services:
       retries: 3
       start_period: 10s
 
-  postgres-ass-mcp:
+  postgres-secondary-mcp:
     image: crystaldba/postgres-mcp
-    container_name: aiworks-mcp-postgres-ass
+    container_name: aiworks-mcp-postgres-secondary
     command: ["--access-mode=unrestricted", "--transport=sse"]
     environment:
       # Inside the container `localhost` is the container itself — reach the HOST
       # Postgres via host.docker.internal (mapped to the host gateway below).
-      DATABASE_URI: ${DATABASE_URI:-postgresql://postgres:postgres@host.docker.internal:5433/postgres}
+      DATABASE_URI: ${DATABASE_URI_SECONDARY:-postgresql://postgres:postgres@host.docker.internal:5433/postgres}
     ports:
-      - "127.0.0.1:${MCP_POSTGRES_PORT:-25433}:8000"
+      - "127.0.0.1:${MCP_POSTGRES_SECONDARY_PORT:-25433}:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
     restart: unless-stopped

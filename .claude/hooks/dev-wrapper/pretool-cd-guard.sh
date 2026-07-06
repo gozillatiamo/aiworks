@@ -54,7 +54,7 @@ esac
   echo "The Bash tool's cwd PERSISTS across calls, so a leading relative cd"
   echo "breaks on the next call (it resolves against the already-moved cwd)."
   echo "Use one of these instead:"
-  echo "  • an ABSOLUTE path:   cd /Users/.../og-419-pgsoft-aggregator/agent-webservice && …"
+  echo "  • an ABSOLUTE path:   cd /Users/.../<workspace>/agent-webservice && …"
   echo "  • git, scoped:        git -C /abs/path <git-subcommand>"
   echo "  • a subshell:         ( cd /abs/path && … )   # leaves the persisted cwd clean"
 } >&2

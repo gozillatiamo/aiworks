@@ -2,7 +2,7 @@
 #
 # Workspace teardown — stop a product's full local stack.
 #
-#   .superset/teardown.sh [product] [--purge-repos] [-v|--verbose]   (default: ofb-platform)
+#   .superset/teardown.sh [product] [--purge-repos] [-v|--verbose]   (default: the ONE product file)
 #
 # Output is QUIET by default; pass -v/--verbose for the full step log.
 #
@@ -27,7 +27,7 @@ cd "$(dirname "$0")/.."
 source .superset/lib.sh
 
 export VERBOSE="${VERBOSE:-0}"   # quiet by default; -v/--verbose shows the full step log
-PRODUCT="ofb-platform"
+PRODUCT=""
 PURGE_REPOS=false
 for arg in "$@"; do
   case "$arg" in
@@ -36,6 +36,7 @@ for arg in "$@"; do
     *) PRODUCT="$arg" ;;
   esac
 done
+PRODUCT="${PRODUCT:-$(default_product)}" || exit 2
 
 log "Stopping shared MCP services…"
 if [[ "$VERBOSE" == 1 ]]; then ./.superset/mcp-services.sh down || true; ./.superset/mcp-services.sh reap || true
@@ -48,9 +49,9 @@ log "Tearing down product '$PRODUCT'…"
 
 # Host-level helpers first (ngrok etc.) — these don't depend on docker, so stop
 # them whether or not docker is up. Optional per product (guarded).
-if declare -f down_aggregator_setup >/dev/null 2>&1; then
-  log "── Stopping aggregator helpers (ngrok) ──"
-  down_aggregator_setup
+if declare -f down_thirdparty_setup >/dev/null 2>&1; then
+  log "── Stopping third-party helpers (ngrok) ──"
+  down_thirdparty_setup
 fi
 
 if docker info >/dev/null 2>&1; then

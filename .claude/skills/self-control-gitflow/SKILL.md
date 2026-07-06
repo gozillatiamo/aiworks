@@ -32,7 +32,7 @@ Goal: a clean feature branch off the newest default branch, so coding never happ
 1. Confirm the repo root. If the working tree has changes you don't intend to carry onto the new branch, stop and have them committed/stashed/cleaned first.
 2. Sync the base: `git fetch origin && git switch "$base" && git pull --ff-only origin "$base"`.
 3. Create the branch named for the ticket: `git switch -c "feature/<KEY>"`.
-   - The branch name is **`feature/` + the ticket key** — e.g. `feature/FM-9`, `feature/OFB-123`. Normalize the key to uppercase; no slug, no description.
+   - The branch name is **`feature/` + the ticket key** — e.g. `feature/FM-9`, `feature/APP-123`. Normalize the key to uppercase; no slug, no description.
 4. Report the new branch and its base, then hand back so coding can start.
 
 ## FINISH — PR/MR + self squash-merge (only after ALL tests pass)

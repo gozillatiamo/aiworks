@@ -97,9 +97,9 @@ run_glance() {  # <title> <cmd> [args…]
 }
 
 # ── host tooling prerequisites ─────────────────────────────────────────────────
-# Ensure the `ngrok` CLI is installed. The AMB aggregator phase (run.sh Phase 4 →
-# agent-webservice/scripts/amb_setup.sh) tunnels :3000 through ngrok so the aggregator's
-# callback reaches this machine. Best-effort + idempotent: present → no-op; otherwise
+# Ensure the `ngrok` CLI is installed. A third-party phase (run.sh Phase 4,
+# a product hook — see .superset/products/example.sh) may tunnel a local port through
+# ngrok so an external callback reaches this machine. Best-effort + idempotent: present → no-op; otherwise
 # install per OS. NEVER fatal to setup — a missing ngrok only breaks that one optional
 # phase (which already warns and carries on). macOS bash 3.2 safe.
 ensure_ngrok() {
@@ -137,7 +137,7 @@ ensure_ngrok() {
   if command -v ngrok >/dev/null 2>&1; then
     log "ngrok installed ($(ngrok version 2>/dev/null | head -1))."
   else
-    warn "ngrok still not on PATH after install — the AMB aggregator phase (run.sh Phase 4) will be skipped. Install it by hand: https://ngrok.com/download"
+    warn "ngrok still not on PATH after install — the third-party phase (run.sh Phase 4) will be skipped. Install it by hand: https://ngrok.com/download"
   fi
   return 0
 }
@@ -486,7 +486,7 @@ stop_node_app() {  # <repo> [port]
 
 # Stop a background process recorded in a pidfile (TERM the pid + its tree), then
 # remove the pidfile. For host-level helpers started outside the node-app scheme
-# (e.g. the ngrok tunnel amb_setup.sh starts). No pidfile → nothing to do, so a
+# (e.g. an ngrok tunnel a third-party-setup hook starts). No pidfile → nothing to do, so a
 # process we did NOT start (and never tracked) is left untouched.
 stop_pidfile() {  # <pidfile> <label>
   local pidfile="$1" label="$2" pid
@@ -560,6 +560,27 @@ run_migration() {  # <repo> <compose-file> <service>
     return "$rc"
   fi
   log "$repo: migrations from $file applied."
+}
+
+# Resolve the default product: exactly ONE real product file in .superset/products/
+# (example.sh is the shipped template, never a runnable default). Zero or several →
+# fail with guidance, so orchestrators never guess an org's stack.
+default_product() {
+  local files=() f
+  for f in .superset/products/*.sh; do
+    [[ -e "$f" && "$(basename "$f")" != "example.sh" ]] && files+=("$f")
+  done
+  if [[ ${#files[@]} -eq 1 ]]; then
+    basename "${files[0]}" .sh
+    return 0
+  fi
+  if [[ ${#files[@]} -eq 0 ]]; then
+    err "no product defined — copy .superset/products/example.sh to .superset/products/<product-id>.sh first."
+  else
+    err "several products defined — name one:"
+    for f in "${files[@]}"; do basename "$f" .sh | sed 's/^/  - /' >&2; done
+  fi
+  return 1
 }
 
 # Source the product definition file; lists available products on a miss.

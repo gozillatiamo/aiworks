@@ -7,7 +7,7 @@
 #   JIRA_EMAIL        Atlassian account email           (required)
 #   JIRA_API_TOKEN    API token                         (required)
 #                     create at id.atlassian.com/manage-profile/security/api-tokens
-#   JIRA_PROJECT_KEY  project key (e.g. OFB) — used to expand a bare number to KEY-n
+#   JIRA_PROJECT_KEY  project key (e.g. APP) — used to expand a bare number to KEY-n
 #   JIRA_EFFORT_FIELD optional custom-field id for --effort (e.g. customfield_10016 / story points)
 #   JIRA_DEV_POINTS_FIELD optional custom-field id for --dev-points (Developer points; number)
 #   JIRA_QA_POINTS_FIELD  optional custom-field id for --qa-points  (QA points; number)
@@ -82,14 +82,14 @@ jira_api() {
 # number (expanded with JIRA_PROJECT_KEY), or a browse URL.
 jira_key() {
   local raw="$1" tail num
-  # a browse URL like https://x.atlassian.net/browse/OFB-12 -> take the last path segment
+  # a browse URL like https://x.atlassian.net/browse/APP-12 -> take the last path segment
   tail="${raw##*/}"
   if [[ "$tail" =~ ^[A-Za-z][A-Za-z0-9_]*-[0-9]+$ ]]; then
     printf '%s' "$(printf '%s' "$tail" | tr '[:lower:]' '[:upper:]')"; return
   fi
   num="${raw//[^0-9]/}"
-  [[ -n "$num" ]] || die "could not parse a Jira key from '$raw' (try OFB-123 or 123)"
-  [[ -n "$JIRA_PROJECT_KEY" ]] || die "bare number '$raw' needs JIRA_PROJECT_KEY set to build the key (e.g. OFB)"
+  [[ -n "$num" ]] || die "could not parse a Jira key from '$raw' (try APP-123 or 123)"
+  [[ -n "$JIRA_PROJECT_KEY" ]] || die "bare number '$raw' needs JIRA_PROJECT_KEY set to build the key (e.g. APP)"
   printf '%s-%s' "$JIRA_PROJECT_KEY" "$num"
 }
 
@@ -219,7 +219,7 @@ jira_create() {
   comps_json="$(printf '%s' "$fields" | jq -c '.components // []')"
   links_json="$(printf '%s' "$fields" | jq -c '.links // []')"
   [[ -n "$title" ]]            || die "creating a Jira issue (ref 'new') needs --title"
-  [[ -n "$JIRA_PROJECT_KEY" ]] || die "creating a Jira issue needs JIRA_PROJECT_KEY (e.g. OFB)"
+  [[ -n "$JIRA_PROJECT_KEY" ]] || die "creating a Jira issue needs JIRA_PROJECT_KEY (e.g. APP)"
 
   # Resolve the issue type: explicit --issuetype wins; --subtask resolves the project's
   # sub-task type (needs a parent); otherwise the configured default.

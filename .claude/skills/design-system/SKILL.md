@@ -197,8 +197,8 @@ new Chart(document.getElementById('revenueChart'), {
         labels: ['Sep', 'Oct', 'Nov', 'Dec'],
         datasets: [{
             data: [5, 12, 28, 45],
-            borderColor: '#FF6B6B',  // Use brand coral
-            backgroundColor: 'rgba(255, 107, 107, 0.1)',
+            borderColor: '#2563EB',  // Use YOUR brand primary (from the project's design-tokens.json)
+            backgroundColor: 'rgba(37, 99, 235, 0.1)',
             fill: true,
             tension: 0.4
         }]
@@ -217,21 +217,14 @@ font-family: var(--typography-font-heading);
 
 /* WRONG - hardcoded */
 background: #0D0D0D;
-color: #FF6B6B;
-font-family: 'Space Grotesk';
-```
-
-### Reference Implementation
-
-Working example with all features:
-```
-assets/designs/slides/claudekit-pitch-251223.html
+color: #FF0000;
+font-family: 'Some Font';
 ```
 
 ### Command
 
 ```bash
-/slides:create "10-slide investor pitch for ClaudeKit Marketing"
+/slides:create "10-slide investor pitch for <your product>"
 ```
 
 ## Best Practices

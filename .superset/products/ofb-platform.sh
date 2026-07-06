@@ -6,10 +6,10 @@
 # orchestrators call (helpers come from .superset/lib.sh):
 #
 #   run_databases / run_backends / run_frontends      — called by run.sh, in order
-#   run_aggregator_setup / wait_backends_ready / fetch_games
+#   run_thirdparty_setup / wait_backends_ready / seed_data
 #                                                     — called by run.sh, optional
 #                                                       (skipped if a product omits them)
-#   down_aggregator_setup                             — called by teardown.sh, optional
+#   down_thirdparty_setup                             — called by teardown.sh, optional
 #   down_frontends / down_backends / down_databases   — called by teardown.sh, in order
 #
 # To add a product variant: copy this file to .superset/products/<id>.sh and
@@ -23,25 +23,25 @@ BACKEND_REPOS=(agent-webservice)
 # Each Next.js dev server costs ~2 GB RAM, and you normally play ONE player site
 # at a time — so running all three at once needlessly eats ~40% of a 16 GB box and
 # forces the machine into swap. The default therefore runs ONE player site + the
-# backoffice. Pick which with OFB_PLAYER_SITE (default: paotung):
+# backoffice. Pick which with PRODUCT_SITE (default: paotung):
 #
-#   OFB_PLAYER_SITE=paotung   .superset/run.sh   → paotung-template + backoffice   (default)
-#   OFB_PLAYER_SITE=ohanabet  .superset/run.sh   → front-end        + backoffice
-#   OFB_PLAYER_SITE=all       .superset/run.sh   → paotung-template + front-end + backoffice  (old behaviour)
+#   PRODUCT_SITE=paotung   .superset/run.sh   → paotung-template + backoffice   (default)
+#   PRODUCT_SITE=ohanabet  .superset/run.sh   → front-end        + backoffice
+#   PRODUCT_SITE=all       .superset/run.sh   → paotung-template + front-end + backoffice  (old behaviour)
 #
 # Or the friendlier spelling — `aiworks run --site <paotung|ohanabet|all>` sets
-# OFB_PLAYER_SITE for you (run.sh -s/--site).
+# PRODUCT_SITE for you (run.sh -s/--site).
 #
 # Or set OFB_FRONTENDS to a custom space-separated list to override entirely, e.g.
 #   OFB_FRONTENDS="paotung-template"  .superset/run.sh   → player site only, no backoffice
 if [[ -n "${OFB_FRONTENDS:-}" ]]; then
   read -r -a FRONTEND_REPOS <<< "$OFB_FRONTENDS"
 else
-  case "${OFB_PLAYER_SITE:-paotung}" in
+  case "${PRODUCT_SITE:-paotung}" in
     paotung)  FRONTEND_REPOS=(paotung-template backoffice) ;;
     ohanabet) FRONTEND_REPOS=(front-end backoffice) ;;
     all)      FRONTEND_REPOS=(paotung-template front-end backoffice) ;;
-    *) echo "WARN: unknown OFB_PLAYER_SITE='${OFB_PLAYER_SITE:-}', using 'paotung' (paotung-template + backoffice)." >&2
+    *) echo "WARN: unknown PRODUCT_SITE='${PRODUCT_SITE:-}', using 'paotung' (paotung-template + backoffice)." >&2
        FRONTEND_REPOS=(paotung-template backoffice) ;;
   esac
 fi
@@ -97,8 +97,8 @@ run_frontends() {
   done
 }
 
-# ── 4. aggregator setup (AMB) ─────────────────────────────────────────────────
-run_aggregator_setup() {
+# ── 4. third-party setup (AMB aggregator) ─────────────────────────────────────
+run_thirdparty_setup() {
   # Wire the AMB aggregator product callback to THIS machine (ngrok -> :3000) so
   # a game is playable locally. The script is idempotent (skips when the IP is
   # already whitelisted and the callback already points here), starts its own
@@ -131,8 +131,8 @@ wait_backends_ready() {
     || warn "agent-webservice did not become ready — Phase 6 may fail."
 }
 
-# ── 6. fetch games ────────────────────────────────────────────────────────────
-fetch_games() {
+# ── 6. seed data (fetch games) ────────────────────────────────────────────────
+seed_data() {
   # Prime the platform's game catalogue via the server-to-server endpoint.
   # NB: this is a long, silent server-side fetch (the backend pulls the whole catalogue
   # from every aggregator). The old version paired quiet-only log() with `curl -s`, so in
@@ -151,7 +151,7 @@ fetch_games() {
 }
 
 # ── teardown (reverse order) ──────────────────────────────────────────────────
-down_aggregator_setup() {
+down_thirdparty_setup() {
   # Stop the ngrok tunnel that Phase 4 (amb_setup.sh) started. Only the tunnel
   # WE started is tracked (via the pidfile amb_setup.sh writes); a pre-existing
   # ngrok that amb_setup.sh merely reused was never tracked, so it is left alone.

@@ -28,7 +28,7 @@ tools:
   # The mcp__sonarqube entry is deliberately NOT listed statically here: a dead mcp__ reference
   # (the server is absent in a headless/worktree Workflow run) DEGRADES this agent's whole toolset
   # — it silently loses its Bash grants (scripts/vcs, scripts/tracker, sonar), which strands its
-  # findings in the return value (OFB-2141 §2.2). Same fix the performance-engineer already uses.
+  # findings in the return value (run-retro §2.2). Same fix the performance-engineer already uses.
   - Bash(sonar *)
   # The reporter owns the ticket: file your own Improvement tickets via /clarifying-ticket
   # (returns the real FM-<n>) — never leave a placeholder for a human.

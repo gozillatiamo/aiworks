@@ -112,7 +112,7 @@ function adjustBrightness(hex, percent) {
  */
 function updateDesignTokens(tokens, colors) {
   // Update brand name
-  const brandName = `ClaudeKit Marketing - ${colors.primary.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}`;
+  const brandName = colors.primary.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   tokens.brand = brandName;
 
   // Update primitive colors with new names
