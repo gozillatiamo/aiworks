@@ -612,15 +612,15 @@ scripts/aiworks config --dry-run</code></pre>
 
       <!-- run -->
       <div class="tab-panel" hidden>
-        <p>Starts a product's full local stack — a pass-through to <code>.superset/run.sh</code>: databases + migrations, backend, one web app / player site, and any product hooks (e.g. the AMB aggregator). Default product is <code>ofb-platform</code>.</p>
+        <p>Starts a product's full local stack — a pass-through to <code>.superset/run.sh</code>: databases + migrations, backends, frontends, and any product hooks (e.g. a third-party integration). Default: the one product file in <code>.superset/products/</code>.</p>
         <pre><code>./aiworks run                    # default product + default site
-./aiworks run --site ohanabet    # pick the player-site profile (paotung | ohanabet | all)
-./aiworks run -G                 # skip the fetch-games phase
+./aiworks run --site &lt;profile&gt;   # pick a frontend profile the product file defines
+./aiworks run -S                 # skip the seed-data phase
 ./aiworks run --verbose          # full step-by-step log</code></pre>
         <div class="callout" data-variant="info" data-block="callout">
           <div class="callout-title">ℹ️ Product-specific run options live in <code>.superset/products/&lt;product&gt;.sh</code></div>
-          <div>The phases and options (<code>--site</code>, port map, AMB) come from the product file, so a different product exposes its own. For the OFB local URLs and seeded accounts, see the workspace <code>README.md</code>.</div>
-          <script type="application/json" class="export-data">{"type":"callout","variant":"info","md":"**Product-specific run options live in `.superset/products/<product>.sh`** — the phases and options (`--site`, port map, AMB) come from the product file, so a different product exposes its own. For the OFB local URLs and seeded accounts, see the workspace `README.md`."}</script>
+          <div>The phases and options (<code>--site</code>, port map, hooks) come from the product file, so a different product exposes its own. For your local URLs and seeded accounts, see the workspace <code>README.md</code>.</div>
+          <script type="application/json" class="export-data">{"type":"callout","variant":"info","md":"**Product-specific run options live in `.superset/products/<product>.sh`** — the phases and options (`--site`, port map, hooks) come from the product file, so a different product exposes its own. For your local URLs and seeded accounts, see the workspace `README.md`."}</script>
         </div>
       </div>
 
@@ -637,7 +637,7 @@ scripts/aiworks config --dry-run</code></pre>
           {"label":"remove","md":"Deregisters a repo from `mani.d/`, `workspace.config.yaml`, and the workspace `.gitignore`. Clone stays on disk unless you add `--purge`.\n\n```\nscripts/aiworks remove your-api\nscripts/aiworks remove your-api --purge\nscripts/aiworks remove your-api --purge --force\n```\n\nℹ️ The `REPOS` map in `.claude/workflows/dev-cycle.js` is regenerated from `workspace.config.yaml`, so the repo drops out of the workflow mirror automatically."},
           {"label":"config","md":"Regenerates the `── CONFIG ──` mirror in `.claude/workflows/dev-cycle.js` straight from `workspace.config.yaml` — `TICKET_PREFIX`, `STATUS`, `AUTO_MERGE`, `AUTO_APPROVE_PLAN`, `PLAN_TO_HTML`, and the `REPOS` registry. Workflow scripts can't read the filesystem at runtime, so they keep this in-source copy.\n\n```\nscripts/aiworks config            # rewrite the block from the config\nscripts/aiworks config --dry-run  # print it, don't write\n```\n\n`add` / `remove` / `sync` all run this at the end — call it directly only after hand-editing a non-repo field."},
           {"label":"setup","md":"The first-run entry point. Pass-through to `.superset/setup.sh`: ensures host tooling (`jq`, `ngrok`, `glab`), runs `sync -y` to clone + onboard every declared repo, copies git-ignored local state (`.env` files, seeded DB), installs node deps, and starts the shared MCP services. Idempotent.\n\n```\n./aiworks setup\n```\n\nEnds with an ACTION REQUIRED list of repo `.env` files still needing values — fill those, then `run`."},
-          {"label":"run","md":"Starts a product's full local stack — pass-through to `.superset/run.sh`: databases + migrations, backend, one web app / player site, and product hooks (e.g. AMB). Default product `ofb-platform`.\n\n```\n./aiworks run                    # default product + site\n./aiworks run --site ohanabet    # player-site profile (paotung | ohanabet | all)\n./aiworks run -G                 # skip fetch-games\n./aiworks run --verbose          # full log\n```\n\nℹ️ Run options (`--site`, ports, AMB) come from `.superset/products/<product>.sh`. For OFB local URLs + seeded accounts, see the workspace `README.md`."},
+          {"label":"run","md":"Starts a product's full local stack — pass-through to `.superset/run.sh`: databases + migrations, backends, frontends, and product hooks. Default: the one product file in `.superset/products/`.\n\n```\n./aiworks run                    # default product + profile\n./aiworks run --site <profile>   # a frontend profile the product file defines\n./aiworks run -S                 # skip the seed-data phase\n./aiworks run --verbose          # full log\n```\n\nℹ️ Run options (`--site`, ports, hooks) come from `.superset/products/<product>.sh`. For your local URLs + seeded accounts, see the workspace `README.md`."},
           {"label":"teardown","md":"Stops the local stack and removes the cloned product repos — pass-through to `.superset/teardown.sh`. The inverse of `setup`.\n\n```\n./aiworks teardown\n```"}
         ]}
       </script>

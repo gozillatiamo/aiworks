@@ -10,7 +10,7 @@
 # 0. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
 #    itself (.code-workspace generation, VS Code settings merge) and the tracker/notify
 #    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
-#    phase's AMB aggregator (run.sh Phase 4 tunnels :3000 through it; macOS: Homebrew, Linux:
+#    phase's optional third-party hook (run.sh Phase 4 can tunnel a port through it; macOS: Homebrew, Linux:
 #    the official apt repo, else a static binary); and glab, the GitLab CLI the VCS adapter
 #    (scripts/vcs/) drives (Homebrew, else the official release tarball). Best-effort.
 # 1. `aiworks sync -y` clones + FULLY onboards every product repo declared under
@@ -20,7 +20,7 @@
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
 # 2. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
-#    .superset/.env) recursively, AND agent-db's seeded db-data Postgres cluster. Runs
+#    .superset/.env) recursively, AND every repo's seeded db-data Postgres cluster. Runs
 #    before the MCP services so they come up on real config + a seeded DB.
 # 3. Installs Node dependencies in every repo that has a package.json
 #    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this).
@@ -53,7 +53,7 @@ fi
 
 # ── 0. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
-# phase's AMB aggregator can tunnel :3000; glab (GitLab CLI) for the VCS adapter. Best-effort —
+# phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter. Best-effort —
 # guarded so a failure never aborts setup.
 log "Ensuring host tooling (jq, ngrok, glab)…"
 ensure_jq || true
@@ -76,10 +76,11 @@ scripts/aiworks sync "${sync_args[@]}"
 #     repo's + adapter's env AND .superset/.env (read by the MCP service containers in step 4).
 #     SUPERSET_ENV (default symlink) → symlink each at the root's (edit once, every worktree
 #     sees it), =copy for an independent per-worktree snapshot, or =skip to manage them yourself.
-#   • agent-db/db-data — the seeded local Postgres cluster the agent-db containers bind-mount
-#     (master :5432, shard-1 :5433, …); without it the local DB comes up empty. SUPERSET_DB_DATA
-#     (default symlink — instant, no ~1G copy, no sudo) → symlink the root's, =copy for an
-#     isolated per-worktree copy, or =skip to manage it yourself.
+#   • <repo>/db-data — a seeded local Postgres cluster a DB repo's containers bind-mount;
+#     without it the local DB comes up empty. Every <repo>/db-data dir found in the root
+#     workspace is provisioned. SUPERSET_DB_DATA (default symlink — instant, no big copy,
+#     no sudo) → symlink the root's, =copy for an isolated per-worktree copy, or =skip to
+#     manage it yourself.
 # Runs BEFORE the MCP services start so they come up on real config + a seeded DB, not defaults.
 # SUPERSET_ROOT_PATH is set by Superset to the root workspace path; the root stays the source of
 # truth (an existing file/link at the destination is replaced to match it).
@@ -123,68 +124,73 @@ if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; 
     log "$env_verb $env_count env file(s) from the root workspace."
   fi
 
-  # agent-db/db-data — the seeded local Postgres cluster (~1G, git-ignored). The agent-db
-  # containers bind-mount its subdirs (./db-data/master → :5432, shard-1 :5433, master-lotto,
-  # cache), so without it the local DB comes up empty. Provisioning mode → SUPERSET_DB_DATA
-  # (default: symlink). See the step-2 header above for the symlink/copy/skip trade-offs.
+  # <repo>/db-data — seeded local Postgres clusters (git-ignored). A DB repo's containers
+  # bind-mount its db-data subdirs, so without it the local DB comes up empty. Every
+  # <repo>/db-data dir found in the root workspace is provisioned here. Provisioning mode →
+  # SUPERSET_DB_DATA (default: symlink). See the step-2 header above for the trade-offs.
   db_mode="${SUPERSET_DB_DATA:-symlink}"
-  db_src="$root_ws/agent-db/db-data"
-  if [[ ! -d agent-db ]]; then
-    warn "agent-db not cloned here — skipping db-data provisioning."
-  elif [[ "$db_mode" == skip ]]; then
-    log "agent-db/db-data: SUPERSET_DB_DATA=skip — leaving it as-is."
-  elif [[ ! -d "$db_src" ]]; then
-    warn "No db-data in the root workspace ($db_src) — skipping the seeded-DB step."
-  elif [[ "$db_mode" == symlink ]]; then
-    # Point this worktree's db-data at the root's seeded cluster. Docker (Linux native) resolves
-    # the symlink when it sets up the bind mounts, so the containers read the root's PGDATA — no
-    # ~1G copy and no sudo to read the 0700 dirs. All worktrees + root then share ONE physical DB.
-    if [[ -L agent-db/db-data && "$(readlink agent-db/db-data)" == "$db_src" ]]; then
-      log "agent-db/db-data already symlinked to the root workspace ($db_src)."
-    else
-      # A real dir in the way must go first — likely root-owned (PGDATA = container uid), so its
-      # removal may need sudo. Best-effort; never abort setup.
-      if [[ -e agent-db/db-data && ! -L agent-db/db-data ]]; then
-        if ! rm -rf agent-db/db-data 2>/dev/null; then
-          if command -v sudo >/dev/null 2>&1; then
-            warn "agent-db/db-data: removing the existing per-worktree copy needs root (PGDATA owned by the container uid) — sudo may prompt…"
-            sudo rm -rf agent-db/db-data || warn "agent-db/db-data: could not remove the existing copy — remove it by hand, then re-run."
+  if [[ "$db_mode" == skip ]]; then
+    log "db-data: SUPERSET_DB_DATA=skip — leaving seeded DB clusters as-is."
+  else
+    for db_src in "$root_ws"/*/db-data; do
+      [[ -d "$db_src" ]] || continue
+      db_repo="$(basename "$(dirname "$db_src")")"
+      db_dst="$db_repo/db-data"
+      if [[ ! -d "$db_repo" ]]; then
+        warn "$db_repo not cloned here — skipping its db-data provisioning."
+      elif [[ "$db_mode" == symlink ]]; then
+        # Point this worktree's db-data at the root's seeded cluster. Docker (Linux native)
+        # resolves the symlink when it sets up the bind mounts, so the containers read the
+        # root's PGDATA — no big copy and no sudo to read the 0700 dirs. All worktrees + root
+        # then share ONE physical DB.
+        if [[ -L "$db_dst" && "$(readlink "$db_dst")" == "$db_src" ]]; then
+          log "$db_dst already symlinked to the root workspace ($db_src)."
+        else
+          # A real dir in the way must go first — likely root-owned (PGDATA = container uid),
+          # so its removal may need sudo. Best-effort; never abort setup.
+          if [[ -e "$db_dst" && ! -L "$db_dst" ]]; then
+            if ! rm -rf "$db_dst" 2>/dev/null; then
+              if command -v sudo >/dev/null 2>&1; then
+                warn "$db_dst: removing the existing per-worktree copy needs root (PGDATA owned by the container uid) — sudo may prompt…"
+                sudo rm -rf "$db_dst" || warn "$db_dst: could not remove the existing copy — remove it by hand, then re-run."
+              else
+                warn "$db_dst: a real copy is in the way and can't be removed (no sudo). Remove it by hand, or set SUPERSET_DB_DATA=copy."
+              fi
+            fi
+          fi
+          rm -f "$db_dst" 2>/dev/null   # drop any stale / wrong-target symlink
+          if [[ ! -e "$db_dst" ]] && ln -s "$db_src" "$db_dst"; then
+            log "$db_dst → $db_src (symlinked; shared with the root workspace)."
           else
-            warn "agent-db/db-data: a real copy is in the way and can't be removed (no sudo). Remove it by hand, or set SUPERSET_DB_DATA=copy."
+            warn "$db_dst: could not symlink to the root workspace (a real dir may remain). Remove it and re-run, or use SUPERSET_DB_DATA=copy."
           fi
         fi
-      fi
-      rm -f agent-db/db-data 2>/dev/null   # drop any stale / wrong-target symlink
-      if [[ ! -e agent-db/db-data ]] && ln -s "$db_src" agent-db/db-data; then
-        log "agent-db/db-data → $db_src (symlinked; shared with the root workspace)."
       else
-        warn "agent-db/db-data: could not symlink to the root workspace (a real dir may remain). Remove it and re-run, or use SUPERSET_DB_DATA=copy."
+        # copy mode — an ISOLATED per-worktree DB. Mirror with rsync (diffs only — cheap on
+        # re-run); cp -a as a fallback. Trailing "/" (rsync) and "/." (cp) copy the CONTENTS
+        # in so re-runs don't nest the dir.
+        [[ -L "$db_dst" ]] && rm -f "$db_dst"   # was a symlink → drop it before copying in
+        log "Copying $db_dst (seeded local DB) from the root workspace…"
+        mkdir -p "$db_dst"
+        # On LINUX, native Docker bind-mounts preserve the postgres CONTAINER uid/gid on the
+        # host: PGDATA is owned by uid ~999 mode 0700, so the host user can't read it (macOS
+        # Docker Desktop's VM file-sharing remaps to the host user, so this never bites there).
+        # A plain rsync/cp then fails with "Permission denied" (rsync exit 23) and the DB is
+        # left unseeded. Retry under sudo — `-a`/`-p` preserve uid/gid so THIS worktree's
+        # postgres container (same uid) can use the data. Best-effort: never abort setup.
+        db_cp() { if command -v rsync >/dev/null 2>&1; then rsync -a "$db_src/" "$db_dst/"; else cp -a "$db_src/." "$db_dst/"; fi; }
+        if db_cp 2>/dev/null; then
+          log "$db_dst is in place."
+        elif command -v sudo >/dev/null 2>&1; then
+          warn "$db_dst: host user can't read the source — Postgres' PGDATA is owned by the container uid (Linux Docker). Retrying with sudo (may prompt for your password)…"
+          if command -v rsync >/dev/null 2>&1; then sudo rsync -a "$db_src/" "$db_dst/"; else sudo cp -a "$db_src/." "$db_dst/"; fi \
+            && log "$db_dst is in place (copied with sudo)." \
+            || warn "$db_dst copy still failed. Copy it by hand (ideally with the $db_repo containers stopped):  sudo rsync -a \"$db_src/\" \"$PWD/$db_dst/\""
+        else
+          warn "$db_dst: permission denied and 'sudo' not available. Copy it by hand (root needed — PGDATA is owned by the container uid):  rsync -a \"$db_src/\" \"$PWD/$db_dst/\"  (run as root, or stop the $db_repo containers first)."
+        fi
       fi
-    fi
-  else
-    # copy mode — an ISOLATED per-worktree DB. Mirror with rsync (diffs only — cheap on re-run);
-    # cp -a as a fallback. Trailing "/" (rsync) and "/." (cp) copy the CONTENTS in so re-runs
-    # don't nest the dir.
-    [[ -L agent-db/db-data ]] && rm -f agent-db/db-data   # was a symlink → drop it before copying in
-    log "Copying agent-db/db-data (seeded local DB) from the root workspace…"
-    mkdir -p agent-db/db-data
-    # On LINUX, native Docker bind-mounts preserve the postgres CONTAINER uid/gid on the host:
-    # PGDATA (master/, shard-1/, master-lotto/, cache/) is owned by uid ~999 mode 0700, so the
-    # host user can't read it (macOS Docker Desktop's VM file-sharing remaps to the host user, so
-    # this never bites there). A plain rsync/cp then fails with "Permission denied" (rsync exit
-    # 23) and the DB is left unseeded. Retry under sudo — `-a`/`-p` preserve uid/gid so THIS
-    # worktree's postgres container (same uid) can use the data. Best-effort: never abort setup.
-    db_cp() { if command -v rsync >/dev/null 2>&1; then rsync -a "$db_src/" agent-db/db-data/; else cp -a "$db_src/." agent-db/db-data/; fi; }
-    if db_cp 2>/dev/null; then
-      log "agent-db/db-data is in place."
-    elif command -v sudo >/dev/null 2>&1; then
-      warn "agent-db/db-data: host user can't read the source — Postgres' PGDATA is owned by the container uid (Linux Docker). Retrying with sudo (may prompt for your password)…"
-      if command -v rsync >/dev/null 2>&1; then sudo rsync -a "$db_src/" agent-db/db-data/; else sudo cp -a "$db_src/." agent-db/db-data/; fi \
-        && log "agent-db/db-data is in place (copied with sudo)." \
-        || warn "agent-db/db-data copy still failed. Copy it by hand (ideally with the agent-db containers stopped):  sudo rsync -a \"$db_src/\" \"$PWD/agent-db/db-data/\""
-    else
-      warn "agent-db/db-data: permission denied and 'sudo' not available. Copy it by hand (root needed — PGDATA is owned by the container uid):  rsync -a \"$db_src/\" \"$PWD/agent-db/db-data/\"  (run as root, or stop the agent-db containers first)."
-    fi
+    done
   fi
 else
   # No separate root to copy from: this IS the root/main worktree (so the git-ignored state is
@@ -240,4 +246,4 @@ if [[ "${#ENV_TODO[@]}" -gt 0 ]]; then
   warn "ACTION REQUIRED — set the environment values in:"
   printf '      %s\n' "${ENV_TODO[@]}"
 fi
-conclude "Next: .superset/run.sh [product]   (default: ofb-platform)"
+conclude "Next: .superset/run.sh [product]"

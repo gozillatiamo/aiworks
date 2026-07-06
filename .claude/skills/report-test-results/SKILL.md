@@ -11,7 +11,7 @@ Turn a finished automation run into a short, readable verdict on the ticket — 
 
 ## 1. Resolve the ticket and gather the inputs
 
-- Resolve the ticket: `$ticket` (a key, e.g. `FM-9`/`OFB-123`) given → use it; already in context → reuse it; neither → ask for the key.
+- Resolve the ticket: `$ticket` (a key, e.g. `FM-9`/`APP-123`) given → use it; already in context → reuse it; neither → ask for the key.
 - **Test plan — the row source / reference:** read **`agent_logs/<FM>-testcases.md`**. Its BDD scenarios are the rows of the results table and define what each scenario *should* do (its `Then`). If it says **"Nothing to test"**, there are no results to report — say so and stop. Keep any **Regressions** list for the coverage note.
 - **Coverage context:** read **`agent_logs/<FM>-automation-plan.md`** if present, to know which scenarios were **Automatable / Partial / Manual-only** — so an un-run scenario is reported as *not automated*, not silently dropped or counted as a pass.
 - **Bug details:** read **`agent_logs/<FM>-bugs.md`** if present — the reproducible app bugs `coding-automate` logged. These populate the failure rows and the Failures section.

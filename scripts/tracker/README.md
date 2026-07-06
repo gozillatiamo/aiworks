@@ -3,7 +3,7 @@
 Provider-agnostic shell scripts that read and update a **ticket** in the team's issue
 tracker. The four entry scripts share one CLI surface; `lib.sh` dispatches to a
 provider implementation chosen by `TRACKER_PROVIDER` (`notion` | `jira`). Readers print
-**plain text** to stdout. A ticket key is `FM-9` / `OFB-123` / a bare number / a page id
+**plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare number / a page id
 / a tracker URL.
 
 | Script | Does |
@@ -33,7 +33,7 @@ a provider API directly:
 | `--link <TYPE>:<KEY>` (repeatable) | link the new issue to `<KEY>` | an issue link, new issue = outward subject | a relation (`NOTION_PROP_LINKS`) |
 
 The new issue is always the **outward (subject)** side of a link, so
-`--link Implements:OFB-123` reads "*\<new\> implements OFB-123*". On Jira an unknown
+`--link Implements:APP-123` reads "*\<new\> implements APP-123*". On Jira an unknown
 **component** is a loud failure (it lists the project's components) and an exact link type
 that's missing falls back to the **closest** name (e.g. `Implements` → `Implement`) with a
 note — neither is invented or silently skipped. Passing these flags to an *update* (a real
@@ -94,7 +94,7 @@ Requires `bash`, `curl`, and `jq`.
 ```sh
 # read
 ./get-ticket-details.sh  FM-9
-./get-ticket-comments.sh OFB-123
+./get-ticket-comments.sh APP-123
 ./get-ticket-comments.sh --deep FM-9        # Notion inline comments (no-op on Jira)
 
 # search (dedup) — provider-neutral flags
@@ -103,15 +103,15 @@ Requires `bash`, `curl`, and `jq`.
 
 # update — provider-neutral flags
 ./upsert-ticket-details.sh FM-9    --status Testing
-./upsert-ticket-details.sh OFB-123 --status "In Review" --priority High
+./upsert-ticket-details.sh APP-123 --status "In Review" --priority High
 ./upsert-ticket-details.sh new     --title "Encrypt DB at rest" --description "one-liner" --body-file spec.md
 ./add-ticket-comment.sh    FM-9    "Moving to Testing — plan attached."
-./add-ticket-comment.sh    OFB-123 < plan.md
-./upsert-ticket-details.sh OFB-123 --status Done --dry-run   # preview, don't send
+./add-ticket-comment.sh    APP-123 < plan.md
+./upsert-ticket-details.sh APP-123 --status Done --dry-run   # preview, don't send
 
 # create a QA sub-task under a parent (component validated, Implements link added)
-./upsert-ticket-details.sh new --parent OFB-123 --subtask \
-    --title "[QA][E2E] Sign-in" --component Cypress --link Implements:OFB-123 \
+./upsert-ticket-details.sh new --parent APP-123 --subtask \
+    --title "[QA][E2E] Sign-in" --component Cypress --link Implements:APP-123 \
     --body-file scenarios.md
 ```
 

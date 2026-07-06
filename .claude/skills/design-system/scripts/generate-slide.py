@@ -401,16 +401,16 @@ SLIDE_TEMPLATE = '''<!DOCTYPE html>
         }}
 
         /* Glow Effects */
-        .glow-coral {{
-            box-shadow: var(--primitive-shadow-glow-coral);
+        .glow-primary {{
+            box-shadow: var(--primitive-shadow-glow-primary);
         }}
 
-        .glow-purple {{
-            box-shadow: var(--primitive-shadow-glow-purple);
+        .glow-secondary {{
+            box-shadow: var(--primitive-shadow-glow-secondary);
         }}
 
-        .glow-mint {{
-            box-shadow: var(--primitive-shadow-glow-mint);
+        .glow-accent {{
+            box-shadow: var(--primitive-shadow-glow-accent);
         }}
     </style>
 </head>
@@ -669,11 +669,11 @@ def main():
             {
                 'type': 'title',
                 'badge': 'Investor Deck 2024',
-                'title': 'ClaudeKit Marketing',
-                'subtitle': 'Your AI marketing team. Always on.',
+                'title': 'Acme Analytics',
+                'subtitle': 'Your product story, told in one deck.',
                 'cta': 'Join Waitlist',
                 'secondary_cta': 'See Demo',
-                'company': 'ClaudeKit',
+                'company': 'Acme',
                 'date': 'December 2024'
             },
             {
@@ -685,7 +685,7 @@ def main():
                 'pain_2_desc': '15+ tools that don\'t talk to each other',
                 'pain_3_title': 'No Time to Think',
                 'pain_3_desc': 'Strategy suffers when execution consumes all hours',
-                'company': 'ClaudeKit',
+                'company': 'Acme',
                 'page': '2'
             },
             {
@@ -697,7 +697,7 @@ def main():
                 'feature_2_desc': 'Multi-channel orchestration with one command',
                 'feature_3_title': 'Analytics & Insights',
                 'feature_3_desc': 'Real-time optimization without the spreadsheets',
-                'company': 'ClaudeKit',
+                'company': 'Acme',
                 'page': '3'
             },
             {
@@ -709,7 +709,7 @@ def main():
                     {'value': '4.9', 'label': 'NPS Score'},
                     {'value': '50hrs', 'label': 'Saved/Week'}
                 ],
-                'company': 'ClaudeKit',
+                'company': 'Acme',
                 'page': '4'
             },
             {
@@ -723,15 +723,15 @@ def main():
                     {'label': 'Nov', 'value': 70, 'display': '$28K'},
                     {'label': 'Dec', 'value': 100, 'display': '$45K'}
                 ],
-                'company': 'ClaudeKit',
+                'company': 'Acme',
                 'page': '5'
             },
             {
                 'type': 'testimonial',
-                'quote': 'ClaudeKit replaced 3 tools and 2 contractors. Our content output tripled while costs dropped 60%.',
+                'quote': 'Acme replaced 3 tools and 2 contractors. Our output tripled while costs dropped 60%.',
                 'author': 'Sarah Chen',
                 'role': 'Head of Marketing, TechStartup',
-                'company': 'ClaudeKit',
+                'company': 'Acme',
                 'page': '6'
             },
             {
@@ -739,12 +739,12 @@ def main():
                 'headline': 'Ship campaigns while you sleep',
                 'subheadline': 'Early access available. Limited spots.',
                 'cta': 'Join the Waitlist',
-                'contact': 'hello@claudekit.ai',
-                'website': 'claudekit.ai'
+                'contact': 'hello@example.com',
+                'website': 'example.com'
             }
         ]
 
-        html = generate_deck(demo_slides, "ClaudeKit Marketing - Pitch Deck")
+        html = generate_deck(demo_slides, "Acme - Pitch Deck")
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = OUTPUT_DIR / f"demo-pitch-{datetime.now().strftime('%y%m%d')}.html"

@@ -13,7 +13,7 @@ Turn a ticket into a test plan a real end user could follow. **Plan only — nev
 
 **a. Read the ticket — the single source of truth.**
 
-- Resolve it: `$ticket` (a key, e.g. `FM-9` / `OFB-123`) given → use it. Already in context (e.g. an agent passed the ticket) → reuse it, don't re-fetch. Neither → ask the user for the key.
+- Resolve it: `$ticket` (a key, e.g. `FM-9` / `APP-123`) given → use it. Already in context (e.g. an agent passed the ticket) → reuse it, don't re-fetch. Neither → ask the user for the key.
 - Read the ticket with the tracker adapter (run from the workspace root — they print plain text to stdout and accept a full key, a bare number, a page id, or a tracker URL):
   - `scripts/tracker/get-ticket-details.sh <KEY>` — title, properties (Status, Priority, …), and the body / **acceptance criteria**.
   - `scripts/tracker/get-ticket-comments.sh <KEY>` — the ticket's comments (where the regression request lives). Add `--deep` to also pull inline/block-anchored comments (Notion) if you suspect one's hiding there.

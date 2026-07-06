@@ -41,7 +41,7 @@
 #                         product's repos sync; otherwise it is treated as a repo name and ONLY
 #                         that repo syncs (default: every repo of every product).
 #   --repo <name>         Only sync the repo(s) with this name — repeatable, or comma-separated
-#                         (e.g. --repo agent-db,paotung-template). Matches a repo's clone-dir name
+#                         (e.g. --repo your-app,your-tests). Matches a repo's clone-dir name
 #                         (the last URL segment, minus .git) or its `path:` override. Combine with
 #                         a <product> to scope the match within that product.
 #   --kind <kind>         Force the kind for ALL synced repos (overrides each entry's kind).
@@ -407,7 +407,7 @@ seed_image_gen_settings
 # ── SonarQube onboarding scaffold (quality_gate.provider: sonarqube) ─────────────
 # Read the provider once, then seed a minimal sonar-project.properties into each CODE repo so the
 # dev-cycle guardian gate resolves a real project instead of silently hitting "no project for this
-# repo" (OFB-2141 §2.4). No-op unless the provider is sonarqube; skips the test-suite repo (no
+# repo" (run-retro §2.4). No-op unless the provider is sonarqube; skips the test-suite repo (no
 # guardian gate); never clobbers an existing file or a sonar.projectKey already defined in
 # pom.xml / build.gradle(.kts) / package.json / .sonarlint/connectedMode.json.
 QG_PROVIDER="$(awk '

@@ -18,7 +18,7 @@
 #   tracker_add_comment   KEY DRY TEXT      — add one comment
 #   tracker_comments_for_block BLOCK_ID     — internal --deep worker (no-op for providers without it)
 #
-# A ticket KEY is provider-neutral: a full key (FM-9 / OFB-123), a bare number, or a
+# A ticket KEY is provider-neutral: a full key (FM-9 / APP-123), a bare number, or a
 # tracker URL/page id — each impl normalizes it.
 
 set -euo pipefail

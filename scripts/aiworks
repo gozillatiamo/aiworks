@@ -69,8 +69,8 @@ Examples:
   # fast path — declare repos under products: in workspace.config.yaml, then:
   aiworks sync                          # onboard every repo in the config
   aiworks sync your-product --dry-run   # preview just the your-product product
-  aiworks sync agent-db                 # onboard ONLY the agent-db repo (repo-name positional)
-  aiworks sync --repo agent-db,paotung-template   # …or several named repos
+  aiworks sync your-app                 # onboard ONLY the your-app repo (repo-name positional)
+  aiworks sync --repo your-app,your-tests   # …or several named repos
   # or onboard one repo imperatively (also writes it into the config):
   aiworks add --url git@github.com:your-org/your-api.git --product backend --lang go
   aiworks remove your-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
@@ -79,7 +79,7 @@ Examples:
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
   aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
-  aiworks run agent-db                  # …run only the named repo(s)
+  aiworks run your-app                  # …run only the named repo(s)
   aiworks teardown                      # exec .superset/teardown.sh
 EOF
 }

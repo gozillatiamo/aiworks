@@ -1,6 +1,6 @@
 ---
 name: qa-subtasks
-description: Create per-tool QA sub-tasks (Cypress / Newman / K6) under a parent ticket — BDD scenarios authored by a Senior QA Expert, each created as a child of the parent with the right Component and an Implements link. Goes through the tracker adapter (scripts/tracker/), provider-agnostic and headless-safe — never an Atlassian MCP/OAuth. Accepts an optional positional arg `parent-ticket-number` (e.g. `OFB-123`). Use when the user wants QA sub-tasks for a ticket, or as the QA step of /clarifying-ticket.
+description: Create per-tool QA sub-tasks (Cypress / Newman / K6) under a parent ticket — BDD scenarios authored by a Senior QA Expert, each created as a child of the parent with the right Component and an Implements link. Goes through the tracker adapter (scripts/tracker/), provider-agnostic and headless-safe — never an Atlassian MCP/OAuth. Accepts an optional positional arg `parent-ticket-number` (e.g. `APP-123`). Use when the user wants QA sub-tasks for a ticket, or as the QA step of /clarifying-ticket.
 argument-hint: "[parent-ticket-number] [tools: E2E API Load]"
 model: opus[1m]
 effort: high
@@ -63,7 +63,7 @@ in the description.
 
 ## 1. Choose which tools
 
-If the invocation already names the tools (e.g. "`/qa-subtasks OFB-123 E2E API`", or the
+If the invocation already names the tools (e.g. "`/qa-subtasks APP-123 E2E API`", or the
 calling step passed a selection), **use them directly — do not ask** (this is what keeps a
 headless run unattended). Otherwise, when interactive, `AskUserQuestion` with
 `multiSelect: true`:
