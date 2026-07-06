@@ -565,7 +565,7 @@ else
         .["search.useIgnoreFiles"] = false                       # VS Code search ignores .gitignore now…
         | .["search.exclude"] = ( (.["search.exclude"] // {})     # …so re-exclude the noise it used to hide
             + { "**/node_modules": true, "**/agent_logs": true, "**/.codegraph": true,
-                "**/.aiworks": true, "**/.git": true, "**/.env": true }
+                "**/.aiworks": true, "**/.git": true }
             + (reduce $ARGS.positional[] as $g ({}; .[$g] = true)) )
       ' --args ${vs_ex[@]+"${vs_ex[@]}"} < "$VS" > "$VS.tmp" 2>/dev/null && mv "$VS.tmp" "$VS"; then
     ok "updated .vscode/settings.json (search.useIgnoreFiles=false + $PATH_REL/ build excludes)"

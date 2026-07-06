@@ -12,8 +12,7 @@
     "**/coverage": true,
     "**/target": true,
     "**/.expo": true,
-    "**/.env": true,
-    "agent-webservice/target": false,
-    "commission-batch/target": false
+    "agent-webservice/target": true,
+    "commission-batch/target": true
   }
 }

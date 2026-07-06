@@ -172,10 +172,6 @@ products:
         lang: json 
         green: "The service is running with healthy"
 
-# Repo dependency edges (build/merge order) are decided per-ticket by the scoping
-# stage; a typical chain is backend → app → test-suite.
-  - id: ofb-platform
-    repos:
       - url: git@gitlab.com:bluepicode/ofb/commission-batch.git
         kind: backend
         desc: Monthly Rust batch job that calculates agency commission and posts a summary to Slack (prod-gated).
