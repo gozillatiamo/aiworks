@@ -2,6 +2,10 @@ httpd.pid
 # mac osx files
 .DS_Store
 
+# python bytecode caches (e.g. from skill scripts) — never committed (any depth)
+__pycache__/
+*.py[cod]
+
 # node dependencies — installed from package.json + lockfile, never committed (any depth)
 node_modules/
 
