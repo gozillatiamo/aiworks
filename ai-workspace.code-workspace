@@ -43,6 +43,10 @@
     {
       "name": "mock-agency-api",
       "path": "mock-agency-api"
+    },
+    {
+      "name": "commission-batch",
+      "path": "commission-batch"
     }
   ],
   "settings": {

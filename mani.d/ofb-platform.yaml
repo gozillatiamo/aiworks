@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  commission-batch:
+    desc: Monthly Rust batch job that calculates agency commission and posts a summary to Slack (prod-gated).
+    url: git@gitlab.com:bluepicode/ofb/commission-batch.git
+    path: ../commission-batch
+    tags: [ofb-platform, rust]
   mock-agency-api:
     desc: The mock API service that user for simulate the agency service for any site that using package S.
     url: git@gitlab.com:bluepicode/ofb/mock-agency-api.git
