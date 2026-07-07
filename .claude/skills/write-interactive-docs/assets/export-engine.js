@@ -23,9 +23,11 @@
  *   h1–h6, p, ul/ol/li (nested ok), table, pre>code, blockquote, hr,
  *   a, img, strong/b, em/i, code.
  *
- * Rich components (diagrams, charts, comparisons, tabs, callouts) can't be
- * reverse-engineered from their pixels, so each one carries a canonical export
- * representation in a hidden JSON island — the single source of truth for export:
+ * Rich components (diagrams, charts, comparisons, tabs, callouts, UI previews) can't
+ * be reverse-engineered from their pixels, so each one carries a canonical export
+ * representation in a hidden JSON island — the single source of truth for export.
+ * A plain-prose block can carry one too (data-block="prose"), so the visible copy can
+ * read plainly for a person while the island holds the fuller version an AI reads:
  *
  *   <figure data-block="diagram">
  *     ...visual...
@@ -220,7 +222,10 @@
           parts.push("**🧑‍⚖️ Human decisions (approved):**");
           parts.push(b.decisions.map((d) => {
             const where = d.section ? `**${d.section}** — ` : "";
-            const head = d.choice ? `chose **${d.choice}**` : "modified";
+            let head;
+            if (Array.isArray(d.choices) && d.choices.length) head = "chose " + d.choices.map((c) => `**${c}**`).join(", ");
+            else if (d.choice) head = `chose **${d.choice}**`;
+            else head = d.feedback ? "commented" : "modified";
             const note = d.note ? ` — ${d.note}` : "";
             return `- ${where}${head}${note}`;
           }).join("\n"));
@@ -231,6 +236,17 @@
 
       case "kpis":
         return (b.items || []).map((k) => `- **${k.value}** — ${k.label}`).join("\n");
+
+      case "preview": {
+        // A rendered UI mockup on the page; the export carries what an AI needs to
+        // rebuild it — a description and the mockup markup (or an image reference).
+        const lines = [];
+        if (b.title) lines.push(`**${b.title}**  _(UI preview)_`);
+        if (b.description) lines.push(b.description);
+        if (b.html) lines.push("```html\n" + String(b.html).trim() + "\n```");
+        else if (b.image) lines.push(`![${b.title || "preview"}](${b.image})`);
+        return lines.join("\n\n");
+      }
 
       default:
         // Unknown rich type: dump its markdown field, else JSON.

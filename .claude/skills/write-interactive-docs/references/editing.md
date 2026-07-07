@@ -36,6 +36,7 @@ is the *smallest* change that satisfies the request — everything else stays by
 | Add a section | Insert a new `<section data-section data-section-title data-section-id>` with its blocks + islands at the right spot. It auto-wires. |
 | Remove a section | Delete the whole `<section>…</section>`. |
 | Add/swap a component in a section | Add the block's HTML + author its island **first**, then the visual from the same data (**components.md**). |
+| Add/adjust a Thai translation | Set/edit `data-th` on the leaf element. If the doc isn't localized yet, add `data-i18n="en,th"` to `<main>` and inline `i18n.js` (**localization.md**). English (the export source) is untouched. |
 | Fix a bug in an engine | Replace the contents of the matching inlined `<script>` with the current asset file (`assets/export-engine.js` / `assets/diagram-interactions.js`). They're already inline-safe (`</script>` escaped). |
 
 ## When the existing doc wasn't made by this skill

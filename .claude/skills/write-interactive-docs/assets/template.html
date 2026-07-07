@@ -31,6 +31,9 @@
       --font-sans: "Inter", system-ui, sans-serif;
       --font-serif: "Lora", Georgia, serif;
       --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+      /* Thai view (localized docs only). For best glyphs add &family=Noto+Sans+Thai
+         to the font <link>; otherwise it falls back to a Thai-capable system face. */
+      --font-thai: "Noto Sans Thai", var(--font-sans);
 
       --color-bg:        #f7f8fb;
       --color-surface:   #ffffff;
@@ -142,6 +145,16 @@
     .pros li::marker { content: "✓ "; color: var(--c-success); }
     .cons li::marker { content: "✕ "; color: var(--c-danger); }
 
+    /* UI preview — a rendered mockup the human can SEE before deciding (design/UI choices) */
+    figure.preview { margin: 20px 0; background: var(--color-surface); border: 1px solid var(--color-border);
+      border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+    figure.preview .preview-bar { display: flex; gap: 6px; align-items: center; padding: 9px 13px;
+      background: var(--color-surface-2); border-bottom: 1px solid var(--color-border); }
+    figure.preview .preview-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--color-border); }
+    figure.preview .preview-bar .label { margin-left: 6px; font-size: 12px; color: var(--color-muted); }
+    figure.preview .preview-frame { width: 100%; height: 420px; border: 0; background: #fff; display: block; }
+    figure.preview figcaption { color: var(--color-muted); font-size: 14px; padding: 10px 14px; text-align: center; }
+
     /* implementation plan (AI-preview) */
     .plan { border: 1px dashed var(--color-primary); border-radius: var(--radius);
       background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); padding: 18px; margin: 18px 0; }
@@ -177,7 +190,12 @@
     data-plan-md="<path>"         → the AUTHORITATIVE markdown a later phase reads/executes
                                      (the Approve download replaces THIS file)
     data-plan-cmd="<command>"     → the command to re-run once approved (shown to the human)
-  Omit all three for a plain explainer or when auto_approve is on. -->
+  Omit all three for a plain explainer or when auto_approve is on.
+
+  LOCALIZATION (English default + Thai, optional): add data-i18n="en,th" to <main>,
+  inline assets/i18n.js at the bottom, and put data-th="<thai>" on LEAF readable
+  elements. A floating 🌐 EN／ไทย chip appears; exports stay English-only.
+  See references/localization.md. -->
 <body>
 <!-- Default scaffold = a plain explainer (no plan attributes). For a PLAN awaiting
      approval, add the three data-plan-* attributes from the comment above to <main>
@@ -187,7 +205,9 @@
   <header class="doc-hero">
     <div class="eyebrow">{{EYEBROW — e.g. ARCHITECTURE · v2}}</div>
     <h1>{{DOC_TITLE}}</h1>
-    <p>{{One-sentence plain-language summary of what this doc explains.}}</p>
+    <!-- data-th = the Thai display text (only active when data-i18n is set on <main>);
+         the English content stays the export source. See references/localization.md. -->
+    <p data-th="{{คำอธิบายสั้น ๆ ของเอกสารนี้}}">{{One-sentence plain-language summary of what this doc explains.}}</p>
   </header>
 
   <!-- ============ Each major idea = one <section data-section> ============ -->
@@ -262,6 +282,23 @@ flowchart LR
        {"name":"Consistency","values":["Eventual","Immediate"]}],
        "recommended":"Queue-based","rationale":"Resilience under load outweighs the eventual-consistency cost here."}
     </script>
+  </section>
+
+  <!-- A UI PREVIEW (include for a UI/design choice): a rendered mockup the human can
+       SEE. The <iframe srcdoc> renders it (HTML-escape the markup: &lt; &gt; &amp; &quot;);
+       the island's `html` carries the same markup for an AI. In plan-approval mode this
+       section's control becomes a "comments" box that feeds the approved plan. -->
+  <section class="doc-section" data-section data-section-title="New save button" data-section-id="preview-save">
+    <h2>New save button</h2>
+    <figure class="preview" data-block="preview">
+      <div class="preview-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">preview</span></div>
+      <iframe class="preview-frame" title="UI preview" style="height:180px"
+        srcdoc="&lt;div style='font-family:system-ui;display:grid;place-items:center;height:100%;background:#f7f8fb'&gt;&lt;button style='font:600 15px system-ui;color:#fff;background:#2f6df0;border:0;border-radius:10px;padding:12px 22px'&gt;Save&lt;/button&gt;&lt;/div&gt;"></iframe>
+      <figcaption>Primary CTA, moved above the fold. Look and decide, or comment below.</figcaption>
+      <script type="application/json" class="export-data">
+        {"type":"preview","title":"New save button","description":"Primary CTA moved above the fold, single accent colour.","html":"<button class=\"cta\">Save</button>"}
+      </script>
+    </figure>
   </section>
 
   <!-- LAST SECTION (conditional): Implementation Plan, written for an AI agent.
@@ -342,6 +379,16 @@ flowchart LR
      ============================================================ -->
 <script>
 /* PASTE assets/plan-approval.js HERE (plan-approval docs only) */
+</script>
+
+<!-- ============================================================
+     LOCALIZATION only: inline assets/i18n.js HERE, AFTER export-engine.js
+     (it wraps window.WID so exports stay English even in the Thai view).
+     It self-injects its CSS and does nothing unless data-i18n is set on
+     <main>, so it's safe to omit for English-only docs.
+     ============================================================ -->
+<script>
+/* PASTE assets/i18n.js HERE (localized docs only) */
 </script>
 
 </body>

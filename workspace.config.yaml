@@ -178,3 +178,10 @@ products:
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/seamless-api.git
+        kind: web-app 
+        desc: The Seamless platform for any agency that open a site for using exposed the seamless APIs, It's included the implementation documents and Interactive test suite UI. 
+        lang: next.js 
+        green: "run and tests passed successfully"
+        guardian_focus: "secrets, data-protection"

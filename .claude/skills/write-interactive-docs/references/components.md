@@ -6,18 +6,29 @@ it's a *rich* block, the `export-data` island that makes it exportable.
 
 ## The export contract (read this once)
 
+Every doc has **two readers**: a **person** reads the visible page, an **AI** reads
+the export. They want different things — a person wants plain, short, non-technical
+copy; an AI wants the full, exact version. So the visible text and the exported
+Markdown **need not be identical**. Write the page for the human; let the export carry
+the depth.
+
 The export engine reconstructs Markdown/JSON from the page. Two paths:
 
 1. **Plain HTML** (`p`, `h2`, `ul`, `table`, `pre`, `blockquote`, `hr`, links,
-   `strong`/`em`/`code`) is converted **automatically**. Write normal HTML.
-2. **Rich blocks** (diagram, chart, comparison, tabs, callout, steps, kpis)
+   `strong`/`em`/`code`) is converted **automatically** — here the visible text *is*
+   the export. Fine when the plain wording already suits both readers.
+2. **Rich blocks** (diagram, chart, comparison, tabs, callout, steps, kpis, preview)
    can't be read from pixels, so each carries a hidden
    `<script type="application/json" class="export-data">…</script>` child whose
    parent has `data-block="<type>"`. That island is the **single source of
-   truth** for export.
+   truth** for export. To decouple a plain paragraph too (simple on the page, fuller
+   for the AI), give it a `prose` island (see [Prose](#prose)).
 
-**Author the island first, then build the visual from the same data** so they
-never drift. If a rich block has no island, it won't export cleanly.
+**Author the island, then build the visual from it.** For blocks the browser *renders
+from* the island — **diagram** and **chart** — the two must match exactly (the verifier
+enforces it for diagrams). For every other block the island and the visual carry the
+**same facts** but may differ in wording: keep them consistent, not word-identical. A
+rich block with no island won't export cleanly.
 
 A section is `<section class="doc-section" data-section data-section-title="…"
 data-section-id="…">`. Section id/title power both the on-page export buttons
@@ -26,11 +37,13 @@ and the in-document anchors.
 ---
 
 ## Table of contents
+- [Prose](#prose) — plain visible copy, optional fuller AI copy
 - [Callout](#callout) — info / tip / warning / danger / success
 - [KPI row](#kpi-row) — headline numbers
 - [Table](#table) — plain auto-exporting tabular data
 - [Tabs](#tabs) — platform / variant switches (iOS vs Android, etc.)
 - [Comparison](#comparison) — options weighed → a recommendation
+- [UI preview](#ui-preview) — a rendered mockup for a design decision
 - [Diagram](#diagram) — see also references/diagrams.md
 - [Chart](#chart) — quantitative data (Chart.js)
 - [Steps / Implementation Plan](#steps--implementation-plan)
@@ -38,6 +51,23 @@ and the in-document anchors.
 - [Accordion / details](#accordion)
 
 ---
+
+<a id="prose"></a>
+## Prose
+Normal paragraphs need nothing — write `<p>…</p>` and they export as-is. Reach for a
+prose **island** only when the two readers want different depth: keep the visible
+sentence plain and short for a person, and carry the fuller, technical version for the
+AI in the island. Same meaning, two voices.
+```html
+<div data-block="prose">
+  <p>Saving is instant — you never wait for the server.</p>
+  <script type="application/json" class="export-data">
+    {"type":"prose","md":"Writes are enqueued client-side and acknowledged optimistically; the worker persists them asynchronously, so the UI never blocks on the DB round-trip."}
+  </script>
+</div>
+```
+The visible `<p>` is what people read; the island `md` is what the Markdown/JSON export
+(and any AI reading it) gets.
 
 ## Callout
 Use for asides: a tip, a gotcha, a danger. Variant sets the colour + icon.
@@ -119,6 +149,30 @@ clean criterion×option table ending in `✅ Recommended: …`.
 </section>
 ```
 
+<a id="ui-preview"></a>
+## UI preview
+**Include whenever the decision is about UI or design.** Don't describe a screen in
+words and ask the human to imagine it — *show* it, so they can look and decide. Render
+the mockup in a sandboxed `<iframe srcdoc>` (its CSS can't leak into the doc); the
+island carries the same markup as `html` so an AI reading the export can rebuild it.
+```html
+<figure class="preview" data-block="preview">
+  <div class="preview-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  <iframe class="preview-frame" title="UI preview"
+    srcdoc="&lt;div style='padding:24px'&gt;&lt;button class='cta'&gt;Pay now&lt;/button&gt;&lt;/div&gt;"></iframe>
+  <figcaption>Primary CTA above the fold. Look and decide, or comment below.</figcaption>
+  <script type="application/json" class="export-data">
+    {"type":"preview","title":"Checkout CTA","description":"Primary action moved above the fold; single-column form.",
+     "html":"<button class=\"cta\">Pay now</button>"}
+  </script>
+</figure>
+```
+- **HTML-escape** the `srcdoc` markup (`&lt; &gt; &amp; &quot;`) — it's an attribute.
+  Use `image` instead of `html` in the island to preview a static asset (`![…](src)`).
+- In **[plan-approval mode](#plan-approval-mode)** a section with a preview gets a
+  **comments** box (not a decision picker) so the human can note adjustments — spacing,
+  copy, colour — and those comments flow into the approved plan.
+
 ## Diagram
 The workhorse — see **references/diagrams.md** for choosing the right kind and
 the Mermaid recipes. Skeleton:
@@ -172,12 +226,18 @@ by both humans and LLMs.
 ## Steps / Implementation Plan
 Ordered, actionable steps. **Include an "Implementation Plan" as the doc's last
 section whenever it proposes something to be built** (a change, feature, or solution
-an agent/engineer will execute); skip it for pure explainers. Write it *for an AI to
-preview and execute*: each step names the concrete **file/component target** to touch
-and what to change there (be specific — `lib/infra/queue.dart`, not "the backend"),
-plus the **acceptance criteria** that prove it's done and any risky/ordering notes.
-The `steps` block exports cleanly — JSON becomes a hand-off task list, Markdown a
-paste-ready prompt.
+an agent/engineer will execute); skip it for pure explainers.
+
+The [two-readers](#the-export-contract-read-this-once) split matters most **here**. The
+visible `.plan` list may read as a short, human-friendly summary — but the **`steps`
+island is the authoritative implementation plan**, and it must be the *intensive,
+step-by-step brief an AI executes with zero ambiguity*: every step names the concrete
+**file/component target** (be specific — `lib/infra/queue.dart`, not "the backend"),
+the **exact change** to make there, the **acceptance criteria** that prove it's done,
+and any **ordering/risk** notes. The approved plan markdown is rebuilt from this island
+(SKILL.md → "Plans vs. documents"), so a thin island leaves the executing agent
+guessing — never let it be less detailed than the plan the next phase needs. JSON
+becomes a hand-off task list; Markdown a paste-ready implementation prompt.
 ```html
 <div class="plan" data-block="steps">
   <ol>
@@ -223,7 +283,9 @@ silently dropped at build time.
   *pick an option*, or *write a modification* for the implementer. Options are
   auto-derived from a [comparison](#comparison) in that section (its `options`,
   defaulting to `recommended`), so a "weigh the options" section becomes a real
-  choose-one control for free.
+  choose-one (radio) control for free.
+- A section with a [UI preview](#ui-preview) instead gets a **comments** box, so the
+  human can note what to adjust in the design — those comments join the approved plan.
 - Writes each change **live** into the plan island's `decisions` array (the export
   source of truth) and mirrors it in a "Human decisions" block inside the plan — so
   the plan reflects the human's intent in real time.
@@ -242,16 +304,35 @@ The exported `steps` block leads with the approved decisions, then the original 
 ```
 
 **Pose a specific question** (optional) by adding a `decision-data` island to a section
-— it overrides the auto-derived control:
+— it overrides the auto-derived control. Set `"type":"multi"` for a **pick-many
+(checkbox)** control; omit it (or `"single"`) for **pick-one (radio)**. `default` is
+the pre-checked value — an array for `multi`.
 ```html
 <section class="doc-section" data-section data-section-title="Write path" data-section-id="write-path">
   …
+  <!-- pick-one -->
   <script type="application/json" class="decision-data">
     {"question":"Which write path for v1?","options":["Queue-based","Synchronous"],"default":"Queue-based"}
   </script>
 </section>
+
+<section class="doc-section" data-section data-section-title="Launch platforms" data-section-id="platforms">
+  …
+  <!-- pick-many -->
+  <script type="application/json" class="decision-data">
+    {"question":"Which platforms ship in v1?","type":"multi",
+     "options":["iOS","Android","Web"],"default":["iOS","Android"]}
+  </script>
+</section>
 ```
-Decision controls are pure UI (`div`/`label`/`select`/`textarea`/`button`) the export
+The human's picks land in the approved plan's `decisions` — pick-one as `choice`,
+pick-many as `choices`, any note as `note`:
+```markdown
+- **Write path** — chose **Synchronous** — start simple; revisit if load grows
+- **Launch platforms** — chose **iOS**, **Web**
+- **New save button** — commented — nudge it 8px down; use the accent colour
+```
+Decision controls are pure UI (`div`/`label`/`input`/`textarea`/`button`) the export
 engine ignores, so they never leak into the Markdown — only the island's `decisions`
 field does.
 

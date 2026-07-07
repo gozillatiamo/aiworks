@@ -180,6 +180,15 @@ const REPOS = {
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
+  'seamless-api': {
+    path: 'seamless-api', kind: 'web-app',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'run and tests passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 

@@ -47,6 +47,10 @@
     {
       "name": "commission-batch",
       "path": "commission-batch"
+    },
+    {
+      "name": "seamless-api",
+      "path": "seamless-api"
     }
   ],
   "settings": {

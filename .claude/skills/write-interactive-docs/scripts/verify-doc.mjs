@@ -154,12 +154,45 @@ if (planRoot) {
     try {
       if (planData) {
         const probe = JSON.parse(JSON.stringify(planData));
-        probe.decisions = [{ section: "Probe", choice: "Option B", note: "verifier probe" }];
+        probe.decisions = [
+          { section: "Probe", choice: "Option B", note: "verifier probe" },     // pick-one
+          { section: "Multi", choices: ["Alpha", "Gamma"] },                      // pick-many
+          { section: "UI", note: "tighten spacing", feedback: true }             // preview comments
+        ];
         const md = w2.WID.pageMd({ title: "t", sections: [{ id: "p", title: "Implementation Plan", blocks: [probe] }] });
-        ok(/Human decisions/.test(md) && /Option B/.test(md),
-          "approved decisions render into the exported plan markdown");
+        ok(/Human decisions/.test(md) && /Option B/.test(md) &&
+           /\*\*Alpha\*\*/.test(md) && /\*\*Gamma\*\*/.test(md) && /commented/.test(md),
+          "approved decisions render into the exported plan markdown (pick-one, pick-many, comments)");
       }
     } catch (e) { ok(false, "approved decisions render into the exported plan markdown — " + e.message.split("\n")[0]); }
+  }
+}
+
+/* LOCALIZATION gate — only when the doc opts in (data-i18n on the root). Confirms the
+ * EN/TH toggle works AND enforces the contract: Thai is display-only, so an export taken
+ * while Thai is on screen must contain ZERO Thai characters (nothing leaks into the .md
+ * an AI reads). */
+const i18nRoot = PD.querySelector("[data-doc][data-i18n]");
+if (i18nRoot) {
+  console.log("\nLocalization (EN/TH):");
+  const THAI = /[฀-๿]/;
+  ok([...PD.querySelectorAll("[data-th]")].length > 0, "at least one element carries a Thai translation (data-th)");
+  ok(/WIDi18n/.test(rawDoc), "i18n.js is inlined (after export-engine.js)");
+  if (w2) {
+    ok(typeof w2.WIDi18n === "object" && w2.WIDi18n !== null, "i18n engine initialises");
+    ok(w2.WIDi18n && w2.WIDi18n.lang === "en", "default language is English");
+    try {
+      // Scope Thai checks to the doc CONTENT (inside <main>), not <body> — the chip's own
+      // "ไทย" label lives outside <main>, so it would falsely satisfy a body-wide check.
+      const main = w2.document.querySelector("[data-doc][data-i18n]");
+      ok(main && !THAI.test(main.textContent || ""), "English view shows no Thai in the content");
+      if (w2.WIDi18n) w2.WIDi18n.setLang("th");
+      ok(main && THAI.test(main.textContent || ""), "switching to Thai renders Thai text in the content");
+      const thMd = w2.WID ? w2.WID.pageMd(w2.WID.pageModel()) : "";
+      ok(thMd.length > 0 && !THAI.test(thMd),
+        "export stays English-only even while Thai is displayed (no Thai leaks into the .md)");
+      if (w2.WIDi18n) w2.WIDi18n.setLang("en");
+    } catch (e) { ok(false, "localization toggle/export contract — " + e.message.split("\n")[0]); }
   }
 }
 

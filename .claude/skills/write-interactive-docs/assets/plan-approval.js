@@ -24,8 +24,11 @@
  * that Markdown. This engine closes that loop:
  *
  *   1. Each section gets a lightweight Decision control — "accept as proposed", pick
- *      an option (auto-derived from a comparison in the section, or a decision-data
- *      island you author), or write a free-text modification for the implementer.
+ *      an option (pick-one via radios, or pick-many via checkboxes when the
+ *      decision-data island sets "type":"multi"), auto-derived from a comparison in
+ *      the section or a decision-data island you author, or write a free-text
+ *      modification. A section containing a UI preview becomes a "comments" box so the
+ *      human can note adjustments to the design.
  *   2. Every change is written LIVE into the Implementation Plan island's `decisions`
  *      array (the export single-source-of-truth) and mirrored in a visible
  *      "Human decisions" block — so the plan reflects the human's intent in real time.
@@ -149,18 +152,31 @@
 
   /* ---- inject a Decision control on every reviewable section ------------ */
   function optionsForSection(sec) {
+    // A UI preview turns this section's control into a comments/feedback box.
+    var preview = !!(sec.matches('[data-block="preview"]') || sec.querySelector('[data-block="preview"]'));
     // 1) an explicit decision-data island wins.
     var dd = islandOf(sec, "decision-data") ||
       (sec.querySelector('[data-block] > script.decision-data') &&
         islandOf(sec.querySelector("[data-block]"), "decision-data"));
-    if (dd) return { question: dd.question || "How should this be handled?", options: dd.options || [], def: dd.default || "" };
-    // 2) else derive from a comparison block in the section.
+    if (dd) {
+      var multi = dd.type === "multi" || dd.multi === true; // pick-many (checkboxes) vs pick-one (radios)
+      return {
+        question: dd.question || (preview ? "Any changes to this UI?" : "How should this be handled?"),
+        options: dd.options || [],
+        def: dd.default != null ? dd.default : (multi ? [] : ""),
+        multi: multi, feedback: preview
+      };
+    }
+    // 2) else derive from a comparison block in the section (always pick-one).
     var cmp = sec.matches('[data-block="comparison"]') ? sec : sec.querySelector('[data-block="comparison"]');
     if (cmp) {
       var c = islandOf(cmp, "export-data");
-      if (c && c.options) return { question: c.title || "Which option do you choose?", options: c.options, def: c.recommended || "" };
+      if (c && c.options) return { question: c.title || "Which option do you choose?", options: c.options, def: c.recommended || "", multi: false, feedback: preview };
     }
-    return { question: "Accept this section as proposed, or modify it?", options: [], def: "" };
+    return {
+      question: preview ? "Any changes to this UI? Add comments below." : "Accept this section as proposed, or modify it?",
+      options: [], def: "", multi: false, feedback: preview
+    };
   }
 
   function buildDecision(sec) {
@@ -168,7 +184,13 @@
     var title = sec.getAttribute("data-section-title") ||
       (sec.querySelector("h2,h3") && sec.querySelector("h2,h3").textContent.trim()) || "Section";
     var spec = optionsForSection(sec);
-    decisions[id] = { sectionTitle: title, question: spec.question, choice: "", note: "", modified: false };
+    var defArr = Array.isArray(spec.def) ? spec.def : [];
+    function isProposed(o) { return spec.multi ? defArr.indexOf(o) >= 0 : o === spec.def; }
+    decisions[id] = {
+      sectionTitle: title, question: spec.question,
+      choice: "", choices: spec.multi ? defArr.slice() : [], defaults: spec.multi ? defArr.slice() : [],
+      note: "", modified: false, multi: !!spec.multi, feedback: !!spec.feedback
+    };
 
     var wrap = document.createElement("details");
     wrap.className = "wid-decision";
@@ -176,8 +198,10 @@
 
     var head = document.createElement("summary");
     head.className = "wid-decision-head";
-    head.innerHTML = '<span>🤔</span><span class="wid-decision-label">Your decision</span>' +
-      '<span class="wid-decision-status">Accepted as proposed</span><span class="wid-decision-caret">▾</span>';
+    head.innerHTML = '<span>' + (spec.feedback ? "💬" : "🤔") + '</span>' +
+      '<span class="wid-decision-label">' + (spec.feedback ? "Your feedback" : "Your decision") + '</span>' +
+      '<span class="wid-decision-status">' + (spec.feedback ? "No comments" : "Accepted as proposed") + '</span>' +
+      '<span class="wid-decision-caret">▾</span>';
     wrap.appendChild(head);
 
     var body = document.createElement("div");
@@ -193,20 +217,25 @@
       opts.className = "wid-decision-opts";
       spec.options.forEach(function (o) {
         var lab = document.createElement("label");
-        var r = document.createElement("input");
-        r.type = "radio"; r.name = radioName; r.value = o;
-        if (o === spec.def) r.checked = true;
-        lab.appendChild(r);
-        lab.appendChild(document.createTextNode(o + (o === spec.def ? "  (proposed)" : "")));
+        var inp = document.createElement("input");
+        inp.type = spec.multi ? "checkbox" : "radio";
+        if (!spec.multi) inp.name = radioName;
+        inp.value = o;
+        if (isProposed(o)) inp.checked = true;
+        lab.appendChild(inp);
+        lab.appendChild(document.createTextNode(o + (isProposed(o) ? "  (proposed)" : "")));
         opts.appendChild(lab);
-        r.addEventListener("change", function () { onChoice(id, o, spec.def); });
+        if (spec.multi) inp.addEventListener("change", function () { onToggle(id, o, inp.checked); });
+        else inp.addEventListener("change", function () { onChoice(id, o, spec.def); });
       });
       body.appendChild(opts);
     }
 
     var note = document.createElement("textarea");
     note.className = "wid-decision-note";
-    note.placeholder = "Modify the approach, refine the wording, or leave a note for whoever implements this…";
+    note.placeholder = spec.feedback
+      ? "Comments — what to adjust in this UI: layout, copy, colours, spacing…"
+      : "Modify the approach, refine the wording, or leave a note for whoever implements this…";
     note.addEventListener("input", function () { onNote(id, note.value); });
     body.appendChild(note);
 
@@ -216,10 +245,15 @@
     reset.type = "button"; reset.className = "wid-decision-reset"; reset.textContent = "Reset to proposed";
     reset.addEventListener("click", function () {
       note.value = "";
-      var checked = wrap.querySelector('input[type=radio][value="' + cssEsc(spec.def) + '"]');
-      if (checked) checked.checked = true;
-      decisions[id].choice = ""; decisions[id].note = ""; decisions[id].modified = false;
-      sync();
+      if (spec.multi) {
+        wrap.querySelectorAll("input[type=checkbox]").forEach(function (cb) { cb.checked = isProposed(cb.value); });
+        decisions[id].choices = defArr.slice();
+      } else {
+        var checked = wrap.querySelector('input[type=radio][value="' + cssEsc(spec.def) + '"]');
+        if (checked) checked.checked = true;
+        decisions[id].choice = "";
+      }
+      decisions[id].note = ""; recompute(id); sync();
     });
     actions.appendChild(reset);
     body.appendChild(actions);
@@ -229,7 +263,14 @@
   }
 
   function onChoice(id, value, def) {
-    decisions[id].choice = (value === def) ? "" : value; // only record a DEVIATION from the proposal
+    decisions[id].choice = (value === def) ? "" : value; // pick-one: record only a DEVIATION from the proposal
+    recompute(id);
+    sync();
+  }
+  function onToggle(id, value, checked) { // pick-many: keep the current selection set
+    var arr = decisions[id].choices, i = arr.indexOf(value);
+    if (checked && i < 0) arr.push(value);
+    if (!checked && i >= 0) arr.splice(i, 1);
     recompute(id);
     sync();
   }
@@ -238,9 +279,15 @@
     recompute(id);
     sync();
   }
+  function sameSet(a, b) {
+    if (a.length !== b.length) return false;
+    var sb = b.slice().sort();
+    return a.slice().sort().every(function (x, i) { return x === sb[i]; });
+  }
   function recompute(id) {
     var d = decisions[id];
-    d.modified = !!(d.choice || d.note);
+    var changed = d.multi ? !sameSet(d.choices, d.defaults) : !!d.choice;
+    d.modified = !!(changed || d.note);
   }
 
   /* ---- write decisions into the plan island + the visible mirror -------- */
@@ -248,7 +295,8 @@
     return Object.keys(decisions).map(function (id) {
       var d = decisions[id];
       if (!d.modified) return null;
-      return { section: d.sectionTitle, choice: d.choice || "", note: d.note || "" };
+      return { section: d.sectionTitle, choice: d.choice || "",
+        choices: d.multi ? d.choices.slice() : [], note: d.note || "", feedback: !!d.feedback };
     }).filter(Boolean);
   }
 
@@ -265,8 +313,11 @@
       var d = decisions[id];
       var pill = w.querySelector(".wid-decision-status");
       w.classList.toggle("is-modified", !!(d && d.modified));
-      if (pill) pill.textContent = d && d.modified
-        ? (d.choice ? "Chose: " + d.choice : "Modified") : "Accepted as proposed";
+      if (!pill) return;
+      if (!d || !d.modified) pill.textContent = d && d.feedback ? "No comments" : "Accepted as proposed";
+      else if (d.multi && d.choices.length) pill.textContent = "Chose " + d.choices.length;
+      else if (d.choice) pill.textContent = "Chose: " + d.choice;
+      else pill.textContent = d.feedback ? "Commented" : "Modified";
     });
   }
 
@@ -285,7 +336,10 @@
       return;
     }
     var items = list.map(function (d) {
-      var head = d.choice ? "chose <strong>" + esc(d.choice) + "</strong>" : "modified";
+      var head;
+      if (d.choices && d.choices.length) head = "chose <strong>" + d.choices.map(esc).join("</strong>, <strong>") + "</strong>";
+      else if (d.choice) head = "chose <strong>" + esc(d.choice) + "</strong>";
+      else head = d.feedback ? "commented" : "modified";
       var note = d.note ? " — " + esc(d.note) : "";
       return "<li><strong>" + esc(d.section) + "</strong> — " + head + note + "</li>";
     }).join("");

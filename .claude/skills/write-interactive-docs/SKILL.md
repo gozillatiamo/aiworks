@@ -32,14 +32,23 @@ export of the whole page or any section to Markdown/JSON for an AI. Two modes �
 rebuild). Pick the mode from the request before doing anything.
 
 ## The bar
-- **Plain language** — short sentences, common words; explain a term on first use.
+- **Plain language** — short sentences, common words a non-technical reader gets;
+  explain a term on first use.
+- **Two readers** — the visible page is for a **person** (plain, concise); each export
+  island is for an **AI** (the full, exact version). Same facts, different voice — they
+  need not read word-for-word alike. (Diagrams/charts are the exception: the visual is
+  rendered *from* the island, so there they're identical.)
 - **Show, don't tell** — lead each idea with the best visual (diagram / chart / table
   / tabs / callout), then prose; never a wall of text.
 - **Interactive diagrams** — inlining `diagram-interactions.js` gives every diagram
   zoom/pan + hover-spotlight; declare clickable nodes (jump to a section / open a
   detail drawer / link) and an optional guided walkthrough where exploring helps.
 - **Themed, never plain** — wear the project's colours/font/vibe; black-on-white is a failure.
-- **Decision-ready** — when options are weighed, end with a comparison that makes the call obvious.
+- **Decision-ready** — when options are weighed, end with a comparison that makes the
+  call obvious; in a plan awaiting approval, offer the choice as a **pick-one (radio)**
+  or **pick-many (checkbox)** control whose result is written into the approved plan.
+- **See UI before deciding** — for a UI/design choice, show a rendered **preview** the
+  human can look at, with a **comments** box to note adjustments (both feed the plan).
 - **AI-friendly exports** — every section + the whole page → clean MD/JSON, download or copy.
 
 ## Mode A — build a new doc
@@ -54,14 +63,19 @@ rebuild). Pick the mode from the request before doing anything.
 4. **Assemble** from **assets/template.html**; inline both engines into their marked
    `<script>` slots (`export-engine.js`, `diagram-interactions.js`) so it stays one
    file. For each rich block, write its `export-data` **island first**, then build the
-   visual from the same data — the export is reconstructed from the island, so they
-   must stay in sync.
+   visual from it — the export is reconstructed from the island. Diagrams/charts are
+   *rendered from* the island, so the two must match exactly; for every other block the
+   visible copy stays plain for the reader while the island carries the fuller AI
+   version (same facts — see **references/components.md → the export contract**).
 5. **Conditionals:** add a **comparison** section when the doc weighs options (mark the
-   Recommended), and an **Implementation Plan** as the last section when something is
-   to be built (ordered steps with real file targets + acceptance criteria). Both are
+   Recommended), a **UI preview** when a choice is about UI/design (show it, don't
+   describe it), and an **Implementation Plan** as the last section when something is
+   to be built (ordered steps with real file targets + acceptance criteria). All are
    specified in **references/components.md**. If the doc IS a plan (it has an
    Implementation Plan), also follow **"Plans vs. documents"** below — it changes what
-   you must emit and whether the human approves in-page.
+   you must emit and whether the human approves in-page. If the doc must be **bilingual**
+   (English default + a Thai display toggle), add the language layer → **references/
+   localization.md** (exports stay English-only).
 6. **Verify, then hand over** — see below.
 
 ## Mode B — update an existing doc
@@ -82,7 +96,14 @@ verified. But when the doc is a **plan** — it ends in an Implementation Plan b
 something will be built from it — the HTML is *not* the thing that gets executed. A
 later phase (e.g. the dev-cycle re-run with `--approve-plan`) reads a **markdown**
 file, never the page. Treat that markdown as the real artifact and the HTML as the
-human's reading-and-deciding surface over it. Two rules and one mode follow from that.
+human's reading-and-deciding surface over it. This is the **two readers** split at its
+sharpest: the **page** explains the plan to a person in plain language, while the
+**markdown** is the executing agent's brief and must be the *intensive, unambiguous,
+step-by-step implementation plan* — exact file/component targets, the change per step,
+acceptance criteria, and ordering/risks — so the agent is never left guessing *how* to
+build it. The markdown is rebuilt from the plan's `steps` island, so write that island
+to this bar (the visible plan may summarize; the island may not). Two rules and one
+mode follow.
 
 **1 — A plan ALWAYS has a markdown twin, even when `to_html` is on.** `to_html` adds
 the HTML; it never *replaces* the markdown. So whenever you produce a plan as HTML,
@@ -92,10 +113,11 @@ yourself next to the `.html` (same basename, `.md`) before handing over. The HTM
 export buttons reconstruct the same markdown, but a later phase shouldn't have to open
 a browser to get it — the file must be on disk.
 
-**2 — Downstream reads the markdown, not the HTML.** Keep the two in sync, and never
-point a build/approve step at the `.html`. The HTML is human-only. Make this concrete
-by setting `data-plan-md` (below) to the exact markdown path the next phase reads, so
-the in-page Approve writes back to that same file.
+**2 — Downstream reads the markdown, not the HTML.** Keep the two consistent — the page
+may read plainer, but the markdown must stay the full, intensive step-by-step plan —
+and never point a build/approve step at the `.html`. The HTML is human-only. Make this
+concrete by setting `data-plan-md` (below) to the exact markdown path the next phase
+reads, so the in-page Approve writes back to that same file.
 
 **The mode — in-page approval when `planning.auto_approve` is false.** When a human
 must sign off before the plan is built, turn the plan doc into an approval surface so
@@ -109,8 +131,10 @@ at build time). Set three attributes on the page root and inline
       data-plan-cmd="/dev-cycle FM-12 --approve-plan">                  <!-- the command to re-run, shown to the human -->
 ```
 With that, the engine (no extra authoring): gives every section a **Decision** control
-(accept / pick an option / write a modification — options auto-derived from a
-comparison in the section), writes each change **live** into the Implementation Plan
+(accept / pick an option — pick-one radios or pick-many checkboxes / write a
+modification — options auto-derived from a comparison in the section, or a
+`decision-data` island you author; a section with a UI **preview** gets a **comments**
+box instead), writes each change **live** into the Implementation Plan
 (its `decisions` island + a visible "Human decisions" block — yes, real-time, it's all
 one page), and adds an **✅ Approve & download plan** button to the plan section. On
 approve it serializes the current plan (decisions included) to markdown and downloads
@@ -142,22 +166,27 @@ to be built; exports work (click "↓ JSON" → a structured tree); single file,
 responsive, readable contrast. **If it's a plan:** the markdown twin exists on disk
 (see "Plans vs. documents"); and in approval mode (`data-plan-approval` set) the page
 shows per-section Decision controls + an Approve button, `data-plan-md` points at that
-markdown, and `plan-approval.js` is inlined — the verifier checks this wiring. Save as
-`<topic>.html` (kebab-case — alongside the source repo's `docs/` when documenting code,
-else where the user asked). Tell the user the path and the export buttons (page toolbar
-top-right; per-section on hover) — and, for a plan in approval mode, that approving
-downloads the markdown to drop over `data-plan-md`.
+markdown, and `plan-approval.js` is inlined — the verifier checks this wiring. **If it's
+bilingual** (`data-i18n` set): the 🌐 chip appears, English is the default, switching to
+Thai renders Thai, and an export taken while Thai is displayed contains **zero Thai** —
+the verifier checks this contract. Save as `<topic>.html` (kebab-case — alongside the
+source repo's `docs/` when documenting code, else where the user asked). Tell the user
+the path and the export buttons (page toolbar top-right; per-section on hover) — and, for
+a plan in approval mode, that approving downloads the markdown to drop over
+`data-plan-md`.
 
 ## Bundled resources
 - **assets/template.html** — scaffold to copy; documents the DOM contract.
 - **assets/export-engine.js** — inline it; reusable MD/JSON export (page + per-section). Don't reinvent.
 - **assets/diagram-interactions.js** — inline it; zoom/pan + hover + clickable nodes + walkthrough; self-injects its CSS. Don't reinvent.
 - **assets/plan-approval.js** — inline it (after export-engine.js) **only for a plan awaiting approval**; adds per-section Decision controls, a live "Human decisions" mirror, and the Approve→markdown download. Self-injects its CSS; inert unless `data-plan-approval` is set. Don't reinvent.
+- **assets/i18n.js** — inline it (after export-engine.js) **only for a bilingual doc**; adds the floating 🌐 EN／ไทย chip and swaps the visible page to Thai while keeping every export English. Self-injects its CSS; inert unless `data-i18n` is set. Don't reinvent.
 - **scripts/verify-doc.mjs** — authoritative runtime check (real Mermaid + the engine, plus a real-mouse-click gate in headless Chrome via puppeteer-core when available). Run before handing over.
 - **references/components.md** — every block, its HTML + export island; comparison + Implementation Plan rules.
 - **references/diagrams.md** — pick the diagram kind; Mermaid recipes; make it interactive; the two gotchas.
 - **references/theming.md** — detect or generate the project's palette.
 - **references/editing.md** — the partial-update playbook (Mode B).
+- **references/localization.md** — the English+Thai display toggle (opt-in; exports stay English).
 
 ## Guardrails
 - **Single file, CDN allowed.** Mermaid/Chart.js load from a CDN (needs internet to
