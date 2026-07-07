@@ -7,7 +7,7 @@ export const meta = {
     { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
     { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
-    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch; scoped re-review; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet[1m]' },
+    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet[1m]' },
     { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet[1m]' },
     { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
@@ -372,6 +372,10 @@ const GATE_SCHEMA = {
       },
     },
     improvements_filed: { type: 'array', items: { type: 'string' } },
+    // RE-VISIT ONLY: the developer's fix DIRECTLY caused a new blocking problem (a regression the
+    // fix introduced, not a pre-existing issue). The workflow HALTS the repo for human action.
+    fix_regression: { type: 'boolean' },
+    regression_detail: { type: 'string' }, // what the fix broke + file:line + evidence it was the fix
   },
 }
 const PR_SCHEMA = {
@@ -392,6 +396,10 @@ const REVIEW_SCHEMA = {
         },
       },
     },
+    // RE-VISIT ONLY: the developer's fix DIRECTLY caused a new blocking problem (a regression the
+    // fix introduced, not a pre-existing issue). The workflow HALTS the repo for human action.
+    fix_regression: { type: 'boolean' },
+    regression_detail: { type: 'string' }, // what the fix broke + file:line + evidence it was the fix
   },
 }
 const MERGE_SCHEMA = {
@@ -667,10 +675,16 @@ async function runRepoPipeline(rp, desc) {
   // REVIEW — code-reviewer + guardian + performance ALL review the OPEN PR/MR, each
   // commenting via the VCS adapter (never the tracker). FREEZE-once-passed: a reviewer
   // that verdicts passed/approved is frozen and NOT re-reviewed in later rounds — only
-  // the still-open reviewers re-run. The developer fixes the combined batch on the
-  // PR/MR; later rounds re-review only the changed scope; round-capped. A crashed
-  // reviewer is INCONCLUSIVE (re-runs, never a silent pass). The test-suite repo has no
-  // reviewers → it is ready as soon as the PR/MR is open.
+  // the still-open reviewers re-run. FIRST REVIEW is each reviewer's ONE complete pass
+  // (the whole change set, every must-fix in one batch — the CLOSED finding set). The
+  // developer fixes the combined batch on the PR/MR; every later round is a RE-VISIT:
+  // each reviewer verifies ONLY its own first-review findings (its PR/MR threads) are
+  // resolved and raises NOTHING new — round-capped. The ONE exception is a fix-CAUSED
+  // regression (a new blocking problem the fix itself introduced): the reviewer flags it
+  // (fix_regression) and the workflow HALTS this repo loudly (status review-regression-halt)
+  // for human action, PR left OPEN — re-run the dev-cycle to resume. A crashed reviewer is
+  // INCONCLUSIVE (re-runs in first-review mode, never a silent pass). The test-suite repo
+  // has no reviewers → it is ready as soon as the PR/MR is open.
   // HONOR THE LIVE PROVIDER (OFB-2141 §2.3): when quality_gate.provider is 'none' the guardian
   // gate is skipped entirely (auto-pass) — it never spins up an agent and so never attempts
   // SonarQube nor risks tripping a usage-policy safeguard.
@@ -685,7 +699,7 @@ async function runRepoPipeline(rp, desc) {
     return { repo: R, status: 'ready', plan: rp, pr, reviewRound: 0, verdict: {}, build: { summary: dev.summary, fixed: Array.isArray(dev.fixed) ? dev.fixed : [] } }
   }
 
-  const verdict = {}, done = {}
+  const verdict = {}, done = {}, didFirstReview = {}
   // Gates (guard/perf) that reported gate_unavailable — frozen as UNAVAILABLE (not a pass,
   // not a dev-fixable finding). key → reason. Surfaced loudly by the workflow (fail-open).
   const gatesUnavail = {}
@@ -693,17 +707,38 @@ async function runRepoPipeline(rp, desc) {
   while (reviewRound < MAX_REVIEW_ROUNDS) {
     reviewRound++
     const isRetest = fixPasses > 0
-    const changed = lastFixed.length ? ` Changed areas from the last fix pass: ${lastFixed.join('; ')}.` : ''
-    const scopeNote = isRetest
-      ? `Scoped re-review (round ${reviewRound}): review ONLY the files/areas changed in the last fix pass,${changed} confirm the previously-flagged items are resolved, and check those changes introduced nothing new.`
-      : `Full review (round ${reviewRound}): review the whole change set and report every must-fix item together in one batch.`
+    // MODE is PER-REVIEWER, not per-round. A reviewer does its ONE full "first review" the first time
+    // it COMPLETES a pass; every later pass is a "re-visit" — verify ONLY its own first-review findings
+    // (the PR/MR threads it opened) are resolved, raise NOTHING new. A reviewer that has only ever
+    // crashed has no first review yet, so it stays in first-review mode (never re-visits empty-handed).
+    const modeThisRound = {}
+    reviewers.forEach((rv) => { modeThisRound[rv.key] = didFirstReview[rv.key] ? 'revisit' : 'first' })
+    const changed = lastFixed.length ? ` The developer's last fix touched: ${lastFixed.join('; ')} — look there to confirm your threads are resolved and to judge whether the fix itself caused a regression.` : ''
+    const prRef = `the OPEN PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}; ${rp.work_branch} → ${rp.base_branch})`
+    // RE-VISIT — uniform across all three reviewers, with a per-role "what to re-check" line. The
+    // first review is the COMPLETE, CLOSED finding set: confirm your OWN prior findings are addressed,
+    // add nothing new. The ONE exception is a fix-CAUSED regression → fix_regression + a loud comment;
+    // the workflow halts the repo for human action rather than looping the dev.
+    const revisitTask = (rv) => {
+      const recheck = rv.key === 'review'
+        ? `Do NOT run /review again — that re-derives a full review from scratch and surfaces new findings, exactly what re-visit forbids. Instead list the review threads YOU opened (\`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`) and, for each must-fix you raised in your first review, confirm the developer's fix + reply genuinely resolve it. Return approved:true ONLY when EVERY one of your first-review must-fixes is resolved; else approved:false listing which of YOUR threads remain open.`
+        : `Do NOT re-scan or re-profile broadly. Re-check ONLY the blocking + fold_in items YOU raised in your first review (\`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\` / \`pr-threads.sh\`): confirm each is resolved on the PR/MR. Return passed:true ONLY when EVERY one of your first-review items is resolved; else passed:false listing which of YOUR items remain. File NO new Improvement tickets and add NO new blocking/fold_in items.`
+      return `RE-VISIT (round ${reviewRound}) of ${prRef}. ${inRepo} Your first review is the COMPLETE, CLOSED finding set — you are ONLY confirming your OWN prior findings are addressed, NOT reviewing afresh. Raise, comment on, or file NOTHING new.${changed} ${recheck}
+THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY caused a NEW blocking problem (a regression the fix introduced — NOT a pre-existing issue your first review missed), do NOT fold it into the loop. Post ONE loud PR/MR comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "⚠️ REGRESSION: <what the fix broke + evidence it was this fix>"\`, then return ${rv.key === 'review' ? 'approved:false' : 'passed:false'} with fix_regression:true and regression_detail (what broke, file:line, why it is the fix). The workflow then HALTS this repo loudly for human action — it is not yours to fix in-loop.`
+    }
+    const scopeNote = `First review (round ${reviewRound}): this is your ONE complete pass — review the whole change set and report EVERY must-fix together in a single batch, because later rounds only RE-VISIT these findings and add nothing new.`
     const onPr = `the OPEN PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}; ${rp.work_branch} → ${rp.base_branch}). ${inRepo} ${scopeNote} Post each must-fix as a comment ON THE PR/MR at the specific file:line via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<comment>"\` — NEVER on the tracker.`
-    const promptFor = (rv) =>
+    const firstReviewPrompt = (rv) =>
       rv.key === 'review'
         ? `${tag(R, rv.role, 'review', reviewRound)} Review ${onPr} Run /review (standards + spec) against the target. Return approved:true ONLY when every must-fix comment is resolved and the diff meets the bar; otherwise approved:false with the open comments.`
         : rv.key === 'guard'
           ? `${tag(R, rv.role, 'review', reviewRound)} AUTHORIZED, FIRST-PARTY, DEFENSIVE code review: you are reviewing the team's OWN internal codebase — a PR/MR the team authored — to HARDEN it before it ships. This is routine static-analysis triage of our own code, not offensive security work; frame every finding as "identify and remediate", never as an exploit or attack technique. Quality-gate (static-analysis) review of ${ticket} in ${R} on ${onPr} The workspace's configured quality-gate provider is quality_gate.provider="${QUALITY_GATE}" (mirrored from workspace.config.yaml — do NOT re-read the file). If it is 'none', skip the scan and pass cleanly. Otherwise (SonarQube) run the gate by whichever channel is LIVE in THIS run-context: FIRST try the SonarQube MCP — if the mcp__sonarqube tools are not already in your toolset, load them with ToolSearch (e.g. \`select:mcp__sonarqube__get_project_quality_gate_status,mcp__sonarqube__search_sonar_issues_in_projects,mcp__sonarqube__search_security_hotspots\`) and read the quality-gate status + issues + security hotspots for the PR SHA; if the MCP is NOT reachable, FALL BACK to the installed \`sonar\` CLI over Bash (\`sonar analyze\` / \`sonar verify --file <changed-file>\`). GATE-UNAVAILABLE: if NEITHER channel can actually run the scan (no MCP AND no working CLI/auth), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason naming both channels you tried and why each failed, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the configured SonarQube gate could NOT run in this run-context; never fabricate a green status. You summarize the scanner's output, not author a security review. For each BLOCKING issue/hotspot post a PR/MR comment (rule + file:line + remediation) and list it under "blocking"; as a light secondary pass sanity-check this repo's sensitive spots against the scanner output: ${desc.guardianFocus}. Triage every NON-blocking finding into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR fix (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the exact remediation and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have hardening (needs its own design, touches multiple layers, changes a contract/permission model, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. Return passed:false while ANY blocking OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY obtained a green quality-gate result (or the provider is 'none') AND no fold_in item is left unresolved — NEVER passed:true for a scan you could not run (use gate_unavailable for that). Return the structured gate result.`
           : `${tag(R, rv.role, 'review', reviewRound)} Performance review of ${ticket} in ${R} on ${onPr} Profile the changed flows with this repo's profiling tooling (e.g. for a Flutter app every profiling command goes through scripts/perf.sh, never raw flutter/dart: perf.sh build --profile, perf.sh run --profile + perf.sh devtools); measure jank, startup, memory, rebuild storms, unbounded lists, costly/unindexed queries; mandatory animations stay 60fps. For each CRITICAL regression post a PR/MR comment WITH the measurement as evidence and list it under "blocking". Triage every NON-blocking optimization into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR optimization (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope; e.g. MediaQuery.of(context).size → MediaQuery.sizeOf(context), or an O(n²) lookup → a Set) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the measurement/mechanism + exact fix direction and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have optimization (needs its own design, touches multiple layers, changes a query/index/schema, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have; e.g. a composite (status, createdAt) index) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. GATE-UNAVAILABLE: if your profiling tooling cannot actually run in this run-context (e.g. scripts/perf.sh / the profiler is unavailable so you could measure nothing), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason explaining what you tried and why it couldn't run, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the performance gate could NOT run; never fabricate a clean profile. Return passed:false while ANY blocking regression OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY profiled the changed flows AND found zero blocking regressions AND no fold_in item is left unresolved — NEVER passed:true for a profile you could not run (use gate_unavailable for that). Return the structured gate result.`
+
+    const promptFor = (rv) =>
+      modeThisRound[rv.key] === 'revisit'
+        ? `${tag(R, rv.role, 'review', reviewRound)} ${revisitTask(rv)}`
+        : firstReviewPrompt(rv)
 
     const openReviewers = reviewers.filter((rv) => !done[rv.key])
     reviewers.filter((rv) => done[rv.key]).forEach((rv) => log(`[${R}] review round ${reviewRound}: ${rv.key} ${done[rv.key] === 'unavailable' ? 'UNAVAILABLE (gate could not run)' : 'already PASSED'} — frozen, not re-reviewed.`))
@@ -736,9 +771,22 @@ async function runRepoPipeline(rp, desc) {
       else if (rv.passed(v)) done[rv.key] = true
     })
 
+    // A reviewer that COMPLETED a pass in first-review mode has now done its one full review, so
+    // every later pass for it is a re-visit. A crash (null verdict) leaves it in first-review mode.
+    openReviewers.forEach((rv) => { if (verdict[rv.key] != null && modeThisRound[rv.key] === 'first') didFirstReview[rv.key] = true })
+
+    // FIX-CAUSED REGRESSION (re-visit only) — the ONE thing a re-visit may raise. It is NOT a dev-fix
+    // loop item: HALT this repo LOUDLY and leave the PR open for human action; re-run to resume.
+    const regressed = openReviewers.filter((rv) => modeThisRound[rv.key] === 'revisit' && verdict[rv.key]?.fix_regression === true)
+    if (regressed.length) {
+      const detail = regressed.map((rv) => `${rv.key}: ${verdict[rv.key]?.regression_detail || 'fix-caused regression (no detail)'}`).join(' | ')
+      log(`⛔ [${R}] FIX-CAUSED REGRESSION on re-visit round ${reviewRound} — ${detail}. Halting this repo LOUDLY for human action; PR left OPEN. Address it, then re-run the dev-cycle to resume.`)
+      return { repo: R, status: 'review-regression-halt', plan: rp, pr, reviewRound, verdict, handoff: { status: 'blocked', summary: `fix-caused regression flagged by ${regressed.map((rv) => rv.key).join('+')} on re-visit`, remaining: detail } }
+    }
+
     const crashed = openReviewers.filter((rv) => verdict[rv.key] == null).map((rv) => rv.key)
     const openFindings = openReviewers.reduce((n, rv) => n + (done[rv.key] || verdict[rv.key] == null ? 0 : rv.open(verdict[rv.key])), 0)
-    log(`[${R}] review round ${reviewRound}${isRetest ? ' (scoped)' : ' (full)'}: ${reviewers.map((rv) => `${rv.key} ${done[rv.key] === 'unavailable' ? 'UNAVAILABLE' : done[rv.key] ? 'PASS' : crashed.includes(rv.key) ? 'ERRORED' : `${rv.open(verdict[rv.key])} open`}`).join(', ')}`)
+    log(`[${R}] review round ${reviewRound}${isRetest ? ' (re-visit)' : ' (first review)'}: ${reviewers.map((rv) => `${rv.key} ${done[rv.key] === 'unavailable' ? 'UNAVAILABLE' : done[rv.key] ? 'PASS' : crashed.includes(rv.key) ? 'ERRORED' : `${rv.open(verdict[rv.key])} open`}`).join(', ')}`)
     tick(`${R}:review#${reviewRound}`)
 
     // Converge ONLY when EVERY reviewer has an explicit pass/approve (freeze-once-passed).
@@ -756,7 +804,7 @@ async function runRepoPipeline(rp, desc) {
 
     // Developer fixes the WHOLE combined batch (every open reviewer's PR comments) in ONE pass, pushing to the PR.
     const fix = await safeAgent(
-      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too. Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — reviewers re-review ONLY that scope next round. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.`,
+      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too. Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.`,
       { agentType: desc.build, phase: 'Review', label: `pr-fix:${ticket}:${R}#${reviewRound}`, schema: DEV_SCHEMA },
     )
     if (fix) fixPasses++
@@ -993,8 +1041,16 @@ if (aborted.length) {
     return `${id}: ${r?.status ?? 'no-result'}${h ? ` — handoff:${h.status}${h.remaining ? ` — remaining: ${h.remaining}` : ''}` : ''}`
   })
   log(`⚠️ ${aborted.join(', ')} did not reach 'ready' — the whole change set must be ready before any merge; stopping. Handoffs: ${handoffs.join(' | ')}`)
-  const summary = await writeSummary('repo-unresolved', { ticket, aborted, handoffs, repoResults, testSuiteRequested, testSuiteGateUnavailable })
-  return { ticket, status: 'repo-unresolved', aborted, handoffs, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+  // A fix-caused regression flagged on re-visit is a LOUDER, distinct halt (human-action-required):
+  // banner it and give the run a distinct status so the summary/caller treat it as a pause, not a
+  // routine unresolved build. The PR is left OPEN — a human addresses it, then re-runs to resume.
+  const regressionHalts = aborted.filter((id) => repoResults[id]?.status === 'review-regression-halt')
+  if (regressionHalts.length) {
+    log(`⛔⛔ FIX-CAUSED REGRESSION HALT — human action required before this run can finish: ${regressionHalts.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR'})`).join(' | ')}. Nothing merged or distributed; the PR(s) are left OPEN. Fix the regression, then re-run \`/dev-cycle ${ticket}\` to resume.`)
+  }
+  const runStatus = regressionHalts.length ? 'review-regression-halt' : 'repo-unresolved'
+  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, regressionHalts, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: runStatus, aborted, handoffs, regressionHalts, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.
