@@ -34,7 +34,11 @@ A ticket reference (e.g. `FM-12` / `APP-123`, or a bare number). The id prefix i
    - Otherwise (**feature / polish**) → base = `branch_model.feature_base` (default
      `develop`), work branch = `feature/<KEY>`.
 
-3. **Create the branch** from a fresh base:
+3. **Create the branch** from a fresh base — in the repo's **primary clone at the
+   workspace root**, never a submodule checkout. Confirm first: `git rev-parse
+   --show-superproject-working-tree` must be **empty** (non-empty ⇒ you're inside a
+   submodule — kick off in the primary clone of that repo instead; see the workspace-root
+   `docs/agents/submodules.md`).
    ```bash
    git fetch origin
    git checkout <base> && git pull --ff-only origin <base>

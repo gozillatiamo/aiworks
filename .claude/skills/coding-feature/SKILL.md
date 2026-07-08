@@ -26,6 +26,8 @@ effort: high
 
 Implement one feature or fix in the **current repo**, test-first. This is a polyglot, multi-repo workspace (Next.js web apps, the Rust backend, Postgres migrations, …) — there is no single stack to assume. **The repo you are in is the authority:** its `CLAUDE.md`, its `docs/`, and the code already on disk define the architecture, standards, and conventions you conform to. New code should read like the code beside it.
 
+**Never develop inside a git submodule.** If the code you need to change lives in a submodule checkout — a repo embedded in this one (e.g. `agent-webservice/agent-db/`), which is *also* cloned as its own primary clone at the workspace root — edit the **primary clone at the root** (`agent-db/`), not the submodule. Detect (`git rev-parse --show-superproject-working-tree` non-empty ⇒ inside a submodule; `.gitmodules` lists the mounted paths) and redirect per the workspace-root `docs/agents/submodules.md`.
+
 ## Read first — the repo's own knowledge (authoritative)
 - `CLAUDE.md` — architecture, coding standards, dependency/version policy. Obey it; don't restate it.
 - `docs/adr/` — Architecture Decision Records. Honor them. If your change would contradict an ADR, **stop and surface the conflict** instead of diverging silently.

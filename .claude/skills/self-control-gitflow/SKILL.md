@@ -17,6 +17,12 @@ after the suite passes. Host operations go through the **VCS adapter** (`scripts
 `git`/adapter command run `git rev-parse --show-toplevel` and make sure it's the repo you
 mean to change. Run all commands from that root.
 
+**And confirm it's not a submodule.** `--show-toplevel` returns a *submodule's* own dir too,
+so it can't tell a primary clone from a submodule checkout. Also run `git rev-parse
+--show-superproject-working-tree` — if it's **non-empty** you're inside a submodule; never
+branch/commit/push here. Switch to the repo's primary clone at the workspace root and run
+the lifecycle there instead. See the workspace-root `docs/agents/submodules.md`.
+
 **Pick the phase** from the argument (`start` / `finish`); if none given, auto-detect: on
 the default branch → **START**; on a feature branch → **FINISH**.
 

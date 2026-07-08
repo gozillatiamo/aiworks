@@ -39,6 +39,10 @@ gitignored clones and only the meta-repo shows.
 - `docs/agents/figma.md` — how every agent works with Figma: the `design.enabled`
   kill-switch (default OFF) and the canonical-file convention (`design.figma_file_key` —
   build product screens into ONE file on a new page per feature, never `create_new_file`).
+- `docs/agents/submodules.md` — never develop inside a git **submodule** checkout: it's a
+  read-only pointer to a repo that is *also* cloned as its own primary clone at the
+  workspace root — branch/commit/PR in that primary clone (the coding-lifecycle skills
+  consult this to redirect submodule'd changes to the right repo).
 - Provider adapters: `scripts/vcs/` (PR/MR via `github`|`gitlab`),
   `scripts/tracker/` (tickets via `notion`|`jira`), and `scripts/notify/` (chat via
   `slack`). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack
@@ -61,3 +65,7 @@ The group's repos are declared under `products:` in @workspace.config.yaml
 **DO NOT:**
 - codegraph is not allowed at the organization (workspace) level — only inside an
   individual repo.
+- Never edit, add, or commit **inside a git submodule checkout** (e.g.
+  `agent-webservice/agent-db/`, `paotung-template/packages/customization-widget/`). That
+  code belongs to a repo that is *also* cloned as its own primary clone at the workspace
+  root — make the change there. See `docs/agents/submodules.md`.
