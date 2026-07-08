@@ -697,7 +697,7 @@ fi
 # Keep CLAUDE.md lean; overflow goes into .claude/rules/<topic>.md with frontmatter. If a
 # CLAUDE.md already exists, ask whether to regenerate / combine / skip (default: skip).
 step "7. Scaffold project knowledge (CLAUDE.md)"
-md_guidance="Constraint: keep CLAUDE.md to 60 lines MAX. If the project needs more guidance than fits, move details into .claude/rules/<topic>.md files — each starting with YAML frontmatter that has a 'description:' line (and a 'globs:' line scoping it to specific paths when the rule is path-specific) — and keep CLAUDE.md a concise index that points to them."
+md_guidance="Constraint: keep CLAUDE.md to 60 lines MAX. If the project needs more guidance than fits, move details into .claude/rules/<topic>.md files — each starting with YAML frontmatter that has a 'description:' line (and, when the rule is path-specific, a 'paths:' list of glob patterns scoping it to matching files) — and keep CLAUDE.md a concise index that points to them."
 init_prompt="Analyze THIS repository's anatomy (languages, build/test tooling, directory layout, conventions) and write a CLAUDE.md giving a future Claude Code session the essential working context: what the project is, the stack, how to build/test/run, key directories, and the conventions to follow. $md_guidance"
 if ! have claude; then
   skip "7. 'claude' CLI not found — run /init in $PATH_REL/ later"
@@ -722,7 +722,7 @@ else
   if [[ -f "$REPO_DIR/CLAUDE.md" ]]; then
     cm_lines="$(grep -c '' "$REPO_DIR/CLAUDE.md" 2>/dev/null || echo 0)"
     if [[ "$cm_lines" -gt 60 ]]; then
-      warn "CLAUDE.md is $cm_lines lines (>60) — move detail into .claude/rules/<topic>.md (frontmatter: description/globs)"
+      warn "CLAUDE.md is $cm_lines lines (>60) — move detail into .claude/rules/<topic>.md (frontmatter: description/paths)"
       FOLLOWUP+=("trim $PATH_REL/CLAUDE.md ($cm_lines lines) to ≤60 and split detail into .claude/rules/")
     fi
   fi
