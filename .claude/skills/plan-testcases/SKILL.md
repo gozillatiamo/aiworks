@@ -33,6 +33,8 @@ If the ticket introduces **no user-observable behavior worth verifying** — a c
 
 ## 3. Author the BDD cases (3–6)
 
+**Ground truth first** — every step must map to a *reachable* state transition (a flow the app actually permits); never author a journey the state machine forbids (e.g. an action chained off a state a prior step just left). See [`../ground-truth-first.md`](../ground-truth-first.md).
+
 `Given / When / Then`, **at least 3, never more than 6**. Cover the happy path, the key edge case(s), and error/offline where the ticket implies them — and every acceptance criterion. Each scenario has a distinct, self-contained purpose and a clear title.
 
 **Write in the user's voice, not an engineer's.** Describe what the user *does* and *sees* on screen — name buttons, screens, and messages the way the app labels them to the user ("the **Save** button", "a *Saved* confirmation").

@@ -41,6 +41,7 @@ Mark each scenario **Automatable / Partial / Manual-only** with a one-line reaso
 
 - Where the spec(s) live (`tests/` per `CLAUDE.md`) and **how they get executed** — call out the change needed since `run-tests.js` runs only `test.js` today (e.g. discover `tests/*.spec.js`, or have an entry import them). Describe it as a plan item; don't make the change here.
 - App-under-test prerequisites: build/install the app, any **test-data reset** the plan needs (e.g. a clean reinstall precondition), and that platform caps already exist in `config/capabilities.js`.
+- **Ground truth first** — any prerequisite/seed data the plan calls for must mirror a **real** entity's full row-set (check the schema + `docs/adr/` + `CONTEXT*.md`), not a minimal stub: a stub missing a row the app's own queries require makes the test fail for a non-feature reason. See [`../ground-truth-first.md`](../ground-truth-first.md).
 
 ## 6. Fill the template and write to agent_logs/
 

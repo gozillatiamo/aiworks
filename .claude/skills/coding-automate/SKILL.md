@@ -47,7 +47,7 @@ Run **`npm run why [platform]`** (omit platform for both). It extracts just the 
 - **Automation issue** — wrong/unconfirmed selector, a missing `await`, a too-short wait, a flow bug in your spec/Page Object, or a runner-wiring mistake. `why` typically shows a `no such element` lookup on a selector you haven't confirmed, or a thrown error framed in `pages/`/`test.js`. **Fix it in the code and re-run `npm test`.** Loop §4–§5 until the suite is green or only app bugs remain. Never log an automation issue as a bug.
 - **App bug** — the automation is correct (selector matches what the app actually exposes, flow follows the test plan) yet the app's **observable behaviour contradicts the test plan's `Then`**: an expected element/screen never appears, a confirmation is missing, the wrong message shows, or it crashes. This is a real finding → **log it (§5a).**
 
-Don't cry "app bug" on the first red. Make the automation correct first; only a failure that reproduces against correct automation, where the app contradicts the expected behaviour, is a bug.
+Don't cry "app bug" on the first red. Make the automation correct first — and confirm **ground truth** held: the seed mirrored a **real** entity (not a stub) and every step was a **reachable** transition ([`../ground-truth-first.md`](../ground-truth-first.md)). A stub seed or an impossible flow fails for a reason that isn't the feature. Only a failure that reproduces against correct automation *and* faithful ground truth, where the app contradicts the expected behaviour, is a bug — confirm it with the developer before logging.
 
 ### 5a. Log app bugs into agent_logs/
 
