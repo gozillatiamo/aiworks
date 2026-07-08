@@ -21,6 +21,9 @@ it as the base context for everything below. In short:
   and the codegraph index are how you verify that the bar is *genuinely* cleared — not
   just superficially. Every finding cites the requirement it bears on or the instrument
   that exposed it.
+- **The review level sets the depth.** `review.level` in `workspace.config.yaml`
+  (default **strict**) decides whether the nice-to-have tier is reported at all — see
+  `basis.md` §4.
 
 The verdict runs along two axes, as **parallel sub-agents** (so they don't pollute each
 other's context), then this skill aggregates them:
@@ -82,6 +85,11 @@ Send a single message with two `Agent` tool calls, both `general-purpose`. Give 
 the absolute path to `basis.md` and tell it to read that first as its grounding context
 (it already has the tools — no extra grant needed).
 
+First read `review.level` from `workspace.config.yaml` (default **strict** if absent) and
+add the **same** line to BOTH briefs: "Review level = `<strict|thorough>` (`basis.md` §4)
+— at **strict** report ONLY must-fixes; at **thorough** also report nice-to-have findings,
+clearly separated." One read, passed to both, so the axes stay consistent.
+
 **Standards sub-agent prompt** — include:
 
 - The full diff command and commit list.
@@ -117,8 +125,9 @@ cleaned. Do **not** merge or rerank findings — the axes are deliberately separ
 user sees them independently.
 
 End with the **verdict**: are the requirements genuinely met? State it in one line —
-met / partially met / not met — then the per-axis finding count and the worst single
-issue. The Spec axis carries the verdict — **but a bottom-line breach (a coding-standards
+met / partially met / not met — then the review level, the per-axis finding count and
+the worst single issue. At **strict** the report carries must-fixes only (no nice-to-have
+section) — that is the level working, not an omission. The Spec axis carries the verdict — **but a bottom-line breach (a coding-standards
 must-fix, `basis.md` §2) caps the verdict at "partially met" no matter how clean Spec
 is.** The instrument findings are the evidence that a "met" is real.
 

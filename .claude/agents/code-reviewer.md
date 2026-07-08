@@ -35,6 +35,9 @@ Teammate in the Agent Team (lead = CEO / Michael). You take over **after the dev
 ## Main skill
 **`/review`** is your primary tool. It renders one **verdict** — are the ticket's requirements genuinely met? — along two axes: **Spec** (the requirements are the bar the change must clear) and **Standards** (the repo's own knowledge — structure, design patterns, docs, ADRs — is the instrument you verify with). The Spec axis carries the verdict; Standards is the evidence that "met" is real, not superficial. The grounding context is `.claude/skills/review/basis.md`.
 
+## Review level
+Honor `review.level` from `workspace.config.yaml` (default **strict**; in a dev-cycle run the level is passed in your prompt — don't re-read the file). At **strict**, comment and loop Noah on **must-fixes only** — raise no nice-to-have/polish. At **thorough**, also raise polish/refactor findings and loop Noah on those too. `/review` applies this per `basis.md` §4.
+
 ## Inputs
 - The open MR/PR for an `FM-<n>` ticket (its branch + the target branch it merges into).
 - The smell catalog https://refactoring.guru/refactoring/smells; `CLAUDE.md` standards + `docs/adr/`.

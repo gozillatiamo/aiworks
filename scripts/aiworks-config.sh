@@ -19,6 +19,7 @@
 #   tracker.statuses.*               → const STATUS
 #   vcs.auto_merge                   → const AUTO_MERGE
 #   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
+#   review.level                     → const REVIEW_LEVEL            (dev-cycle.js; 'strict' ⇒ must-fixes only, no nice-to-have)
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
 #   notify.enabled                   → const NOTIFY
@@ -142,6 +143,7 @@ NT_RAW='false'; NOTIFY_PROVIDER='slack'; NOTIFY_CHANNEL=''
 DESIGN_EN_RAW='false'; DESIGN_KEY=''; DESIGN_PAGE='{work_key} / {feature}'   # Figma OFF unless design.enabled: true
 IMG_EN_RAW='false'; IMG_QUALITY='balanced'; IMG_MAX='2'   # image-gen OFF unless image_generation.enabled: true
 QG_RAW='none'   # quality_gate.provider — 'none' (guardian gate skips+passes) unless the org declares sonarqube
+RL_RAW='strict' # review.level — 'strict' (must-fixes only) unless the org declares thorough
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -163,6 +165,7 @@ while IFS=$'\t' read -r k v; do
     IMG_QUALITY)        IMG_QUALITY="$v" ;;
     IMG_MAX)            IMG_MAX="$v" ;;
     QUALITY_GATE)       QG_RAW="$v" ;;
+    REVIEW_LEVEL)       RL_RAW="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -190,6 +193,7 @@ done < <(
     sec=="image_generation" && /^  quality:/         { print "IMG_QUALITY\t" val($0); next }
     sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
     sec=="quality_gate" && /^  provider:/            { print "QUALITY_GATE\t" val($0); next }
+    sec=="review"       && /^  level:/               { print "REVIEW_LEVEL\t" val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
@@ -202,6 +206,8 @@ case "$IMG_QUALITY" in fast|balanced|quality) ;; *) IMG_QUALITY='balanced' ;; es
 [[ "$IMG_MAX" =~ ^[0-9]+$ ]] || IMG_MAX='2'         # numeric budget cap; fall back to 2
 QUALITY_GATE="${QG_RAW:-none}"
 case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # clamp to the supported providers
+REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
+case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
 # Fall back to the historical 5-phase lifecycle when the org declared no statuses.
 if [[ -z "$STATUS_PAIRS" ]]; then
   STATUS_PAIRS=$'not_started\tNot started\nin_progress\tIn progress\nready_to_test\tReady to test\ntesting\tTesting\ndone\tDone\n'
@@ -348,6 +354,7 @@ const NOTIFY_PROVIDER = $(jsq "$NOTIFY_PROVIDER") // from workspace.config.yaml 
 const NOTIFY_CHANNEL = $(jsq "$NOTIFY_CHANNEL")  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = $(jsq "$QUALITY_GATE")     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
+const REVIEW_LEVEL = $(jsq "$REVIEW_LEVEL")     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const STATUS = {
 ${status_body}}
 const REPOS = {

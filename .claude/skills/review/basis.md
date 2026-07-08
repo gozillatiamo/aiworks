@@ -64,3 +64,18 @@ These are not a second scorecard to tick. They are how you tell "looks done" fro
 "is done": a requirement built against the grain of the repo's structure, in violation
 of an ADR, or breaking an out-of-diff dependent is **not genuinely met**. Cite the
 instrument for every finding — the file + rule, the ADR, the codegraph dependent.
+
+## 4. The review level sets how deep you report
+
+Read `review.level` from `workspace.config.yaml` (default **strict** when absent). It
+decides whether the **nice-to-have** tier is surfaced at all — it never softens a
+must-fix.
+
+- **strict** — report **only must-fixes**: the bar breaches (§1) and bottom-line
+  breaches (§2) that block a "met" verdict. Suppress the nice-to-have tier entirely —
+  raise no polish, no optional refactor, no "you might consider" finding.
+- **thorough** — report must-fixes **plus** nice-to-have: also surface the non-blocking
+  instrument findings (§3 judgement calls, optional refactors, hardening) as clearly
+  labelled advisory findings, separate from the must-fixes.
+
+Must-fixes are the floor at both levels; the level only gates the tier above them.

@@ -72,6 +72,16 @@ branch_model:
 quality_gate:
   provider: none              # sonarqube | none
 
+# ── Review level (how deep the Review phase acts) ──────────────────────────────
+# Governs ALL THREE Review gates (code-reviewer + guardian + performance) and the /review skill:
+#   strict   (default) → report ONLY must-fixes (the blocking findings that hold the merge);
+#                        suppress every nice-to-have — no polish comments, no minor fold-ins,
+#                        no Improvement tickets.
+#   thorough           → must-fixes PLUS nice-to-have — fold minor improvements into the PR and
+#                        file Improvement tickets for major optional work.
+review:
+  level: strict                    # strict | thorough  (default: strict)
+
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:
   auto_approve: false               # auto-approve-plan. true → execution proceeds straight from the
