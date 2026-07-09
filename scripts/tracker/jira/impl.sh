@@ -96,10 +96,23 @@ jira_key() {
 # ── tracker interface ───────────────────────────────────────────────────────
 
 tracker_get_details() {
-  local key issue
+  local key issue fields_q f
   key="$(jira_key "$1")"
-  issue="$(jira_api GET "/rest/api/3/issue/$key?fields=summary,status,priority,assignee,labels,issuetype,description,parent")"
+  # Append the configured point/effort field ids so the estimate is visible (e.g. for
+  # /estimate-ticket re-estimation) — the endpoint returns only the fields requested.
+  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent"
+  for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD"; do
+    [[ -n "$f" ]] && fields_q="$fields_q,$f"
+  done
+  issue="$(jira_api GET "/rest/api/3/issue/$key?fields=$fields_q")"
   printf '%s' "$issue" | jq -L "$JIRA_IMPL_DIR" -r --arg base "$JIRA_BASE_URL" 'include "jira"; issue_details_text($base)'
+  # Estimate line (only fields that are configured AND set), appended after the body.
+  printf '%s' "$issue" | jq -r \
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg ef "$JIRA_EFFORT_FIELD" '
+    [ (if ($dpf|length>0) and (.fields[$dpf]!=null) then "Dev: \(.fields[$dpf])" else empty end),
+      (if ($qpf|length>0) and (.fields[$qpf]!=null) then "QA: \(.fields[$qpf])"  else empty end),
+      (if ($ef|length>0)  and (.fields[$ef]!=null)  then "Effort: \(.fields[$ef])" else empty end) ]
+    | if length>0 then "\nEstimate:  " + join("  ·  ") else empty end'
 }
 
 # Jira has a single comment stream (no block-anchored comments), so --deep is ignored.
@@ -407,17 +420,43 @@ tracker_add_comment() {
 # enough issues are collected (only --limit 0 / "all" pages the whole board); the final
 # slice trims any overshoot from the last page.
 tracker_find() {
-  local opts="$1" query open limit as_json types_json jql token acc resp body count tmpdir
+  local opts="$1" query open done_only estimated limit as_json types_json jql token acc resp body count tmpdir
   query="$(printf '%s' "$opts" | jq -r '.query // ""')"
   open="$(printf '%s' "$opts" | jq -r '.open // false')"
+  done_only="$(printf '%s' "$opts" | jq -r '.done // false')"
+  estimated="$(printf '%s' "$opts" | jq -r '.estimated // false')"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
 
-  jql="$(jq -rn --arg proj "$JIRA_PROJECT_KEY" --arg q "$query" --argjson open "$open" --argjson types "$types_json" '
+  # --estimated → "(<devField> is not EMPTY OR <qaField> is not EMPTY OR <effortField> ...)",
+  # built from whichever point/effort field ids are configured. Empty (a no-op) if none are.
+  local est_clause="" f; local -a est_parts=()
+  if [[ "$estimated" == "true" ]]; then
+    for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD"; do
+      [[ -n "$f" ]] && est_parts+=("$f is not EMPTY")
+    done
+    if [[ ${#est_parts[@]} -gt 0 ]]; then
+      est_clause="${est_parts[0]}"
+      local i; for ((i=1; i<${#est_parts[@]}; i++)); do est_clause="$est_clause OR ${est_parts[i]}"; done
+      est_clause="($est_clause)"
+    fi
+  fi
+
+  # Point/effort field ids to REQUEST (the /search/jql endpoint returns only what is asked
+  # for) so callers like /estimate-ticket can read prior estimates. Base fields + configured.
+  local fields_json='["summary","status","issuetype","priority","description"]'
+  for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD"; do
+    [[ -n "$f" ]] && fields_json="$(jq -c --arg f "$f" '. + [$f]' <<<"$fields_json")"
+  done
+
+  jql="$(jq -rn --arg proj "$JIRA_PROJECT_KEY" --arg q "$query" --argjson open "$open" \
+      --argjson done "$done_only" --arg est "$est_clause" --argjson types "$types_json" '
     ( [ (if ($proj|length) > 0 then "project = " + $proj else empty end),
         (if ($q|length)    > 0 then "summary ~ " + ($q | @json) else empty end),
         (if $open              then "statusCategory != Done" else empty end),
+        (if $done              then "statusCategory = Done"  else empty end),
+        (if ($est|length)  > 0 then $est else empty end),
         (if ($types|length)> 0 then "issuetype in (" + ($types | map(@json) | join(", ")) + ")" else empty end)
       ] )
     | (if length > 0 then join(" AND ") + " " else "" end) + "ORDER BY created DESC"
@@ -426,8 +465,8 @@ tracker_find() {
   tmpdir="$(mktemp -d)"; trap 'rm -rf "$tmpdir"' RETURN
   token=""; count=0
   while :; do
-    body="$(jq -n --arg jql "$jql" --arg tok "$token" \
-      '{jql: $jql, maxResults: 100, fields: ["summary","status","issuetype","priority","description"]}
+    body="$(jq -n --arg jql "$jql" --arg tok "$token" --argjson fields "$fields_json" \
+      '{jql: $jql, maxResults: 100, fields: $fields}
        + (if $tok != "" then {nextPageToken: $tok} else {} end)')"
     resp="$(jira_api POST "/rest/api/3/search/jql" "$body")"
     # Append this page's issues array to the accumulator file (one JSON doc per line).
@@ -457,7 +496,8 @@ tracker_find() {
 
   if [[ "$(printf '%s' "$acc" | jq 'length')" -eq 0 ]]; then echo "(no matching tickets)"; return 0; fi
 
-  printf '%s' "$acc" | jq -L "$JIRA_IMPL_DIR" -r '
+  printf '%s' "$acc" | jq -L "$JIRA_IMPL_DIR" -r \
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg ef "$JIRA_EFFORT_FIELD" '
     include "jira";
     .[]
     | (.key) as $k
@@ -465,7 +505,11 @@ tracker_find() {
     | (.fields.issuetype.name // "—")          as $tt
     | (.fields.summary        // "(untitled)") as $title
     | ((.fields.description | adf_to_text) | gsub("\n+"; " ") | .[0:140]) as $desc
-    | "\($k) | \($st) | \($tt) | \($title)"
+    | ( [ (if ($dpf|length>0) and (.fields[$dpf]!=null) then "Dev \(.fields[$dpf])" else empty end),
+          (if ($qpf|length>0) and (.fields[$qpf]!=null) then "QA \(.fields[$qpf])"  else empty end),
+          (if ($ef|length>0)  and (.fields[$ef]!=null)  then "Effort \(.fields[$ef])" else empty end) ]
+        | if length>0 then "  [" + join(" · ") + "]" else "" end ) as $est
+    | "\($k) | \($st) | \($tt) | \($title)\($est)"
       + (if (($desc | gsub("\\s"; "")) | length) > 0 then "  ::  " + $desc else "" end)
   '
 }

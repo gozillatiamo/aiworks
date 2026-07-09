@@ -195,3 +195,10 @@ products:
         lang: next.js 
         green: "run and tests passed successfully"
         guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/game.git
+        kind: package 
+        desc: The game lib package, for any Rust service, It's handle most of functionality that interact with game, mainly to get/fetch game/games. It's included caching ability. 
+        lang: Rust 
+        green: "unit tests and integration passed successfully"
+        guardian_focus: "secrets, data-protection"

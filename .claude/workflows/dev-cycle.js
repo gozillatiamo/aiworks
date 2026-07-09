@@ -194,6 +194,15 @@ const REPOS = {
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
+  'game': {
+    path: 'game', kind: 'package',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests and integration passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 

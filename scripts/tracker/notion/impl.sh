@@ -368,21 +368,36 @@ tracker_add_comment() {
 # The dedup lookup behind /clarifying-ticket. Pagination puts the cursor in the BODY
 # (POST /databases/{id}/query), so this does its own loop rather than notion_collect_pages.
 tracker_find() {
-  local opts="$1" query open limit as_json types_json conds filter sorts body resp cursor acc n
+  local opts="$1" query open done_only estimated limit as_json types_json conds filter sorts body resp cursor acc n
   query="$(printf '%s' "$opts" | jq -r '.query // ""')"
   open="$(printf '%s' "$opts" | jq -r '.open // false')"
+  done_only="$(printf '%s' "$opts" | jq -r '.done // false')"
+  estimated="$(printf '%s' "$opts" | jq -r '.estimated // false')"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
 
+  # --estimated → keep tickets with a Dev-points OR QA-points value (whichever props are
+  # configured); an is_not_empty OR-group, or [] (no-op) when neither prop is set.
+  local est_json='[]'
+  if [[ "$estimated" == "true" ]]; then
+    est_json="$(jq -n --arg dp "$NOTION_PROP_DEV_POINTS" --arg qp "$NOTION_PROP_QA_POINTS" '
+      ( [ (if ($dp|length)>0 then {property:$dp, number:{is_not_empty:true}} else empty end),
+          (if ($qp|length)>0 then {property:$qp, number:{is_not_empty:true}} else empty end) ] )
+      | if length>0 then [{or: .}] else [] end')"
+  fi
+
   # Build the Notion filter (AND of the supplied constraints).
   conds="$(jq -n \
-    --arg q "$query" --argjson open "$open" --argjson types "$types_json" \
+    --arg q "$query" --argjson open "$open" --argjson done "$done_only" \
+    --argjson est "$est_json" --argjson types "$types_json" \
     --arg pTitle "$NOTION_PROP_TITLE" --arg pStatus "$NOTION_PROP_STATUS" \
-    --arg pType "$NOTION_PROP_TYPE" --arg done "$NOTION_STATUS_DONE" '
+    --arg pType "$NOTION_PROP_TYPE" --arg done_name "$NOTION_STATUS_DONE" '
     []
     + (if ($q | length) > 0 then [{property: $pTitle, title: {contains: $q}}] else [] end)
-    + (if $open then [{property: $pStatus, status: {does_not_equal: $done}}] else [] end)
+    + (if $open then [{property: $pStatus, status: {does_not_equal: $done_name}}] else [] end)
+    + (if $done then [{property: $pStatus, status: {equals: $done_name}}] else [] end)
+    + $est
     + ( ($types | map({property: $pType, multi_select: {contains: .}}))
         | if   length == 0 then []
           elif length == 1 then [.[0]]

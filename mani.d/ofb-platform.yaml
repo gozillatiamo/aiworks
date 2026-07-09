@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  game:
+    desc: The game lib package, for any Rust service, It's handle most of functionality that interact with game, mainly to get/fetch game/games. It's included caching ability. 
+    url: git@gitlab.com:bluepicode/ofb/game.git
+    path: ../game
+    tags: [ofb-platform, Rust ]
   seamless-api:
     desc: The Seamless platform for any agency that open a site for using exposed the seamless APIs, It's included the implementation documents and Interactive test suite UI. 
     url: git@gitlab.com:bluepicode/ofb/seamless-api.git

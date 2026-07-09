@@ -35,6 +35,11 @@ Options:
   --type <name>      Match a ticket type. Repeatable / comma-separated → OR.
   --open             Exclude "done" tickets (Notion: Status != NOTION_STATUS_DONE;
                      Jira: statusCategory != Done).
+  --done             Keep ONLY "done" tickets (the inverse of --open). Used by
+                     /estimate-ticket to pull a completed-ticket calibration set.
+  --estimated        Keep only tickets that carry an estimate — a Dev-points or
+                     QA-points (or effort) value. Pairs with --done --limit 10 for a
+                     deterministic calibration set. No-op if no point field is configured.
   --limit <n>        Print at most n rows (default 50; 0 = no limit).
   --json             Print the raw matched tickets as a JSON array instead of lines.
   -h, --help         Show this help and exit.
@@ -52,7 +57,7 @@ for a in "$@"; do case "$a" in -h|--help) usage; exit 0 ;; esac; done
 # shellcheck source=lib.sh
 . "$DIR/lib.sh"
 
-query=""; open=0; limit=50; as_json=0; types_json='[]'
+query=""; open=0; done_only=0; estimated=0; limit=50; as_json=0; types_json='[]'
 addtype() { types_json="$(jq -n --argjson cur "$types_json" --arg t "$1" '$cur + [$t]')"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -62,6 +67,8 @@ while [[ $# -gt 0 ]]; do
               for t in "${_t[@]}"; do t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"; [[ -n "$t" ]] && addtype "$t"; done
               shift 2 ;;
     --open)   open=1; shift ;;
+    --done)   done_only=1; shift ;;
+    --estimated) estimated=1; shift ;;
     --limit)  [[ -n "${2:-}" ]] || die "--limit needs a value"; limit="$2"; shift 2 ;;
     --json)   as_json=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -70,8 +77,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-opts="$(jq -n --arg q "$query" --argjson open "$open" --argjson limit "$limit" \
+opts="$(jq -n --arg q "$query" --argjson open "$open" --argjson done "$done_only" \
+  --argjson estimated "$estimated" --argjson limit "$limit" \
   --argjson json "$as_json" --argjson types "$types_json" \
-  '{query: $q, open: ($open == 1), limit: $limit, as_json: ($json == 1), types: $types}')"
+  '{query: $q, open: ($open == 1), done: ($done == 1), estimated: ($estimated == 1),
+    limit: $limit, as_json: ($json == 1), types: $types}')"
 
 tracker_find "$opts"
