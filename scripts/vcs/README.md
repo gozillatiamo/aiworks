@@ -17,8 +17,9 @@ remote** when unset. All commands run against the repo in the current directory.
 | `pr-threads.sh`     | List a PR/MR's resolvable **review threads** with their thread ids + resolved state (so a fix can be tied back to a thread) |
 | `pr-resolve-thread.sh` | Check **"Resolve thread"** on a review thread once addressed (`--unresolve` to reopen) |
 | `merge-pr.sh`       | **Squash-merge server-side** so the web PR/MR shows *Merged*, then prints pr-view |
+| `pr-approve.sh`     | **The reviewer's PASS signal** — register a host approval (+ post a one-line verdict via `--body`). Decoupled from merge; the merge stays gated on `vcs.auto_merge` |
 
-`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, and `merge-pr.sh` accept `--dry-run`.
+`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, `merge-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
 
 ## Layout
 
@@ -28,13 +29,13 @@ vcs/
 ├── github.sh          # gh implementation
 ├── gitlab.sh          # glab implementation
 ├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
-├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh
+├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
 └── .env.example       # optional VCS_PROVIDER override
 ```
 
 A provider impl defines: `vcs_require_config`, `vcs_open_pr`, `vcs_pr_view`,
 `vcs_pr_comment`, `vcs_pr_comments`, `vcs_pr_threads`, `vcs_pr_resolve_thread`,
-`vcs_merge_pr`, `vcs_upload_media`. **To add a host**
+`vcs_merge_pr`, `vcs_approve_pr`, `vcs_upload_media`. **To add a host**
 (e.g. Bitbucket), drop a new `<provider>.sh` implementing those — nothing else changes.
 Shared media helpers (`vcs_is_image`, `vcs_is_media`, `vcs_media_md`,
 `vcs_media_asset_name`) live in `lib.sh`.
@@ -71,6 +72,13 @@ Handled by the provider CLI, not this adapter:
   addressed — don't resolve to silence an open finding. On **GitLab** these are MR
   *discussions* (`PUT …/discussions/:id?resolved=true`); on **GitHub** they're PR *review
   threads*, resolvable only over GraphQL (`resolveReviewThread`), keyed by an opaque node id.
+- **Approving is the PASS signal, and is decoupled from merging.** `pr-approve.sh` makes a
+  clean review VISIBLE on the PR/MR — a host-level approval (GitHub review `APPROVE` / GitLab
+  MR approve) plus one loud single-line verdict via `--body` — so a pass never lives only in
+  the reviewer's chat. It never merges: the merge stays gated on `vcs.auto_merge` (`merge-pr.sh`).
+  Off ⇒ approve and leave the PR/MR open for a human; on ⇒ the reviewer approves, then merges.
+  A host may forbid approving your **own** PR/MR — a non-issue in the pipeline, where the
+  reviewer is never the author.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff

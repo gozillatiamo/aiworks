@@ -213,3 +213,22 @@ vcs_merge_pr() {
   gh pr merge "$num" --squash --subject "$subject"
   vcs_pr_view "$num"
 }
+
+# vcs_approve_pr NUMBER BODY [DRY] -> the reviewer's PASS signal. Submits an APPROVE review
+# carrying BODY as its summary, so one call gives both the loud verdict AND the host-level
+# approval. BODY is optional. Approve is DECOUPLED from merge: it says "cleared the bar"
+# without merging — the merge stays gated on vcs.auto_merge (vcs_merge_pr).
+# NOTE: GitHub forbids approving your OWN PR — fine here, the reviewer is not the author.
+vcs_approve_pr() {
+  local num="$1" body="${2:-}" dry="${3:-0}"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr review %s --approve%s\n' "$num" "${body:+ --body <verdict>}"
+    return 0
+  fi
+  if [[ -n "$body" ]]; then
+    gh pr review "$num" --approve --body "$body" || die "failed to approve PR #$num"
+  else
+    gh pr review "$num" --approve || die "failed to approve PR #$num"
+  fi
+  printf 'Approved PR #%s\n' "$num"
+}

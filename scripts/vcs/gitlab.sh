@@ -286,3 +286,20 @@ vcs_merge_pr() {
   glab mr merge "$num" --squash --remove-source-branch --yes
   vcs_pr_view "$num"
 }
+
+# vcs_approve_pr NUMBER BODY [DRY] -> the reviewer's PASS signal. Posts BODY as a one-line
+# verdict note (loud + visible on the MR) and registers a host-level MR approval. BODY is
+# optional; empty -> approval only. Approve is DECOUPLED from merge: it says "cleared the
+# bar" without merging — the merge stays gated on vcs.auto_merge (vcs_merge_pr).
+# Approving your own MR may be blocked by the project's approval rules — fine here, the
+# reviewer is not the MR author.
+vcs_approve_pr() {
+  local num="$1" body="${2:-}" dry="${3:-0}"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — %sglab mr approve %s\n' "${body:+glab mr note $num --message <verdict> && }" "$num"
+    return 0
+  fi
+  [[ -n "$body" ]] && { glab mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"; }
+  glab mr approve "$num" >/dev/null || die "failed to approve MR !$num"
+  printf 'Approved MR !%s%s\n' "$num" "${body:+ (verdict note posted)}"
+}

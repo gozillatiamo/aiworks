@@ -14,6 +14,7 @@
 #   vcs_pr_threads NUMBER                       — list resolvable review threads + their ids/state
 #   vcs_pr_resolve_thread NUMBER THREAD_ID [RESOLVED=true] [DRY] — check/uncheck "Resolve thread"
 #   vcs_merge_pr  NUMBER SUBJECT [DRY]          — server-side squash-merge, then print pr-view
+#   vcs_approve_pr NUMBER BODY [DRY]            — reviewer PASS signal: post BODY as a one-line verdict + host-level approve (decoupled from merge)
 #   vcs_close_pr  NUMBER [DRY]                  — close without merging (branch kept), then pr-view
 #   vcs_upload_media KEY FILE [DRY]             — host one media file, print its embeddable markdown line
 #
