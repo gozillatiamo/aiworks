@@ -25,7 +25,14 @@
 #    .superset/.env) recursively, AND every repo's seeded db-data Postgres cluster. Runs
 #    before the MCP services so they come up on real config + a seeded DB.
 # 3. Installs Node dependencies in every repo that has a package.json
-#    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this).
+#    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this), then
+#    seeds any missing repo .env from .env.example.
+# 3b. Maps the seeded player-site subdomains to 127.0.0.1 in /etc/hosts — paotl.<domain>
+#    (PAOTUNG) and ohnbl.<domain> (OHANABET), where <domain> is OFB_DOMAIN_NAME from
+#    agent-webservice/.env (default oneforbet.local) — so a themed player site resolves
+#    locally by host (host-based theme resolution; see README "Visit a site by its site
+#    code"). Runs after the .env step so it reads the real domain. Idempotent (adds ONLY
+#    the names not already mapped) + best-effort (needs root; warns and continues).
 # 4. Starts the shared MCP service containers, then reports which repos still
 #    need their .env reviewed.
 #
@@ -233,6 +240,21 @@ done
 # NOTE: Cursor (.cursorindexingignore) and VS Code (.vscode/settings.json) search
 # re-inclusion, plus the per-repo adapter symlinks, are handled by `aiworks sync` above
 # (the `aiworks add` toolchain, per repo) — no longer duplicated here.
+
+# ── 3b. Local player-site host aliases. A player site picks its theme + config from the request
+# HOST (host-based theme resolution). We standardize the local domain on OFB_DOMAIN_NAME (from
+# agent-webservice/.env, default oneforbet.local) and map the two seeded site subdomains to
+# 127.0.0.1, so http://paotl.<domain>:3004 (PAOTUNG) and http://ohnbl.<domain>:3002 (OHANABET)
+# resolve locally. See the README "Visit a site by its site code" section. Runs AFTER the .env
+# step above so it reads the real domain. Idempotent (only the missing names are added) and
+# best-effort (needs root; warns and continues) — never aborts setup.
+ofb_domain="oneforbet.local"
+if [[ -f agent-webservice/.env ]]; then
+  d="$(sed -n 's/^[[:space:]]*OFB_DOMAIN_NAME=[[:space:]]*"\{0,1\}\([^"#[:space:]]*\).*/\1/p' agent-webservice/.env | tail -n1)"
+  [[ -n "$d" ]] && ofb_domain="$d"
+fi
+log "Ensuring local player-site host aliases (paotl.$ofb_domain, ohnbl.$ofb_domain → 127.0.0.1)…"
+ensure_hosts_entries 127.0.0.1 "paotl.$ofb_domain" "ohnbl.$ofb_domain" || true
 
 # ── 4. Start the shared, long-lived MCP service containers (one container shared by every
 # client/agent over SSE — replaces the old per-client `docker run` servers that orphaned
