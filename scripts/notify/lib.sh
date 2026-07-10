@@ -5,8 +5,9 @@
 # Selects a provider implementation by NOTIFY_PROVIDER (slack) and sources
 # scripts/notify/<provider>/impl.sh, which defines the provider interface:
 #
-#   notify_require_config            — validate the provider's env (token/webhook), die if missing
-#   notify_send  CHANNEL TEXT [DRY]  — post TEXT to CHANNEL; print "ok=1" + "permalink=<url>" on success
+#   notify_require_config                   — validate the provider's env (token/webhook), die if missing
+#   notify_send  CHANNEL TEXT [DRY] [THREAD] — post TEXT to CHANNEL; a non-empty THREAD replies in-thread. Prints "ok=1" + "permalink=<url>"
+#   notify_find_thread CHANNEL KEY          — print the ts of the newest message containing KEY (the review-request), else nothing (caller SKIPS). Best-effort; a provider that can't search returns empty
 #
 # CHANNEL is provider-neutral: an id, a #name, or empty (fall back to NOTIFY_CHANNEL, then
 # whatever the provider's default destination is — e.g. a webhook's bound channel).

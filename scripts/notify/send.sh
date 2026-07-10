@@ -16,6 +16,7 @@ usage() {
   cat <<'EOF'
 Usage: send.sh [--channel <id|#name>] [text] [--dry-run]
        send.sh --review <ticket-key> [--title <text>] [--channel <ch>] [--dry-run]
+       send.sh --reply <ticket-key> [text] [--channel <ch>] [--dry-run]
 
 Post a message to the configured chat provider (NOTIFY_PROVIDER: slack).
 
@@ -30,8 +31,16 @@ Two ways to supply the message:
                 The gather is done here so no repo is ever missed. Exits non-zero when
                 the ticket has no open PR/MR anywhere (nothing to announce).
 
+--reply threads the message UNDER the review-request for a ticket: it finds the newest
+channel message containing the key (the "please review" the requester posted) and replies
+in that thread. If no such thread is found, it SKIPS — prints `skipped=1` and posts
+nothing (never a stray top-level message). This is how a reviewer's verdict lands where
+the request was made. Reply mode needs a bot token (a webhook can't read history) — a
+webhook always skips.
+
 Options:
   --review <KEY>  Compose + send the review digest for ticket KEY (don't also pass text).
+  --reply <KEY>   Post [text] as a reply in the review-request thread for KEY; skip if none.
   --title <text>  Header title for --review (default: looked up from the tracker adapter).
   --channel <ch>  Target channel (id or #name). Default: $NOTIFY_CHANNEL from .env.
                   Ignored by providers whose destination is fixed (e.g. a Slack webhook).
@@ -95,11 +104,12 @@ compose_review_digest() {  # KEY [TITLE]  -> prints the digest, or nothing if no
   printf '%s' "${rows%$'\n'}"
 }
 
-channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""
+channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --channel) channel="${2:-}";      shift 2 ;;
     --review)  review_key="${2:-}";   shift 2 ;;
+    --reply)   reply_key="${2:-}";    shift 2 ;;
     --title)   review_title="${2:-}"; shift 2 ;;
     --dry-run) dry=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -111,6 +121,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$review_key" ]]; then
+  [[ -n "$reply_key" ]] && die "--review and --reply are different modes — pick one"
   [[ "$have_text" -eq 0 ]] || die "--review <KEY> composes the message itself — don't also pass text"
   text="$(compose_review_digest "$review_key" "$review_title")"
   [[ -n "$text" ]] || die "no open PR/MR found for $review_key in any workspace repo — nothing to announce"
@@ -120,4 +131,14 @@ else
   [[ -n "$text" ]] || die "no message text — pass it as an argument, pipe it via stdin, or use --review <KEY>"
 fi
 
-notify_send "$channel" "$text" "$dry"
+if [[ -n "$reply_key" ]]; then
+  # Thread the message under the review-request for this ticket. No request thread found ⇒
+  # SKIP: print skipped=1 and post nothing (never a stray top-level message).
+  ts="$(notify_find_thread "$channel" "$reply_key" || true)"
+  if [[ -z "$ts" ]]; then
+    printf 'skipped=1 reason=no-review-thread-for-%s\n' "$reply_key"; exit 0
+  fi
+  notify_send "$channel" "$text" "$dry" "$ts"
+else
+  notify_send "$channel" "$text" "$dry"
+fi

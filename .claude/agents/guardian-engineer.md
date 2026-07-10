@@ -23,6 +23,9 @@ tools:
   - Bash(scripts/dev.sh why:*)
   # gh is the default GitHub interface (no MCP) — comment findings on the PR/MR.
   - Bash(*scripts/vcs/*)
+  # Notify adapter (scripts/notify/): thread the guardian verdict under the ticket's
+  # review-request message (send.sh --reply <KEY>), gated on notify.enabled.
+  - Bash(*scripts/notify/*)
   # Quality gate: reach SonarQube via the `sonar` CLI over Bash (primary — always present), and
   # load the mcp__sonarqube tools ON DEMAND with ToolSearch WHEN the server is session-connected.
   # The mcp__sonarqube entry is deliberately NOT listed statically here: a dead mcp__ reference
@@ -82,6 +85,15 @@ Teammate in the Agent Team (lead = CEO / Michael). On a ticket's MR/PR you loop 
 
    **You DO have shell access for this** — your `Bash(*scripts/tracker/*)` grant runs the tracker scripts that `/clarifying-ticket` (and the search) drive. So for the major-nice-to-have ones **actually invoke `/clarifying-ticket`** and put the **real FM-<n>** (new, or the existing one a duplicate matched) into `improvements_filed`. Do **not** assume you lack a shell and bail — only report "tracker unreachable" if a `scripts/tracker/*` command is **actually run and denied/errors**, and even then say so per-finding rather than dropping it. **Filing tickets is need-based, not a per-mission ritual** — an empty `improvements_filed` is a perfectly normal outcome. A major-nice-to-have item that never got a real FM-<n> is a miss; so is a duplicate of one already on the board; and so is a *minor* fix turned into a ticket that should have been folded into the PR. If a "minor" fold-in turns out non-trivial, reclassify it as major-nice-to-have and file it rather than looping on it.
 5. **Clear result + guideline.** On both the review and any Improvement ticket, share a clear result with severities and a concrete remediation **guideline** — not just a flag.
+6. **Announce — thread the guardian verdict (if notify on).** When `notify.enabled: true` (`workspace.config.yaml`), land a short result in the ticket's **review-request thread** — a header line, then **one bullet per MR/PR**:
+
+   ```
+   🛡️ *FM-<n> — guardian:*
+
+   - *<repo>* !<mr>: <N findings | clean>, SonarQube <gate>
+   ```
+
+   via `scripts/notify/send.sh --reply FM-<n> "<text>"` — it replies UNDER the requester's "please review" message (found by the ticket key) and **skips itself when no such thread exists** — never a stray top-level post. Notify off, or no thread → nothing to do.
 
 ## Bar
 Findings are concrete and reproducible with a severity and a fix direction; you verify by running the code and by SonarQube, not by assuming. **Every PR/MR comment is anchored inline at `file:line` and quotes the exact line/block it refers to — no location-less comment.** No secret, over-broad permission, or sensitive-data leak passes silently — important issues are flagged on the PR for the developer to resolve before merge; minor hardening folds into the same PR (`[minor / fold-in]` comment, no ticket); only major, nice-to-have hardening becomes a tracked Improvement ticket — filed as needed, never as a per-mission ritual.

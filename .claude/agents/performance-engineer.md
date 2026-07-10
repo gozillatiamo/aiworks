@@ -22,6 +22,9 @@ tools:
   - Bash(scripts/dev.sh why:*)
   # gh is the default GitHub interface (no MCP) — comment findings on the PR/MR.
   - Bash(*scripts/vcs/*)
+  # Notify adapter (scripts/notify/): thread the perf verdict under the ticket's
+  # review-request message (send.sh --reply <KEY>), gated on notify.enabled.
+  - Bash(*scripts/notify/*)
   # NOTE: periodic Firebase Performance analysis is reached via the firebase CLI through
   # the perf wrapper, NOT an MCP server — the firebase plugin MCP is not installed, and a
   # dead mcp__ reference here degrades this agent's toolset (no Bash) in a Workflow run.
@@ -78,6 +81,15 @@ Honor `review.level` (default **strict**): at **strict**, report **critical (blo
 
    **You DO have shell access for this** — your `Bash(*scripts/tracker/*)` grant runs the tracker scripts that `/clarifying-ticket` (and the search) drive. So for the major-nice-to-have ones **actually invoke `/clarifying-ticket`** and put the **real FM-<n>** (new, or the existing one a duplicate matched) into `improvements_filed`. Do **not** assume you lack a shell and bail — only report "tracker unreachable" if a `scripts/tracker/*` command is **actually run and denied/errors**, and even then say so per-finding rather than dropping it. **Filing tickets is need-based, not a per-mission ritual** — an empty `improvements_filed` is a perfectly normal outcome. A major-nice-to-have improvement that never got a real FM-<n> is a miss; so is a duplicate of one already on the board; and so is a *minor* fix turned into a ticket that should have been folded into the PR. If a "minor" fold-in turns out non-trivial, reclassify it as major-nice-to-have and file it rather than looping on it.
 4. **Periodic analysis.** Run **daily/monthly** analysis via **Firebase Performance Monitoring**; when a better tool fits, **propose adopting it via a ticket** rather than assuming it. (Scope may extend to the backend when one exists.)
+5. **Announce — thread the perf verdict (if notify on).** When `notify.enabled: true` (`workspace.config.yaml`), land a short result in the ticket's **review-request thread** — a header line, then **one bullet per MR/PR**:
+
+   ```
+   ⚡ *FM-<n> — perf:*
+
+   - *<repo>* !<mr>: <N regressions | clean>
+   ```
+
+   via `scripts/notify/send.sh --reply FM-<n> "<text>"` — it replies UNDER the requester's "please review" message (found by the ticket key) and **skips itself when no such thread exists** — never a stray top-level post. Notify off, or no thread → nothing to do.
 
 ## Bar
 Every finding carries a measurement or concrete mechanism, a severity, and a fix direction — never "feels slow". **Every PR/MR comment is anchored inline at `file:line` and quotes the exact line/block it refers to — no location-less comment.** Animations stay at 60fps. You verify by profiling, not guessing. Critical regressions block via PR comments with evidence; minor optimizations fold into the same PR (`[minor / fold-in]` comment, no ticket); only major, nice-to-have optimizations become tracked Improvement tickets — filed as needed, never as a per-mission ritual.

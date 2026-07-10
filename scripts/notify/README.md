@@ -15,6 +15,25 @@ The message text is the first positional arg, or stdin.
 printf '%s' "$msg" | scripts/notify/send.sh --channel '#reviews'
 ```
 
+Three message modes:
+- **raw** — `[text]` arg or stdin (the default).
+- **`--review <KEY>`** — compose + post the "please review" digest of a ticket's open PR/MR
+  across every repo (the dev-cycle Notify phase).
+- **`--reply <KEY>`** — post `[text]` as a **threaded reply under the review-request** for the
+  ticket: it finds the newest channel message containing the key (the requester's "please
+  review") via `conversations.history` and replies in that thread. **No thread found ⇒ it
+  skips** (`skipped=1`, posts nothing — never a stray top-level message). This is how the
+  reviewers land their verdict where the request was made. Needs a **bot token** (a webhook
+  can't read history, so it always skips); a bot token can't use `search.messages`, hence the
+  history scan over `conversations.history` (`channels:history`/`groups:history`). **The
+  channel must resolve to an id:** `conversations.history` takes an id, not a `#name`, so set
+  `NOTIFY_CHANNEL` (or `--channel`) to the channel **id** — a `#name` only resolves when the
+  bot also has `channels:read`/`groups:read`, and without it reply mode silently skips.
+
+```sh
+scripts/notify/send.sh --reply OFB-2098 '✅ OFB-2098 — approved. Standards clean, 0 must-fix.'
+```
+
 ## Where it's used
 
 The **dev-cycle** workflow's *Notify* phase (the last phase) posts a "please review"
@@ -34,9 +53,10 @@ notify/
 └── .env.example    # NOTIFY_PROVIDER / NOTIFY_CHANNEL + the Slack secret
 ```
 
-A provider impl defines: `notify_require_config`, `notify_send CHANNEL TEXT [DRY]`.
-**To add a provider** (e.g. Teams, Discord), drop a new `<provider>/impl.sh` implementing
-those — nothing else changes.
+A provider impl defines: `notify_require_config`, `notify_send CHANNEL TEXT [DRY] [THREAD]`,
+and `notify_find_thread CHANNEL KEY` (return empty if the provider can't search — reply mode
+then always skips). **To add a provider** (e.g. Teams, Discord), drop a new `<provider>/impl.sh`
+implementing those — nothing else changes.
 
 ## Auth (Slack)
 

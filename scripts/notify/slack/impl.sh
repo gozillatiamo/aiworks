@@ -13,17 +13,20 @@ notify_require_config() {
     die "slack notify needs SLACK_BOT_TOKEN or SLACK_WEBHOOK_URL in scripts/notify/.env"
 }
 
-# notify_send CHANNEL TEXT [DRY] -> prints "ok=1" + "permalink=<url>" on success, else dies.
+# notify_send CHANNEL TEXT [DRY] [THREAD_TS] -> prints "ok=1" + "permalink=<url>" on success,
+# else dies. A non-empty THREAD_TS posts the message as a reply UNDER that thread (the review
+# conclusion lands beneath the review-request), never broadcast to the channel.
 notify_send() {
-  local channel="$1" text="$2" dry="${3:-0}"
+  local channel="$1" text="$2" dry="${3:-0}" thread_ts="${4:-}"
 
   if [[ -n "${SLACK_BOT_TOKEN:-}" ]]; then
     [[ -n "$channel" ]] || die "slack chat.postMessage needs a channel — pass --channel or set NOTIFY_CHANNEL"
     if [[ "$dry" -eq 1 ]]; then
-      printf 'DRY RUN — POST chat.postMessage channel=%s\n%s\n' "$channel" "$text"; return 0
+      printf 'DRY RUN — POST chat.postMessage channel=%s%s\n%s\n' "$channel" "${thread_ts:+ thread_ts=$thread_ts}" "$text"; return 0
     fi
     local payload resp
-    payload="$(jq -n --arg c "$channel" --arg t "$text" '{channel:$c, text:$t, unfurl_links:false}')"
+    payload="$(jq -n --arg c "$channel" --arg t "$text" --arg tt "$thread_ts" \
+      '{channel:$c, text:$t, unfurl_links:false} + (if $tt != "" then {thread_ts:$tt} else {} end)')"
     resp="$(curl -sS -X POST https://slack.com/api/chat.postMessage \
       -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
       -H 'Content-Type: application/json; charset=utf-8' \
@@ -78,4 +81,33 @@ notify_send() {
     || die "slack webhook request failed (network)"
   [[ "$resp" == ok ]] || die "slack webhook rejected the message: ${resp:-<empty>}"
   printf 'ok=1\npermalink=\n'
+}
+
+# Resolve a channel #name (or pass an id through) to a channel id. Empty on failure.
+_slack_channel_id() {
+  local ch="$1"
+  case "$ch" in
+    \#*) curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel,private_channel" \
+           -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null \
+           | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1 ;;
+    *)   printf '%s' "$ch" ;;
+  esac
+}
+
+# notify_find_thread CHANNEL KEY -> print the ts of the NEWEST channel message whose text
+# contains KEY — the review-request a reviewer replies under. Best-effort by design: bot
+# tokens can't search.messages, so we scan conversations.history (needs channels:history /
+# groups:history + channels:read). ANY miss — webhook mode, no scope, no match — prints
+# nothing, and the caller SKIPS (never falls back to a top-level post). conversations.history
+# returns top-level messages newest-first, so the first match is the latest request; the
+# reviewer's own in-thread replies are not top-level, so they never shadow the request.
+notify_find_thread() {
+  local channel="$1" key="$2" cid
+  [[ -n "${SLACK_BOT_TOKEN:-}" ]] || return 0
+  cid="$(_slack_channel_id "$channel")"
+  [[ -n "$cid" ]] || return 0
+  curl -sS "https://slack.com/api/conversations.history?channel=${cid}&limit=200" \
+    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null \
+    | jq -r --arg k "$key" 'if .ok then (.messages[]? | select((.text // "") | test($k; "i")) | .ts) else empty end' 2>/dev/null \
+    | head -n1
 }
