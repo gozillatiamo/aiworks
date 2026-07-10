@@ -62,6 +62,13 @@ Handled by the provider CLI, not this adapter:
   location-less review comments — this applies to the code reviewer (Daniel), the
   guardian (Ethan), and the performance reviewer (Liam) alike. Both providers anchor the
   comment to the line; the quoted snippet in `--body` keeps it self-contained either way.
+- **The anchor must match the quote (auto-verified).** The **first line** of the quoted
+  snippet is the exact offending line, and `pr-comment.sh` verifies `--line` against it:
+  if the anchored line doesn't contain that quoted line, it re-anchors to the **unique
+  match within ±15 lines** and prints a `note:` (the common off-by-N — e.g. a definition
+  whose `--line` landed on the blank/attribute line above the signature); with no unique
+  nearby match it posts as given and **WARNs**. So always quote the offending line **first**,
+  and anchor at the line of the code you're quoting — never the top of the added hunk.
 - **Resolving review threads.** Once the developer addresses a review comment (pushes the
   fix + replies), they check **"Resolve thread"** on it so reviewers see what's been handled
   and what's still open. `pr-threads.sh <number>` lists each resolvable thread with its
