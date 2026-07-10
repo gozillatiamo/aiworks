@@ -35,8 +35,10 @@ the closing summary print. Pass -v/--verbose to any of them for the full step-by
 Commands:
   add        Onboard ONE repo: register it (workspace.config.yaml products[] + mani.d +
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
-             seed hooks/permissions, scaffold scripts/dev.sh, run the skill generator, and
-             ensure the .superset lifecycle hooks (setup/run/teardown) exist + cover the repo.
+             seed hooks/permissions, seed the default coding-standards rules
+             (.claude/rules/coding_standards/, backend/frontend flavor by the repo's stack),
+             scaffold scripts/dev.sh, run the skill generator, and ensure the .superset
+             lifecycle hooks (setup/run/teardown) exist + cover the repo.
   sync       Onboard every repo DECLARED in workspace.config.yaml products[].repos[]
              (optionally narrowed to one product, or one repo via a repo-name positional
              or --repo <name>) by running the `add` toolchain for each — reading

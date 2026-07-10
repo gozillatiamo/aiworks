@@ -6,8 +6,10 @@
 # QA → reviewers → guardian/perf) can work the repo: registers it with mani, clones
 # it, installs codegraph (https://github.com/colbymchenry/codegraph) if it's missing —
 # machine-wide, once — then builds the codegraph index, installs the agent skill packs, seeds a hardcoded
-# (sonar-free) hook + permission baseline, and — best-effort, via Claude — scaffolds a
-# language-appropriate CLAUDE.md and scripts/dev.sh shaped by the repo's own anatomy.
+# (sonar-free) hook + permission baseline, seeds a default coding-standards rule set
+# (.claude/rules/coding_standards/ — backend or frontend flavor by the repo's stack), and —
+# best-effort, via Claude — scaffolds a language-appropriate CLAUDE.md and scripts/dev.sh shaped
+# by the repo's own anatomy.
 #
 # It is provider/stack-agnostic and IDEMPOTENT: anything already done/installed is
 # SKIPPED and just reported. Steps that shell out to external tools (mani, codegraph,
@@ -227,6 +229,28 @@ detect_lang() {
   elif [[ -f "$d/pyproject.toml" || -f "$d/requirements.txt" || -f "$d/setup.py" ]]; then echo 'python'
   elif [[ -f "$d/pom.xml" || -f "$d/build.gradle" || -f "$d/build.gradle.kts" ]]; then echo 'jvm'
   else echo ''; fi
+}
+
+# Pick the default coding-standards FLAVOR for a repo from its kind + language: backend |
+# frontend | "" (empty = no obvious flavor → seed nothing). The `kind` decides when it's
+# explicit; otherwise the language does (so a `package`/`generic` repo still classifies by its
+# stack — a Rust lib → backend, a Next.js lib → frontend). QA suites (cypress/newman/k6) and
+# doc repos (markdown/json) match neither and get no standards. The templates these map to live
+# in scripts/templates/coding-standards/<flavor>/ — backend ← agent-webservice conventions,
+# frontend ← paotung-template conventions.
+standards_flavor() {
+  local kind lang
+  kind="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  lang="$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$kind" in
+    backend|service|api|migration) echo backend; return ;;
+    web-app|webapp|frontend|ui)    echo frontend; return ;;
+  esac
+  case "$lang" in
+    *rust*|go|*golang*|*jvm*|*java*|*kotlin*|*scala*|*postgres*|*sql*|*python*|py|*ruby*|*php*|*elixir*|*dotnet*|c#) echo backend ;;
+    *next*|*nuxt*|*node*|*react*|*vue*|*svelte*|*angular*|*astro*|*solid*|*typescript*|ts|*javascript*|js) echo frontend ;;
+    *) echo '' ;;
+  esac
 }
 
 # Render a stream of glance lines as a fixed N-line "running log" window (like a docker
@@ -726,6 +750,29 @@ else
       FOLLOWUP+=("trim $PATH_REL/CLAUDE.md ($cm_lines lines) to ≤60 and split detail into .claude/rules/")
     fi
   fi
+fi
+
+# ── 7.5. seed default coding-standards rules (.claude/rules/coding_standards/) ──
+# Every new CODE repo starts with a lean, broadly-applicable standards baseline the team edits
+# from — file-size cap, storytelling code (no in-body comments), deterministic date/time in
+# tests. These are STATIC templates (no Claude call → deterministic, free), picked by the repo's
+# FLAVOR: backend ← agent-webservice conventions, frontend ← paotung-template. A repo with no
+# flavor (QA suite, docs) is skipped. Idempotent like the other seeders: present → skip (keeps
+# any team-authored rules), --force reseeds the two baseline files.
+step "7.5. Seed default coding-standards rules (.claude/rules/coding_standards/)"
+cs_flavor="$(standards_flavor "$KIND" "$LANG")"
+cs_src="$ROOT/scripts/templates/coding-standards/$cs_flavor"
+cs_dest="$REPO_DIR/.claude/rules/coding_standards"
+if [[ -z "$cs_flavor" ]]; then
+  skip "7.5. no backend/frontend flavor for kind '$KIND' / lang '${LANG:-?}' — no default standards seeded"
+elif [[ ! -d "$cs_src" ]]; then
+  skip "7.5. template store missing ($cs_src) — expected scripts/templates/coding-standards/$cs_flavor/*.md"
+elif [[ -f "$cs_dest/standards.md" && "$FORCE" -ne 1 ]]; then
+  skip "7.5. .claude/rules/coding_standards/ already present — kept (--force to reseed the baseline)"
+elif mkdir -p "$cs_dest" && cp "$cs_src"/*.md "$cs_dest"/ 2>/dev/null; then
+  ok "seeded $cs_flavor coding-standards baseline ($(cd "$cs_src" && printf '%s ' *.md)) into .claude/rules/coding_standards/"
+else
+  skip "7.5. could not copy $cs_flavor templates from $cs_src into $cs_dest"
 fi
 
 # ── 8. scaffold the matt-pocock per-repo config (NON-INTERACTIVE) ──────────────
