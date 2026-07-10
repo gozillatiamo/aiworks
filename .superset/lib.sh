@@ -381,6 +381,53 @@ install_jq_binary() {
   return 0
 }
 
+# Ensure the `pnpm` CLI is installed. Repos that use pnpm (a pnpm-lock.yaml or a
+# "packageManager": "pnpm…" field — see node_pm) need it for the step-3 dependency install;
+# without it node_install SKIPS them and their deps never land. Best-effort + idempotent:
+# present → no-op; otherwise install. NEVER fatal to setup. macOS bash 3.2 safe. Install order
+# prefers corepack (bundled with Node ≥16.13, no download) → Homebrew → npm -g → the official
+# standalone installer (https://pnpm.io/installation).
+ensure_pnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    log "pnpm already installed ($(pnpm --version 2>/dev/null))."
+    return 0
+  fi
+  log "pnpm not found — installing…"
+  # 1) corepack — ships with Node ≥16.13, so it needs no download; it just drops a pnpm shim
+  #    next to node. Creating the shim needs write access to Node's bin dir; retry under sudo.
+  if command -v corepack >/dev/null 2>&1; then
+    run_glance "pnpm: corepack enable" corepack enable pnpm \
+      || { command -v sudo >/dev/null 2>&1 && run_glance "pnpm: corepack enable (sudo)" sudo corepack enable pnpm; } \
+      || true
+    # Pin + fetch a concrete release so the shim resolves offline later (best-effort; needs net).
+    command -v pnpm >/dev/null 2>&1 && run_glance "pnpm: corepack prepare pnpm@latest" corepack prepare pnpm@latest --activate || true
+  fi
+  # 2) Homebrew — the canonical macOS install (brew is already assumed; setup needs `mani`).
+  if ! command -v pnpm >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
+    run_glance "pnpm: brew install" brew install pnpm || warn "brew install pnpm failed — trying npm / the standalone installer."
+  fi
+  # 3) npm -g — any Node, all platforms.
+  if ! command -v pnpm >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    run_glance "pnpm: npm install -g pnpm" npm install -g pnpm || warn "npm install -g pnpm failed — trying the standalone installer."
+  fi
+  # 4) The official standalone installer — no Node needed; drops pnpm into PNPM_HOME
+  #    (~/.local/share/pnpm on Linux, ~/Library/pnpm on macOS) and edits the shell rc, but NOT
+  #    this running shell — so surface PNPM_HOME on PATH for the check below + step-3's install.
+  if ! command -v pnpm >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+    run_glance "pnpm: standalone installer" sh -c 'curl -fsSL https://get.pnpm.io/install.sh | sh -' || true
+    local d
+    for d in "${PNPM_HOME:-}" "$HOME/.local/share/pnpm" "$HOME/Library/pnpm"; do
+      if [[ -n "$d" && -x "$d/pnpm" && ":$PATH:" != *":$d:"* ]]; then export PATH="$d:$PATH"; fi
+    done
+  fi
+  if command -v pnpm >/dev/null 2>&1; then
+    log "pnpm installed ($(pnpm --version 2>/dev/null))."
+  else
+    warn "pnpm still not on PATH after install — repos that use pnpm will be SKIPPED in the dependency install (step 3). Install it by hand (https://pnpm.io/installation); if the standalone installer ran, open a new shell so its PATH edit takes effect."
+  fi
+  return 0
+}
+
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>

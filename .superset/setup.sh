@@ -11,8 +11,10 @@
 #    itself (.code-workspace generation, VS Code settings merge) and the tracker/notify
 #    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
 #    phase's optional third-party hook (run.sh Phase 4 can tunnel a port through it; macOS: Homebrew, Linux:
-#    the official apt repo, else a static binary); and glab, the GitLab CLI the VCS adapter
-#    (scripts/vcs/) drives (Homebrew, else the official release tarball). Best-effort.
+#    the official apt repo, else a static binary); glab, the GitLab CLI the VCS adapter
+#    (scripts/vcs/) drives (Homebrew, else the official release tarball); and pnpm, the package
+#    manager the pnpm-based repos need for the step-3 dependency install (corepack, else
+#    Homebrew / npm -g / the official standalone installer). Best-effort.
 # 1. `aiworks sync -y` clones + FULLY onboards every product repo declared under
 #    products[] in workspace.config.yaml (via the generated mani.d/<product>.yaml)
 #    — repos are gitignored and don't travel with a new git worktree. Full onboard
@@ -53,12 +55,14 @@ fi
 
 # ── 0. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
-# phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter. Best-effort —
+# phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter;
+# pnpm so step 3 can install deps for the pnpm-based repos (else node_install skips them). Best-effort —
 # guarded so a failure never aborts setup.
-log "Ensuring host tooling (jq, ngrok, glab)…"
+log "Ensuring host tooling (jq, ngrok, glab, pnpm)…"
 ensure_jq || true
 ensure_ngrok || true
 ensure_glab || true
+ensure_pnpm || true
 
 # ── 1. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
 # full `aiworks add` toolchain per repo (codegraph index, skill packs, adapter symlinks into

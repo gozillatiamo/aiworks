@@ -57,7 +57,7 @@ independent clone.
 | **Claude Code** | [claude.com/claude-code](https://claude.com/claude-code) |
 | **gcloud CLI** | [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install) |
 
-> 🔧 `jq`, `glab` (GitLab CLI), and `ngrok` are installed by `setup` if missing — just run
+> 🔧 `jq`, `glab` (GitLab CLI), `pnpm`, and `ngrok` are installed by `setup` if missing — just run
 > `glab auth login` once after. You'll also need a
 > [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens) and access
 > to the `#dev-oneforbet` Slack channel.
@@ -88,8 +88,18 @@ dependencies, and starts the shared MCP services. Idempotent, safe to re-run:
 | File | Purpose |
 |------|---------|
 | `agent-webservice/.env` + `.env.local` | backend (`.env.local` required by docker-compose) |
-| `backoffice/.env` · `front-end/.env` · `paotung-template/.env` | web apps |
+| `backoffice/.env` · `front-end/.env` · `paotung-template/.env` + `.env.local` | web apps |
 | `agent-webservice/.env.amb` | AMB aggregator — without it `run` skips the AMB phase ([docs](agent-webservice/docs/amb_setup_flow.md)) |
+
+4.1 glab auth login
+```sh
+glab auth login
+```
+
+4.2 gcloud auth login
+```sh
+gcloud auth application-default login
+```
 
 **5. Run the product** — starts the full local stack (databases + migrations, backend,
 backoffice, **one** player site, AMB aggregator):
@@ -149,7 +159,7 @@ domain on **`oneforbet.local`** — set `OFB_DOMAIN_NAME=oneforbet.local` in
 `agent-webservice/.env`, then add the seeded subdomains to `/etc/hosts`:
 
 ```
-127.0.0.1 paotl.oneforbet.local ohnbl.oneforbet.local
+127.0.0.1 localhost paotl.oneforbet.local ohnbl.oneforbet.local
 ```
 
 - `http://paotl.oneforbet.local:3004` → PAOTUNG site (code `PAOTL`)
