@@ -24,6 +24,9 @@ it as the base context for everything below. In short:
 - **The review level sets the depth.** `review.level` in `workspace.config.yaml`
   (default **strict**) decides whether the nice-to-have tier is reported at all — see
   `basis.md` §4.
+- **Every claim carries a receipt.** Cite what you actually ran or read — you have no
+  build tool, so a compile/test result you didn't observe, or a claim about an unwritten
+  fix, is a suggestion for the developer's gate to settle, not a verdict (`basis.md` §5).
 
 The verdict runs along two axes, as **parallel sub-agents** (so they don't pollute each
 other's context), then this skill aggregates them:
@@ -103,7 +106,10 @@ clearly separated." One read, passed to both, so the axes stay consistent.
   to see its dependents before judging change-preventer/coupler smells and contract
   changes; report any changed contract whose dependents now break (cite the ADR /
   structure / codegraph dependent). Separate the bottom-line must-fixes from the
-  instrument judgement calls. Skip what tooling enforces. Under 400 words."
+  instrument judgement calls. Skip what tooling enforces. **Receipts (§5):** you have NO
+  build/test tool — never assert it compiles or passes, and a claim about an unwritten
+  fix ('widening this compiles, zero call-site changes') is a hypothesis for the
+  developer's gate to settle, not yours to certify. Under 400 words."
 
 **Spec sub-agent prompt** — include:
 
