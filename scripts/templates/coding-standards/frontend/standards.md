@@ -6,7 +6,7 @@ paths:
 
 # Coding standards
 
-Seeded default (from the OFB frontend conventions). Add repo-specific rules
+Seeded default (a lean frontend baseline). Add repo-specific rules
 (`architecture.md`, layering/naming, `storybook.md`, …) as this repo grows.
 
 ## **MUST DO**

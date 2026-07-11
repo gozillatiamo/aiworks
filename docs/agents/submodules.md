@@ -16,13 +16,13 @@ superproject pins to one commit, not a place to develop.
 the PR/MR there. Bumping the superproject's pointer to the merged commit is a separate,
 deliberate step, not this skill's job.
 
-Current instances in this workspace (illustrative — detect from git, don't trust the list to stay current):
+Illustrative shape (detect from git — don't trust any hard-coded list to stay current):
 
 | Submodule checkout — do NOT touch | Is really the repo | Develop here instead (primary clone at root) |
 |---|---|---|
-| `agent-webservice/agent-db/` | `agent-db` | `agent-db/` |
-| `commission-batch/agent-db/` | `agent-db` | `agent-db/` |
-| `paotung-template/packages/customization-widget/` | `customization-widget` | `customization-widget/` |
+| `your-app/shared-lib/` | `shared-lib` | `shared-lib/` |
+| `your-service/shared-lib/` | `shared-lib` | `shared-lib/` |
+| `your-web/packages/ui-kit/` | `ui-kit` | `ui-kit/` |
 
 ## Detect it before you edit — two angles, check both
 
@@ -38,7 +38,7 @@ git rev-parse --show-superproject-working-tree   # NON-EMPTY ⇒ you are inside 
 `.gitmodules` is a submodule mount:
 
 ```sh
-git config -f .gitmodules --get-regexp '\.path$'   # e.g. "submodule.agent-db.path agent-db"
+git config -f .gitmodules --get-regexp '\.path$'   # e.g. "submodule.shared-lib.path shared-lib"
 ```
 
 A target under one of those paths must be redirected before you write.
@@ -48,8 +48,8 @@ A target under one of those paths must be redirected before you write.
 Map the submodule to its primary clone at the workspace root by repo name:
 
 ```sh
-url="$(git -C <submodule-path> config --get remote.origin.url)"   # …/agent-db.git
-repo="$(basename "$url" .git)"                                    # agent-db
+url="$(git -C <submodule-path> config --get remote.origin.url)"   # …/shared-lib.git
+repo="$(basename "$url" .git)"                                    # shared-lib
 # primary clone = <workspace-root>/$repo   (what `mani` cloned; confirm with `mani list projects`)
 ```
 

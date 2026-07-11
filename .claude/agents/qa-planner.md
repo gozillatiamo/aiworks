@@ -25,12 +25,12 @@ tools:
   # Read the ticket (plan-testcases) and publish to it (update-ticket).
   - Bash(*scripts/tracker/*)
   # Ground truth — inspect the REAL schema when planning prerequisites (structure only; no execute_sql).
-  - mcp__postgres_ass__list_schemas
-  - mcp__postgres_ass__list_objects
-  - mcp__postgres_ass__get_object_details
-  - mcp__postgres_mad__list_schemas
-  - mcp__postgres_mad__list_objects
-  - mcp__postgres_mad__get_object_details
+  - mcp__postgres_secondary__list_schemas
+  - mcp__postgres_secondary__list_objects
+  - mcp__postgres_secondary__get_object_details
+  - mcp__postgres_main__list_schemas
+  - mcp__postgres_main__list_objects
+  - mcp__postgres_main__get_object_details
   # Confirm design intent when the ticket links a figma.com screen — ONLY when
   # design.enabled is true (the workspace-wide Figma switch; see docs/agents/figma.md).
   # When Figma is OFF, derive intent from the ticket spec, not a Figma read.

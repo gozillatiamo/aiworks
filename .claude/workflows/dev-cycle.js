@@ -66,141 +66,42 @@ export const meta = {
 //   folded into the PR, Improvement tickets filed). See STRICT / levelDirective below.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
-const TICKET_PREFIX = 'OFB'
+const TICKET_PREFIX = 'FM'
 const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = false // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
-const PLAN_TO_HTML = true     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
+const PLAN_TO_HTML = false     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
 const NOTIFY = true        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
-const NOTIFY_CHANNEL = '#dev-oneforbet'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
+const NOTIFY_CHANNEL = '#code-reviews'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
 const DESIGN_ENABLED = false     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = 'none'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = 'strict'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const STATUS = {
-  to_do: 'TO DO',
-  in_progress: 'IN PROGRESS',
-  code_review: 'CODE REVIEW',
-  ready_to_merge: 'READY TO MERGE',
-  ready_to_test: 'READY TO TEST',
-  testing: 'TESTING',
-  done: 'DONE',
+  to_do: 'To do',
+  in_progress: 'In progress',
+  code_review: 'Code review',
+  ready_to_merge: 'Ready to merge',
+  ready_to_test: 'Ready to test',
+  testing: 'Testing',
+  done: 'Done',
 }
 const REPOS = {
-  'ofb-instruction': {
-    path: 'ofb-instruction', kind: 'document',
+  'your-app': {
+    path: 'your-app', kind: 'frontend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
-    green: '<unit + integration tests>',
-    guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit',
-    distribute: null,
-  },
-  'agent-db': {
-    path: 'agent-db', kind: 'migration',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'migrate passed successfully and rollback able',
-    guardianFocus: 'secrets',
-    distribute: null,
-  },
-  'paotung-template': {
-    path: 'paotung-template', kind: 'web-app',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'tests via stroybook and lint passed successfully',
+    green: '<keep-it-green check, e.g. lint + unit tests>',
     guardianFocus: 'secrets, data-protection',
-    distribute: null,
+    distribute: 'firebase',
   },
-  'customization-widget': {
-    path: 'customization-widget', kind: 'package',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'tests via stroybook and lint passed successfully',
-    guardianFocus: 'secrets, data-protection',
-    distribute: null,
-  },
-  'front-end': {
-    path: 'front-end', kind: 'web-app',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'tests via stroybook and lint passed successfully',
-    guardianFocus: 'secrets, data-protection',
-    distribute: null,
-  },
-  'agent-webservice': {
-    path: 'agent-webservice', kind: 'backend',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'unit tests + integration tests passed successfully',
-    guardianFocus: 'secrets, data-protection, injection attacks',
-    distribute: null,
-  },
-  'agent-paotung-cypress': {
-    path: 'agent-paotung-cypress', kind: 'test-suite',
+  'your-tests': {
+    path: 'your-tests', kind: 'test-suite',
     base: { feature: 'main', fix: 'main' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
-    green: 'tests via cypress passed successfully',
+    green: 'E2E suite passed successfully',
     testSuite: true,
-    distribute: null,
-  },
-  'backoffice': {
-    path: 'backoffice', kind: 'web-app',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'tests via stroybook and lint passed successfully',
-    guardianFocus: 'secrets, data-protection',
-    distribute: null,
-  },
-  'ofb-backoffice-cypress': {
-    path: 'ofb-backoffice-cypress', kind: 'test-suite',
-    base: { feature: 'main', fix: 'main' },
-    plan: 'qa-planner', build: 'qa-runner', review: null,
-    guard: false, perf: false,
-    green: 'tests via cypress and newman passed successfully',
-    testSuite: true,
-    distribute: null,
-  },
-  'mock-agency-api': {
-    path: 'mock-agency-api', kind: 'backend',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'The service is running with healthy',
-    guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit',
-    distribute: null,
-  },
-  'commission-batch': {
-    path: 'commission-batch', kind: 'backend',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'unit tests + integration tests passed successfully',
-    guardianFocus: 'secrets, data-protection',
-    distribute: null,
-  },
-  'seamless-api': {
-    path: 'seamless-api', kind: 'web-app',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'run and tests passed successfully',
-    guardianFocus: 'secrets, data-protection',
-    distribute: null,
-  },
-  'game': {
-    path: 'game', kind: 'package',
-    base: { feature: 'develop', fix: 'main' },
-    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
-    guard: true, perf: true,
-    green: 'unit tests and integration passed successfully',
-    guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
 }
@@ -225,7 +126,7 @@ if (!ticket) throw new Error(`dev-cycle needs a ticket number, e.g. args: "${TIC
 const opt = typeof args === 'object' && args ? args : {}
 const MAX_GATE_ROUNDS = opt.maxGateRounds || 3     // build↔gates loops, per repo
 const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 3 // review↔fix loops, per repo
-const MAX_BUILD_TRIAGE = opt.maxBuildTriage || 3   // fix attempts per failing test before a build agent must hand off (OFB-2141)
+const MAX_BUILD_TRIAGE = opt.maxBuildTriage || 3   // fix attempts per failing test before a build agent must hand off
 // REVIEW LEVEL (workspace.config.yaml review.level, mirrored above). strict ⇒ the Review phase
 // reports must-fixes ONLY and suppresses the whole nice-to-have tier; thorough ⇒ + nice-to-have.
 // levelDirective is prepended to every first-review prompt so all three gates share one rule; at
@@ -258,11 +159,11 @@ const tag = (repo, role, phase, round) =>
 const ccType = (branch) => (/^fix\//i.test(branch ?? '') ? 'fix' : 'feat')
 const prTitle = (rp) => `${ccType(rp.work_branch)}(${ticket}): ${rp.title ?? '<Task name>'}`
 
-// Shared BUILD-AGENT DISCIPLINE (OFB-2141) — appended to EVERY build prompt (code + test-suite)
+// Shared BUILD-AGENT DISCIPLINE — appended to EVERY build prompt (code + test-suite)
 // and the convergence retry. Three hard rules that stop an open-ended build loop from running
-// away (the agent-webservice build aborted 3× without ever handing off): always hand off, never
+// away (a build aborted 3× without ever handing off): always hand off, never
 // a repo-wide formatter, and a bounded red-test triage that tells a flaky harness from a real bug.
-const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory — OFB-2141):
+const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory):
 • ALWAYS HAND OFF. Ending WITHOUT calling StructuredOutput is a FAILURE. Even if the work is incomplete or the suite is red, you MUST end by returning the DEV_SCHEMA result with "status" set: "complete" (Definition of Done met — for the test-suite repo a red caused only by reported app bugs / expected pre-merge reds still counts as complete), "partial" (some slices landed, work remains), or "blocked" (cannot proceed). For "partial"/"blocked" put exactly WHAT REMAINS and WHY in "remaining". Never withhold the handoff to keep investigating.
 • NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
 • BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.`
@@ -349,7 +250,7 @@ const DEV_SCHEMA = {
     work_branch: { type: 'string' }, handoff_path: { type: 'string' },
     summary: { type: 'string' }, commits: { type: 'number' },
     fixed: { type: 'array', items: { type: 'string' } },
-    // Convergence contract (OFB-2141): a build/fix handoff ALWAYS classifies its end state, so the
+    // Convergence contract: a build/fix handoff ALWAYS classifies its end state, so the
     // workflow never has to treat a wall as a bare null/abort. complete = DoD met (test-suite repo:
     // a red caused only by reported app bugs / expected pre-merge reds still counts as complete);
     // partial = some slices landed, work remains; blocked = cannot proceed (flaky harness, missing
@@ -654,7 +555,7 @@ async function runRepoPipeline(rp, desc) {
     buildPrompt + BUILD_DISCIPLINE + FIGMA_DIRECTIVE,
     { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
   )
-  // CONVERGENCE RETRY (OFB-2141 §1.2) — a null build means the agent never produced a structured
+  // CONVERGENCE RETRY — a null build means the agent never produced a structured
   // handoff (it ran away triaging a red / reformatting instead of returning). Don't abort the
   // wave: retry ONCE with a bounded "stop working, hand off NOW" continuation, bumped to opus +
   // xhigh so the wrap-up is reliable. It must emit DEV_SCHEMA with whatever state it reached
@@ -709,7 +610,7 @@ async function runRepoPipeline(rp, desc) {
   // for human action, PR left OPEN — re-run the dev-cycle to resume. A crashed reviewer is
   // INCONCLUSIVE (re-runs in first-review mode, never a silent pass). The test-suite repo
   // has no reviewers → it is ready as soon as the PR/MR is open.
-  // HONOR THE LIVE PROVIDER (OFB-2141 §2.3): when quality_gate.provider is 'none' the guardian
+  // HONOR THE LIVE PROVIDER: when quality_gate.provider is 'none' the guardian
   // gate is skipped entirely (auto-pass) — it never spins up an agent and so never attempts
   // SonarQube nor risks tripping a usage-policy safeguard.
   if (desc.guard && QUALITY_GATE === 'none') log(`[${R}] quality_gate.provider=none — guardian gate skipped (auto-pass, no SonarQube attempt).`)
@@ -770,7 +671,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // security-review phrasing, or a transient API error — must NOT read as a hard run failure.
     // Map it to gate_unavailable so the run continues (fail-open) and surfaces it loudly, exactly
     // like an un-runnable gate. The code reviewer has no gate_unavailable concept → stays null
-    // (inconclusive, re-run next round). (OFB-2141 §2.1)
+    // (inconclusive, re-run next round).
     const runReviewer = async (rv) => {
       try {
         return await agent(promptFor(rv), { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
@@ -893,7 +794,7 @@ const branchKind = scope.type === 'bug' ? 'fix' : 'feature' // polish rides the 
 // ── Per-repo plan artifacts MUST land under their repo clone, NOT the workspace root ──
 // The workflow engine runs every agent with cwd = the workspace (org) root and agent() exposes
 // NO cwd override, so we cannot rely on a planner voluntarily cd-ing into its repo before it
-// writes a bare `agent_logs/...` path — some do, some don't (OFB-2141: two planners dumped their
+// writes a bare `agent_logs/...` path — some do, some don't (seen in practice: two planners dumped their
 // plan/.html/testcases at the workspace root). We make placement cwd-independent in three steps:
 //   (1) resolve the absolute workspace root ONCE here,
 //   (2) hand each planner an ABSOLUTE, repo-anchored output path (code repos write the plan
@@ -951,7 +852,7 @@ const plans = (await parallel(scoped.map((r) => () => {
     : (repoRoot
         ? ` ARTIFACT ANCHORING (mandatory): the ${r.repo} clone is at ${repoRoot}. Write the implementation plan (and, if asked below, its HTML) with the Write tool to the ABSOLUTE path(s) given — NEVER a bare \`agent_logs/...\` relative to your cwd, and NEVER to the workspace-root agent_logs/ (that dir is for run-level summaries only).`
         : ` ARTIFACT ANCHORING (mandatory): \`cd ${repoDir}\` (the ${r.repo} clone) before writing the plan, so its \`agent_logs/...\` path lands UNDER the repo, NEVER at the workspace-root agent_logs/.`)
-  // --approve-plan PRESERVE (OFB-2141 §3): on an approved re-run a human may have hand-edited the
+  // --approve-plan PRESERVE: on an approved re-run a human may have hand-edited the
   // plan/ADRs after a bad run. The planner must NOT regenerate or overwrite an existing plan —
   // --approve-plan ("the plan is approved") implies "do not regenerate the approved plan". It runs
   // /ticket-kickoff for BRANCH SETUP ONLY, reads the existing plan as-is (validated against current
@@ -1057,7 +958,7 @@ const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].stat
 if (aborted.length) {
   // Surface each unresolved repo's partial/blocked HANDOFF (status + what remains) instead of a
   // bare "aborted" — the run stops at the merge gate (the whole change set must be ready before any
-  // merge), but the human/summary sees what landed and what's missing per repo. (OFB-2141 §1.5)
+  // merge), but the human/summary sees what landed and what's missing per repo.
   const handoffs = aborted.map((id) => {
     const r = repoResults[id]
     const h = r?.handoff

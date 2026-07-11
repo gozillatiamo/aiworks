@@ -33,12 +33,12 @@ tools:
   - Bash(npm run appium:*)
   - Bash(node test.js:*)
   # Ground truth — inspect the REAL schema before seeding (structure only; no execute_sql / no data writes).
-  - mcp__postgres_ass__list_schemas
-  - mcp__postgres_ass__list_objects
-  - mcp__postgres_ass__get_object_details
-  - mcp__postgres_mad__list_schemas
-  - mcp__postgres_mad__list_objects
-  - mcp__postgres_mad__get_object_details
+  - mcp__postgres_secondary__list_schemas
+  - mcp__postgres_secondary__list_objects
+  - mcp__postgres_secondary__get_object_details
+  - mcp__postgres_main__list_schemas
+  - mcp__postgres_main__list_objects
+  - mcp__postgres_main__get_object_details
   # Read the ticket for context, then publish results onto it (report-test-results + update-ticket).
   - Bash(*scripts/tracker/*)
   # Confirm design intent when the ticket links a figma.com screen — ONLY when

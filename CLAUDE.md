@@ -66,6 +66,6 @@ The group's repos are declared under `products:` in @workspace.config.yaml
 - codegraph is not allowed at the organization (workspace) level — only inside an
   individual repo.
 - Never edit, add, or commit **inside a git submodule checkout** (e.g.
-  `agent-webservice/agent-db/`, `paotung-template/packages/customization-widget/`). That
+  `your-app/shared-lib/`, `your-web/packages/ui-kit/`). That
   code belongs to a repo that is *also* cloned as its own primary clone at the workspace
   root — make the change there. See `docs/agents/submodules.md`.

@@ -31,7 +31,7 @@ Three message modes:
   bot also has `channels:read`/`groups:read`, and without it reply mode silently skips.
 
 ```sh
-scripts/notify/send.sh --reply OFB-2098 '✅ OFB-2098 — approved. Standards clean, 0 must-fix.'
+scripts/notify/send.sh --reply FM-2098 '✅ FM-2098 — approved. Standards clean, 0 must-fix.'
 ```
 
 ## Where it's used

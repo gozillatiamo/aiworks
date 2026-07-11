@@ -42,7 +42,7 @@ vcs_open_pr() {
 # vcs_find_prs KEY -> print the web_url (one per line) of every OPEN MR whose TITLE or
 # source BRANCH contains KEY (case-insensitive). Read-only — never creates anything.
 # Relies on the team convention that a ticket's MR carries the ticket key in its
-# Conventional-Commit title (e.g. feat(OFB-2141): …) and/or branch (feature/OFB-2141).
+# Conventional-Commit title (e.g. feat(FM-12): …) and/or branch (feature/FM-12).
 vcs_find_prs() {
   local key="$1"
   glab api "projects/:fullpath/merge_requests?state=opened&per_page=100" 2>/dev/null \

@@ -12,7 +12,7 @@ Post a **review-request notification** for a ticket — the "please review" dige
 open PR/MR across every repo — to the team chat. **One command does the whole job:**
 
 ```bash
-scripts/notify/send.sh --review <KEY> --channel '#dev-oneforbet'
+scripts/notify/send.sh --review <KEY> --channel '#code-reviews'
 ```
 
 `send.sh --review` gathers the ticket's open PR/MR from **every** workspace repo (matched
@@ -31,7 +31,7 @@ list.** Run from the workspace (org) root (the dir holding `.claude/`); never `c
 
 - **Channel**: defaults to `NOTIFY_CHANNEL` from `scripts/notify/.env`; when that is unset,
   pass `--channel` with the workspace's `notify.channel` from `workspace.config.yaml`
-  (`#dev-oneforbet`).
+  (`#code-reviews`).
 - **Confirm first**: add `--dry-run` to print the assembled digest without posting.
 
 ## Result

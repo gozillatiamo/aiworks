@@ -6,7 +6,7 @@ paths:
 
 # Coding standards
 
-Seeded default (from the OFB backend conventions). Tune the numbers and add
+Seeded default (a lean backend baseline). Tune the numbers and add
 per-area rules (`dao.md`, `services.md`, `route.md`, …) as this repo grows.
 
 ## **MUST DO**

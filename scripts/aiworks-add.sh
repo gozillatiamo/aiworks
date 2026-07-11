@@ -236,8 +236,8 @@ detect_lang() {
 # explicit; otherwise the language does (so a `package`/`generic` repo still classifies by its
 # stack — a Rust lib → backend, a Next.js lib → frontend). QA suites (cypress/newman/k6) and
 # doc repos (markdown/json) match neither and get no standards. The templates these map to live
-# in scripts/templates/coding-standards/<flavor>/ — backend ← agent-webservice conventions,
-# frontend ← paotung-template conventions.
+# in scripts/templates/coding-standards/<flavor>/ — backend ← the backend flavor,
+# frontend ← the frontend flavor.
 standards_flavor() {
   local kind lang
   kind="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
@@ -756,7 +756,7 @@ fi
 # Every new CODE repo starts with a lean, broadly-applicable standards baseline the team edits
 # from — file-size cap, storytelling code (no in-body comments), deterministic date/time in
 # tests. These are STATIC templates (no Claude call → deterministic, free), picked by the repo's
-# FLAVOR: backend ← agent-webservice conventions, frontend ← paotung-template. A repo with no
+# FLAVOR: backend ← the backend flavor, frontend ← the frontend flavor. A repo with no
 # flavor (QA suite, docs) is skipped. Idempotent like the other seeders: present → skip (keeps
 # any team-authored rules), --force reseeds the two baseline files.
 step "7.5. Seed default coding-standards rules (.claude/rules/coding_standards/)"

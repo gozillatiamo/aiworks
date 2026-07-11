@@ -1,6 +1,6 @@
 export const meta = {
   name: 'prd',
-  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker. Pass a brd work-key ("phase-2"), a doc-space URL, a docs/brd/<key>.md path — or an EXISTING ticket key (e.g. OFB-123, "complete detail for ticket OFB-123") to enter TICKET MODE: the run completes THAT ticket in place (full spec written onto it) and creates NO new tickets unless the work demonstrably cannot ship under it.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd-design skill instead for real frames). "intake" = CPO briefs only, returns features for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + figmaByFeature (the /prd-design skill builds frames in-session, then calls this). See .claude/skills/prd-design/SKILL.md.',
+  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker. Pass a brd work-key ("phase-2"), a doc-space URL, a docs/brd/<key>.md path — or an EXISTING ticket key (e.g. APP-123, "complete detail for ticket APP-123") to enter TICKET MODE: the run completes THAT ticket in place (full spec written onto it) and creates NO new tickets unless the work demonstrably cannot ship under it.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd-design skill instead for real frames). "intake" = CPO briefs only, returns features for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + figmaByFeature (the /prd-design skill builds frames in-session, then calls this). See .claude/skills/prd-design/SKILL.md.',
   whenToUse: 'Turn an approved BRD into production-ready designs + a ready-for-dev backlog of tickets (each a PRD, with its Figma frame linked when UI-bearing). For real Figma frames, run via the /prd-design skill (in-session OAuth) — a raw Workflow(prd) call cannot author frames (the Figma MCP is unauthenticated inside the workflow runtime).',
   phases: [
     { title: 'Intake', detail: 'CPO: read the BRD(if exists) → prioritized feature briefs, each flagged UI-bearing or not', model: 'opus' },
@@ -73,8 +73,8 @@ const stage = (typeof args === 'object' && args?.stage) || 'all'
 const isUrl = /^https?:\/\//i.test(rawIn)
 const isPath = !isUrl && (/\.md$/i.test(rawIn) || rawIn.includes('/'))
 const phaseMatch = rawIn.match(/phase\s*-?\s*(\d+)/i)
-// TICKET MODE — the input names an EXISTING tracker ticket (e.g. "OFB-2193", or a
-// directive like "complete detail for bug ticket OFB-2193"). The mission then is to
+// TICKET MODE — the input names an EXISTING tracker ticket (e.g. "APP-2193", or a
+// directive like "complete detail for bug ticket APP-2193"). The mission then is to
 // COMPLETE that one ticket in place — enrich its spec — NOT to mint new per-feature
 // tickets. "phase-N" refs are stripped before matching so "phase-2" never reads as a key.
 const ticketMatch = !isUrl && !isPath
