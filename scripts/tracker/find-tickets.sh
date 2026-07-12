@@ -48,7 +48,7 @@ With NO --query and NO --type, lists every ticket (newest first) — combine wit
 --open to scope it.
 
 Environment:
-  TRACKER_PROVIDER   notion | jira (default: notion). Provider creds live in .env.
+  TRACKER_PROVIDER   notion | jira | linear (default: notion). Provider creds live in .env.
 EOF
 }
 

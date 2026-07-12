@@ -2,7 +2,7 @@
 # Tracker adapter — shared dispatch for the ticket scripts.
 # Sourced by the entry scripts (get/upsert/add/get-comments); not meant to run alone.
 #
-# Selects a provider implementation by TRACKER_PROVIDER (notion | jira) and sources
+# Selects a provider implementation by TRACKER_PROVIDER (notion | jira | linear) and sources
 # scripts/tracker/<provider>/impl.sh, which defines the provider interface that the
 # entry scripts call:
 #
@@ -40,7 +40,7 @@ command -v curl >/dev/null || die "curl is required"
 # Which tracker backs this workspace. Defaults to notion to match the reference setup.
 TRACKER_PROVIDER="${TRACKER_PROVIDER:-notion}"
 IMPL="$TRACKER_DIR/$TRACKER_PROVIDER/impl.sh"
-[[ -f "$IMPL" ]] || die "unknown TRACKER_PROVIDER '$TRACKER_PROVIDER' (no $IMPL) — use 'notion' or 'jira', or add an impl.sh under scripts/tracker/$TRACKER_PROVIDER/"
+[[ -f "$IMPL" ]] || die "unknown TRACKER_PROVIDER '$TRACKER_PROVIDER' (no $IMPL) — use 'notion', 'jira' or 'linear', or add an impl.sh under scripts/tracker/$TRACKER_PROVIDER/"
 
 # shellcheck disable=SC1090
 . "$IMPL"

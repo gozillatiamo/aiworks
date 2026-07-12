@@ -57,7 +57,7 @@ notify:
 
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
-  provider: notion                 # notion | jira
+  provider: notion                 # notion | jira | linear
   ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+)
   # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
   # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.

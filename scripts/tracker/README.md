@@ -2,8 +2,8 @@
 
 Provider-agnostic shell scripts that read and update a **ticket** in the team's issue
 tracker. The four entry scripts share one CLI surface; `lib.sh` dispatches to a
-provider implementation chosen by `TRACKER_PROVIDER` (`notion` | `jira`). Readers print
-**plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare number / a page id
+provider implementation chosen by `TRACKER_PROVIDER` (`notion` | `jira` | `linear`). Readers
+print **plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare number / a page id
 / a tracker URL.
 
 | Script | Does |
@@ -72,14 +72,15 @@ tracker/
 ├── upsert-ticket-details.sh
 ├── add-ticket-comment.sh
 ├── notion/{impl.sh,notion.jq} # Notion REST implementation
-└── jira/{impl.sh,jira.jq}     # Jira Cloud REST v3 implementation (ADF)
+├── jira/{impl.sh,jira.jq}     # Jira Cloud REST v3 implementation (ADF)
+└── linear/impl.sh             # Linear GraphQL implementation (Markdown-native)
 ```
 
 A provider `impl.sh` defines the interface `lib.sh` calls: `tracker_require_config`,
 `tracker_get_details`, `tracker_get_comments`, `tracker_upsert` (4th arg = optional
 Markdown body), `tracker_find`, `tracker_add_comment`, `tracker_comments_for_block`.
-**To add a tracker** (e.g. Linear, GitHub Issues), drop a new `<provider>/impl.sh`
-implementing those functions — nothing else changes.
+**To add a tracker** (e.g. GitHub Issues), drop a new `<provider>/impl.sh`
+implementing those functions — nothing else changes (Linear was added exactly this way).
 
 ## Setup
 
@@ -152,3 +153,20 @@ canonical workflow-phase → real-status mapping for this org lives in
   `--link` is **off** unless `NOTION_PROP_LINKS` is set (Notion has no typed issue links, so
   the parent relation already carries the QA "Implements parent" case). `--dry-run` notes
   the parent/link relations rather than resolving their page ids, to stay offline.
+- **Linear** (GraphQL, `LINEAR_API_KEY` + `LINEAR_TEAM_KEY`): descriptions **and** comments
+  are Markdown-native, so there's no ADF/blocks renderer — the Markdown is sent verbatim.
+  `--status` names a workflow **state** resolved to its id within the team (unknown name →
+  loud failure listing the team's states). `--priority` maps to Linear's Int 0–4
+  (Urgent=1/High=2/Medium=3/Low=4/None=0; a bare 0–4 works too; an unrecognised name WARNs and
+  is skipped). There is a **single numeric `estimate`** (no Dev/QA split) — this workspace
+  **sums** `--effort` + `--dev-points` + `--qa-points` into it (needs team estimation enabled).
+  `--issuetype` and `--component` both map to **labels** (Linear has no issue-type field; a
+  missing label WARNs and is skipped, never invented). `--parent` sets the sub-issue parent
+  (`--subtask` is a no-op note). `--link <TYPE>:<KEY>` creates an issue **relation** — Linear
+  supports `related|blocks|duplicate`, so any other type (e.g. `Implements`) maps to `related`.
+  `find-tickets.sh` scopes to `LINEAR_TEAM_KEY` (when set), matches the title case-insensitively,
+  and treats "done" as a **completed** workflow state. `--dry-run` stays offline (describes the
+  change by name; ids resolve on a real run). New issues (ref `new`) can default into a
+  **project** via `LINEAR_PROJECT` (a project name) or `LINEAR_PROJECT_ID` (a UUID) — Linear has
+  no team-level default-project setting through the API, so this is where you set it; the
+  identifier PREFIX still comes from the team, not the project.

@@ -14,8 +14,9 @@
 # It also PREPARES the adapter .env files (scripts/{tracker,vcs,notify}/.env) when they are missing:
 # each is seeded from its committed .env.example and pre-filled with the values derivable from
 # workspace.config.yaml (vcs.provider → VCS_PROVIDER; tracker.provider → TRACKER_PROVIDER;
-# tracker.ticket_prefix → JIRA_PROJECT_KEY for jira; tracker.statuses.done → NOTION_STATUS_DONE
-# for notion; notify.provider/channel → NOTIFY_PROVIDER/NOTIFY_CHANNEL). An existing .env is left
+# tracker.ticket_prefix → JIRA_PROJECT_KEY for jira / LINEAR_TEAM_KEY for linear;
+# tracker.statuses.done → NOTION_STATUS_DONE for notion; notify.provider/channel →
+# NOTIFY_PROVIDER/NOTIFY_CHANNEL). An existing .env is left
 # untouched — you still fill in the secrets by hand (e.g. the Slack token in notify/.env).
 #
 # It also PREPARES the image-generation config: ensures the git-ignored
@@ -275,6 +276,7 @@ prepare_adapter_env() {
   case "$tracker_provider" in
     jira)   tkv+=(JIRA_PROJECT_KEY  "$ticket_prefix") ;;   # ticket_prefix == the Jira project key
     notion) tkv+=(NOTION_STATUS_DONE "$status_done") ;;    # the "done" status name find-tickets uses
+    linear) tkv+=(LINEAR_TEAM_KEY   "$ticket_prefix") ;;   # ticket_prefix == the Linear team key
   esac
   seed_env_file "$DIR/tracker" "${tkv[@]}"
 

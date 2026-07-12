@@ -25,7 +25,7 @@ Options:
   -h, --help    Show this help and exit.
 
 Environment:
-  TRACKER_PROVIDER  notion | jira (default: notion). Provider creds live in .env.
+  TRACKER_PROVIDER  notion | jira | linear (default: notion). Provider creds live in .env.
 EOF
 }
 

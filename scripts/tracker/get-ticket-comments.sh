@@ -16,7 +16,7 @@ usage() {
 Usage: get-ticket-comments.sh [--deep] <ticket>
 
 Print a ticket's open comments as plain text, from the tracker selected by
-TRACKER_PROVIDER (notion | jira).
+TRACKER_PROVIDER (notion | jira | linear).
 
 Arguments:
   <ticket>            Ticket key (FM-9, APP-123, a number), a page id, or a URL.
@@ -27,7 +27,7 @@ Options:
   -h, --help          Show this help and exit.
 
 Environment:
-  TRACKER_PROVIDER    notion | jira (default: notion).
+  TRACKER_PROVIDER    notion | jira | linear (default: notion).
   NOTION_CONCURRENCY  Parallel requests used by --deep on Notion (default 8).
 EOF
 }

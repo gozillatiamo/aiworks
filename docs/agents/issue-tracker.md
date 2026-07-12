@@ -9,8 +9,8 @@ of hardcoding a provider — fill it in when you instantiate the workspace, alon
 ## The adapter is the only entry point
 
 **Never** call a tracker's API/MCP directly. All ticket I/O goes through the shell
-adapter in `scripts/tracker/`, which dispatches by `TRACKER_PROVIDER` (`notion` | `jira`)
-from `scripts/tracker/.env`:
+adapter in `scripts/tracker/`, which dispatches by `TRACKER_PROVIDER`
+(`notion` | `jira` | `linear`) from `scripts/tracker/.env`:
 
 | Need | Command |
 |---|---|
@@ -22,7 +22,8 @@ from `scripts/tracker/.env`:
 | Add a comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
 
 Both write scripts accept `--dry-run`. The flags are **abstract**; the adapter maps them
-to the provider (Notion properties; Jira fields + a status transition).
+to the provider (Notion properties; Jira fields + a status transition; Linear GraphQL fields
++ a workflow-state id).
 
 **Estimate points are FIELDS, not a comment.** `--dev-points` / `--qa-points` write the
 estimation split into dedicated number fields (Notion "Developer Points" / "QA Points";
@@ -30,7 +31,9 @@ Jira `JIRA_DEV_POINTS_FIELD` / `JIRA_QA_POINTS_FIELD`), and `--effort` the overa
 (Notion "Effort level"; Jira `JIRA_EFFORT_FIELD`). `/estimate-ticket` owns these — see
 that skill. A provider with no point fields configured now **warns** and lists the flag
 under a `Skipped:` line (it no longer drops the value silently) — check `Changed:` /
-`Skipped:`.
+`Skipped:`. **Linear** has a single numeric `estimate` (no Dev/QA split), so this workspace
+**sums** `--effort` + `--dev-points` + `--qa-points` into it — the split isn't stored
+separately there.
 
 **Child issues are create-only flags through the same adapter.** `--parent`, `--subtask`
 (or `--issuetype`), `--component`, and `--link <TYPE>:<KEY>` on the ref `new` build a child
@@ -43,16 +46,21 @@ back to the closest; see `scripts/tracker/README.md`.
 
 > Fill these in from `workspace.config.yaml`.
 
-- **Provider:** `<notion | jira>`
+- **Provider:** `<notion | jira | linear>`
 - **Ticket id format:** `<PREFIX>-<n>` (e.g. `FM-9`, `APP-123`). The id regex is
   `<PREFIX>-\d+`. A bare number is accepted (Notion: looked up by the unique-id
-  property; Jira: expanded with `JIRA_PROJECT_KEY`).
+  property; Jira: expanded with `JIRA_PROJECT_KEY`; Linear: expanded with `LINEAR_TEAM_KEY`).
 - **Notion only:** tasks database id = `<NOTION_DB_ID>`; unique-id property =
   `<NOTION_ID_PROP, default "Task ID">`. Never write `Task ID` or `Updated at`
   (read-only / auto).
 - **Jira only:** project key = `<JIRA_PROJECT_KEY>`; status changes happen via
   **workflow transitions** (the adapter resolves a transition whose target matches the
   status name you pass).
+- **Linear only:** team key = `<LINEAR_TEAM_KEY>` (the identifier prefix, e.g. `FM`);
+  the id regex prefix is that team key. `--status` names a **workflow state** resolved to
+  its id within the team, so `tracker.statuses` must map to your Linear state names.
+  Descriptions and comments are Markdown-native. `--issuetype`/`--component` → **labels**;
+  there is no separate issue-type field.
 
 ## Status lifecycle
 
