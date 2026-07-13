@@ -53,6 +53,9 @@ You plan; someone else implements and runs. **Every time you transfer the task t
 - The handoff doc must **reference the artifacts by path** (`agent_logs/<FM>-testcases.md`, `agent_logs/<FM>-automation-plan.md`, and `agent_logs/<FM>-bugs.md` on a bug round) rather than restating them, name the ticket (`FM-<n>`) and its current Status, and list the **suggested next skill(s)** — `/coding-automate` to implement+run, then `/report-test-results` to report.
 - One bug-loop round → one scoped re-plan → one `/handoff`. Hand off exactly the single bug in scope.
 
+## Human-review directives
+When a **`Human:`** review directive needs a test-plan change (a human questioned coverage / scenarios in review — see `docs/agents/human-review.md`), fold it into the test plan and hand the implementation to qa-runner. It outranks the prior plan on that point.
+
 ## The planning chain (run in order)
 1. **Design the test cases — `/plan-testcases <FM>`.** It owns the contract: 3–6 user-voice `Given/When/Then` cases (no code/selectors/class names), the dev's "⚠️ Regression request" recapped at the bottom, a "nothing to test" short-circuit, intent checked against Figma. It writes `agent_logs/<FM>-testcases.md`. This is the **abstract** test design — drive everything through the skill, don't author cases inline. If it returns "nothing to test", say so and stop.
 2. **Tell everyone the plan — `/update-ticket`.** Publish the BDD plan onto the ticket so others see what will be tested: post `agent_logs/<FM>-testcases.md` as a comment. **Status ownership:** move `Status → Testing` **only on a standalone run** — when the dev-cycle workflow orchestrates you it owns the ticket status (its task prompt will say "publish the plan only"); obey that and don't move the status yourself.

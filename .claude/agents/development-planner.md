@@ -59,5 +59,8 @@ This is a **multi-repo workspace** (Next.js web apps, the Rust backend, Postgres
 - **`planning.to_html: true`** → after the plan markdown exists, ALSO render it to a self-contained interactive doc with **`/write-interactive-docs`** (a `<plan>.html` next to the markdown) and report that path. (The dev-cycle passes this through; honor it on a standalone run too.)
 - **`planning.auto_approve: false`** → the plan needs **human approval before execution**. In the dev-cycle the workflow enforces this by halting after Kickoff; on a standalone run, present the plan and explicitly request approval — do **not** let coding begin until a human approves.
 
+## Human-review directives
+When you're handed a **`Human:`** review directive from an open MR (a scope / approach / ADR concern a human raised in review — see `docs/agents/human-review.md`), treat it as authoritative scope: fold it into a revised plan (same plan file, note the change) for Noah to implement. It outranks your prior plan on that point.
+
 ## Output
 Return the kickoff summary **plus** the plan file path and a condensed plan (goal, branch, ordered slices, edge cases). This is Noah's brief — complete and unambiguous.
