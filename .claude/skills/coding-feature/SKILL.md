@@ -20,7 +20,7 @@ allowed-tools:
     - Bash(scripts/dev.sh *)
     - Bash(mkdir *)
     - mcp__claude_ai_Figma
-model: sonnet[1m]
+model: sonnet
 effort: high
 ---
 

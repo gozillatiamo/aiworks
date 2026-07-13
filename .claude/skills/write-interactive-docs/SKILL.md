@@ -19,7 +19,7 @@ description: >-
   "add a section" — editing just the requested part instead of rebuilding. Prefer
   this over a plain Markdown reply whenever the user wants something polished,
   visual, or shareable.
-model: sonnet[1m]
+model: sonnet
 effort: low 
 ---
 

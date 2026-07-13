@@ -48,7 +48,7 @@ Goal: a clean feature branch off the newest default branch, so coding never happ
 1. `head="$(git rev-parse --abbrev-ref HEAD)"`; refuse if `head` == `base` (you're on the default branch — nothing to PR).
 2. Commit the work if the tree is dirty: `git add -A && git commit -m "<concise change summary>"`. End the commit message with:
    ```
-   Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+   Co-Authored-By: Claude Code <noreply@anthropic.com>
    ```
    If there are no commits ahead of `base` (`git rev-list --count "$base..$head"` is 0), there's nothing to merge — stop and say so.
 3. Open the PR/MR to the parent/default branch (the adapter pushes the branch for you). Title it per **Conventional Commits**, deriving the type from the branch prefix — `feature/<KEY>` → `feat(<KEY>): <title>`, `fix/<KEY>` → `fix(<KEY>): <title>`:
