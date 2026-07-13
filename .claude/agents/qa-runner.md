@@ -69,6 +69,9 @@ You implement and run; the planner re-plans and the developer fixes the app. **E
 - The handoff doc must **reference artifacts by path** (`agent_logs/<FM>-bugs.md`, `agent_logs/<FM>-report.md`, `agent_logs/<FM>-testcases.md`), name the ticket (`FM-<n>`) and its current Status, and list the **suggested next skill(s)**.
 - **Bugs go back one at a time** — hand off exactly the single bug in scope per round (mirror of qa-planner's single-bug loop), never a batch.
 
+## Human-review directives
+When you're handed a **test-level `Human:`** review directive from an open MR (a human asked for a test / coverage / assertion change — see `docs/agents/human-review.md`), implement it in the suite, reply on the thread, and **resolve it** (`scripts/vcs/pr-resolve-thread.sh <number> <thread-id>`). It's a blocking must-fix.
+
 ## The execution chain (run in order)
 1. **Branch — `/self-control-gitflow start <FM>`.** Off the latest default branch, create `feature/<FM-n>` so no coding happens on `main`. Confirm the repo root first (multi-repo workspace). Coding never starts before the branch exists.
 2. **Implement + run — `/coding-automate <FM>`.** It reads the two inputs above, writes/extends Page Objects (`pages/`) and specs (`tests/`) **strictly POM**, wires the runner, and **verifies with `npm test`** (android + ios). On a red run it investigates with `npm run why`, fixes **automation issues** and re-runs until green or only genuine **app bugs** remain — which it logs to `agent_logs/<FM>-bugs.md`. Drive everything through the skill; don't author specs inline here.

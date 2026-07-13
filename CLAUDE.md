@@ -32,6 +32,10 @@ gitignored clones and only the meta-repo shows.
   everything up from it.
 - `docs/agents/issue-tracker.md` — how to read/write tickets (the tracker adapter,
   status names, id format).
+- `docs/agents/human-review.md` — the `Human:` convention: a human reviewer's required
+  changes, left as `Human:`-prefixed PR/MR review-thread comments, are blocking, top-priority
+  directives the agents auto-route (code→developer, test→qa, scope→planner) and resolve. The
+  `apply-human-review` skill drives them on demand ("take my review", no prefix needed).
 - `docs/agents/image-generation.md` — how the graphic-designer generates assets
   (the `mcp-image` server + `GEMINI_API_KEY`), gated by `image_generation.enabled`
   (default OFF); the design/PRD phase fails loud when it's not set up rather than
