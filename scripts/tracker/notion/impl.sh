@@ -23,6 +23,7 @@ NOTION_PROP_PRIORITY="${NOTION_PROP_PRIORITY:-Priority}"
 NOTION_PROP_EFFORT="${NOTION_PROP_EFFORT:-Effort level}"
 NOTION_PROP_DEV_POINTS="${NOTION_PROP_DEV_POINTS:-Developer Points}"   # number; estimation Dev split
 NOTION_PROP_QA_POINTS="${NOTION_PROP_QA_POINTS:-QA Points}"            # number; estimation QA split
+NOTION_PROP_SPRINT="${NOTION_PROP_SPRINT:-}"    # select → --sprint; empty by default (warns instead of dropping)
 NOTION_PROP_TITLE="${NOTION_PROP_TITLE:-Task name}"
 NOTION_PROP_DESCRIPTION="${NOTION_PROP_DESCRIPTION:-Description}"
 NOTION_PROP_TYPE="${NOTION_PROP_TYPE:-Task type}"   # multi_select used by find-tickets --type / --issuetype
@@ -252,6 +253,15 @@ tracker_upsert() {
         '$p + {($prop): {multi_select: ($c | map({name: .}))}}')"
     else
       echo "WARN: --component ignored — NOTION_PROP_COMPONENT not set in scripts/tracker/.env" >&2
+    fi
+  fi
+  local sprint_val; sprint_val="$(printf '%s' "$fields" | jq -r '.sprint // empty')"
+  if [[ -n "$sprint_val" ]]; then
+    if [[ -n "$NOTION_PROP_SPRINT" ]]; then
+      props="$(jq -n --argjson p "$props" --arg prop "$NOTION_PROP_SPRINT" --arg v "$sprint_val" \
+        '$p + {($prop): {select: {name: $v}}}')"
+    else
+      echo "WARN: --sprint ignored — NOTION_PROP_SPRINT not set in scripts/tracker/.env" >&2
     fi
   fi
   if [[ -n "$issuetype" ]]; then

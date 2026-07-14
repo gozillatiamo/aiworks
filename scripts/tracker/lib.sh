@@ -10,12 +10,14 @@
 #   tracker_get_details   KEY               — print title + properties/fields + body (plain text)
 #   tracker_get_comments  DEEP KEY          — print comments (DEEP = 0|1; providers may ignore DEEP)
 #   tracker_upsert        KEY DRY FIELDS [BODY_MD]
-#                                           — FIELDS = JSON {status,priority,effort,title,description};
-#                                             BODY_MD (optional) = Markdown spec written to the page
-#                                             BODY / issue description (--body / --body-file)
+#                                           — FIELDS = JSON {status,priority,effort,dev_points,
+#                                             qa_points,sprint,title,description}; BODY_MD (optional)
+#                                             = Markdown spec written to the page BODY / issue
+#                                             description (--body / --body-file)
 #   tracker_find          OPTS             — OPTS = JSON {query,open,limit,as_json,types:[...]};
 #                                             print matching tickets newest-first (the dedup search)
 #   tracker_add_comment   KEY DRY TEXT      — add one comment
+#   tracker_add_attachment KEY DRY FILE     — upload a local file as an attachment (Jira; Notion dies loud)
 #   tracker_comments_for_block BLOCK_ID     — internal --deep worker (no-op for providers without it)
 #
 # A ticket KEY is provider-neutral: a full key (FM-9 / APP-123), a bare number, or a

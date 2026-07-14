@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Discover the Jira custom-field ids you need to populate the estimation env keys in
-# scripts/tracker/.env — JIRA_EFFORT_FIELD / JIRA_DEV_POINTS_FIELD / JIRA_QA_POINTS_FIELD —
-# without guessing customfield ids by hand.
+# scripts/tracker/.env — JIRA_EFFORT_FIELD / JIRA_DEV_POINTS_FIELD / JIRA_QA_POINTS_FIELD /
+# JIRA_SPRINT_FIELD — without guessing customfield ids by hand.
 #
 # Calls GET /rest/api/3/field and prints "<id>\t<name>" for every field whose name matches
-# Story Points / Developer Points / QA Points (case-insensitive). Widen or narrow it with
-# --grep <regex>, or dump everything with --all.
+# Story Points / Developer Points / QA Points / Sprint (case-insensitive). Widen or narrow it
+# with --grep <regex>, or dump everything with --all.
 #
 #   ./discover-fields.sh                 # the estimation point fields (the default)
 #   ./discover-fields.sh --grep points   # any field whose name matches /points/i
@@ -55,8 +55,8 @@ fi
 . "$DIR/impl.sh"
 tracker_require_config
 
-# Default pattern matches the three estimation fields and common name variants.
-pattern='story point|developer point|dev point|qa point'
+# Default pattern matches the three estimation fields + Sprint and common name variants.
+pattern='story point|developer point|dev point|qa point|sprint'
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --grep) [[ -n "${2:-}" ]] || die "--grep needs a regex"; pattern="$2"; shift 2 ;;

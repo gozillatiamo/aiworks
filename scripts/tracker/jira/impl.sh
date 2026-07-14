@@ -11,6 +11,10 @@
 #   JIRA_EFFORT_FIELD optional custom-field id for --effort (e.g. customfield_10016 / story points)
 #   JIRA_DEV_POINTS_FIELD optional custom-field id for --dev-points (Developer points; number)
 #   JIRA_QA_POINTS_FIELD  optional custom-field id for --qa-points  (QA points; number)
+#   JIRA_SPRINT_FIELD     optional custom-field id for --sprint (the Agile "Sprint" field).
+#                     Read as the current/last sprint's id+name; written as a bare sprint id
+#                     (an integer, not the array GET returns) — e.g. copy an original ticket's
+#                     sprint onto a freshly split-off piece.
 #                     find the ids with jira/discover-fields.sh; when one is unset the
 #                     matching flag is WARNed + listed under "Skipped:" (not dropped silently).
 #   JIRA_SUBTASK_ISSUETYPE optional sub-task issue type NAME for --subtask (e.g. "Sub-task").
@@ -34,6 +38,7 @@ JIRA_PROJECT_KEY="${JIRA_PROJECT_KEY:-}"
 JIRA_EFFORT_FIELD="${JIRA_EFFORT_FIELD:-}"
 JIRA_DEV_POINTS_FIELD="${JIRA_DEV_POINTS_FIELD:-}"
 JIRA_QA_POINTS_FIELD="${JIRA_QA_POINTS_FIELD:-}"
+JIRA_SPRINT_FIELD="${JIRA_SPRINT_FIELD:-}"
 JIRA_DEFAULT_ISSUETYPE="${JIRA_DEFAULT_ISSUETYPE:-Task}"
 JIRA_SUBTASK_ISSUETYPE="${JIRA_SUBTASK_ISSUETYPE:-}"   # --subtask type; "" → resolve from API
 
@@ -101,7 +106,7 @@ tracker_get_details() {
   # Append the configured point/effort field ids so the estimate is visible (e.g. for
   # /estimate-ticket re-estimation) — the endpoint returns only the fields requested.
   fields_q="summary,status,priority,assignee,labels,issuetype,description,parent"
-  for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD"; do
+  for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD" "$JIRA_SPRINT_FIELD"; do
     [[ -n "$f" ]] && fields_q="$fields_q,$f"
   done
   issue="$(jira_api GET "/rest/api/3/issue/$key?fields=$fields_q")"
@@ -113,6 +118,12 @@ tracker_get_details() {
       (if ($qpf|length>0) and (.fields[$qpf]!=null) then "QA: \(.fields[$qpf])"  else empty end),
       (if ($ef|length>0)  and (.fields[$ef]!=null)  then "Effort: \(.fields[$ef])" else empty end) ]
     | if length>0 then "\nEstimate:  " + join("  ·  ") else empty end'
+  # Sprint line — the field GETs as an array of sprint objects; show the last (current) one
+  # and its bare id, so a caller can round-trip that id straight into --sprint on another ticket.
+  printf '%s' "$issue" | jq -r --arg sf "$JIRA_SPRINT_FIELD" '
+    if ($sf|length) > 0 and (.fields[$sf]? // [] | length) > 0
+    then (.fields[$sf] | last) as $s | "\nSprint:  \($s.name // "—") (id \($s.id // "—"))"
+    else empty end'
 }
 
 # Jira has a single comment stream (no block-anchored comments), so --deep is ignored.
@@ -136,7 +147,8 @@ jira_warn_dropped_fields() {
   for spec in \
     "effort|$JIRA_EFFORT_FIELD|--effort|JIRA_EFFORT_FIELD" \
     "dev_points|$JIRA_DEV_POINTS_FIELD|--dev-points|JIRA_DEV_POINTS_FIELD" \
-    "qa_points|$JIRA_QA_POINTS_FIELD|--qa-points|JIRA_QA_POINTS_FIELD"; do
+    "qa_points|$JIRA_QA_POINTS_FIELD|--qa-points|JIRA_QA_POINTS_FIELD" \
+    "sprint|$JIRA_SPRINT_FIELD|--sprint|JIRA_SPRINT_FIELD"; do
     IFS='|' read -r key env flag envname <<<"$spec"
     present="$(printf '%s' "$fields" | jq -r --arg k "$key" '((.[$k] // "") | tostring | length) > 0')"
     if [[ "$present" == "true" && -z "$env" ]]; then
@@ -199,7 +211,7 @@ tracker_upsert() {
   # bare --description (no --body) falls back to a plain-text ADF description. Any media
   # carried from the previous description is re-appended so images survive the rewrite.
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" --arg ef "$JIRA_EFFORT_FIELD" \
-    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" \
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg sf "$JIRA_SPRINT_FIELD" --arg body "$body_md" \
     --argjson media "$existing_media" '
     include "jira";
     {}
@@ -211,6 +223,7 @@ tracker_upsert() {
     + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
     + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
     + (if (.qa_points  and ($qpf | length > 0)) then {($qpf): (.qa_points  | tonumber)} else {} end)
+    + (if (.sprint     and ($sf  | length > 0)) then {($sf):  (.sprint     | tonumber)} else {} end)
     ')"
 
   if [[ "$dry" -eq 1 ]]; then
@@ -278,7 +291,7 @@ jira_create() {
 
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" \
     --arg proj "$JIRA_PROJECT_KEY" --arg itype "$itype" --arg ef "$JIRA_EFFORT_FIELD" \
-    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" \
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg sf "$JIRA_SPRINT_FIELD" --arg body "$body_md" \
     --arg parent "$parent" --argjson comps "$comp_fields" '
     include "jira";
     { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
@@ -291,6 +304,7 @@ jira_create() {
     + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
     + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
     + (if (.qa_points  and ($qpf | length > 0)) then {($qpf): (.qa_points  | tonumber)} else {} end)
+    + (if (.sprint     and ($sf  | length > 0)) then {($sf):  (.sprint     | tonumber)} else {} end)
     ')"
   body="$(jq -n --argjson f "$jfields" '{fields: $f}')"
 

@@ -121,7 +121,9 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
 ## Execute flow (PO)
 
 1. **Read + confirm.** `get-ticket-details.sh <KEY>` — confirm total > 12. If a CTO proposal was
-   handed in, use its slices; otherwise derive them yourself against the independence bar.
+   handed in, use its slices; otherwise derive them yourself against the independence bar. Note
+   the `Sprint:` line if present (`Sprint: <name> (id <id>)`) — every fresh piece created below
+   must land in that same sprint.
 2. **Dedup.** `find-tickets.sh --query "<distinctive token from the title>" --open` — if the
    ticket already has split-children or "Split from" siblings, it was decomposed already; stop
    and report the existing pieces rather than splitting twice.
@@ -136,7 +138,10 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
    not-started status (see `issue-tracker.md`) and the same work issue-type as the original
    (Story/feature), not a sub-task. **Replace shape: piece 1 is the original ticket itself** —
    update it in place (retitle + rewrite body) rather than creating a new key for it; only
-   pieces 2..N are genuinely new. Epic shape always creates every piece fresh (see above).
+   pieces 2..N are genuinely new. Epic shape always creates every piece fresh (see above). **Every
+   genuinely new piece gets `--sprint <ORIG-SPRINT-ID>`** (the id read off step 1's `Sprint:` line)
+   — a split is a scope change, not a scheduling one, so each piece stays in the sprint the
+   original was already committed to. Skip the flag only when the original had no sprint set.
 6. **Re-estimate each piece — do not hand-write numbers.** Run `/estimate-ticket <NEW-KEY>` per
    piece so calibrated Dev/QA points land in the point **fields**. If a piece still comes back
    > 12, it wasn't sliced enough or it's an irreducible large piece — note it in the output (and,
@@ -166,11 +171,12 @@ most overlaps the original's existing component/repo/type); the rest are created
   --body-file <piece1-spec.md>
 #    pasted images/attachments already on <ORIG> carry over onto it automatically
 
-# 2) create pieces 2..N fresh — same work type as the original, linked back to it
+# 2) create pieces 2..N fresh — same work type as the original, linked back to it,
+#    same sprint as the original (read its id off get-ticket-details.sh's Sprint: line)
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type, e.g. Story>" \
   --status "<not-started status>" \
-  --link "Split from":<ORIG> \
+  --link "Split from":<ORIG> --sprint <ORIG-SPRINT-ID> \
   --body-file <piece-spec.md>
 ```
 
@@ -190,10 +196,10 @@ Too many for a flat replace — group them under an epic.
   --link "Split from":<ORIG> --body-file <epic-summary.md>
 #    → read the epic <EPIC-KEY> from the "Created <KEY> — …" line
 
-# 2) each piece is a CHILD of the epic
+# 2) each piece is a CHILD of the epic, same sprint as the original
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type>" \
-  --parent <EPIC-KEY> --status "<not-started status>" \
+  --parent <EPIC-KEY> --status "<not-started status>" --sprint <ORIG-SPRINT-ID> \
   --body-file <piece-spec.md>
 ```
 
@@ -223,6 +229,9 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
   needs them (mockups almost always belong on the UI-bearing piece, and on any piece whose AC
   cites literal numbers read off them) needs its own copy: download the image and
   `scripts/tracker/add-ticket-attachment.sh <NEW-KEY> <file>` it there (Jira only for now).
+- **Same sprint as the original.** A split changes scope, not schedule — every genuinely new
+  piece gets `--sprint <ORIG-SPRINT-ID>` so it lands in the sprint the original was already
+  committed to (the reused-original piece already has the right sprint; nothing to do there).
 - **Idempotent.** Never split a ticket that already has split-children/siblings (step 2 dedup).
 - **Adapter only, fail loud.** If the tracker is unreachable, report the split was **not** applied
   (don't fabricate keys) — same rule as `docs/agents/issue-tracker.md`.

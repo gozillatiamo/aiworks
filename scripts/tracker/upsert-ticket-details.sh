@@ -33,6 +33,10 @@ Options:
   --effort <name>      Set the overall effort/size field (provider-dependent; optional).
   --dev-points <n>     Set the Developer-points number field (estimation; optional).
   --qa-points <n>      Set the QA-points number field (estimation; optional).
+  --sprint <id>        Set the Sprint field to this sprint id (Jira; optional). Copy the
+                       value straight from another ticket's `get-ticket-details.sh` output
+                       ("Sprint: <name> (id <id>)") to keep a split-off piece in the same
+                       sprint as the ticket it came from.
   --title <text>       Set the ticket title / summary.
   --description <text> Set the one-line description / summary field.
   --parent <KEY>       Create the new issue as a CHILD of this parent ticket (Jira: the
@@ -89,6 +93,7 @@ while [[ $# -gt 0 ]]; do
     --effort)      need "${2:-}" "--effort needs a value";      setf effort      "$2"; shift 2 ;;
     --dev-points)  need "${2:-}" "--dev-points needs a number"; setf dev_points  "$2"; shift 2 ;;
     --qa-points)   need "${2:-}" "--qa-points needs a number";  setf qa_points   "$2"; shift 2 ;;
+    --sprint)      need "${2:-}" "--sprint needs a sprint id";  setf sprint      "$2"; shift 2 ;;
     --title)       need "${2:-}" "--title needs a value";       setf title       "$2"; shift 2 ;;
     --description) need "${2:-}" "--description needs a value"; setf description "$2"; shift 2 ;;
     --parent)      need "${2:-}" "--parent needs a ticket key"; setf parent      "$2"; shift 2 ;;
