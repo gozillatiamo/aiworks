@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  cashback-batch:
+    desc: A Rust batch job(cronjob) to calculate the cashback from promotion to player.
+    url: git@gitlab.com:bluepicode/ofb/cashback-batch.git
+    path: ../cashback-batch
+    tags: [ofb-platform, rust]
   game:
     desc: The game lib package, for any Rust service, It's handle most of functionality that interact with game, mainly to get/fetch game/games. It's included caching ability. 
     url: git@gitlab.com:bluepicode/ofb/game.git

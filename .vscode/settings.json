@@ -13,6 +13,7 @@
     "**/target": true,
     "**/.expo": true,
     "agent-webservice/target": true,
-    "commission-batch/target": true
+    "commission-batch/target": true,
+    "cashback-batch/target": true
   }
 }

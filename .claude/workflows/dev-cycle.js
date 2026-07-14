@@ -69,7 +69,7 @@ export const meta = {
 const TICKET_PREFIX = 'OFB'
 const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge
 const AUTO_APPROVE_PLAN = false // from workspace.config.yaml planning.auto_approve; false ⇒ halt after Kickoff (re-run with --approve-plan)
-const PLAN_TO_HTML = true     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
+const PLAN_TO_HTML = false     // from workspace.config.yaml planning.to_html; true ⇒ planners also render the plan to interactive HTML
 const NOTIFY = true        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = 'slack' // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
 const NOTIFY_CHANNEL = '#dev-oneforbet'  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
@@ -200,6 +200,15 @@ const REPOS = {
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
     green: 'unit tests and integration passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
+  'cashback-batch': {
+    path: 'cashback-batch', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests + integration tests passed successfully',
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },

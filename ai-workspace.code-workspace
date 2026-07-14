@@ -55,6 +55,10 @@
     {
       "name": "game",
       "path": "game"
+    },
+    {
+      "name": "cashback-batch",
+      "path": "cashback-batch"
     }
   ],
   "settings": {
