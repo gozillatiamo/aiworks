@@ -84,12 +84,26 @@ notify_send() {
 }
 
 # Resolve a channel #name (or pass an id through) to a channel id. Empty on failure.
+# Tries public_channel alone first — cheapest, and covers every channel this org actually
+# uses. Falls back to public_channel,private_channel only if that misses: a bot token
+# without groups:read gets missing_scope on the combined call, and even when the scope IS
+# present, combining types roughly doubles the channel count under the same limit=1000
+# page, which can push the target channel past the first page. Public-only avoids both
+# failure modes for a channel we already know is public; the combined call remains the
+# fallback for genuinely private channels.
 _slack_channel_id() {
-  local ch="$1"
+  local ch="$1" resp id
   case "$ch" in
-    \#*) curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel,private_channel" \
-           -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null \
-           | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1 ;;
+    \#*)
+      resp="$(curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel" \
+        -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null || true)"
+      id="$(printf '%s' "$resp" | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1)"
+      if [[ -z "$id" ]]; then
+        resp="$(curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel,private_channel" \
+          -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null || true)"
+        id="$(printf '%s' "$resp" | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1)"
+      fi
+      printf '%s' "$id" ;;
     *)   printf '%s' "$ch" ;;
   esac
 }
