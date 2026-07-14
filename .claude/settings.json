@@ -4,8 +4,10 @@
     "postgres_mad",
     "postgres_ass",
     "sonarqube",
-    "mcp-image",
     "redis"
+  ],
+  "disabledMcpjsonServers": [
+    "mcp-image"
   ],
   "permissions": {
     "allow": [
