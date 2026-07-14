@@ -20,12 +20,33 @@ def adf_to_text:
       elif $t == "mention"     then ($n.attrs.text // "@user")
       elif $t == "emoji"       then ($n.attrs.text // $n.attrs.shortName // "")
       elif $t == "inlineCard"  then ($n.attrs.url // "")
-      elif $t == "mediaSingle" or $t == "media" then "[media]"
+      elif $t == "mediaSingle" or $t == "media" then "[image/attachment]"
       else ( ($n.content // []) | map(node) | join("") )
       end;
   if . == null then "" elif (type == "string") then . else node end
   # collapse the trailing newline noise a little
   | gsub("\n{3,}"; "\n\n") | gsub("[ \t]+\n"; "\n");
+
+# Editor-pasted images/attachments live as block-level `mediaSingle` / `mediaGroup`
+# nodes (each wrapping `media` children that reference an attachment by id). A
+# description write via PUT replaces the whole field, so these must be carried across a
+# rewrite or the images are lost for good (OFB-1952). Return an ADF doc's media blocks,
+# in order, walking into non-media containers but taking each media block whole.
+def adf_media_blocks:
+  def collect:
+    (.type // "") as $t
+    | if ($t == "mediaSingle" or $t == "mediaGroup") then [.]
+      else ((.content // []) | map(collect) | add // []) end;
+  ((.content // []) | map(collect) | add // []);
+
+# Re-append preserved media blocks to a freshly rendered ADF doc, under a divider +
+# heading so it reads as carried-over rather than authored anew. No-op when empty.
+def adf_append_media($media):
+  if ($media | length) == 0 then .
+  else .content += ([ {type:"rule"},
+                      {type:"heading", attrs:{level:3},
+                       content:[{type:"text", text:"Attachments (carried over)"}]} ] + $media)
+  end;
 
 # Build a minimal ADF doc from a plain-text string (for comment writes / one-line
 # descriptions). Each non-empty line becomes a paragraph; ADF rejects empty text nodes.
@@ -179,6 +200,7 @@ def issue_details_text($base):
       | map(select(.v != null and .v != "")) ) as $rows
   | ($rows | map(.k | length) | max // 0) as $w
   | ($i.fields.description | adf_to_text) as $desc
+  | ($i.fields.description | adf_media_blocks | length) as $nmedia
   | "\($k) — \($summary)\n"
     + (if ($base | length) > 0 then "\($base)/browse/\($k)\n" else "" end)
     + (if ($rows | length) > 0
@@ -186,6 +208,9 @@ def issue_details_text($base):
         else "" end)
     + (if (($desc | gsub("\\s"; "")) | length) > 0
         then "\n------------------------------------------------------------\n" + ($desc | sub("\n+$"; "")) + "\n"
+        else "" end)
+    + (if $nmedia > 0
+        then "\n⚠ \($nmedia) embedded image/attachment(s) in the description — carried over automatically when the body is rewritten via upsert-ticket-details.sh.\n"
         else "" end);
 
 # Render the /comment payload to plain text.

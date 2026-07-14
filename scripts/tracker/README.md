@@ -47,6 +47,14 @@ comment. Notion appends page blocks (in 100-block batches); Jira renders the Mar
 ADF as the issue **description** (its one rich field — so a bare `--description` is used
 only when no `--body` is given).
 
+**Images survive a body rewrite (Jira):** a `--body` write replaces the whole
+description field, which would otherwise drop editor-pasted images/attachments already in
+it (OFB-1952). The Jira adapter now reads the existing description's `mediaSingle` /
+`mediaGroup` nodes first and re-appends them under an *"Attachments (carried over)"*
+divider, so the images stay rendered — you refine the text without losing the pictures.
+`get-ticket-details.sh` flags how many are present (`⚠ N embedded image/attachment(s)`)
+so you know they exist even though plain text shows each only as `[image/attachment]`.
+
 **Comments render Markdown too:** `add-ticket-comment.sh` no longer posts raw Markdown —
 it converts it to each tracker's native style so headers, bullets, tables and inline
 marks read as intended, not as literal `##`/`-`/`|`. **Jira** comment bodies are full ADF

@@ -4,7 +4,7 @@ Pick the template matching the ticket type. Output the filled template as a code
 
 **Stay at the business-requirement level.** Use the optional *Technical pointers (rough)* section for general area/integration hints from the code exploration — area names, service names, "needs a new endpoint" — never concrete paths, function names, or step-by-step implementation. If you have nothing rough to add, omit the section entirely.
 
-**The template is a skeleton, not a reset.** Fold existing ticket content into the matching fields — original acceptance criteria, repro steps, edge cases, links, embedded images, and attachment references all carry through. If the source had material that doesn't fit any field, add an `Existing details:` section at the bottom rather than dropping it. Preserve Jira image markup (`!filename.png!`) and Notion block references verbatim so attachments stay rendered.
+**The template is a skeleton, not a reset.** Fold existing ticket content into the matching fields — original acceptance criteria, repro steps, edge cases, links all carry through. If the source had material that doesn't fit any field, add an `Existing details:` section at the bottom rather than dropping it. **Embedded images/attachments are carried over by the adapter itself** — a `--body` rewrite re-appends the description's media under an *"Attachments (carried over)"* divider, so don't hand-copy image markup; just keep the surrounding prose that refers to them (`"see screenshot"`, callouts) so the text still reads sensibly beside the picture.
 
 ## Task / Story / Improvement
 

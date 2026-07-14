@@ -180,16 +180,32 @@ tracker_upsert() {
     ] | join(", ")')"
   [[ -n "$_createonly" ]] && echo "WARN: $_createonly ignored — only applied when creating (ref \"new\"), not on updates" >&2
 
+  # A PUT replaces the whole description field, so any editor-pasted images/attachments
+  # already in it must be carried across a rewrite or they are lost for good (OFB-1952).
+  # Fetch the existing description's media blocks first; re-appended below. Only relevant
+  # when we are actually rewriting the body (--body / --body-file).
+  local existing_media='[]'
+  if [[ -n "$body_md" ]]; then
+    local _cur
+    _cur="$(jira_api GET "/rest/api/3/issue/$key?fields=description" 2>/dev/null || true)"
+    existing_media="$(printf '%s' "$_cur" | jq -L "$JIRA_IMPL_DIR" -c 'include "jira"; ((.fields.description // {}) | adf_media_blocks)' 2>/dev/null || echo '[]')"
+    [[ -n "$existing_media" && "$existing_media" != "null" ]] || existing_media='[]'
+    local _nm; _nm="$(printf '%s' "$existing_media" | jq 'length' 2>/dev/null || echo 0)"
+    [[ "${_nm:-0}" -gt 0 ]] && echo "Carrying over $_nm image/attachment node(s) from the existing description." >&2
+  fi
+
   # Map the abstract field set (minus status) to a Jira `fields` object. Jira has one
   # rich description field, so the full spec (--body, Markdown→ADF) populates it; a
-  # bare --description (no --body) falls back to a plain-text ADF description.
+  # bare --description (no --body) falls back to a plain-text ADF description. Any media
+  # carried from the previous description is re-appended so images survive the rewrite.
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" --arg ef "$JIRA_EFFORT_FIELD" \
-    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" '
+    --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg body "$body_md" \
+    --argjson media "$existing_media" '
     include "jira";
     {}
     + (if .title    then {summary: .title} else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
-    + ( if ($body | length) > 0 then {description: ($body | md_to_adf)}
+    + ( if ($body | length) > 0 then {description: ($body | md_to_adf | adf_append_media($media))}
         elif .description       then {description: (.description | text_to_adf)}
         else {} end )
     + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)

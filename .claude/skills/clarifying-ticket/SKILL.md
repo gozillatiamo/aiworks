@@ -65,10 +65,18 @@ for this org's ticket-id format, status names, and any read-only fields.
 
 ## Flow
 
-1. **Gather source.** Mode A: use the finding passed in (title, scope/`file:line`,
-   severity, evidence, originating `<KEY>`). Mode B: use the request text, or read an
-   existing ticket with `get-ticket-details.sh <KEY>` (+ `get-ticket-comments.sh` for
-   prior context). Capture existing content verbatim — refinement adds, never deletes.
+1. **Gather source — clarifying an existing ticket FOLDS IN, never resets.** Mode A: use
+   the finding passed in (title, scope/`file:line`, severity, evidence, originating
+   `<KEY>`). Mode B: use the request text, or read an existing ticket with
+   `get-ticket-details.sh <KEY>` (+ `get-ticket-comments.sh` for prior context). Capture
+   every bit of existing content — repro steps, acceptance criteria, edge cases, links —
+   verbatim; the clarified spec **carries it forward and may sharpen it, but drops
+   nothing**. **Attachments/images:** when the read output ends in a `⚠ N embedded
+   image/attachment(s)` line, the description holds editor-pasted images. The adapter
+   carries those media across automatically on a `--body` rewrite (they re-appear under an
+   *"Attachments (carried over)"* divider), so you never manually re-embed them — but keep
+   any surrounding prose that references them (`"see screenshot"`, callouts) so the text
+   still makes sense next to the picture.
 2. **Dedup — search the board FIRST (REQUIRED; do not skip).** Before composing
    anything, confirm the board isn't already tracking this finding. Search by
    **distinctive keyword**, not by type — improvement tickets are often filed with no
@@ -87,9 +95,17 @@ for this org's ticket-id format, status names, and any read-only fields.
    Only when nothing on the board covers it do you continue. When overlap is
    partial/ambiguous, prefer linking to the existing ticket (note the overlap in the new
    ticket's **Source** block) over filing a near-duplicate.
-3. **(Mode B only) Clarify.** Shallow code skim — **codegraph FIRST** (`codegraph explore`/`codegraph search` to find the area the request touches), with `Grep`/`Glob`/`Read` slices only as a last resort — → detect
-   type → `AskUserQuestion` (≤4 related per call). Business-requirement first; no file
-   paths / function names / schemas in the ticket — leave design to the implementer.
+3. **(Mode B only) Clarify — when it isn't clear, ASK; never invent.** Shallow code skim
+   — **codegraph FIRST** (`codegraph explore`/`codegraph search` to find the area the
+   request touches), with `Grep`/`Glob`/`Read` slices only as a last resort — → detect
+   type → `AskUserQuestion` (≤4 related per call; skip anything the request or existing
+   ticket already answers). Any gap that would change scope, behaviour, or an acceptance
+   criterion is a **must-ask** — batch it into an `AskUserQuestion`, don't guess a default.
+   Only mark a gap `Open question:` in the spec when it genuinely can't be answered now
+   (out of the user's hands, needs another role); a reachable answer left unasked is a bug.
+   **Completion criterion:** no material ambiguity survives unasked, and nothing in the
+   spec is fabricated. Business-requirement first; no file paths / function names /
+   schemas in the ticket — leave design to the implementer.
 4. **Classify.** Type (bug / feature / polish), Priority (map a finding's severity),
    Effort (hardening tweaks are usually small) — use the org's real values from
    `issue-tracker.md` / `workspace.config.yaml`.
@@ -97,7 +113,10 @@ for this org's ticket-id format, status names, and any read-only fields.
    template into Markdown: **Context/Problem**, **Proposed change**, **Acceptance
    criteria** (verifiable checklist), **Source** (originating `<KEY>` + `file:line`/scope
    + evidence verbatim), plus a `Triage: ready-for-agent` line. (Mode B: an
-   **Assumptions** block for anything inferred.)
+   **Assumptions** block for anything inferred.) When refining an existing ticket, the
+   template is a **skeleton, not a reset** — fold the step-1 content into its matching
+   fields per `templates.md` (nothing dropped); the rewrite then goes through `--body`,
+   which preserves the ticket's images.
 6. **Create the ticket with its spec in the body** (only if step 2 found no duplicate).
    One call — `--description` is the one-line summary, `--body` is the full rendered spec:
    ```sh
