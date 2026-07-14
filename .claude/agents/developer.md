@@ -43,8 +43,8 @@ tools:
   - mcp__claude_ai_Figma__get_design_context
   # Full DB + cache access (read + write, all permissions) — execute_sql/DML and redis writes for
   # local dev / seeding / debugging against the platform stores. Whole-server grants.
-  - mcp__postgres_mad
-  - mcp__postgres_ass
+  - mcp__postgres_main
+  - mcp__postgres_secondary
   - mcp__redis
 ---
 

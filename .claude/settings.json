@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "enabledMcpjsonServers": [
-    "postgres_mad",
-    "postgres_ass",
+    "postgres_main",
+    "postgres_secondary",
     "sonarqube",
     "redis"
   ],
@@ -45,8 +45,8 @@
       "Bash(python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py:*)",
       "mcp__codegraph",
       "mcp__sonarqube",
-      "mcp__postgres_ass",
-      "mcp__postgres_mad",
+      "mcp__postgres_secondary",
+      "mcp__postgres_main",
       "mcp__redis",
       "mcp__claude_ai_Figma__get_screenshot",
       "mcp__claude_ai_Figma__get_metadata",
