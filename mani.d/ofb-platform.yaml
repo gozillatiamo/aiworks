@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  crypto-watcher:
+    desc: A Rust service crypto watcher to listen the crypto events/transactions from the blockchain and map into the agency wallet.
+    url: git@gitlab.com:bluepicode/ofb/crypto-watcher.git
+    path: ../crypto-watcher
+    tags: [ofb-platform, rust]
   cashback-batch:
     desc: A Rust batch job(cronjob) to calculate the cashback from promotion to player.
     url: git@gitlab.com:bluepicode/ofb/cashback-batch.git

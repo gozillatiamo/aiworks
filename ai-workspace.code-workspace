@@ -59,6 +59,10 @@
     {
       "name": "cashback-batch",
       "path": "cashback-batch"
+    },
+    {
+      "name": "crypto-watcher",
+      "path": "crypto-watcher"
     }
   ],
   "settings": {

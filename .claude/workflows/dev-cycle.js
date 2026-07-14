@@ -212,6 +212,15 @@ const REPOS = {
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
+  'crypto-watcher': {
+    path: 'crypto-watcher', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests + integration tests passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 

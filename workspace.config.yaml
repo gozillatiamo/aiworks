@@ -133,3 +133,10 @@ products:
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/crypto-watcher.git
+        kind: backend
+        desc: A Rust service crypto watcher to listen the crypto events/transactions from the blockchain and map into the agency wallet.
+        lang: rust
+        green: "unit tests + integration tests passed successfully"
+        guardian_focus: "secrets, data-protection"
