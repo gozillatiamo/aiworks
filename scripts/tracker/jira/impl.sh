@@ -419,6 +419,38 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$key" "${cid:-?}"
 }
 
+# Upload a local file as an issue attachment. Jira's attachments endpoint takes
+# multipart/form-data (not JSON), so this bypasses jira_api and curls directly;
+# "X-Atlassian-Token: no-check" is required to skip Jira's XSRF check on this endpoint.
+tracker_add_attachment() {
+  local ticket="$1" dry="$2" file="$3" key tmp err http filename
+  [[ -f "$file" ]] || die "no such file: $file"
+  key="$(jira_key "$ticket")"
+  filename="$(basename "$file")"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — POST /rest/api/3/issue/%s/attachments  (file: %s)\n' "$key" "$file"
+    return 0
+  fi
+  tmp="$(mktemp)"; err="$(mktemp)"
+  http="$(curl -sS -X POST \
+    -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+    -H "X-Atlassian-Token: no-check" \
+    -H "Accept: application/json" \
+    -F "file=@$file;filename=$filename" \
+    -o "$tmp" -w '%{http_code}' \
+    "$JIRA_BASE_URL/rest/api/3/issue/$key/attachments" 2>"$err")" || {
+      rm -f "$tmp"; die "attachment upload to $key failed: $(cat "$err")"; rm -f "$err"
+    }
+  rm -f "$err"
+  if [[ "$http" -ge 400 ]]; then
+    echo "error: Jira API POST /rest/api/3/issue/$key/attachments -> HTTP $http" >&2
+    jq -r '(.errorMessages // [])[]? , ((.errors // {}) | to_entries[]? | "\(.key): \(.value)")' "$tmp" >&2 2>/dev/null || cat "$tmp" >&2
+    rm -f "$tmp"; exit 1
+  fi
+  printf 'Attached %s to %s\n' "$filename" "$key"
+  rm -f "$tmp"
+}
+
 # tracker_find OPTS_JSON — OPTS = {query, open, limit, as_json, types:[...]}.
 # Search the project via JQL and print one compact line per match (newest first):
 #   "<KEY> | <Status> | <Type> | <Summary>  ::  <Description>", or raw issues JSON.

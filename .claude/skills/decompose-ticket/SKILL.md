@@ -42,7 +42,17 @@ Provider + auth + project/db come from `scripts/tracker/.env` — never passed. 
 `docs/agents/issue-tracker.md`. **Child-issue flags (`--issuetype` / `--parent` / `--link`)
 apply only when creating (ref `new`); the adapter ignores them on an update.** That is why
 the epic path below builds a *fresh* short-named epic rather than retyping the original —
-the adapter cannot change an existing issue's type.
+the adapter cannot change an existing issue's type or re-parent an existing issue under a
+freshly created one.
+
+**The original ticket becomes one of the pieces — never a leftover.** A *replace*-shape split
+(`N ≤ 5`) reuses the original's own key as piece 1: retitle it, rewrite its body to that piece's
+spec, and re-estimate it in place. There is no orphaned/superseded ticket to close, and that
+piece keeps its pasted images/comments/history/links for free (an update carries them over
+automatically — see the media-carryover note in `tracker_upsert`). Only pieces 2..N are created
+fresh. An *epic*-shape split (`N > 5`) can't do this for the original itself (the adapter can't
+re-parent an existing issue under a newly created epic — see above), so that shape still
+supersedes the original into the new epic; every *other* piece is still fresh.
 
 ## When this fires — the 12-point rule
 
@@ -124,7 +134,9 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
    slice of the acceptance criteria, scope boundary, build-order note, and a pointer back to the
    original / epic). Write the spec to a temp `.md` and pass `--body-file`. Give it the org's
    not-started status (see `issue-tracker.md`) and the same work issue-type as the original
-   (Story/feature), not a sub-task.
+   (Story/feature), not a sub-task. **Replace shape: piece 1 is the original ticket itself** —
+   update it in place (retitle + rewrite body) rather than creating a new key for it; only
+   pieces 2..N are genuinely new. Epic shape always creates every piece fresh (see above).
 6. **Re-estimate each piece — do not hand-write numbers.** Run `/estimate-ticket <NEW-KEY>` per
    piece so calibrated Dev/QA points land in the point **fields**. If a piece still comes back
    > 12, it wasn't sliced enough or it's an irreducible large piece — note it in the output (and,
@@ -143,10 +155,18 @@ Cut count `N` decides how the pieces relate to the original.
 
 ### N ≤ 5 → replace the original
 
-The pieces are **independent siblings**; the original is superseded.
+The pieces are **independent siblings**. The original's own key becomes **piece 1** — pick
+whichever piece it fits best (first in build order is the usual default, or whichever piece
+most overlaps the original's existing component/repo/type); the rest are created fresh.
 
 ```sh
-# one call per piece — same work type as the original, linked back to it
+# 1) reuse the original as piece 1 — an ordinary update, no create-only flags needed
+"$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh <ORIG> \
+  --title "<piece 1 title>" --status "<not-started status>" \
+  --body-file <piece1-spec.md>
+#    pasted images/attachments already on <ORIG> carry over onto it automatically
+
+# 2) create pieces 2..N fresh — same work type as the original, linked back to it
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type, e.g. Story>" \
   --status "<not-started status>" \
@@ -154,12 +174,10 @@ The pieces are **independent siblings**; the original is superseded.
   --body-file <piece-spec.md>
 ```
 
-Then re-estimate each (step 6), and **supersede the original**: rewrite its body to a short
-decomposition index — *"Decomposed and replaced by `<KEY-a>`, `<KEY-b>`, … — each independently
-deliverable"* — via `upsert-ticket-details.sh <ORIG> --body-file <index.md>`, and move it to a
-**terminal/closed status if the board declares one** (see `tracker.statuses`). If the board has
-no cancel/superseded state, leave it open and **flag in the output that a human should close it**
-— never silently drop it.
+Then re-estimate **every** piece including the reused original (step 6) — its old combined
+estimate no longer applies once its scope has shrunk to just piece 1. Nothing needs superseding
+or closing: the original ticket simply *is* piece 1 now, under its own key, in whatever status
+that piece is naturally in.
 
 ### N > 5 → new short-named epic, pieces as children
 
@@ -179,11 +197,13 @@ Too many for a flat replace — group them under an epic.
   --body-file <piece-spec.md>
 ```
 
-Then re-estimate each child (step 6), and **supersede the original into the epic** (same as the
-replace case: body → a pointer to `<EPIC-KEY>`, terminal status if the board has one, else flag
-for human closure). Because the adapter cannot retype an existing issue, "move the original to be
-an epic" is realized as *this fresh short-named epic + superseding the original into it* — the
-resulting hierarchy (short epic + children under it) is what the caller asked for.
+Then re-estimate each child (step 6), and **supersede the original into the epic**: body → a
+pointer to `<EPIC-KEY>`, terminal status if the board has one, else flag for human closure. Unlike
+the replace shape, the original can't become one of the children here — the adapter's `--parent`
+only applies on create, so an existing issue can't be re-parented under the fresh epic — so this
+is the one case where the original is still superseded rather than reused. Carry over its
+attachments the same way: download anything `get-ticket-details.sh <ORIG>` flags
+(`⚠ N embedded …`) and `add-ticket-attachment.sh` it onto whichever child(ren) need it.
 
 If the provider rejects the `Epic` issue type (unknown name), the adapter **fails loud** and
 prints the valid types — surface that and pick the org's real epic-level type; never invent one.
@@ -198,8 +218,11 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
 - **Don't split below the bar.** Independent slices only; irreducible ⇒ keep whole. Prefer one
   honest big ticket over several fake-independent ones.
 - **Complete cover, nothing dropped.** Every acceptance criterion of the original lands in exactly
-  one piece; carry over any pasted images/attachments the adapter reports (`⚠ N embedded …`) on
-  the ticket you rewrite.
+  one piece. Attachments are scoped to the issue they live on — the piece that reuses the
+  original's key (replace shape's piece 1) keeps them for free, but every *other* piece that
+  needs them (mockups almost always belong on the UI-bearing piece, and on any piece whose AC
+  cites literal numbers read off them) needs its own copy: download the image and
+  `scripts/tracker/add-ticket-attachment.sh <NEW-KEY> <file>` it there (Jira only for now).
 - **Idempotent.** Never split a ticket that already has split-children/siblings (step 2 dedup).
 - **Adapter only, fail loud.** If the tracker is unreachable, report the split was **not** applied
   (don't fabricate keys) — same rule as `docs/agents/issue-tracker.md`.
@@ -214,8 +237,8 @@ verdict:     split | irreducible
 shape:       replace | epic | n/a         # n/a when irreducible
 epic:        <EPIC-KEY> | none            # the new epic, when shape=epic
 pieces:                                   # empty when irreducible
-  - <KEY-a>  dev <d>/qa <q> (total <t>)  — <one-line goal>
+  - <KEY-a>  dev <d>/qa <q> (total <t>)  — <one-line goal>   # replace shape: KEY-a == <ORIG>, reused as piece 1
   - <KEY-b>  …
-original_state: superseded (<status>) | left-open — human close needed | unchanged (irreducible)
+original_state: reused as piece 1 (<ORIG>) | superseded (<status>) | left-open — human close needed | unchanged (irreducible)
 note:        <irreducible reason / a piece still >12 / epic-type or link fallback / tracker issue>
 ```
