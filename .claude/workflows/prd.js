@@ -1,12 +1,12 @@
 export const meta = {
   name: 'prd',
-  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → CTO technical consulting (feasibility/risk findings, folded into scope + a short "Technical notes" section — the ticket otherwise stays written in business-requirement voice) → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker. Pass a brd work-key ("phase-2"), a doc-space URL, a docs/brd/<key>.md path — or an EXISTING ticket key (e.g. APP-123, "complete detail for ticket APP-123") to enter TICKET MODE: the run completes THAT ticket in place (full spec written onto it) and creates NO new tickets unless the work demonstrably cannot ship under it.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd-design skill instead for real frames). "intake" = CPO briefs + CTO consult, returns features/ctoFindings for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + ctoFindings + figmaByFeature (the /prd-design skill builds frames in-session, then calls this). See .claude/skills/prd-design/SKILL.md.',
+  description: 'PRD / design+ticketing workflow: embrace a BRD → CPO feature briefs → CTO technical consulting (feasibility/risk findings, folded into scope + a short "Technical notes" section — the ticket otherwise stays written in business-requirement voice) → design UI-bearing features in Figma (planner → graphic assets → designer) → Product Owner writes self-contained tickets into the issue tracker (splitting any ticket over 12 total points into independent, re-estimated pieces via /decompose-ticket). Pass a brd work-key ("phase-2"), a doc-space URL, a docs/brd/<key>.md path — or an EXISTING ticket key (e.g. APP-123, "complete detail for ticket APP-123") to enter TICKET MODE: the run completes THAT ticket in place (full spec written onto it) and creates NO new tickets unless the work demonstrably cannot ship under it.\n\nSTAGES (args.stage): omit/"all" = full headless run (design phase needs a Figma MCP that survives the workflow runtime — the OAuth claude.ai remote does NOT, so use the /prd-design skill instead for real frames). "intake" = CPO briefs + CTO consult, returns features/ctoFindings for an in-session design phase. "ticketing" = write tickets+summary from caller-supplied features + ctoFindings + figmaByFeature (the /prd-design skill builds frames in-session, then calls this). See .claude/skills/prd-design/SKILL.md.',
   whenToUse: 'Turn an approved BRD into production-ready designs + a ready-for-dev backlog of tickets (each a PRD, with its Figma frame linked when UI-bearing). For real Figma frames, run via the /prd-design skill (in-session OAuth) — a raw Workflow(prd) call cannot author frames (the Figma MCP is unauthenticated inside the workflow runtime).',
   phases: [
     { title: 'Intake', detail: 'CPO: read the BRD(if exists) → prioritized feature briefs, each flagged UI-bearing or not', model: 'opus' },
-    { title: 'Consult', detail: 'CTO: technical consulting on the briefs — feasibility, risks, cross-repo touches, ADR implications, technical dependencies — per feature; consulting only, does not write the ticket', model: 'opus' },
+    { title: 'Consult', detail: 'CTO: technical consulting on the briefs — feasibility, risks, cross-repo touches, ADR implications, technical dependencies — per feature; consulting only, does not write the ticket. Also proposes independent decomposition (/decompose-ticket advise) for any feature heading past 12 total points', model: 'opus' },
     { title: 'Design', detail: 'CONDITIONAL — skipped entirely when no feature is UI-bearing, and skipped in stage=intake/ticketing (the /prd-design skill builds frames in-session because the Figma MCP is unauthenticated in the workflow runtime). Else per UI-bearing feature: ux-ui-planner plan → graphic-designer assets → ux-ui-designer Figma frames (all features in parallel)', model: 'opus/sonnet' },
-    { title: 'Ticketing', detail: 'Product Owner writes one self-contained FM ticket per feature onto the Notion board, folding CTO findings into scope + a short "Technical notes" section (rest of the ticket stays business-requirement voice), linking the Figma frame (TICKET MODE: completes the given existing ticket in place instead — no new tickets)', model: 'sonnet' },
+    { title: 'Ticketing', detail: 'Product Owner writes one self-contained FM ticket per feature onto the Notion board, folding CTO findings into scope + a short "Technical notes" section (rest of the ticket stays business-requirement voice), linking the Figma frame, and splitting any ticket over 12 total points via /decompose-ticket into independent, re-estimated pieces (TICKET MODE: completes the given existing ticket in place instead — no new tickets unless a >12 estimate forces a split)', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-role token/time table (summarize-workflow-performance)', model: 'haiku' },
   ],
 }
@@ -139,6 +139,21 @@ const CONSULT_SCHEMA = {
         cross_repo: { type: 'array', items: { type: 'string' } },     // features that touch another repo
         adr_implications: { type: 'array', items: { type: 'string' } },
         technical_dependencies: { type: 'array', items: { type: 'string' } },  // sequencing vs other features
+        // /decompose-ticket (advise): when a feature is heading past ~12 total points, the CTO
+        // proposes independent vertical slices here — consulting only, the PO executes the split.
+        decomposition: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            should_split: { type: 'boolean' },   // false ⇒ ships as one ticket (or irreducible)
+            reason: { type: 'string' },
+            pieces: { type: 'array', items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                title: { type: 'string' }, goal: { type: 'string' },
+                rough_dev: { type: 'number' }, rough_qa: { type: 'number' },
+                depends_on: { type: 'array', items: { type: 'string' } },  // build order, not blocking-ownership
+              } } },
+          } },
       } } },
     notes: { type: 'string' },
   },
@@ -202,6 +217,16 @@ const TICKETS_SCHEMA = {
         ui_bearing: { type: 'boolean' }, figma_link: { type: ['string', 'null'] },
         priority: { type: 'string' }, effort: { type: 'string' },
       } } },
+    // /decompose-ticket (execute): any ticket that re-estimated over 12 total points and was
+    // split. Its pieces appear as their own entries in `tickets` above; this records the split.
+    decompositions: { type: 'array', items: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        original: { type: 'string' },
+        shape: { type: 'string', enum: ['replace', 'epic', 'irreducible'] },
+        epic: { type: ['string', 'null'] },   // the new epic key when shape=epic
+        pieces: { type: 'array', items: { type: 'string' } },  // the split ticket keys
+      } } },
   },
 }
 const SUMMARY_SCHEMA = {
@@ -238,7 +263,7 @@ if (stage === 'all' || stage === 'intake') {
   // ticket's own business-requirement voice.
   phase('Consult')
   consult = await agent(
-    `${tag('cto', 'consult')} As CTO, do technical consulting on the CPO's feature briefs for ${workKey}${ticketKey ? ` (scoped to completing ticket ${ticketKey})` : ''}. Features: ${JSON.stringify(features).slice(0, 3500)}. For EACH feature give: technical feasibility (true/false), the big-picture approach, risks (with severity + mitigation), any cross-repo touches, ADR implications, and technical dependencies/sequencing against the other features. This is consulting only — you do NOT write the ticket. The Product Owner will fold your risk/dependency findings into the ticket's scope and add a short "Technical notes" section for the developer from them; the rest of the ticket stays in business-requirement voice, so keep each finding a crisp, developer-actionable flag, not a design doc.`,
+    `${tag('cto', 'consult')} As CTO, do technical consulting on the CPO's feature briefs for ${workKey}${ticketKey ? ` (scoped to completing ticket ${ticketKey})` : ''}. Features: ${JSON.stringify(features).slice(0, 3500)}. For EACH feature give: technical feasibility (true/false), the big-picture approach, risks (with severity + mitigation), any cross-repo touches, ADR implications, and technical dependencies/sequencing against the other features. This is consulting only — you do NOT write the ticket. The Product Owner will fold your risk/dependency findings into the ticket's scope and add a short "Technical notes" section for the developer from them; the rest of the ticket stays in business-requirement voice, so keep each finding a crisp, developer-actionable flag, not a design doc.\n  SOLUTION-FINDING — DECOMPOSE OVERSIZED WORK: for any feature large enough that its ticket would exceed ~12 total (Dev+QA) points, apply your /decompose-ticket (advise branch) judgment and fill the finding's \`decomposition\` field — propose independent VERTICAL SLICES (each a self-contained increment that can be built, reviewed, and shipped on its own, not a horizontal layer), giving each piece a title, one-line goal, rough Dev/QA sizing, and build order (\`depends_on\`). Set should_split=true only when the slices genuinely clear that independence bar; if the feature is irreducible, set should_split=false with the reason. Advise only — the Product Owner executes the split and re-estimates each piece.`,
     { agentType: 'cto', phase: 'Consult', label: `consult:${workKey}`, schema: CONSULT_SCHEMA },
   )
   const infeasible = (consult.findings || []).filter((f) => f.feasible === false)
@@ -337,17 +362,20 @@ const briefsJson = briefsJsonFull.slice(0, 12000)
 // CTO consult findings, matched to features by name. Consulting input only — see the
 // per-branch instruction below for exactly how these may touch the ticket text.
 const ctoFindingsJson = JSON.stringify(consult.findings || []).slice(0, 3000)
-const ctoNote = `CTO technical findings, from consulting (per feature, matched by name — informational, NOT ticket-ready prose): ${ctoFindingsJson}. Use these ONLY two ways: (1) fold any risk/dependency/cross-repo implication into the ticket's own scope-boundary and dependency-order language, written in plain business wording — never copy technical/architecture phrasing verbatim into those sections; (2) add ONE short "Technical notes" section at the end of the ticket — a few terse, developer-facing bullet lines (e.g. cross-repo touches, ADR flags, sequencing, risk+mitigation) — clearly separate from the business-requirement body above it, and never prescribing implementation, class/module design, or stack choices. Every OTHER section of the ticket must stay written from the business/user perspective. If any feature came back feasible:false or carries a high-severity risk, do not silently proceed — say so plainly in coverage_note.`
+const ctoNote = `CTO technical findings, from consulting (per feature, matched by name — informational, NOT ticket-ready prose): ${ctoFindingsJson}. Use these ONLY two ways: (1) fold any risk/dependency/cross-repo implication into the ticket's own scope-boundary and dependency-order language, written in plain business wording — never copy technical/architecture phrasing verbatim into those sections; (2) add ONE short "Technical notes" section at the end of the ticket — a few terse, developer-facing bullet lines (e.g. cross-repo touches, ADR flags, sequencing, risk+mitigation) — clearly separate from the business-requirement body above it, and never prescribing implementation, class/module design, or stack choices. Every OTHER section of the ticket must stay written from the business/user perspective. If any feature came back feasible:false or carries a high-severity risk, do not silently proceed — say so plainly in coverage_note. (A finding's \`decomposition\` field is handled separately — see the decomposition rule below, not the two text-uses above.)`
+// The 12-point rule, wired into ticketing: an estimated ticket over 12 total points is split
+// via /decompose-ticket. Shared by both prompt branches (feature-mode + ticket-mode).
+const decompNote = `DECOMPOSE OVERSIZED TICKETS — the 12-point rule: after a ticket is estimated, if its total (Dev+QA) exceeds 12, run \`/decompose-ticket <KEY>\` (execute branch) to split it into independently-deliverable pieces and re-estimate each. Start from the CTO finding's \`decomposition\` proposal for that feature when present (should_split=true lists the proposed independent slices); if a finding says should_split=false / the skill reports it irreducible, do NOT force a split. Each piece is itself a ticket — include every piece in the returned tickets list, and record each split in \`decompositions\` ({original, shape: replace|epic, epic, pieces[]}) and in coverage_note. Never let a >12 ticket flow onward whole unless /decompose-ticket reports it genuinely irreducible.`
 const tickets = await agent(
   ticketKey
-    ? `${tag('product-owner', 'ticketing')} As Product Owner, COMPLETE the EXISTING ticket ${ticketKey} IN PLACE — via /update-ticket (the tracker adapter; see docs/agents/issue-tracker.md). Synthesize ALL the briefs below into ONE self-contained spec and write it onto ${ticketKey}'s description: clear goal + user value, reproduction steps and expected-vs-actual if it is a bug, root-cause hypothesis, affected repos, verifiable acceptance criteria, scope boundaries + edge cases, and a dependency-ordered work breakdown as sections INSIDE the ticket. Do NOT create any new ticket unless the work demonstrably cannot ship under ${ticketKey} alone — and then explain why in coverage_note. Keep the ticket's existing Type (a Bug stays a Bug) and Status; never set read-only id fields; adjust Priority/Effort only when clearly warranted. For UI-bearing aspects, link the backing Figma frame inside the spec. ${ctoNote} Then ESTIMATE it: run \`/estimate-ticket ${ticketKey}\` so its calibrated Dev/QA points land in the point FIELDS — not done until those fields are set (a comment alone does not count).
+    ? `${tag('product-owner', 'ticketing')} As Product Owner, COMPLETE the EXISTING ticket ${ticketKey} IN PLACE — via /update-ticket (the tracker adapter; see docs/agents/issue-tracker.md). Synthesize ALL the briefs below into ONE self-contained spec and write it onto ${ticketKey}'s description: clear goal + user value, reproduction steps and expected-vs-actual if it is a bug, root-cause hypothesis, affected repos, verifiable acceptance criteria, scope boundaries + edge cases, and a dependency-ordered work breakdown as sections INSIDE the ticket. Do NOT create any new ticket unless the work demonstrably cannot ship under ${ticketKey} alone — and then explain why in coverage_note. Keep the ticket's existing Type (a Bug stays a Bug) and Status; never set read-only id fields; adjust Priority/Effort only when clearly warranted. For UI-bearing aspects, link the backing Figma frame inside the spec. ${ctoNote} Then ESTIMATE it: run \`/estimate-ticket ${ticketKey}\` so its calibrated Dev/QA points land in the point FIELDS — not done until those fields are set (a comment alone does not count). ${decompNote} In TICKET MODE a >12 estimate on ${ticketKey} IS the demonstrable reason the work cannot ship under one ticket, so that is exactly when you split ${ticketKey} into independent pieces rather than leaving it whole.
   Feature briefs: ${briefsJson}.
   Figma frame per feature: ${JSON.stringify(figmaByFeature).slice(0, 2000)}.
-  Return the updated ticket (task_name + ticket URL) — estimated (Dev/QA point fields set) — plus any ticket you genuinely had to create — and the board URL.`
-    : `${tag('product-owner', 'ticketing')} As Product Owner, create one self-contained ticket per feature for ${workKey} in the issue tracker — via /clarifying-ticket (which uses the tracker adapter; see docs/agents/issue-tracker.md) and /to-prd. For each ticket: clear goal + user value, verifiable acceptance criteria, scope boundaries + edge cases, Priority and Effort from the brief, a "feature" type, and the org's not-started status (see issue-tracker.md; never set read-only id fields). For UI-bearing features, link the backing Figma frame in the ticket body/spec. Sequence tickets by dependency so the pipeline picks them up in order, and confirm full coverage (every feature → a ticket). ${ctoNote} Then ESTIMATE each ticket: run \`/estimate-ticket <KEY>\` per created ticket so calibrated Dev/QA points land in the ticket's point FIELDS — a ticket is NOT done until its point fields are set (a comment alone does not count).
+  Return the updated ticket (task_name + ticket URL) — estimated (Dev/QA point fields set) — plus any split pieces / ticket you genuinely had to create (with the split recorded in \`decompositions\`) — and the board URL.`
+    : `${tag('product-owner', 'ticketing')} As Product Owner, create one self-contained ticket per feature for ${workKey} in the issue tracker — via /clarifying-ticket (which uses the tracker adapter; see docs/agents/issue-tracker.md) and /to-prd. For each ticket: clear goal + user value, verifiable acceptance criteria, scope boundaries + edge cases, Priority and Effort from the brief, a "feature" type, and the org's not-started status (see issue-tracker.md; never set read-only id fields). For UI-bearing features, link the backing Figma frame in the ticket body/spec. Sequence tickets by dependency so the pipeline picks them up in order, and confirm full coverage (every feature → a ticket). ${ctoNote} Then ESTIMATE each ticket: run \`/estimate-ticket <KEY>\` per created ticket so calibrated Dev/QA points land in the ticket's point FIELDS — a ticket is NOT done until its point fields are set (a comment alone does not count). ${decompNote}
   Feature briefs: ${briefsJson}.
   Figma frame per feature: ${JSON.stringify(figmaByFeature).slice(0, 2000)}.
-  Return every created ticket (task_name + ticket URL + figma_link) — each already estimated (Dev/QA point fields set) — and the board URL.`,
+  Return every created ticket (task_name + ticket URL + figma_link) — each already estimated (Dev/QA point fields set), plus any pieces produced by a split (recorded in \`decompositions\`) — and the board URL.`,
   { agentType: 'product-owner', phase: 'Ticketing', label: `tickets:${workKey}`, schema: TICKETS_SCHEMA },
 )
 log(ticketKey
@@ -360,7 +388,7 @@ tick('ticketing')
 // ──────────────────────────────────────────────────────────────────────────
 phase('Summary')
 const summary = await agent(
-  `Run-recorder for the PRD/design+ticketing workflow on work-key ${workKey}. Write the run-summary to agent_logs/${workKey}-PRD-SUMMARY.md (git-ignored): a short narrative — features intaken, CTO feasibility concerns (if any), UI features designed (with Figma links), and the FM tickets created (names + URLs) — from this result: ${JSON.stringify({ features: features.map((f) => f.name), cto_findings: consult.findings || [], designs: designs.map((d) => d.feature || d), tickets: tickets.tickets }).slice(0, 3500)}. Then, as the LAST step, run:\n  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${workKey} --workflow prd\nand append its Markdown output VERBATIM under a "## Token & time usage" heading. Return the summary_path.`,
+  `Run-recorder for the PRD/design+ticketing workflow on work-key ${workKey}. Write the run-summary to agent_logs/${workKey}-PRD-SUMMARY.md (git-ignored): a short narrative — features intaken, CTO feasibility concerns (if any), any oversized tickets decomposed into independent pieces, UI features designed (with Figma links), and the FM tickets created (names + URLs) — from this result: ${JSON.stringify({ features: features.map((f) => f.name), cto_findings: consult.findings || [], decompositions: tickets.decompositions || [], designs: designs.map((d) => d.feature || d), tickets: tickets.tickets }).slice(0, 3500)}. Then, as the LAST step, run:\n  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${workKey} --workflow prd\nand append its Markdown output VERBATIM under a "## Token & time usage" heading. Return the summary_path.`,
   { agentType: 'documentor', phase: 'Summary', label: `summary:${workKey}`, schema: SUMMARY_SCHEMA },
 )
 tick('summary')
@@ -369,6 +397,6 @@ log(`Run summary: ${summary.summary_path}`)
 return {
   workKey, ticketKey, brdRef: rawIn, stage, status: 'tickets-ready', maxRounds: MAX_ROUNDS,
   featureCount: features.length, uiDesigned: Object.keys(figmaByFeature).length,
-  tickets: tickets.tickets, board_url: tickets.board_url,
+  tickets: tickets.tickets, decompositions: tickets.decompositions || [], board_url: tickets.board_url,
   briefs, consult, designs, figmaByFeature, summary, spend,
 }
