@@ -66,6 +66,27 @@ gitignored clones and only the meta-repo shows.
 The group's repos are declared under `products:` in @workspace.config.yaml
 (and cloned via the generated `mani.d/<product>.yaml` files).
 
+## Notifications
+When a workflow includes a code review or ship step, always post the Slack
+notification as part of completing that step — do not treat it as optional
+or a follow-up.
+
+## Submodules & Worktrees
+Never edit files inside submodule checkouts. Before diagnosing test failures
+involving missing tables/data, verify submodule branch alignment first — a
+wrong submodule branch is a common false-red cause.
+
+## Test Diagnosis
+Before concluding a test failure is real, check for known false-reds:
+appium-flutter-driver hit-testability limits, stale persistent test DB,
+submodule branch drift, and dual-formatter conflicts on generated files.
+Validate on a live emulator/run where relevant before declaring red.
+
+## Estimation
+When estimating tickets, always fetch the persisted story-point fields first
+to build calibration history before producing an estimate; do not conclude
+'no calibration history' without querying those fields.
+
 **DO NOT:**
 - codegraph is not allowed at the organization (workspace) level — only inside an
   individual repo.
