@@ -97,9 +97,13 @@ key still cannot generate — so check BOTH:
 ```
 Workflow({ name: 'prd', args: { brd: '<the BRD ref the user passed>', stage: 'intake' } })
 ```
-Returns `{ features, uiFeatures, briefs, workKey }`. Keep `features` verbatim — you
-pass it back in step 3. If `uiFeatures` is empty, skip step 2 entirely (spec-only
-mission) and go to step 3 with an empty `figmaByFeature`.
+Returns `{ features, uiFeatures, briefs, workKey, ctoFindings }`. `ctoFindings` is the
+CTO's technical consulting pass (feasibility/risk/cross-repo/ADR/dependency findings per
+feature) — it already ran headless in this call, no Figma needed. Keep BOTH `features`
+and `ctoFindings` verbatim — you pass both back in step 3 untouched (this skill never
+edits or interprets them, just carries them across the in-session design gap). If
+`uiFeatures` is empty, skip step 2 entirely (spec-only mission) and go to step 3 with an
+empty `figmaByFeature`.
 
 ### 2. DESIGN (in-session — this is where you take control)
 For **each** feature in `uiFeatures`, run the design chain with the **Agent tool**
@@ -146,13 +150,16 @@ and keep going — don't abort the whole run.
 Workflow({ name: 'prd', args: {
   brd: '<same BRD ref>', stage: 'ticketing',
   features: <the features array from step 1>,
+  ctoFindings: <the ctoFindings array from step 1>,
   figmaByFeature: <map from step 2>,
   designed: <list from step 2>,
 } })
 ```
-The Product Owner writes one self-contained ticket per feature and links the Figma
-frame for UI-bearing ones (it only handles the URL *strings* — no Figma MCP call,
-so it's headless-safe). The documentor writes the run summary.
+The Product Owner writes one self-contained ticket per feature, folds each feature's
+CTO findings into its scope/dependencies plus a short "Technical notes" section (the
+rest of the ticket stays business-requirement voice — see `prd.js`'s Ticketing step),
+and links the Figma frame for UI-bearing ones (it only handles the URL *strings* — no
+Figma MCP call, so it's headless-safe). The documentor writes the run summary.
 
 ### 4. Report
 Summarize to the user: features intaken, frames built (with URLs), tickets created
