@@ -46,11 +46,11 @@ the adapter cannot change an existing issue's type or re-parent an existing issu
 freshly created one.
 
 **The original ticket becomes one of the pieces — never a leftover.** A *replace*-shape split
-(`N ≤ 5`) reuses the original's own key as piece 1: retitle it, rewrite its body to that piece's
+(`N < 4`) reuses the original's own key as piece 1: retitle it, rewrite its body to that piece's
 spec, and re-estimate it in place. There is no orphaned/superseded ticket to close, and that
 piece keeps its pasted images/comments/history/links for free (an update carries them over
 automatically — see the media-carryover note in `tracker_upsert`). Only pieces 2..N are created
-fresh. An *epic*-shape split (`N > 5`) can't do this for the original itself (the adapter can't
+fresh. An *epic*-shape split (`N >= 4`) can't do this for the original itself (the adapter can't
 re-parent an existing issue under a newly created epic — see above), so that shape still
 supersedes the original into the new epic; every *other* piece is still fresh.
 
@@ -130,7 +130,7 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
 3. **Settle the slices.** Lock the independent slices (each ideally ≤ 12). If no valid split
    exists → **stop**, leave the ticket whole, and report it irreducible with the reason. Never
    force a split.
-4. **Pick the split shape by piece count** (see the next section) — `N ≤ 5` → *replace*; `N > 5`
+4. **Pick the split shape by piece count** (see the next section) — `N < 4` → *replace*; `N >= 4`
    → *epic*.
 5. **Create each piece** through the adapter with a self-contained spec in its body (goal, its
    slice of the acceptance criteria, scope boundary, build-order note, and a pointer back to the
@@ -158,7 +158,7 @@ in a comment is not done.
 
 Cut count `N` decides how the pieces relate to the original.
 
-### N ≤ 5 → replace the original
+### N < 4 → replace the original
 
 The pieces are **independent siblings**. The original's own key becomes **piece 1** — pick
 whichever piece it fits best (first in build order is the usual default, or whichever piece
@@ -185,7 +185,7 @@ estimate no longer applies once its scope has shrunk to just piece 1. Nothing ne
 or closing: the original ticket simply *is* piece 1 now, under its own key, in whatever status
 that piece is naturally in.
 
-### N > 5 → new short-named epic, pieces as children
+### N >= 4 → new short-named epic, pieces as children
 
 Too many for a flat replace — group them under an epic.
 
