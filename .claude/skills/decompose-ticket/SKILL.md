@@ -1,6 +1,6 @@
 ---
 name: decompose-ticket
-description: Split an oversized ticket (total Dev+QA points over 24) into smaller tickets that can each be built and shipped independently, then re-estimate every piece — but only when a genuinely independent decomposition exists; an irreducible ticket is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs right after /estimate-ticket whenever the total exceeds 24, including inside the /prd workflow. Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
+description: Split an oversized ticket (total Dev+QA points over 24) into smaller tickets that can each be built and shipped in parallel (no hard cross-piece dependency), then re-estimate every piece — parallel independence is first-class; only a truly huge ticket (over 36) may instead split along hard 'is blocked by' dependencies, and a ticket with no valid parallel cut is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs right after /estimate-ticket whenever the total exceeds 24, including inside the /prd workflow. Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
 argument-hint: "<KEY> (e.g. OFB-1952) [advise|execute]"
 model: opus
 effort: high
@@ -19,10 +19,12 @@ allowed-tools:
 # Decomposing an oversized ticket
 
 A ticket whose **total (Dev + QA) points exceed 24** is too big to flow cleanly through the
-pipeline — it hides risk, blocks parallelism, and estimates poorly. When such a ticket can
-be carved into **independent slices**, split it into several smaller tickets and **re-estimate
-each**. When it genuinely cannot be, leave it whole — a forced split is worse than an honest
-big ticket.
+pipeline — it hides risk, blocks parallelism, and estimates poorly. Split it into smaller pieces
+that can each be built, reviewed, and shipped **in parallel** — no piece waiting on a sibling —
+and **re-estimate each**. Parallel independence is **first-class**: over 24 you split only into
+pieces with no hard dependency on one another. Only once a ticket is genuinely huge — **over 36** —
+is a dependency-ordered split (wired with `is blocked by` links) allowed. When no valid cut exists
+at all, leave the ticket whole — a forced split is worse than an honest big ticket.
 
 All tracker reads/writes go through the **tracker adapter** (provider-agnostic —
 `notion`|`jira`); **never** call a tracker MCP/API directly (keeps it headless-safe):
@@ -55,28 +57,31 @@ fresh. An *epic*-shape split (`N >= 4`) reuses the original too — it becomes a
 epic via `--parent <EPIC-KEY>` on an update — so every piece keeps its own history; only the
 epic itself is a new issue.
 
-## When this fires — the 24-point rule
+## When this fires — the two gates
 
 Trigger on **total (Dev + QA) points > 24** — the ticket's derived headline size (25+).
 The natural moment is **right after `/estimate-ticket` sets the points**: read the total off
 `get-ticket-details.sh`'s `Estimate:` line. A ticket that isn't estimated yet has no total to
 test — estimate it first, then apply this rule. 24 or below → this skill does nothing.
 
-## The independence bar — vertical slices, not horizontal layers
+The total also decides **how far the independence bar bends** — a second gate at **36** governs
+whether a hard-dependency split is allowed at all. See *The independence bar* below.
 
-The whole point is pieces that can be built, reviewed, merged, and shipped **independently of
-each other**. Cut along **seams** that yield **vertical slices** — each slice a self-contained
-increment that reaches Done and stands on its own — never **horizontal layers** (the migration
-alone, the API alone, the screen alone) that are dead weight until their siblings land.
+## The independence bar — parallel slices, not horizontal layers
+
+The whole point is pieces built, reviewed, merged, and shipped **in parallel** — a developer
+picks up any piece without waiting on a sibling. Cut along **seams** that yield **vertical
+slices** — each a self-contained increment that reaches Done and stands on its own — never
+**horizontal layers** (the migration alone, the API alone, the screen alone) that are dead
+weight until their siblings land.
 
 A valid decomposition satisfies **every** bar below:
 
-- **Independently deliverable** — each piece can go to Done without any *sibling* being done
-  first. A suggested build *order* is fine (piece B extends A), but no piece may be inert until
-  another merges, and there must be no cyclic dependency between pieces. When the order is a
-  **hard** dependency (B cannot be built/reviewed at all until A merges, not just "better after"),
-  wire it as a real **is blocked by** link on B pointing at A — Jira's Linked work items, not
-  just a "Requires: `<KEY>`" prose note — so the board shows the same ordering the spec describes.
+- **Parallel-independent** — pieces carry **no hard dependency on each other**: any piece can be
+  built and reach Done without a *sibling* merging first, and there is no cyclic dependency. A
+  suggested build *order* is fine ("B reads best after A"), but "better after" is **not** "blocked
+  by" — if a piece is genuinely inert until another merges, that pair is **not** parallel, and
+  whether such a split is allowed at all is decided by the two gates below.
 - **Self-contained spec** — each piece carries its own goal, its slice of the acceptance
   criteria, and its own scope boundary; a planner can pick it up without reading the others.
 - **Meaningfully smaller** — each piece is expected to re-estimate **at or below 24**. Expect
@@ -85,10 +90,24 @@ A valid decomposition satisfies **every** bar below:
 - **Complete cover** — the pieces together deliver everything the original promised; nothing
   in-scope is dropped and no gap opens between them.
 
-**Irreducible tickets exist.** If no cut produces independent slices — one tightly-coupled
-change, an atomic migration, a single indivisible algorithm — do **not** manufacture a split.
-Leave the ticket whole and say why it is irreducible (Advise: in the proposal; Execute: in the
-output). A big-but-honest ticket beats fake independence.
+### The two gates — when a hard dependency is allowed
+
+Parallelism is first-class; the original's **total** decides how far the bar bends:
+
+- **Gate 1 — total > 24 (up to 36): parallel or nothing.** Split **only** into parallel-independent
+  pieces. If the only decomposition you can find is a hard-dependency chain (each piece blocked by
+  the prior), that is **not** a valid split — leave the ticket whole, over 24, and say why. A big
+  honest ticket beats a fake-parallel one. No `is blocked by` links are created in this band.
+- **Gate 2 — total > 36: dependency allowed.** The ticket is too big to leave whole, so a
+  dependency-ordered split is permitted. Still prefer parallel pieces; where a piece genuinely
+  cannot start until an earlier one merges, wire the order as a real **is blocked by** link on it
+  pointing at the earlier piece — Jira's Linked work items, not just a "Requires: `<KEY>`" prose
+  note — so the board shows the ordering the spec describes.
+
+**Irreducible tickets exist.** If no valid cut exists — one tightly-coupled change, an atomic
+migration, a single indivisible algorithm; or, under Gate 1, only a dependency chain is possible —
+do **not** manufacture a split. Leave the ticket whole and say why (Advise: in the proposal;
+Execute: in the output). A big-but-honest ticket beats fake independence.
 
 ## Two branches — detect from the caller
 
@@ -113,10 +132,12 @@ output). A big-but-honest ticket beats fake independence.
    not to design.
 3. **Propose the slices** against the independence bar: for each proposed piece give a title, a
    one-line goal, which acceptance criteria it owns, a rough Dev/QA size, its cross-repo touches,
-   and where it sits in the build order. Confirm each piece clears every bar; flag any that
-   doesn't.
-4. If the ticket is **irreducible**, say so plainly and stop — recommend it ship whole (or that a
-   human re-scopes it), and do not propose an artificial split.
+   and where it sits in the build order. Aim for **parallel-independent** pieces; only when the
+   total is **> 36** may you propose a dependency-ordered chain (name each hard `is blocked by`).
+   Confirm each piece clears every bar; flag any that doesn't.
+4. If the ticket is **irreducible** — or the total is ≤ 36 and the only decomposition is a
+   dependency chain — say so plainly and stop: recommend it ship whole (or that a human
+   re-scopes it), and do not propose an artificial or chain-only split.
 
 **Completion criterion (Advise):** a proposal the Product Owner can execute without re-deciding
 the seams — each piece independently deliverable, self-contained, rough-sized, and ordered — OR
@@ -131,9 +152,10 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
 2. **Dedup.** `find-tickets.sh --query "<distinctive token from the title>" --open` — if the
    ticket already has split-children or "Split from" siblings, it was decomposed already; stop
    and report the existing pieces rather than splitting twice.
-3. **Settle the slices.** Lock the independent slices (each ideally ≤ 24). If no valid split
-   exists → **stop**, leave the ticket whole, and report it irreducible with the reason. Never
-   force a split.
+3. **Settle the slices.** Lock the **parallel-independent** slices (each ideally ≤ 24), applying
+   the two gates: at total ≤ 36 the slices must be parallel — if the only decomposition is a
+   dependency chain, **stop**, leave the ticket whole, and report it irreducible with the reason.
+   Only at total > 36 may the slices form a dependency-ordered chain. Never force a split.
 4. **Pick the split shape by piece count** (see the next section) — `N < 4` → *replace*; `N >= 4`
    → *epic*.
 5. **Create each piece** through the adapter with a self-contained spec in its body (goal, its
@@ -152,11 +174,12 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
    original had no sprint set. **Likewise every genuinely new piece (and the epic) gets
    `--priority <ORIG-PRIORITY>`** (the value on step 1's `Priority:` line) — a split changes
    scope, not urgency, so each piece inherits the original's priority; the reused original keeps
-   its priority automatically. **Whenever a piece's build order says it Requires an earlier
-   piece, add `--link "is blocked by":<EARLIER-KEY>` to that piece's own create/update call**
-   (works on the reused original too — `--link` applies on update, not just create) — this is
-   what actually puts the "is blocked by" relationship in Jira's Linked work items, not just
-   prose in the body.
+   its priority automatically. **Only in a dependency-ordered split (Gate 2, original total > 36):
+   whenever a piece's build order says it Requires an earlier piece, add
+   `--link "is blocked by":<EARLIER-KEY>` to that piece's own create/update call** (works on the
+   reused original too — `--link` applies on update, not just create) — this is what actually puts
+   the "is blocked by" relationship in Jira's Linked work items, not just prose in the body. A
+   Gate-1 split (total ≤ 36) is parallel by construction, so it wires no such links.
 6. **Re-estimate each piece — do not hand-write numbers.** Run `/estimate-ticket <NEW-KEY>` per
    piece so calibrated Dev/QA points land in the point **fields**. If a piece still comes back
    > 24, it wasn't sliced enough or it's an irreducible large piece — note it in the output (and,
@@ -187,8 +210,9 @@ most overlaps the original's existing component/repo/type); the rest are created
 #    pasted images/attachments already on <ORIG> carry over onto it automatically
 
 # 2) create pieces 2..N fresh — same work type as the original, linked back to it,
-#    same sprint + priority as the original (read them off get-ticket-details.sh's Sprint:/Priority: lines);
-#    add --link "is blocked by":<KEY> for each piece this one's build order Requires
+#    same sprint + priority as the original (read them off get-ticket-details.sh's Sprint:/Priority: lines).
+#    Add --link "is blocked by":<EARLIER-KEY> ONLY for a Gate-2 (>36) dependency split; a Gate-1
+#    (≤36) split is parallel by construction, so drop that flag entirely.
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type, e.g. Story>" \
   --status "<not-started status>" \
@@ -222,8 +246,9 @@ superseding, no closing.
   --body-file <piece-spec.md>
 #    pasted images/attachments already on <ORIG> carry over onto it automatically
 
-# 3) create every other piece fresh, as a CHILD of the epic, same sprint + priority as the original;
-#    add --link "is blocked by":<KEY> for each piece this one's build order Requires
+# 3) create every other piece fresh, as a CHILD of the epic, same sprint + priority as the original.
+#    Add --link "is blocked by":<EARLIER-KEY> ONLY for a Gate-2 (>36) dependency split; a Gate-1
+#    (≤36) split is parallel, so drop that flag.
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type>" \
   --parent <EPIC-KEY> --status "<not-started status>" \
@@ -250,8 +275,9 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
 - **Points live in fields; estimation is `/estimate-ticket`'s job.** This skill never hand-writes
   Dev/QA points and never touches the derived total — it delegates every re-estimate to
   `/estimate-ticket` so the board stays calibrated.
-- **Don't split below the bar.** Independent slices only; irreducible ⇒ keep whole. Prefer one
-  honest big ticket over several fake-independent ones.
+- **Parallel-first, gated by size.** At total ≤ 36, split only into parallel-independent slices; a
+  chain-only decomposition ⇒ keep whole. Only above 36 may pieces carry hard dependencies.
+  Irreducible ⇒ keep whole. Prefer one honest big ticket over several fake-parallel ones.
 - **Complete cover, nothing dropped.** Every acceptance criterion of the original lands in exactly
   one piece. Attachments are scoped to the issue they live on — the piece that reuses the
   original's key keeps them for free (either shape), but every *other* piece that needs them
@@ -266,10 +292,12 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
   (the reused-original piece already has it; nothing to do there). Re-estimation in step 6 may
   change a piece's points, but never its priority.
 - **Idempotent.** Never split a ticket that already has split-children/siblings (step 2 dedup).
-- **Hard dependencies become real links, not just prose.** Every "Requires: `<KEY>`" build-order
-  note on a piece gets a matching `--link "is blocked by":<KEY>` on that piece's own create/update
-  call — same closest-match/fail-loud behavior as `Split from`: if the exact phrase is missing,
-  the adapter substitutes the closest link type and says so; carry that note into the output.
+- **Hard dependencies become real links, not just prose — Gate 2 only.** A hard dependency is
+  allowed only in a > 36 split; there, every "Requires: `<KEY>`" build-order note on a piece gets
+  a matching `--link "is blocked by":<KEY>` on that piece's own create/update call — same
+  closest-match/fail-loud behavior as `Split from`: if the exact phrase is missing, the adapter
+  substitutes the closest link type and says so; carry that note into the output. A ≤ 36 split is
+  parallel, so it produces no such links.
 - **Adapter only, fail loud.** If the tracker is unreachable, report the split was **not** applied
   (don't fabricate keys) — same rule as `docs/agents/issue-tracker.md`.
 
@@ -284,7 +312,7 @@ shape:       replace | epic | n/a         # n/a when irreducible
 epic:        <EPIC-KEY> | none            # the new epic, when shape=epic
 pieces:                                   # empty when irreducible
   - <KEY-a>  dev <d>/qa <q> (total <t>)  — <one-line goal>   # KEY-a == <ORIG>, reused as a piece (either shape)
-  - <KEY-b>  dev <d>/qa <q> (total <t>)  — <one-line goal>  [blocked by <KEY-a>]   # only when a hard build-order dependency exists
+  - <KEY-b>  dev <d>/qa <q> (total <t>)  — <one-line goal>  [blocked by <KEY-a>]   # Gate-2 (>36) splits only, where a hard build-order dependency exists
   - <KEY-c>  …
 original_state: reused as piece 1 (<ORIG>) | reused as epic child (<ORIG>, evicted from prior parent <OLD-PARENT> if any) | unchanged (irreducible)
 note:        <irreducible reason / a piece still >24 / epic-type or link fallback / tracker issue>
