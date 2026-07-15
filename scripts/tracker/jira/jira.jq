@@ -201,10 +201,23 @@ def issue_details_text($base):
   | ($rows | map(.k | length) | max // 0) as $w
   | ($i.fields.description | adf_to_text) as $desc
   | ($i.fields.description | adf_media_blocks | length) as $nmedia
+  # Issue links, grouped by the phrase THIS issue sees: a link naming the other side via
+  # outwardIssue means this issue is the inward (object) side → show the inward phrase (e.g.
+  # "is blocked by"); via inwardIssue means this issue is the outward (subject) side → show
+  # the outward phrase (e.g. "blocks"). Each target carries the linked issue's status.
+  | ( [ $i.fields.issuelinks[]?
+        | if .outwardIssue
+          then {phrase: (.type.inward  // .type.name), tgt: "\(.outwardIssue.key) [\(.outwardIssue.fields.status.name // "?")]"}
+          else {phrase: (.type.outward // .type.name), tgt: "\(.inwardIssue.key) [\(.inwardIssue.fields.status.name // "?")]"} end ]
+      | group_by(.phrase)
+      | map("  " + .[0].phrase + ": " + (map(.tgt) | join(", "))) ) as $links
   | "\($k) — \($summary)\n"
     + (if ($base | length) > 0 then "\($base)/browse/\($k)\n" else "" end)
     + (if ($rows | length) > 0
         then "\n" + ( $rows | map( .k + ":" + (" " * ($w - (.k | length) + 1)) + .v ) | join("\n") ) + "\n"
+        else "" end)
+    + (if ($links | length) > 0
+        then "\nLinked issues:\n" + ($links | join("\n")) + "\n"
         else "" end)
     + (if (($desc | gsub("\\s"; "")) | length) > 0
         then "\n------------------------------------------------------------\n" + ($desc | sub("\n+$"; "")) + "\n"

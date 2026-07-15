@@ -33,7 +33,7 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
   get-ticket-comments.sh  <KEY> [--deep]   # prior estimation/decomposition notes
   find-tickets.sh         [--query …] [--open] [--json]   # dedup: has it already been split?
   upsert-ticket-details.sh new --title … --issuetype … [--parent <EPIC>] \
-      [--link "Split from":<ORIG>] --status … --body-file <spec.md>   # CREATE a piece
+      [--link "Split from":<ORIG>] [--priority <ORIG-PRIORITY>] --status … --body-file <spec.md>   # CREATE a piece
   upsert-ticket-details.sh <ORIG> --title … --status … --body-file …  # reconcile the original
   add-ticket-comment.sh   <KEY> "text"
 ```
@@ -73,7 +73,10 @@ A valid decomposition satisfies **every** bar below:
 
 - **Independently deliverable** — each piece can go to Done without any *sibling* being done
   first. A suggested build *order* is fine (piece B extends A), but no piece may be inert until
-  another merges, and there must be no cyclic dependency between pieces.
+  another merges, and there must be no cyclic dependency between pieces. When the order is a
+  **hard** dependency (B cannot be built/reviewed at all until A merges, not just "better after"),
+  wire it as a real **is blocked by** link on B pointing at A — Jira's Linked work items, not
+  just a "Requires: `<KEY>`" prose note — so the board shows the same ordering the spec describes.
 - **Self-contained spec** — each piece carries its own goal, its slice of the acceptance
   criteria, and its own scope boundary; a planner can pick it up without reading the others.
 - **Meaningfully smaller** — each piece is expected to re-estimate **at or below 24**. Expect
@@ -123,8 +126,8 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
 
 1. **Read + confirm.** `get-ticket-details.sh <KEY>` — confirm total > 24. If a CTO proposal was
    handed in, use its slices; otherwise derive them yourself against the independence bar. Note
-   the `Sprint:` line if present (`Sprint: <name> (id <id>)`) — every fresh piece created below
-   must land in that same sprint.
+   the `Sprint:` line if present (`Sprint: <name> (id <id>)`) and the `Priority:` line — every
+   fresh piece created below must land in that same sprint and carry that same priority.
 2. **Dedup.** `find-tickets.sh --query "<distinctive token from the title>" --open` — if the
    ticket already has split-children or "Split from" siblings, it was decomposed already; stop
    and report the existing pieces rather than splitting twice.
@@ -146,7 +149,14 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
    doing it quietly. **Every genuinely new piece gets `--sprint <ORIG-SPRINT-ID>`** (the id read
    off step 1's `Sprint:` line) — a split is a scope change, not a scheduling one, so each piece
    stays in the sprint the original was already committed to. Skip the flag only when the
-   original had no sprint set.
+   original had no sprint set. **Likewise every genuinely new piece (and the epic) gets
+   `--priority <ORIG-PRIORITY>`** (the value on step 1's `Priority:` line) — a split changes
+   scope, not urgency, so each piece inherits the original's priority; the reused original keeps
+   its priority automatically. **Whenever a piece's build order says it Requires an earlier
+   piece, add `--link "is blocked by":<EARLIER-KEY>` to that piece's own create/update call**
+   (works on the reused original too — `--link` applies on update, not just create) — this is
+   what actually puts the "is blocked by" relationship in Jira's Linked work items, not just
+   prose in the body.
 6. **Re-estimate each piece — do not hand-write numbers.** Run `/estimate-ticket <NEW-KEY>` per
    piece so calibrated Dev/QA points land in the point **fields**. If a piece still comes back
    > 24, it wasn't sliced enough or it's an irreducible large piece — note it in the output (and,
@@ -177,11 +187,13 @@ most overlaps the original's existing component/repo/type); the rest are created
 #    pasted images/attachments already on <ORIG> carry over onto it automatically
 
 # 2) create pieces 2..N fresh — same work type as the original, linked back to it,
-#    same sprint as the original (read its id off get-ticket-details.sh's Sprint: line)
+#    same sprint + priority as the original (read them off get-ticket-details.sh's Sprint:/Priority: lines);
+#    add --link "is blocked by":<KEY> for each piece this one's build order Requires
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type, e.g. Story>" \
   --status "<not-started status>" \
-  --link "Split from":<ORIG> --sprint <ORIG-SPRINT-ID> \
+  --link "Split from":<ORIG> --link "is blocked by":<EARLIER-KEY> \
+  --priority <ORIG-PRIORITY> --sprint <ORIG-SPRINT-ID> \
   --body-file <piece-spec.md>
 ```
 
@@ -199,7 +211,7 @@ superseding, no closing.
 ```sh
 # 1) create the epic — a SHORT umbrella name distilled from the original title
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
-  --title "<short epic name>" --issuetype Epic \
+  --title "<short epic name>" --issuetype Epic --priority <ORIG-PRIORITY> \
   --link "Split from":<ORIG> --body-file <epic-summary.md>
 #    → read the epic <EPIC-KEY> from the "Created <KEY> — …" line
 
@@ -210,10 +222,13 @@ superseding, no closing.
   --body-file <piece-spec.md>
 #    pasted images/attachments already on <ORIG> carry over onto it automatically
 
-# 3) create every other piece fresh, as a CHILD of the epic, same sprint as the original
+# 3) create every other piece fresh, as a CHILD of the epic, same sprint + priority as the original;
+#    add --link "is blocked by":<KEY> for each piece this one's build order Requires
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type>" \
-  --parent <EPIC-KEY> --status "<not-started status>" --sprint <ORIG-SPRINT-ID> \
+  --parent <EPIC-KEY> --status "<not-started status>" \
+  --priority <ORIG-PRIORITY> --sprint <ORIG-SPRINT-ID> \
+  --link "is blocked by":<EARLIER-KEY> \
   --body-file <piece-spec.md>
 ```
 
@@ -246,7 +261,15 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
 - **Same sprint as the original.** A split changes scope, not schedule — every genuinely new
   piece gets `--sprint <ORIG-SPRINT-ID>` so it lands in the sprint the original was already
   committed to (the reused-original piece already has the right sprint; nothing to do there).
+- **Same priority as the original.** A split changes scope, not urgency — every genuinely new
+  piece (and the epic) gets `--priority <ORIG-PRIORITY>` so it inherits the original's priority
+  (the reused-original piece already has it; nothing to do there). Re-estimation in step 6 may
+  change a piece's points, but never its priority.
 - **Idempotent.** Never split a ticket that already has split-children/siblings (step 2 dedup).
+- **Hard dependencies become real links, not just prose.** Every "Requires: `<KEY>`" build-order
+  note on a piece gets a matching `--link "is blocked by":<KEY>` on that piece's own create/update
+  call — same closest-match/fail-loud behavior as `Split from`: if the exact phrase is missing,
+  the adapter substitutes the closest link type and says so; carry that note into the output.
 - **Adapter only, fail loud.** If the tracker is unreachable, report the split was **not** applied
   (don't fabricate keys) — same rule as `docs/agents/issue-tracker.md`.
 
@@ -261,7 +284,8 @@ shape:       replace | epic | n/a         # n/a when irreducible
 epic:        <EPIC-KEY> | none            # the new epic, when shape=epic
 pieces:                                   # empty when irreducible
   - <KEY-a>  dev <d>/qa <q> (total <t>)  — <one-line goal>   # KEY-a == <ORIG>, reused as a piece (either shape)
-  - <KEY-b>  …
+  - <KEY-b>  dev <d>/qa <q> (total <t>)  — <one-line goal>  [blocked by <KEY-a>]   # only when a hard build-order dependency exists
+  - <KEY-c>  …
 original_state: reused as piece 1 (<ORIG>) | reused as epic child (<ORIG>, evicted from prior parent <OLD-PARENT> if any) | unchanged (irreducible)
 note:        <irreducible reason / a piece still >24 / epic-type or link fallback / tracker issue>
 ```

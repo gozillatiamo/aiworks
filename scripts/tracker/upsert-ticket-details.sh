@@ -50,10 +50,15 @@ Options:
                        (resolved from the provider). Create-only; requires --parent.
   --component <name>   Add a component/tag (Jira: project component, validated;
                        Notion: a multi_select option). Repeatable.
-  --link <TYPE>:<KEY>  Link the new issue to <KEY> as the outward subject — e.g.
-                       --link Implements:APP-123 means "<new> implements APP-123".
-                       Repeatable. Jira: an issue link (closest type if exact missing);
-                       Notion: a relation. Create-only.
+  --link <TYPE>:<KEY>  Link this issue to <KEY>. <TYPE> can be an outward phrase, putting
+                       THIS issue as the subject — e.g. --link Implements:APP-123 means
+                       "<this> implements APP-123" — or an inward phrase, putting THIS
+                       issue as the object — e.g. --link "is blocked by":APP-123 means
+                       "<this> is blocked by APP-123" (Jira shows it under APP-123 as
+                       "blocks <this>"). Repeatable. Jira: a real issue link (closest type
+                       if the exact phrase is missing), works on both create ("new") and
+                       an existing ticket. Notion: a relation (no directional types), works
+                       the same either way.
   --body <markdown>    Write the full spec (Markdown) into the ticket BODY. Notion
                        appends page blocks; Jira renders it as the issue description.
                        Supports headings, bullet/numbered/to-do lists, quotes,

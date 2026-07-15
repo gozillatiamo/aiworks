@@ -23,11 +23,17 @@
 # Child issues (ref "new"): --parent <KEY> sets fields.parent; --subtask uses the project's
 # sub-task type (or --issuetype <name> for any type); --component <name> (repeatable) sets
 # fields.components after validating each against the project; --link <TYPE>:<KEY> (repeatable)
-# creates an issue link AFTER create, with the new issue as the outward (subject) side.
+# creates an issue link. <TYPE> may be a link type's NAME or OUTWARD phrase (e.g. "Blocks" —
+# the calling/new issue is the subject: "<this> blocks <KEY>") or its INWARD phrase (e.g.
+# "is blocked by" — the calling/new issue is the object: "<KEY> blocks <this>", i.e. "<this>
+# is blocked by <KEY>"). jira_resolve_link_type detects which phrasing was used and swaps
+# the outward/inward sides accordingly.
 #
-# --parent also works on an UPDATE (re-parent an existing issue) — Jira's fields.parent is
-# writable via PUT, not just at create. --subtask/--issuetype/--component/--link stay
-# create-only (retyping/re-linking an existing issue isn't the same one-field PUT).
+# --parent and --link also work on an UPDATE (re-parent an existing issue, or add a link to
+# one) — Jira's fields.parent is writable via PUT, and an issue link is its own POST
+# /issueLink call independent of the issue body, so neither needs the issue to be freshly
+# created. --subtask/--issuetype/--component stay create-only (retyping/re-componenting an
+# existing issue isn't the same one-field PUT).
 #
 # Status is set via a Jira transition (Jira moves by transition, not by writing the
 # field). --status must name the TARGET status (or the transition name); the impl finds
@@ -109,7 +115,7 @@ tracker_get_details() {
   key="$(jira_key "$1")"
   # Append the configured point/effort field ids so the estimate is visible (e.g. for
   # /estimate-ticket re-estimation) — the endpoint returns only the fields requested.
-  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent"
+  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks"
   for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD" "$JIRA_SPRINT_FIELD"; do
     [[ -n "$f" ]] && fields_q="$fields_q,$f"
   done
@@ -184,18 +190,21 @@ tracker_upsert() {
 
   key="$(jira_key "$ticket")"
 
-  # Most child-issue flags (issuetype/subtask/component/link) only apply when CREATING
-  # (ref "new"). On an update, say so loudly rather than dropping them silently. --parent
-  # is the exception — Jira's fields.parent is writable via PUT, so it re-parents an
-  # existing issue (used to move a split ticket under a freshly created epic).
-  local _createonly
+  # Most child-issue flags (issuetype/subtask/component) only apply when CREATING (ref
+  # "new"). On an update, say so loudly rather than dropping them silently. --parent and
+  # --link are the exceptions: Jira's fields.parent is writable via PUT (re-parents an
+  # existing issue, e.g. moving a split ticket under a freshly created epic), and issue
+  # links are their own POST /issueLink call independent of the issue's other fields — so
+  # --link works here too (e.g. wiring an "is blocked by" dependency onto the reused
+  # original ticket in a split, which is only ever updated, never created).
+  local _createonly links_json
   _createonly="$(printf '%s' "$fields" | jq -r '
     [ (if .issuetype then "--issuetype" else empty end),
       (if .subtask   then "--subtask"   else empty end),
-      (if (.components // [] | length) > 0 then "--component" else empty end),
-      (if (.links      // [] | length) > 0 then "--link"      else empty end)
+      (if (.components // [] | length) > 0 then "--component" else empty end)
     ] | join(", ")')"
   [[ -n "$_createonly" ]] && echo "WARN: $_createonly ignored — only applied when creating (ref \"new\"), not on updates" >&2
+  links_json="$(printf '%s' "$fields" | jq -c '.links // []')"
 
   # A PUT replaces the whole description field, so any editor-pasted images/attachments
   # already in it must be carried across a rewrite or they are lost for good (OFB-1952).
@@ -234,8 +243,9 @@ tracker_upsert() {
 
   if [[ "$dry" -eq 1 ]]; then
     [[ "$jfields" != "{}" ]] && printf 'DRY RUN — PUT /rest/api/3/issue/%s\n%s\n' "$key" "$(jq -n --argjson f "$jfields" '{fields: $f}')"
+    printf '%s' "$links_json" | jq -r --arg k "$key" '.[]? | "DRY RUN — then POST /rest/api/3/issueLink  (\($k) \(.type) \(.key))"'
     [[ -n "$status" ]] && printf 'DRY RUN — POST /rest/api/3/issue/%s/transitions  (target status: %s)\n' "$key" "$status"
-    [[ "$jfields" == "{}" && -z "$status" ]] && printf 'DRY RUN — nothing to change for %s\n' "$key"
+    [[ "$jfields" == "{}" && -z "$status" && "$(printf '%s' "$links_json" | jq 'length')" -eq 0 ]] && printf 'DRY RUN — nothing to change for %s\n' "$key"
     return 0
   fi
 
@@ -244,6 +254,7 @@ tracker_upsert() {
     printf 'Updated %s\n' "$key"
     printf 'Changed: %s\n' "$(printf '%s' "$jfields" | jq -r 'keys | join(", ")')"
   fi
+  jira_create_links "$key" "$links_json"
   [[ -n "$status" ]] && jira_transition "$key" "$status"
   return 0
 }
@@ -368,11 +379,15 @@ jira_resolve_components() {
   printf '%s' "$out" | jq -c '.fields'
 }
 
-# Create each requested issue link with the NEW issue as the outward (subject) side:
-# "<new> <type> <other>" (e.g. a new sub-task Implements its parent). The link type name is
-# resolved against the project; on no exact match the closest type is used (and reported).
+# Create each requested issue link. By default the CALLING issue (child) is the outward
+# (subject) side: "<child> <type> <other>" (e.g. a new sub-task Implements its parent). But
+# when the requested phrase matches a link type's INWARD phrasing (e.g. "is blocked by",
+# the inward side of Jira's "Blocks" type), the sides swap — the calling issue becomes the
+# inward (object) side instead, so "<other> Blocks <child>" reads correctly as "<child> is
+# blocked by <other>". jira_resolve_link_type reports which side applies. The link type name
+# is resolved against the project; on no exact match the closest type is used (and reported).
 jira_create_links() {
-  local child="$1" links_json="$2" n i ltype other resolved types
+  local child="$1" links_json="$2" n i ltype other resolved rname rswap rkind types outw inw
   n="$(printf '%s' "$links_json" | jq 'length')"
   [[ "$n" -gt 0 ]] || return 0
   types="$(jira_api GET "/rest/api/3/issueLinkType")"
@@ -380,34 +395,68 @@ jira_create_links() {
     ltype="$(printf '%s' "$links_json" | jq -r --argjson i "$i" '.[$i].type')"
     other="$(printf '%s' "$links_json" | jq -r --argjson i "$i" '.[$i].key')"
     resolved="$(jira_resolve_link_type "$types" "$ltype")"
-    jira_api POST "/rest/api/3/issueLink" "$(jq -n --arg t "$resolved" --arg c "$child" --arg o "$other" \
-      '{type: {name: $t}, outwardIssue: {key: $c}, inwardIssue: {key: $o}}')" >/dev/null
-    if [[ "$resolved" == "$ltype" ]]; then
-      printf 'Linked %s —[%s]→ %s\n' "$child" "$resolved" "$other"
+    IFS='|' read -r rname rswap rkind <<< "$resolved"
+    if [[ "$rswap" == "true" ]]; then outw="$other"; inw="$child"; else outw="$child"; inw="$other"; fi
+    jira_api POST "/rest/api/3/issueLink" "$(jq -n --arg t "$rname" --arg o "$outw" --arg w "$inw" \
+      '{type: {name: $t}, outwardIssue: {key: $o}, inwardIssue: {key: $w}}')" >/dev/null
+    if [[ "$rswap" == "true" ]]; then
+      printf 'Linked %s ←[%s]— %s  (%s %s %s)\n' "$child" "$rname" "$other" "$child" "$ltype" "$other"
     else
-      printf 'Linked %s —[%s]→ %s  (requested "%s"; used closest match "%s")\n' "$child" "$resolved" "$other" "$ltype" "$resolved"
+      printf 'Linked %s —[%s]→ %s\n' "$child" "$rname" "$other"
     fi
+    # Only warn when the type was actually SUBSTITUTED (fuzzy/generic fallback) — an exact
+    # match on a link type's name OR either directional phrase ("is blocked by" == Blocks'
+    # inward phrase) is not a substitution, even though the type NAME differs from the phrase.
+    [[ "$rkind" != "exact" ]] && printf '  (requested "%s"; used closest match "%s")\n' "$ltype" "$rname"
   done
+  # Explicit success: the loop's last statement is a short-circuit test that leaves a
+  # non-zero status on an "exact" match — without this the function returns 1 and, under
+  # `set -e`, the whole upsert is treated as failed even though every link was created.
+  return 0
 }
 
-# Map a requested link-type name to a real one: exact (case-insensitive) match first, then
-# the closest by substring (e.g. "Implements" → "Implement"), preferring the longest name.
-# No reasonable match → loud failure listing the available types.
+# Resolve a requested link-type phrase against Jira's real link types — matching the type
+# NAME or either directional phrase (outward, e.g. "Blocks"; inward, e.g. "is blocked by"),
+# case-insensitive, exact first then closest substring. Prints "<type-name>|<swap>|<kind>":
+#   swap — "true" when the requested phrase was the INWARD one, telling jira_create_links to
+#          put the calling issue on the inward (object) side instead of the default outward
+#          (subject) side.
+#   kind — "exact" when the phrase matched a type's name/outward/inward exactly (NOT a
+#          substitution — the caller stays quiet); "closest" when it only matched by substring
+#          or fell through to the generic Relates fallback (the caller reports the substitution).
+# No reasonable match on either → generic fallback to a "Relates"-named type (kind "closest",
+# per decompose-ticket's documented "closest existing type" promise for phrases like "Split
+# from" that have no dedicated Jira link type). Only a project with no Relates-like type at all
+# reaches loud failure listing the available types.
 jira_resolve_link_type() {
-  local types="$1" want="$2" name
-  name="$(printf '%s' "$types" | jq -r --arg w "$want" '
-    [.issueLinkTypes[]? | select((.name | ascii_downcase) == ($w | ascii_downcase)) | .name][0] // empty')"
-  if [[ -z "$name" ]]; then
-    name="$(printf '%s' "$types" | jq -r --arg w "$want" '
-      ($w | ascii_downcase) as $lw
-      | [ .issueLinkTypes[]?
-          | (.name | ascii_downcase) as $ln
-          | select(($ln | startswith($lw)) or ($lw | startswith($ln)) or ($ln | inside($lw)) or ($lw | inside($ln)))
-          | .name ]
-      | sort_by(length) | reverse | (.[0] // empty)')"
-  fi
-  [[ -n "$name" ]] || die "issue link type '$want' not found in Jira — available: $(printf '%s' "$types" | jq -r '[.issueLinkTypes[]?.name] | join(", ")' 2>/dev/null)"
-  printf '%s' "$name"
+  local types="$1" want="$2" out
+  out="$(printf '%s' "$types" | jq -r --arg w "$want" '
+    ($w | ascii_downcase) as $lw
+    | (.issueLinkTypes // []) as $lt
+    | ( [$lt[] | select((.name|ascii_downcase)==$lw)    | {name, swap:false}]
+      + [$lt[] | select((.outward|ascii_downcase)==$lw) | {name, swap:false}]
+      + [$lt[] | select((.inward|ascii_downcase)==$lw)  | {name, swap:true}]
+      ) as $exact
+    | if ($exact | length) > 0 then ($exact[0] + {kind: "exact"})
+      else
+        ( [ $lt[]
+            | . as $t
+            | ($t.name|ascii_downcase) as $ln | ($t.outward|ascii_downcase) as $lo | ($t.inward|ascii_downcase) as $li
+            | select(($ln|startswith($lw)) or ($lw|startswith($ln)) or ($ln|inside($lw)) or ($lw|inside($ln))
+                     or ($lo|startswith($lw)) or ($lw|startswith($lo)) or ($lo|inside($lw)) or ($lw|inside($lo))
+                     or ($li|startswith($lw)) or ($lw|startswith($li)) or ($li|inside($lw)) or ($lw|inside($li)))
+            | {name: $t.name,
+               swap: (($li|startswith($lw)) or ($lw|startswith($li)) or ($li|inside($lw)) or ($lw|inside($li)))}
+          ] | sort_by(.name | length) | reverse | (.[0] // null) ) as $fuzzy
+        | if $fuzzy != null then ($fuzzy + {kind: "closest"})
+          else
+            ([$lt[] | select((.name|ascii_downcase)=="relates")] | .[0]) as $rel
+            | if $rel != null then {name: $rel.name, swap: false, kind: "closest"} else null end
+          end
+      end
+    | if . != null then "\(.name)|\(.swap)|\(.kind)" else empty end')"
+  [[ -n "$out" ]] || die "issue link type '$want' not found in Jira — available: $(printf '%s' "$types" | jq -r '[.issueLinkTypes[]? | "\(.name) (\(.outward) / \(.inward))"] | join(", ")' 2>/dev/null)"
+  printf '%s' "$out"
 }
 
 # Move an issue to a target status by finding+posting the matching transition.
