@@ -1,6 +1,6 @@
 ---
 name: decompose-ticket
-description: Split an oversized ticket (total Dev+QA points over 12) into smaller tickets that can each be built and shipped independently, then re-estimate every piece — but only when a genuinely independent decomposition exists; an irreducible ticket is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs right after /estimate-ticket whenever the total exceeds 12, including inside the /prd workflow. Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
+description: Split an oversized ticket (total Dev+QA points over 24) into smaller tickets that can each be built and shipped independently, then re-estimate every piece — but only when a genuinely independent decomposition exists; an irreducible ticket is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs right after /estimate-ticket whenever the total exceeds 24, including inside the /prd workflow. Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
 argument-hint: "<KEY> (e.g. OFB-1952) [advise|execute]"
 model: opus
 effort: high
@@ -18,7 +18,7 @@ allowed-tools:
 
 # Decomposing an oversized ticket
 
-A ticket whose **total (Dev + QA) points exceed 12** is too big to flow cleanly through the
+A ticket whose **total (Dev + QA) points exceed 24** is too big to flow cleanly through the
 pipeline — it hides risk, blocks parallelism, and estimates poorly. When such a ticket can
 be carved into **independent slices**, split it into several smaller tickets and **re-estimate
 each**. When it genuinely cannot be, leave it whole — a forced split is worse than an honest
@@ -55,12 +55,12 @@ fresh. An *epic*-shape split (`N >= 4`) reuses the original too — it becomes a
 epic via `--parent <EPIC-KEY>` on an update — so every piece keeps its own history; only the
 epic itself is a new issue.
 
-## When this fires — the 12-point rule
+## When this fires — the 24-point rule
 
-Trigger on **total (Dev + QA) points > 12** — the ticket's derived headline size (13+).
+Trigger on **total (Dev + QA) points > 24** — the ticket's derived headline size (25+).
 The natural moment is **right after `/estimate-ticket` sets the points**: read the total off
 `get-ticket-details.sh`'s `Estimate:` line. A ticket that isn't estimated yet has no total to
-test — estimate it first, then apply this rule. 12 or below → this skill does nothing.
+test — estimate it first, then apply this rule. 24 or below → this skill does nothing.
 
 ## The independence bar — vertical slices, not horizontal layers
 
@@ -76,7 +76,7 @@ A valid decomposition satisfies **every** bar below:
   another merges, and there must be no cyclic dependency between pieces.
 - **Self-contained spec** — each piece carries its own goal, its slice of the acceptance
   criteria, and its own scope boundary; a planner can pick it up without reading the others.
-- **Meaningfully smaller** — each piece is expected to re-estimate **at or below 12**. Expect
+- **Meaningfully smaller** — each piece is expected to re-estimate **at or below 24**. Expect
   the pieces' points to **sum higher than the original** (coordination overhead is real) — that
   is normal, do not force them to add back to the original total.
 - **Complete cover** — the pieces together deliver everything the original promised; nothing
@@ -104,7 +104,7 @@ output). A big-but-honest ticket beats fake independence.
 
 ## Advise flow (CTO)
 
-1. **Read** the ticket (`get-ticket-details.sh <KEY>` + comments) and confirm the total > 12.
+1. **Read** the ticket (`get-ticket-details.sh <KEY>` + comments) and confirm the total > 24.
 2. **Skim the touched area** for real seams — **codegraph first** (`codegraph explore`/`search`
    in the repo the ticket targets), Grep/Glob/Read only as a last resort. Skim to find seams,
    not to design.
@@ -121,14 +121,14 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
 
 ## Execute flow (PO)
 
-1. **Read + confirm.** `get-ticket-details.sh <KEY>` — confirm total > 12. If a CTO proposal was
+1. **Read + confirm.** `get-ticket-details.sh <KEY>` — confirm total > 24. If a CTO proposal was
    handed in, use its slices; otherwise derive them yourself against the independence bar. Note
    the `Sprint:` line if present (`Sprint: <name> (id <id>)`) — every fresh piece created below
    must land in that same sprint.
 2. **Dedup.** `find-tickets.sh --query "<distinctive token from the title>" --open` — if the
    ticket already has split-children or "Split from" siblings, it was decomposed already; stop
    and report the existing pieces rather than splitting twice.
-3. **Settle the slices.** Lock the independent slices (each ideally ≤ 12). If no valid split
+3. **Settle the slices.** Lock the independent slices (each ideally ≤ 24). If no valid split
    exists → **stop**, leave the ticket whole, and report it irreducible with the reason. Never
    force a split.
 4. **Pick the split shape by piece count** (see the next section) — `N < 4` → *replace*; `N >= 4`
@@ -149,7 +149,7 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
    original had no sprint set.
 6. **Re-estimate each piece — do not hand-write numbers.** Run `/estimate-ticket <NEW-KEY>` per
    piece so calibrated Dev/QA points land in the point **fields**. If a piece still comes back
-   > 12, it wasn't sliced enough or it's an irreducible large piece — note it in the output (and,
+   > 24, it wasn't sliced enough or it's an irreducible large piece — note it in the output (and,
    if it's cleanly divisible, split that one piece further).
 7. **Reconcile the original** (see the split-shape section).
 8. **Report** per *Output*.
@@ -255,7 +255,7 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
 Return a compact summary the caller (CTO consult / PO ticketing / `/prd`) can carry forward:
 
 ```
-original:    <KEY>  (total <T> > 12)
+original:    <KEY>  (total <T> > 24)
 verdict:     split | irreducible
 shape:       replace | epic | n/a         # n/a when irreducible
 epic:        <EPIC-KEY> | none            # the new epic, when shape=epic
@@ -263,5 +263,5 @@ pieces:                                   # empty when irreducible
   - <KEY-a>  dev <d>/qa <q> (total <t>)  — <one-line goal>   # KEY-a == <ORIG>, reused as a piece (either shape)
   - <KEY-b>  …
 original_state: reused as piece 1 (<ORIG>) | reused as epic child (<ORIG>, evicted from prior parent <OLD-PARENT> if any) | unchanged (irreducible)
-note:        <irreducible reason / a piece still >12 / epic-type or link fallback / tracker issue>
+note:        <irreducible reason / a piece still >24 / epic-type or link fallback / tracker issue>
 ```
