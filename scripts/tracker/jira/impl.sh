@@ -379,13 +379,18 @@ jira_resolve_components() {
   printf '%s' "$out" | jq -c '.fields'
 }
 
-# Create each requested issue link. By default the CALLING issue (child) is the outward
-# (subject) side: "<child> <type> <other>" (e.g. a new sub-task Implements its parent). But
-# when the requested phrase matches a link type's INWARD phrasing (e.g. "is blocked by",
-# the inward side of Jira's "Blocks" type), the sides swap — the calling issue becomes the
-# inward (object) side instead, so "<other> Blocks <child>" reads correctly as "<child> is
-# blocked by <other>". jira_resolve_link_type reports which side applies. The link type name
-# is resolved against the project; on no exact match the closest type is used (and reported).
+# Create each requested issue link so it reads "<child> <requested-phrase> <other>".
+#
+# ⚠ Jira's POST /issueLink direction is the OPPOSITE of the field names' intuition (verified
+# against the live board): the issue placed in the payload's `inwardIssue` performs the
+# OUTWARD action, and `outwardIssue` is its object. So for the DEFAULT case — the child is the
+# subject of the type's OUTWARD phrase, e.g. a sub-task that "implements" its parent — the
+# child goes in `inwardIssue`. When the requested phrase is the type's INWARD phrase
+# (swap=true, e.g. "is blocked by"), the child is the object, so it goes in `outwardIssue`
+# instead. Getting this backwards makes an intended "F1 blocks F2" render as "F1 is blocked by
+# F2" on the board. Do NOT "simplify" by matching the field names to the phrase names — that
+# reverses every directional link. jira_resolve_link_type reports <swap>; the link type name is
+# resolved against the project (closest match used and reported on no exact hit).
 jira_create_links() {
   local child="$1" links_json="$2" n i ltype other resolved rname rswap rkind types outw inw
   n="$(printf '%s' "$links_json" | jq 'length')"
@@ -396,7 +401,7 @@ jira_create_links() {
     other="$(printf '%s' "$links_json" | jq -r --argjson i "$i" '.[$i].key')"
     resolved="$(jira_resolve_link_type "$types" "$ltype")"
     IFS='|' read -r rname rswap rkind <<< "$resolved"
-    if [[ "$rswap" == "true" ]]; then outw="$other"; inw="$child"; else outw="$child"; inw="$other"; fi
+    if [[ "$rswap" == "true" ]]; then outw="$child"; inw="$other"; else outw="$other"; inw="$child"; fi
     jira_api POST "/rest/api/3/issueLink" "$(jq -n --arg t "$rname" --arg o "$outw" --arg w "$inw" \
       '{type: {name: $t}, outwardIssue: {key: $o}, inwardIssue: {key: $w}}')" >/dev/null
     if [[ "$rswap" == "true" ]]; then
@@ -418,9 +423,11 @@ jira_create_links() {
 # Resolve a requested link-type phrase against Jira's real link types — matching the type
 # NAME or either directional phrase (outward, e.g. "Blocks"; inward, e.g. "is blocked by"),
 # case-insensitive, exact first then closest substring. Prints "<type-name>|<swap>|<kind>":
-#   swap — "true" when the requested phrase was the INWARD one, telling jira_create_links to
-#          put the calling issue on the inward (object) side instead of the default outward
-#          (subject) side.
+#   swap — "true" when the requested phrase was the INWARD one, telling jira_create_links the
+#          calling issue is the OBJECT of the relation (e.g. "<child> is blocked by <other>")
+#          rather than the default SUBJECT ("<child> <outward-phrase> <other>"). See the
+#          field-mapping ⚠ note above jira_create_links — the payload fields do NOT match
+#          these names.
 #   kind — "exact" when the phrase matched a type's name/outward/inward exactly (NOT a
 #          substitution — the caller stays quiet); "closest" when it only matched by substring
 #          or fell through to the generic Relates fallback (the caller reports the substitution).

@@ -201,14 +201,15 @@ def issue_details_text($base):
   | ($rows | map(.k | length) | max // 0) as $w
   | ($i.fields.description | adf_to_text) as $desc
   | ($i.fields.description | adf_media_blocks | length) as $nmedia
-  # Issue links, grouped by the phrase THIS issue sees: a link naming the other side via
-  # outwardIssue means this issue is the inward (object) side → show the inward phrase (e.g.
-  # "is blocked by"); via inwardIssue means this issue is the outward (subject) side → show
-  # the outward phrase (e.g. "blocks"). Each target carries the linked issue's status.
+  # Issue links, grouped by the phrase THIS issue sees. In a GET, Jira names the OTHER end in
+  # the field that matches the phrase to show FROM THIS ISSUE: an `outwardIssue` field → show
+  # the OUTWARD phrase (e.g. "blocks") toward it; an `inwardIssue` field → show the INWARD
+  # phrase (e.g. "is blocked by"). (Verified against the live board — note this GET convention
+  # is the OPPOSITE of the POST convention in jira_create_links.) Each target carries the status.
   | ( [ $i.fields.issuelinks[]?
         | if .outwardIssue
-          then {phrase: (.type.inward  // .type.name), tgt: "\(.outwardIssue.key) [\(.outwardIssue.fields.status.name // "?")]"}
-          else {phrase: (.type.outward // .type.name), tgt: "\(.inwardIssue.key) [\(.inwardIssue.fields.status.name // "?")]"} end ]
+          then {phrase: (.type.outward // .type.name), tgt: "\(.outwardIssue.key) [\(.outwardIssue.fields.status.name // "?")]"}
+          else {phrase: (.type.inward  // .type.name), tgt: "\(.inwardIssue.key) [\(.inwardIssue.fields.status.name // "?")]"} end ]
       | group_by(.phrase)
       | map("  " + .[0].phrase + ": " + (map(.tgt) | join(", "))) ) as $links
   | "\($k) — \($summary)\n"
