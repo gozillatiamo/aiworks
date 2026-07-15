@@ -698,7 +698,7 @@ fi
 # present skills are skipped. Project scope is guaranteed by being inside the repo with a
 # .claude/ marker + -y (no --global).
 step "6. Install mattpocock skills — project scope (one per skill)"
-mp_skills=(caveman grill-me grill-with-docs diagnose setup-matt-pocock-skills)
+mp_skills=(caveman grill-me grill-with-docs grilling domain-modeling diagnose setup-matt-pocock-skills)
 if ! have npx; then
   skip "6. 'npx' (Node) not found — run later, one per skill: npx skills@latest add mattpocock/skills --skill <name> -y"
 else
