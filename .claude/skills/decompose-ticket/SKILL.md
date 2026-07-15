@@ -39,20 +39,21 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
 ```
 
 Provider + auth + project/db come from `scripts/tracker/.env` — never passed. See
-`docs/agents/issue-tracker.md`. **Child-issue flags (`--issuetype` / `--parent` / `--link`)
-apply only when creating (ref `new`); the adapter ignores them on an update.** That is why
-the epic path below builds a *fresh* short-named epic rather than retyping the original —
-the adapter cannot change an existing issue's type or re-parent an existing issue under a
-freshly created one.
+`docs/agents/issue-tracker.md`. **Most child-issue flags (`--issuetype` / `--link` / `--subtask`
+/ `--component`) apply only when creating (ref `new`); the adapter ignores them on an update
+and warns.** `--parent` is the exception — it also re-parents an *existing* issue, so the
+epic path below can move the original ticket itself under the freshly created epic instead of
+superseding it; the adapter still can't retype an existing issue, which is why the epic is
+always a *fresh* issue rather than the original retyped in place.
 
 **The original ticket becomes one of the pieces — never a leftover.** A *replace*-shape split
 (`N < 4`) reuses the original's own key as piece 1: retitle it, rewrite its body to that piece's
 spec, and re-estimate it in place. There is no orphaned/superseded ticket to close, and that
 piece keeps its pasted images/comments/history/links for free (an update carries them over
 automatically — see the media-carryover note in `tracker_upsert`). Only pieces 2..N are created
-fresh. An *epic*-shape split (`N >= 4`) can't do this for the original itself (the adapter can't
-re-parent an existing issue under a newly created epic — see above), so that shape still
-supersedes the original into the new epic; every *other* piece is still fresh.
+fresh. An *epic*-shape split (`N >= 4`) reuses the original too — it becomes a child of the new
+epic via `--parent <EPIC-KEY>` on an update — so every piece keeps its own history; only the
+epic itself is a new issue.
 
 ## When this fires — the 12-point rule
 
@@ -136,12 +137,16 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
    slice of the acceptance criteria, scope boundary, build-order note, and a pointer back to the
    original / epic). Write the spec to a temp `.md` and pass `--body-file`. Give it the org's
    not-started status (see `issue-tracker.md`) and the same work issue-type as the original
-   (Story/feature), not a sub-task. **Replace shape: piece 1 is the original ticket itself** —
-   update it in place (retitle + rewrite body) rather than creating a new key for it; only
-   pieces 2..N are genuinely new. Epic shape always creates every piece fresh (see above). **Every
-   genuinely new piece gets `--sprint <ORIG-SPRINT-ID>`** (the id read off step 1's `Sprint:` line)
-   — a split is a scope change, not a scheduling one, so each piece stays in the sprint the
-   original was already committed to. Skip the flag only when the original had no sprint set.
+   (Story/feature), not a sub-task. **Both shapes reuse the original as one of the pieces** —
+   update it in place (retitle + rewrite body, plus `--parent <EPIC-KEY>` for epic shape) rather
+   than creating a new key for it; only the other pieces are genuinely new (epic shape: also the
+   epic itself). Before re-parenting the original under a freshly created epic, check its
+   `Parent:` line (`get-ticket-details.sh`) — Jira/Notion parent is single-valued, so this
+   silently evicts it from any pre-existing parent; note that trade-off in the output rather than
+   doing it quietly. **Every genuinely new piece gets `--sprint <ORIG-SPRINT-ID>`** (the id read
+   off step 1's `Sprint:` line) — a split is a scope change, not a scheduling one, so each piece
+   stays in the sprint the original was already committed to. Skip the flag only when the
+   original had no sprint set.
 6. **Re-estimate each piece — do not hand-write numbers.** Run `/estimate-ticket <NEW-KEY>` per
    piece so calibrated Dev/QA points land in the point **fields**. If a piece still comes back
    > 12, it wasn't sliced enough or it's an irreducible large piece — note it in the output (and,
@@ -187,7 +192,9 @@ that piece is naturally in.
 
 ### N >= 4 → new short-named epic, pieces as children
 
-Too many for a flat replace — group them under an epic.
+Too many for a flat replace — group them under an epic. The original becomes **one of the
+children** (re-parented via update), same as replace shape reuses it as piece 1 — no
+superseding, no closing.
 
 ```sh
 # 1) create the epic — a SHORT umbrella name distilled from the original title
@@ -196,19 +203,26 @@ Too many for a flat replace — group them under an epic.
   --link "Split from":<ORIG> --body-file <epic-summary.md>
 #    → read the epic <EPIC-KEY> from the "Created <KEY> — …" line
 
-# 2) each piece is a CHILD of the epic, same sprint as the original
+# 2) reuse the original as one of the pieces — re-parent it under the new epic (ordinary
+#    update; --parent works on an existing issue, see the note above this section)
+"$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh <ORIG> \
+  --title "<piece title>" --parent <EPIC-KEY> --status "<not-started status>" \
+  --body-file <piece-spec.md>
+#    pasted images/attachments already on <ORIG> carry over onto it automatically
+
+# 3) create every other piece fresh, as a CHILD of the epic, same sprint as the original
 "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh new \
   --title "<piece title>" --issuetype "<original's type>" \
   --parent <EPIC-KEY> --status "<not-started status>" --sprint <ORIG-SPRINT-ID> \
   --body-file <piece-spec.md>
 ```
 
-Then re-estimate each child (step 6), and **supersede the original into the epic**: body → a
-pointer to `<EPIC-KEY>`, terminal status if the board has one, else flag for human closure. Unlike
-the replace shape, the original can't become one of the children here — the adapter's `--parent`
-only applies on create, so an existing issue can't be re-parented under the fresh epic — so this
-is the one case where the original is still superseded rather than reused. Carry over its
-attachments the same way: download anything `get-ticket-details.sh <ORIG>` flags
+Then re-estimate every piece including the reused original (step 6) — its old combined estimate
+no longer applies once its scope has shrunk to just one piece. If the original had its own
+pre-existing parent (check `Parent:` on `get-ticket-details.sh <ORIG>` in step 1), re-parenting
+it under the new epic replaces that membership — call this out in the output rather than doing
+it silently; it's a real trade-off, not a bug. Carry over the original's attachments the same
+way as any other piece that needs them: download anything `get-ticket-details.sh <ORIG>` flags
 (`⚠ N embedded …`) and `add-ticket-attachment.sh` it onto whichever child(ren) need it.
 
 If the provider rejects the `Epic` issue type (unknown name), the adapter **fails loud** and
@@ -225,9 +239,9 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
   honest big ticket over several fake-independent ones.
 - **Complete cover, nothing dropped.** Every acceptance criterion of the original lands in exactly
   one piece. Attachments are scoped to the issue they live on — the piece that reuses the
-  original's key (replace shape's piece 1) keeps them for free, but every *other* piece that
-  needs them (mockups almost always belong on the UI-bearing piece, and on any piece whose AC
-  cites literal numbers read off them) needs its own copy: download the image and
+  original's key keeps them for free (either shape), but every *other* piece that needs them
+  (mockups almost always belong on the UI-bearing piece, and on any piece whose AC cites literal
+  numbers read off them) needs its own copy: download the image and
   `scripts/tracker/add-ticket-attachment.sh <NEW-KEY> <file>` it there (Jira only for now).
 - **Same sprint as the original.** A split changes scope, not schedule — every genuinely new
   piece gets `--sprint <ORIG-SPRINT-ID>` so it lands in the sprint the original was already
@@ -246,8 +260,8 @@ verdict:     split | irreducible
 shape:       replace | epic | n/a         # n/a when irreducible
 epic:        <EPIC-KEY> | none            # the new epic, when shape=epic
 pieces:                                   # empty when irreducible
-  - <KEY-a>  dev <d>/qa <q> (total <t>)  — <one-line goal>   # replace shape: KEY-a == <ORIG>, reused as piece 1
+  - <KEY-a>  dev <d>/qa <q> (total <t>)  — <one-line goal>   # KEY-a == <ORIG>, reused as a piece (either shape)
   - <KEY-b>  …
-original_state: reused as piece 1 (<ORIG>) | superseded (<status>) | left-open — human close needed | unchanged (irreducible)
+original_state: reused as piece 1 (<ORIG>) | reused as epic child (<ORIG>, evicted from prior parent <OLD-PARENT> if any) | unchanged (irreducible)
 note:        <irreducible reason / a piece still >12 / epic-type or link fallback / tracker issue>
 ```

@@ -39,9 +39,11 @@ Options:
                        sprint as the ticket it came from.
   --title <text>       Set the ticket title / summary.
   --description <text> Set the one-line description / summary field.
-  --parent <KEY>       Create the new issue as a CHILD of this parent ticket (Jira: the
-                       parent issue / sub-task parent; Notion: the parent-item relation).
-                       Create-only — use with the ref "new".
+  --parent <KEY>       Set this ticket's parent (Jira: the parent issue / sub-task parent;
+                       Notion: the parent-item relation). On the ref "new" it creates the
+                       new issue as a CHILD; on an existing ticket it RE-PARENTS that issue
+                       (both providers) — e.g. moving a split-off piece under a freshly
+                       created epic.
   --issuetype <name>   Create with this issue type (Jira: fields.issuetype; Notion: the
                        Type property). Create-only. Overrides --subtask if both given.
   --subtask            Create the new issue as the project's SUB-TASK type under --parent

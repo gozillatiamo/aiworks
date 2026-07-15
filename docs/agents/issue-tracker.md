@@ -32,12 +32,17 @@ that skill. A provider with no point fields configured now **warns** and lists t
 under a `Skipped:` line (it no longer drops the value silently) — check `Changed:` /
 `Skipped:`.
 
-**Child issues are create-only flags through the same adapter.** `--parent`, `--subtask`
-(or `--issuetype`), `--component`, and `--link <TYPE>:<KEY>` on the ref `new` build a child
+**Child issues are create-only flags through the same adapter** — `--subtask` (or
+`--issuetype`), `--component`, and `--link <TYPE>:<KEY>` on the ref `new` build a child
 issue — provider-agnostic, no Atlassian MCP/OAuth, so it runs headless. `/qa-subtasks` uses
 this to file per-tool QA sub-tasks (E2E→Cypress / API→Newman / Load→K6) under a parent with
 an Implements link. On Jira an unknown component fails loud and a missing link type falls
 back to the closest; see `scripts/tracker/README.md`.
+
+**`--parent` is the exception — it also works on an existing ticket, re-parenting it**
+(both providers). Use it to move an already-created issue under a freshly created epic
+(e.g. `decompose-ticket`'s epic-shape split no longer has to supersede the original —
+it can re-parent it under the new epic instead).
 
 ## This workspace's settings
 

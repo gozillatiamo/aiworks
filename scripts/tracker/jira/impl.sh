@@ -25,6 +25,10 @@
 # fields.components after validating each against the project; --link <TYPE>:<KEY> (repeatable)
 # creates an issue link AFTER create, with the new issue as the outward (subject) side.
 #
+# --parent also works on an UPDATE (re-parent an existing issue) — Jira's fields.parent is
+# writable via PUT, not just at create. --subtask/--issuetype/--component/--link stay
+# create-only (retyping/re-linking an existing issue isn't the same one-field PUT).
+#
 # Status is set via a Jira transition (Jira moves by transition, not by writing the
 # field). --status must name the TARGET status (or the transition name); the impl finds
 # the matching transition. The phase→status mapping lives in docs/agents/issue-tracker.md.
@@ -180,12 +184,13 @@ tracker_upsert() {
 
   key="$(jira_key "$ticket")"
 
-  # The child-issue flags (parent/issuetype/subtask/component/link) only apply when
-  # CREATING (ref "new"). On an update, say so loudly rather than dropping them silently.
+  # Most child-issue flags (issuetype/subtask/component/link) only apply when CREATING
+  # (ref "new"). On an update, say so loudly rather than dropping them silently. --parent
+  # is the exception — Jira's fields.parent is writable via PUT, so it re-parents an
+  # existing issue (used to move a split ticket under a freshly created epic).
   local _createonly
   _createonly="$(printf '%s' "$fields" | jq -r '
-    [ (if .parent    then "--parent"    else empty end),
-      (if .issuetype then "--issuetype" else empty end),
+    [ (if .issuetype then "--issuetype" else empty end),
       (if .subtask   then "--subtask"   else empty end),
       (if (.components // [] | length) > 0 then "--component" else empty end),
       (if (.links      // [] | length) > 0 then "--link"      else empty end)
@@ -217,6 +222,7 @@ tracker_upsert() {
     {}
     + (if .title    then {summary: .title} else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
+    + (if .parent   then {parent: {key: .parent}} else {} end)
     + ( if ($body | length) > 0 then {description: ($body | md_to_adf | adf_append_media($media))}
         elif .description       then {description: (.description | text_to_adf)}
         else {} end )
