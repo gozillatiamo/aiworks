@@ -30,30 +30,35 @@ Options:
   --status <name>      Set the workflow status. Use the org's real status name (see
                        docs/agents/issue-tracker.md). Jira moves via a transition.
   --priority <name>    Set Priority (e.g. High / Medium / Low).
-  --project <name|id>  Assign the ticket to a project. Linear: resolved by name or id and
-                       set on create AND update. Jira/Notion: not a per-ticket field —
-                       WARNed and skipped (no silent drop).
   --effort <name>      Set the overall effort/size field (provider-dependent; optional).
   --dev-points <n>     Set the Developer-points number field (estimation; optional).
   --qa-points <n>      Set the QA-points number field (estimation; optional).
+  --sprint <id>        Set the Sprint field to this sprint id (Jira; optional). Copy the
+                       value straight from another ticket's `get-ticket-details.sh` output
+                       ("Sprint: <name> (id <id>)") to keep a split-off piece in the same
+                       sprint as the ticket it came from.
   --title <text>       Set the ticket title / summary.
   --description <text> Set the one-line description / summary field.
-  --parent <KEY>       Create the new issue as a CHILD of this parent ticket (Jira: the
-                       parent issue / sub-task parent; Notion: the parent-item relation).
-                       Create-only — use with the ref "new".
+  --parent <KEY>       Set this ticket's parent (Jira: the parent issue / sub-task parent;
+                       Notion: the parent-item relation). On the ref "new" it creates the
+                       new issue as a CHILD; on an existing ticket it RE-PARENTS that issue
+                       (both providers) — e.g. moving a split-off piece under a freshly
+                       created epic.
   --issuetype <name>   Create with this issue type (Jira: fields.issuetype; Notion: the
                        Type property). Create-only. Overrides --subtask if both given.
   --subtask            Create the new issue as the project's SUB-TASK type under --parent
                        (resolved from the provider). Create-only; requires --parent.
   --component <name>   Add a component/tag (Jira: project component, validated;
                        Notion: a multi_select option). Repeatable.
-  --label <name>       Add a label/tag. Repeatable. Linear: a workspace label (must already
-                       exist; missing → WARN+skip). Jira: an issue label. Notion: a
-                       multi_select option (same property as --component).
-  --link <TYPE>:<KEY>  Link the new issue to <KEY> as the outward subject — e.g.
-                       --link Implements:APP-123 means "<new> implements APP-123".
-                       Repeatable. Jira: an issue link (closest type if exact missing);
-                       Notion: a relation. Create-only.
+  --link <TYPE>:<KEY>  Link this issue to <KEY>. <TYPE> can be an outward phrase, putting
+                       THIS issue as the subject — e.g. --link Implements:APP-123 means
+                       "<this> implements APP-123" — or an inward phrase, putting THIS
+                       issue as the object — e.g. --link "is blocked by":APP-123 means
+                       "<this> is blocked by APP-123" (Jira shows it under APP-123 as
+                       "blocks <this>"). Repeatable. Jira: a real issue link (closest type
+                       if the exact phrase is missing), works on both create ("new") and
+                       an existing ticket. Notion: a relation (no directional types), works
+                       the same either way.
   --body <markdown>    Write the full spec (Markdown) into the ticket BODY. Notion
                        appends page blocks; Jira renders it as the issue description.
                        Supports headings, bullet/numbered/to-do lists, quotes,
@@ -68,7 +73,7 @@ Behavior:
   or --body.
 
 Environment:
-  TRACKER_PROVIDER     notion | jira | linear (default: notion). Provider creds live in .env.
+  TRACKER_PROVIDER     notion | jira (default: notion). Provider creds live in .env.
 EOF
 }
 
@@ -83,9 +88,8 @@ setf() { fields="$(jq -n --argjson cur "$fields" --arg k "$1" --arg v "$2" '$cur
 need() { [[ -n "${1:-}" ]] || die "$2"; }
 
 # Repeatable child-issue relations accumulate into arrays (merged into $fields below).
-components_json='[]'; links_json='[]'; labels_json='[]'
+components_json='[]'; links_json='[]'
 addcomp() { components_json="$(jq -n --argjson cur "$components_json" --arg v "$1" '$cur + [$v]')"; }
-addlabel() { labels_json="$(jq -n --argjson cur "$labels_json" --arg v "$1" '$cur + [$v]')"; }
 addlink() { links_json="$(jq -n --argjson cur "$links_json" --arg t "$1" --arg k "$2" '$cur + [{type: $t, key: $k}]')"; }
 
 ticket=""; dry=0; body_md=""; have_body=0
@@ -93,17 +97,16 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --status)      need "${2:-}" "--status needs a value";      setf status      "$2"; shift 2 ;;
     --priority)    need "${2:-}" "--priority needs a value";    setf priority    "$2"; shift 2 ;;
-    --project)     need "${2:-}" "--project needs a value";     setf project     "$2"; shift 2 ;;
     --effort)      need "${2:-}" "--effort needs a value";      setf effort      "$2"; shift 2 ;;
     --dev-points)  need "${2:-}" "--dev-points needs a number"; setf dev_points  "$2"; shift 2 ;;
     --qa-points)   need "${2:-}" "--qa-points needs a number";  setf qa_points   "$2"; shift 2 ;;
+    --sprint)      need "${2:-}" "--sprint needs a sprint id";  setf sprint      "$2"; shift 2 ;;
     --title)       need "${2:-}" "--title needs a value";       setf title       "$2"; shift 2 ;;
     --description) need "${2:-}" "--description needs a value"; setf description "$2"; shift 2 ;;
     --parent)      need "${2:-}" "--parent needs a ticket key"; setf parent      "$2"; shift 2 ;;
     --issuetype)   need "${2:-}" "--issuetype needs a value";   setf issuetype   "$2"; shift 2 ;;
     --subtask)     setf subtask true; shift ;;
     --component)   need "${2:-}" "--component needs a value";   addcomp "$2"; shift 2 ;;
-    --label)       need "${2:-}" "--label needs a value";       addlabel "$2"; shift 2 ;;
     --link)        need "${2:-}" "--link needs <TYPE>:<KEY>";
                    _lt="${2%%:*}"; _lk="${2#*:}"
                    [[ "$2" == *:* && -n "$_lt" && -n "$_lk" ]] \
@@ -121,10 +124,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Fold the repeatable relations into the abstract field set (omit when empty).
-fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --argjson links "$links_json" --argjson labels "$labels_json" \
+fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --argjson links "$links_json" \
   '$cur
    + (if ($comps | length) > 0 then {components: $comps} else {} end)
-   + (if ($labels | length) > 0 then {labels: $labels}   else {} end)
    + (if ($links | length) > 0 then {links: $links}      else {} end)')"
 
 [[ -n "$ticket" ]] || die "usage: $(basename "$0") <ticket> [options]   (see -h)"
