@@ -3,6 +3,12 @@ name: to-prd
 description: Turn the current conversation context into a PRD and publish it to the project issue tracker. Use when user wants to create a PRD from the current context.
 ---
 
+## Output language — resolve BEFORE writing (do this FIRST)
+
+**A `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line already in your prompt is AUTHORITATIVE — obey it verbatim, do NOT re-resolve over it.** Otherwise, as your FIRST action, resolve it: read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory — and state the resolved value + source in one line before producing output.
+
+When the resolved language is **`th`**, write every ticket description, spec, acceptance criterion, and comment you post (the ticket Summary/title itself stays on the English spine) in **Thai prose with an English spine** — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code and checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** = unchanged; this block is a no-op. Full policy: `docs/agents/language.md`.
+
 This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT interview the user — just synthesize what you already know.
 
 The issue tracker and triage label vocabulary should have been provided to you — run `/setup-matt-pocock-skills` if not.
@@ -21,6 +27,11 @@ Check with the user that these modules match their expectations. Check with the 
 
 <prd-template>
 
+<!-- Under OUTPUT LANGUAGE = th: the `## ` section headings below stay English, but the PROSE
+you fill under each (problem, solution, user stories, decisions, notes) is written in Thai —
+code / identifiers / domain & proper-noun terms stay English. The user-story skeleton becomes
+its Thai form: `<n>. ในฐานะ <actor> ฉันต้องการ <feature> เพื่อ <benefit>`. Default en = as shown. -->
+
 ## Problem Statement
 
 The problem that the user is facing, from the user's perspective.
@@ -34,6 +45,7 @@ The solution to the problem, from the user's perspective.
 A LONG, numbered list of user stories. Each user story should be in the format of:
 
 1. As an <actor>, I want a <feature>, so that <benefit>
+<!-- under language=th: `1. ในฐานะ <actor> ฉันต้องการ <feature> เพื่อ <benefit>` -->
 
 <user-story-example>
 1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
