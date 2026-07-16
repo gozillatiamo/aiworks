@@ -7,26 +7,33 @@
 # Output is QUIET by default (only warnings, errors, and the closing summary). Pass
 # -v/--verbose for the full step-by-step log when debugging.
 #
-# 0. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
+# 1. Symlinks your PERSONAL, git-ignored local config from the root workspace FIRST — before
+#    host tooling / aiworks sync / anything else, so it's already linked if a later step aborts
+#    AND so aiworks + every step after read it: workspace.config.local.yaml (runtime override
+#    of workspace.config.yaml) and .claude/settings.local.json (your local Claude Code
+#    settings). Neither is tracked, so a fresh worktree carries neither. SUPERSET_LOCAL
+#    (default symlink) → =skip to manage them yourself. Best-effort — a missing source is
+#    simply skipped.
+# 2. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
 #    itself (.code-workspace generation, VS Code settings merge) and the tracker/notify
 #    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
 #    phase's optional third-party hook (run.sh Phase 4 can tunnel a port through it; macOS: Homebrew, Linux:
 #    the official apt repo, else a static binary); glab, the GitLab CLI the VCS adapter
 #    (scripts/vcs/) drives (Homebrew, else the official release tarball); and pnpm, the package
-#    manager the pnpm-based repos need for the step-3 dependency install (corepack, else
+#    manager the pnpm-based repos need for the step-5 dependency install (corepack, else
 #    Homebrew / npm -g / the official standalone installer). Best-effort.
-# 1. `aiworks sync -y` clones + FULLY onboards every product repo declared under
+# 3. `aiworks sync -y` clones + FULLY onboards every product repo declared under
 #    products[] in workspace.config.yaml (via the generated mani.d/<product>.yaml)
 #    — repos are gitignored and don't travel with a new git worktree. Full onboard
 #    toolchain (codegraph index, skill packs, adapter symlinks, Cursor/VS Code
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
-# 2. Copies the REAL local state from the root workspace into this worktree — a fresh
+# 4. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
 #    .superset/.env) recursively, AND every repo's seeded db-data Postgres cluster. Runs
 #    before the MCP services so they come up on real config + a seeded DB.
-# 3. Installs Node dependencies in every repo that has a package.json
+# 5. Installs Node dependencies in every repo that has a package.json
 #    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this).
-# 4. Starts the shared MCP service containers, then reports which repos still
+# 6. Starts the shared MCP service containers, then reports which repos still
 #    need their .env reviewed.
 #
 # Idempotent — safe to re-run.
@@ -53,10 +60,52 @@ if ! command -v mani >/dev/null 2>&1; then
   exit 1
 fi
 
-# ── 0. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
+# ── Resolve the root workspace — the source of the git-ignored local state a fresh worktree
+# carries NONE of. Superset sets SUPERSET_ROOT_PATH; for a MANUAL `git worktree` (no Superset)
+# it's unset, so fall back to git's MAIN worktree — the root checkout holding the real
+# git-ignored state (always the first entry of `git worktree list`). When this IS the main
+# worktree it equals $PWD, so has_root stays 0 and the provisioning steps below correctly no-op.
+# Resolved up here (not inside step 4) because step 1 below needs it before anything else runs.
+root_ws="${SUPERSET_ROOT_PATH:-}"
+if [[ -z "$root_ws" ]]; then
+  root_ws="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{sub(/^worktree /,""); print; exit}')"
+  [[ -n "$root_ws" && "$(cd "$root_ws" 2>/dev/null && pwd)" != "$PWD" ]] \
+    && log "Not under Superset — provisioning git-ignored state from git's main worktree: $root_ws"
+fi
+has_root=0
+if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; then
+  has_root=1
+else
+  log "No separate root workspace — skipping the root state copy (this is the root/main worktree, or a standalone checkout). Set SUPERSET_ROOT_PATH=<path> to copy from a specific checkout."
+fi
+
+# ── 1. Personal, git-ignored LOCAL config FIRST — before host tooling / aiworks sync / anything
+# else, so it's already linked if a later step aborts AND so aiworks and every step after read
+# it: workspace.config.local.yaml (runtime override of workspace.config.yaml — see
+# docs/agents/language.md) and .claude/settings.local.json (your local Claude Code settings).
+# Neither is tracked, so a fresh worktree carries neither — link each at the root's so your prefs
+# follow you in. SUPERSET_LOCAL (default symlink) → =skip to manage them yourself. A missing
+# source file is simply skipped (best-effort, never aborts).
+if [[ "$has_root" == 1 ]]; then
+  local_mode="${SUPERSET_LOCAL:-symlink}"
+  if [[ "$local_mode" == skip ]]; then
+    log "personal local config: SUPERSET_LOCAL=skip — leaving workspace.config.local.yaml / .claude/settings.local.json as-is."
+  else
+    for rel in workspace.config.local.yaml .claude/settings.local.json; do
+      if [[ ! -f "$root_ws/$rel" ]]; then log "no $rel at the root workspace — skipping (nothing to link)."; continue; fi
+      if [[ -L "$rel" && "$(readlink "$rel")" == "$root_ws/$rel" ]]; then log "$rel already symlinked to the root workspace."; continue; fi
+      mkdir -p "$(dirname "$rel")"
+      rm -f "$rel" 2>/dev/null   # replace any stale link / copied file with the link
+      if ln -s "$root_ws/$rel" "$rel" 2>/dev/null; then log "$rel → root workspace (symlinked; personal, shared across your worktrees)."
+      else warn "could not symlink $rel from the root workspace."; fi
+    done
+  fi
+fi
+
+# ── 2. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
 # phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter;
-# pnpm so step 3 can install deps for the pnpm-based repos (else node_install skips them). Best-effort —
+# pnpm so step 5 can install deps for the pnpm-based repos (else node_install skips them). Best-effort —
 # guarded so a failure never aborts setup.
 log "Ensuring host tooling (jq, ngrok, glab, pnpm)…"
 ensure_jq || true
@@ -64,7 +113,7 @@ ensure_ngrok || true
 ensure_glab || true
 ensure_pnpm || true
 
-# ── 1. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
+# ── 3. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
 # full `aiworks add` toolchain per repo (codegraph index, skill packs, adapter symlinks into
 # each repo + .git/info/exclude, Cursor .cursorindexingignore / VS Code search re-inclusion,
 # scripts/dev.sh, the .superset lifecycle hooks). Idempotent — already-onboarded repos SKIP.
@@ -73,11 +122,11 @@ log "aiworks sync -y (clone + fully onboard every product repo)…"
 sync_args=(-y); [[ "$VERBOSE" == 1 ]] && sync_args+=(--verbose)
 scripts/aiworks sync "${sync_args[@]}"
 
-# ── 2. Bring the REAL local state (git-ignored, so a fresh worktree carries NONE of it) into
+# ── 4. Bring the REAL local state (git-ignored, so a fresh worktree carries NONE of it) into
 # this worktree from the root workspace — by DEFAULT as symlinks (one source of truth; cheap):
 #   • every .env / .env.* file (except .env.example, which is committed upstream and already
 #     travels with the clone), recursively, preserving each file's relative path — every
-#     repo's + adapter's env AND .superset/.env (read by the MCP service containers in step 4).
+#     repo's + adapter's env AND .superset/.env (read by the MCP service containers in step 6).
 #     SUPERSET_ENV (default symlink) → symlink each at the root's (edit once, every worktree
 #     sees it), =copy for an independent per-worktree snapshot, or =skip to manage them yourself.
 #   • <repo>/db-data — a seeded local Postgres cluster a DB repo's containers bind-mount;
@@ -85,24 +134,12 @@ scripts/aiworks sync "${sync_args[@]}"
 #     workspace is provisioned. SUPERSET_DB_DATA (default symlink — instant, no big copy,
 #     no sudo) → symlink the root's, =copy for an isolated per-worktree copy, or =skip to
 #     manage it yourself.
-#   • workspace.config.local.yaml + .claude/settings.local.json — your PERSONAL, git-ignored
-#     config (the runtime config override + your local Claude Code settings). Neither is tracked,
-#     so a fresh worktree carries neither. SUPERSET_LOCAL (default symlink → your prefs follow you
-#     into every worktree, edited once at the root) → =skip to manage them yourself.
+# (Your personal workspace.config.local.yaml + .claude/settings.local.json are provisioned
+# FIRST in step 1 above — before host tooling / sync — not here.)
 # Runs BEFORE the MCP services start so they come up on real config + a seeded DB, not defaults.
-# SUPERSET_ROOT_PATH is set by Superset to the root workspace path; the root stays the source of
-# truth (an existing file/link at the destination is replaced to match it).
-# Superset sets SUPERSET_ROOT_PATH. For a MANUAL `git worktree` (no Superset) it's unset, so
-# fall back to git's MAIN worktree — that's the root checkout holding the real git-ignored state
-# (the main worktree is always the first entry of `git worktree list`). When this IS the main
-# worktree, it equals $PWD and the copy below correctly no-ops.
-root_ws="${SUPERSET_ROOT_PATH:-}"
-if [[ -z "$root_ws" ]]; then
-  root_ws="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{sub(/^worktree /,""); print; exit}')"
-  [[ -n "$root_ws" && "$(cd "$root_ws" 2>/dev/null && pwd)" != "$PWD" ]] \
-    && log "Not under Superset — copying git-ignored state from git's main worktree: $root_ws"
-fi
-if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; then
+# root_ws / has_root were resolved at the top; the root stays the source of truth (an existing
+# file/link at the destination is replaced to match it).
+if [[ "$has_root" == 1 ]]; then
   # Env provisioning mode → SUPERSET_ENV (default: symlink). symlink keeps ONE source of truth
   # (the root's file); copy snapshots it per-worktree; skip leaves the worktree's env alone.
   env_mode="${SUPERSET_ENV:-symlink}"
@@ -201,33 +238,9 @@ if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; 
     done
   fi
 
-  # ── 2b. Personal, git-ignored LOCAL config — the workspace-config + Claude-settings analogues
-  # of the per-repo .env above: workspace.config.local.yaml (runtime override of
-  # workspace.config.yaml — see docs/agents/language.md) and .claude/settings.local.json (your
-  # local Claude Code settings). Neither is tracked, so a fresh worktree carries neither — link
-  # each at the root's so your prefs follow you in. SUPERSET_LOCAL (default symlink) → =skip to
-  # manage them yourself. A missing source file is simply skipped (best-effort, never aborts).
-  local_mode="${SUPERSET_LOCAL:-symlink}"
-  if [[ "$local_mode" == skip ]]; then
-    log "personal local config: SUPERSET_LOCAL=skip — leaving workspace.config.local.yaml / .claude/settings.local.json as-is."
-  else
-    for rel in workspace.config.local.yaml .claude/settings.local.json; do
-      if [[ ! -f "$root_ws/$rel" ]]; then log "no $rel at the root workspace — skipping (nothing to link)."; continue; fi
-      if [[ -L "$rel" && "$(readlink "$rel")" == "$root_ws/$rel" ]]; then log "$rel already symlinked to the root workspace."; continue; fi
-      mkdir -p "$(dirname "$rel")"
-      rm -f "$rel" 2>/dev/null   # replace any stale link / copied file with the link
-      if ln -s "$root_ws/$rel" "$rel" 2>/dev/null; then log "$rel → root workspace (symlinked; personal, shared across your worktrees)."
-      else warn "could not symlink $rel from the root workspace."; fi
-    done
-  fi
-else
-  # No separate root to copy from: this IS the root/main worktree (so the git-ignored state is
-  # already here), or it's a standalone checkout (not a linked worktree). Either way there's
-  # nothing to copy — the .env check in step 4 still seeds any missing .env from .env.example.
-  log "No separate root workspace — skipping the root state copy (this is the root/main worktree, or a standalone checkout). Set SUPERSET_ROOT_PATH=<path> to copy from a specific checkout."
 fi
 
-# ── 3. Install Node dependencies in every repo that has a package.json (aiworks does not).
+# ── 5. Install Node dependencies in every repo that has a package.json (aiworks does not).
 log "Installing Node dependencies…"
 for repo in */; do
   repo="${repo%/}"
@@ -258,9 +271,9 @@ done
 # re-inclusion, plus the per-repo adapter symlinks, are handled by `aiworks sync` above
 # (the `aiworks add` toolchain, per repo) — no longer duplicated here.
 
-# ── 4. Start the shared, long-lived MCP service containers (one container shared by every
+# ── 6. Start the shared, long-lived MCP service containers (one container shared by every
 # client/agent over SSE — replaces the old per-client `docker run` servers that orphaned
-# on crash). Reads .superset/.env (copied from the root in step 2) for DATABASE_URI etc.
+# on crash). Reads .superset/.env (copied from the root in step 4) for DATABASE_URI etc.
 # Idempotent and self-skipping if docker is unavailable. See .superset/mcp-compose.yml.
 log "Starting shared MCP services…"
 if [[ "$VERBOSE" == 1 ]]; then ./.superset/mcp-services.sh up || true
