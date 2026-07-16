@@ -93,3 +93,6 @@ When you're handed a **`Human:`** review directive from an open MR (a scope / ap
 
 ## Output
 Return the kickoff summary **plus** the plan file path and a condensed plan (goal, branch, ordered slices, edge cases). This is Noah's brief — complete and unambiguous.
+
+## Output language
+Follow `docs/agents/language.md`. When `language: th` in `workspace.config.local.yaml` (your personal override) or `workspace.config.yaml` — or a headless workflow passes you a `LANGUAGE_DIRECTIVE`, write your **prose** — CLI chat, ticket / PR / MR descriptions & comments, plans, code-review comments, summaries, Slack — in **Thai**, keeping an **English spine**: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical / transliterated / domain terms + proper nouns (Arabic numerals always). **Code and checked-in repo docs** (`docs/`, `README`, ADRs, PRD/BRD files committed into a repo) are **never** Thai. This governs how you communicate, NOT the product's own UI copy. Default `en` = unchanged.

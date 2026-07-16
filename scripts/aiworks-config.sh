@@ -14,12 +14,19 @@
 #   `aiworks sync` all call it automatically after they touch the config, so the workflow
 #   tracks workspace.config.yaml with zero hand-editing.
 #
+#   PERSONAL OVERRIDES: a git-ignored workspace.config.local.yaml overrides the shared config at
+#   RUNTIME (chat / agents / interactive skills), but is deliberately NOT read here — this
+#   committed mirror always reflects workspace.config.yaml (shared) ONLY, so no personal pref
+#   ever leaks into a tracked file. (`language` still reaches headless-workflow agents via their
+#   per-agent pointer, which reads the local file at runtime — see docs/agents/language.md.)
+#
 # WHAT IT DERIVES (workspace.config.yaml → dev-cycle.js CONFIG)
 #   tracker.ticket_prefix            → const TICKET_PREFIX
 #   tracker.statuses.*               → const STATUS
 #   vcs.auto_merge                   → const AUTO_MERGE
 #   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
 #   review.level                     → const REVIEW_LEVEL            (dev-cycle.js; 'strict' ⇒ must-fixes only, no nice-to-have)
+#   language                         → const LANGUAGE                (dev-cycle.js AND prd.js; 'en' default | 'th' ⇒ English spine, Thai prose)
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
 #   notify.enabled                   → const NOTIFY
@@ -113,6 +120,13 @@ WS_NAME="$(basename "$ROOT")"
 [[ -f "$WC" ]]     || die "no workspace.config.yaml at $WC — declare your repos under products: first"
 [[ -f "$TARGET" ]] || die "no dev-cycle workflow at $TARGET"
 
+# Personal, git-ignored override — read at RUNTIME by chat/agents/skills, NOT baked into this
+# committed mirror (so no personal pref leaks into a tracked file). Just surface that it exists.
+WC_LOCAL="$ROOT/workspace.config.local.yaml"
+if [[ -f "$WC_LOCAL" && "$QUIET" -ne 1 ]]; then
+  warn "workspace.config.local.yaml present — a RUNTIME-only personal override (chat/agents/skills); this committed mirror is regenerated from workspace.config.yaml (shared) only."
+fi
+
 START_RE='>>> AIWORKS:CONFIG START'
 END_RE='<<< AIWORKS:CONFIG END'
 if ! grep -qF "$START_RE" "$TARGET" || ! grep -qF "$END_RE" "$TARGET"; then
@@ -150,6 +164,7 @@ STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY statu
 while IFS=$'\t' read -r k v; do
   case "$k" in
     PREFIX)        PREFIX="$v" ;;
+    LANGUAGE)      LANG_RAW="$v" ;;
     AUTO_MERGE)    AM_RAW="$v" ;;
     AUTO_APPROVE)  AA_RAW="$v" ;;
     TO_HTML)       TH_RAW="$v" ;;
@@ -173,6 +188,7 @@ done < <(
     function val(s){ sub(/^[^:]*:[ \t]*/,"",s); sub(/[ \t]+#.*$/,"",s);
                      gsub(/^[ \t]+|[ \t]+$/,"",s); gsub(/^["'\'']|["'\'']$/,"",s); return s }
     /^[A-Za-z_][A-Za-z0-9_]*:/ { sec=$0; sub(/:.*/,"",sec); instat=0 }   # new top-level section
+    /^language:[ \t]*[^ \t#]/  { print "LANGUAGE\t" val($0); next }      # top-level scalar (workspace output language)
     sec=="vcs"          && /^  auto_merge:/      { print "AUTO_MERGE\t"    val($0); next }
     sec=="tracker"      && /^  ticket_prefix:/   { print "PREFIX\t"        val($0); next }
     sec=="tracker"      && /^  statuses:/        { instat=1; next }
@@ -208,6 +224,8 @@ QUALITY_GATE="${QG_RAW:-none}"
 case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # clamp to the supported providers
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
+LANGUAGE="$(printf '%s' "${LANG_RAW:-en}" | tr '[:upper:]' '[:lower:]')"
+case "$LANGUAGE" in en|th) ;; *) LANGUAGE='en' ;; esac   # workspace output language; default en (see docs/agents/language.md)
 # Fall back to the historical 5-phase lifecycle when the org declared no statuses.
 if [[ -z "$STATUS_PAIRS" ]]; then
   STATUS_PAIRS=$'not_started\tNot started\nin_progress\tIn progress\nready_to_test\tReady to test\ntesting\tTesting\ndone\tDone\n'
@@ -355,6 +373,7 @@ const NOTIFY_CHANNEL = $(jsq "$NOTIFY_CHANNEL")  // from workspace.config.yaml n
 const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = $(jsq "$QUALITY_GATE")     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = $(jsq "$REVIEW_LEVEL")     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
+const LANGUAGE = $(jsq "$LANGUAGE")     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE below); 'en' ⇒ unchanged
 const STATUS = {
 ${status_body}}
 const REPOS = {
@@ -362,7 +381,8 @@ ${repos_body}}
 "
 
 # prd.js design block (the canonical-file behavior the /prd-design design phase reads).
-PRD_BODY="const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ design phase skipped (no Figma)
+PRD_BODY="const LANGUAGE = $(jsq "$LANGUAGE")     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE); 'en' ⇒ unchanged
+const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ design phase skipped (no Figma)
 const DESIGN_FIGMA_FILE_KEY = $(jsq "$DESIGN_KEY") // from workspace.config.yaml design.figma_file_key; set ⇒ build into THIS file (new page/feature), never create_new_file; empty ⇒ orphan file + WARN
 const DESIGN_PAGE_NAMING = $(jsq "$DESIGN_PAGE")  // from workspace.config.yaml design.page_naming; tokens {work_key} {feature}
 const IMAGE_GEN_ENABLED = ${IMAGE_GEN_ENABLED}     // from workspace.config.yaml image_generation.enabled; false ⇒ graphic-designer generates no images (assets 'unavailable')
