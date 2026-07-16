@@ -72,3 +72,6 @@ Scannable Markdown: `##`/`###` headers + `---` separators; **tables** for featur
 
 ## Bar
 Features are distinct, prioritized by value + data dependency, tied to user value AND unit economics; acceptance intent verifiable; scope boundaries explicit. Resolve ambiguity by asking the CEO/CTO, not by inventing scope. Exact domain terms; avoid the `_Avoid_` synonyms in `CONTEXT.md`.
+
+- **Every feature is a capability, never a document.** A feature is something an operator/user/system can now DO. An ADR, a doc / `CONTEXT.md` / glossary, or a skill is *grounding* and an engineering byproduct — it belongs in a ticket's Technical-notes section, never as a feature of its own. When the request says "update the skills / docs / ADRs", that is your INPUT, not the deliverable; the deliverable is the capability underneath it.
+- **Reconcile against the board before inventing.** Search the tracker for tickets that already cover the request; when they exist, your briefs REFRESH that existing backlog (one brief per ticket) and you propose a new feature only for a genuine gap — never a duplicate set beside it.

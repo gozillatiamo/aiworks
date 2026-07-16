@@ -97,13 +97,15 @@ key still cannot generate — so check BOTH:
 ```
 Workflow({ name: 'prd', args: { brd: '<the BRD ref the user passed>', stage: 'intake' } })
 ```
-Returns `{ features, uiFeatures, briefs, workKey, ctoFindings }`. `ctoFindings` is the
-CTO's technical consulting pass (feasibility/risk/cross-repo/ADR/dependency findings per
-feature) — it already ran headless in this call, no Figma needed. Keep BOTH `features`
-and `ctoFindings` verbatim — you pass both back in step 3 untouched (this skill never
-edits or interprets them, just carries them across the in-session design gap). If
-`uiFeatures` is empty, skip step 2 entirely (spec-only mission) and go to step 3 with an
-empty `figmaByFeature`.
+Returns `{ features, uiFeatures, briefs, workKey, ctoFindings, existing, anchorKey, revampKeys }`.
+`ctoFindings` is the CTO's technical consulting pass (feasibility/risk/cross-repo/ADR/dependency
+findings per feature) — it already ran headless in this call, no Figma needed. The `existing` /
+`anchorKey` / `revampKeys` fields are the Recon result: a non-empty `revampKeys` means the board
+ALREADY covers this and the Ticketing stage must REVAMP those tickets in place, not create new
+ones. Keep `features`, `ctoFindings`, **and the three Recon fields** verbatim — you pass them all
+back in step 3 untouched (this skill never edits or interprets them, just carries them across the
+in-session design gap). If `uiFeatures` is empty, skip step 2 entirely (spec-only mission) and go
+to step 3 with an empty `figmaByFeature`.
 
 ### 2. DESIGN (in-session — this is where you take control)
 For **each** feature in `uiFeatures`, run the design chain with the **Agent tool**
@@ -151,6 +153,9 @@ Workflow({ name: 'prd', args: {
   brd: '<same BRD ref>', stage: 'ticketing',
   features: <the features array from step 1>,
   ctoFindings: <the ctoFindings array from step 1>,
+  existing: <the existing array from step 1>,       // Recon result — carry verbatim
+  anchorKey: <the anchorKey from step 1>,            // so the PO revamps the existing
+  revampKeys: <the revampKeys array from step 1>,    // backlog in place, not create anew
   figmaByFeature: <map from step 2>,
   designed: <list from step 2>,
 } })
