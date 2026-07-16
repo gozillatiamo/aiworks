@@ -449,6 +449,10 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$ident" "${cid:-?}"
 }
 
+tracker_edit_comment() {
+  die "edit-ticket-comment.sh is not implemented for TRACKER_PROVIDER=linear yet (Linear's GraphQL API exposes a commentUpdate mutation, but it isn't wired up here) — edit the comment manually for now"
+}
+
 # tracker_find OPTS_JSON — OPTS = {query, open, done, estimated, limit, as_json, types:[...]}.
 # Query issues (scoped to LINEAR_TEAM_KEY when set) and print one compact line per match,
 # newest first: "<IDENT> | <State> | <Labels> | <Title>  ::  <Description>", or raw JSON.

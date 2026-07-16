@@ -495,6 +495,22 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$key" "${cid:-?}"
 }
 
+# Replace an existing comment's body in place (e.g. re-language a comment posted
+# before the workspace's language policy was applied). comment_id comes from
+# tracker_get_comments' raw API response (get-ticket-comments.sh doesn't print it,
+# so callers fetch it via GET /rest/api/3/issue/$key/comment first).
+tracker_edit_comment() {
+  local ticket="$1" comment_id="$2" dry="$3" text="$4" key body
+  key="$(jira_key "$ticket")"
+  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" 'include "jira"; {body: ($t | md_to_adf)}')"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — PUT /rest/api/3/issue/%s/comment/%s\n%s\n' "$key" "$comment_id" "$(printf '%s' "$body" | jq .)"
+    return 0
+  fi
+  jira_api PUT "/rest/api/3/issue/$key/comment/$comment_id" "$body" >/dev/null
+  printf 'Edited comment %s on %s\n' "$comment_id" "$key"
+}
+
 # Upload a local file as an issue attachment. Jira's attachments endpoint takes
 # multipart/form-data (not JSON), so this bypasses jira_api and curls directly;
 # "X-Atlassian-Token: no-check" is required to skip Jira's XSRF check on this endpoint.
