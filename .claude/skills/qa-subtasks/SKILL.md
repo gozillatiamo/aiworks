@@ -15,6 +15,12 @@ allowed-tools:
 
 # QA sub-task creation
 
+## Output language — resolve BEFORE writing (do this FIRST)
+
+**A `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line already in your prompt is AUTHORITATIVE — obey it verbatim, do NOT re-resolve over it.** Otherwise, as your FIRST action, resolve it: read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory — and state the resolved value + source in one line before producing output.
+
+When the resolved language is **`th`**, write every ticket description, spec, acceptance criterion, and comment you post (the ticket Summary/title itself stays on the English spine) in **Thai prose with an English spine** — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code and checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** = unchanged; this block is a no-op. Full policy: `docs/agents/language.md`.
+
 Create one QA sub-task per selected tool **under a parent ticket**, each a true child
 (sub-task) with the right Component set and an **Implements** link back to the parent.
 

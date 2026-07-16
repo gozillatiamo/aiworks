@@ -103,6 +103,21 @@ body is Thai prose; a PRD committed into a product repo is English.
   occasionally skip the Read and mis-resolve to `en`. Treat this as a strong reinforcement, not a
   guarantee, for any role invoked directly (e.g. via `/review`) outside a workflow; the workflow
   path below is the deterministic one.
+- **Prose-producing skills** (`.claude/skills/*/SKILL.md`) that compose a user-facing artifact
+  themselves ALSO lead their body — right under the title — with the same `## Output language`
+  block: ticket bodies & comments (`clarifying-ticket`, `to-prd`, `update-ticket`,
+  `decompose-ticket`, `estimate-ticket`, `report-test-results`, `qa-subtasks`, `diagnosing-bugs`),
+  PR/MR review comments (`review`, `apply-human-review`), the PR/MR description (`open-pr`), and
+  plans / interactive HTML docs (`plan-automate`, `plan-testcases`, `write-interactive-docs`). This
+  is the third reinforcement layer, added 2026-07-16 to close a measured gap: the agent-file block
+  sits atop the *agent* system prompt, but a skill's instructions load *later* — closest to the
+  moment the artifact is actually composed — and crowd the agent-file block out. A `/prd` run
+  resolved `th` correctly (CPO/CTO briefs came back Thai) yet the product-owner (Haiku) wrote all
+  three ticket bodies (APP-201/202/203) in English, because the ticket-writing skills carried no
+  language reminder at the point of composition. The block defers to a `LANGUAGE_DIRECTIVE` already
+  in the prompt (authoritative) and otherwise self-resolves from disk, exactly like the agent-file
+  block. Built-in commands (`/code-review`, `/security-review`) have no editable `SKILL.md`, so they
+  rely on the agent-file block only.
 - **`dev-cycle.js` / `prd.js` / `brd.js`** (headless) each run a small dedicated resolver
   sub-agent (`documentor`, label `resolve-language`) as their FIRST step — its only job is to
   Read `workspace.config.local.yaml` else `workspace.config.yaml` and return the resolved value.

@@ -10,6 +10,12 @@ allowed-tools:
 
 # Open PR
 
+## Output language — resolve BEFORE writing (do this FIRST)
+
+**A `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line already in your prompt is AUTHORITATIVE — obey it verbatim, do NOT re-resolve over it.** Otherwise, as your FIRST action, resolve it: read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory — and state the resolved value + source in one line before producing output.
+
+When the resolved language is **`th`**, write the PR/MR description body and review discussion you write (the PR title stays English, Conventional-Commit style) in **Thai prose with an English spine** — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code and checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** = unchanged; this block is a no-op. Full policy: `docs/agents/language.md`.
+
 Ships an approved ticket as a pull/merge request through the **VCS adapter**
 (`scripts/vcs/`), which targets `github` (`gh`) or `gitlab` (`glab`) — auto-detected
 from the `origin` remote. Never call `gh`/`glab` directly.

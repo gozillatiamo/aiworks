@@ -5,6 +5,12 @@ description: Review the changes since a fixed point (commit, branch, tag, or mer
 
 # Review
 
+## Output language — resolve BEFORE writing (do this FIRST)
+
+**A `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line already in your prompt is AUTHORITATIVE — obey it verbatim, do NOT re-resolve over it.** Otherwise, as your FIRST action, resolve it: read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory — and state the resolved value + source in one line before producing output.
+
+When the resolved language is **`th`**, write every review comment you post — the inline notes and the overview/verdict on the PR/MR in **Thai prose with an English spine** — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code and checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** = unchanged; this block is a no-op. Full policy: `docs/agents/language.md`.
+
 Review the diff between `HEAD` and a fixed point the user supplies, and render one
 verdict: **are the originating ticket's requirements genuinely met?**
 
@@ -93,6 +99,16 @@ add the **same** line to BOTH briefs: "Review level = `<strict|thorough>` (`basi
 — at **strict** report ONLY must-fixes; at **thorough** also report nice-to-have findings,
 clearly separated." One read, passed to both, so the axes stay consistent.
 
+**Propagate the output language into BOTH briefs — non-negotiable.** These sub-agents are
+`general-purpose` and carry NO output-language pointer of their own, and step 5 presents their
+findings **verbatim**, so a finding written in the wrong language ships in the wrong language.
+Take the language you resolved in the `## Output language` block above and add this line to BOTH
+briefs: "OUTPUT LANGUAGE = `<en|th>` (authoritative — do NOT re-resolve). Write every finding's
+prose in this language; under `th` the finding SENTENCES are Thai with an English spine — headings/
+labels, ALL code + identifiers + file paths, and technical/domain/proper-noun terms stay English
+(Arabic numerals always); under `en` write English." Pass the resolved value, never the literal
+`<en|th>`.
+
 **Standards sub-agent prompt** — include:
 
 - The full diff command and commit list.
@@ -128,7 +144,10 @@ If there are no requirements (step 2), skip the Spec sub-agent and note it in th
 
 Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly
 cleaned. Do **not** merge or rerank findings — the axes are deliberately separate so the
-user sees them independently.
+user sees them independently. **Language check before you present:** if a sub-agent returned
+its findings in the wrong language (it missed the directive), rewrite that prose into the
+resolved OUTPUT LANGUAGE now — "lightly cleaned" includes fixing the language. Never present a
+verbatim finding that violates the resolved language.
 
 End with the **verdict**: are the requirements genuinely met? State it in one line —
 met / partially met / not met — then the review level, the per-axis finding count and

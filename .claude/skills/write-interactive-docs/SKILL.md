@@ -25,6 +25,12 @@ effort: low
 
 # Write Interactive Docs
 
+## Output language — resolve BEFORE writing (do this FIRST)
+
+**A `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line already in your prompt is AUTHORITATIVE — obey it verbatim, do NOT re-resolve over it.** Otherwise, as your FIRST action, resolve it: read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory — and state the resolved value + source in one line before producing output.
+
+When the resolved language is **`th`**, write the plan / document prose you author — whether Markdown in agent_logs/ or the HTML page body in **Thai prose with an English spine** — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code and checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** = unchanged; this block is a no-op. (This governs the page's AUTHORED prose. The optional EN／ไทย display toggle and English-only export in `references/localization.md` are a separate, orthogonal feature — do not conflate them.) Full policy: `docs/agents/language.md`.
+
 Produce **one self-contained `.html` file** that explains something clearly: plain
 words, the right visual per idea, a look that matches the project, and one-click
 export of the whole page or any section to Markdown/JSON for an AI. Two modes —

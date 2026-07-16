@@ -5,6 +5,12 @@ description: Apply a human reviewer's required changes to an open PR/MR — the 
 
 # Apply human review
 
+## Output language — resolve BEFORE writing (do this FIRST)
+
+**A `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line already in your prompt is AUTHORITATIVE — obey it verbatim, do NOT re-resolve over it.** Otherwise, as your FIRST action, resolve it: read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory — and state the resolved value + source in one line before producing output.
+
+When the resolved language is **`th`**, write every review comment you post — the inline notes and the overview/verdict on the PR/MR in **Thai prose with an English spine** — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code and checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** = unchanged; this block is a no-op. Full policy: `docs/agents/language.md`.
+
 The user reviewed an open PR/MR and left required changes as **`Human:`** directives on its
 review threads. Scan them, route each to the right role, and drive each to
 fixed-and-resolved. The convention — what a `Human:` directive is, its blocking authority,
