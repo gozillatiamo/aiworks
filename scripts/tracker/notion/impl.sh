@@ -376,6 +376,10 @@ tracker_add_attachment() {
   die "add-ticket-attachment.sh is not implemented for TRACKER_PROVIDER=notion yet (Notion needs the file-upload API + a block append) — attach the file to the page manually for now"
 }
 
+tracker_edit_comment() {
+  die "edit-ticket-comment.sh is not implemented for TRACKER_PROVIDER=notion yet (Notion's comment API has no update endpoint) — edit the comment manually for now"
+}
+
 # tracker_find OPTS_JSON — OPTS = {query, open, limit, as_json, types:[...]}.
 # Query the tasks database and print one compact line per match (newest first):
 #   "<ID> | <Status> | <Type> | <Title>  ::  <Description>", or raw JSON with as_json.
