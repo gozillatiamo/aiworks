@@ -142,5 +142,7 @@ Flip these in `workspace.config.yaml` (`planning.auto_approve`, `vcs.auto_merge`
 ## 📚 Learn more
 
 - [`docs/aiworks.html`](docs/aiworks.html) — the full walkthrough (setup, CLI, dev-cycle)
+- [`CONTEXT.md`](CONTEXT.md) — the workspace glossary (ubiquitous language, one place)
+- [`docs/adr/`](docs/adr/) — architecture decision records (why the workspace is shaped this way)
 - [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) — how agents read/write tickets
 - [`scripts/tracker/README.md`](scripts/tracker/README.md) · [`scripts/vcs/README.md`](scripts/vcs/README.md) — adapter details

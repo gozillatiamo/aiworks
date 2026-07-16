@@ -22,11 +22,30 @@
 #
 # The fast path to onboard repos:  add their URLs under `products:` below, then run
 #   scripts/aiworks sync          # clone + onboard every declared repo (idempotent)
+#
+# PERSONAL OVERRIDES (not shared): keys you want for YOURSELF only go in a git-ignored
+# `workspace.config.local.yaml` — the workspace-config analogue of .claude/settings.local.json.
+# It overrides this file for everything read at RUNTIME (chat, agents, interactive skills); the
+# committed workflow mirror is always regenerated from THIS shared file only, so your prefs never
+# leak into git. See workspace.config.local.example.yaml.
 # ─────────────────────────────────────────────────────────────────────────────
 
 org:
   name: Acme                       # shown in agent copy / summaries
   product: "<one-line product description>"   # the domain agents ground research/copy in
+
+# ── Output language (governs what language EVERY agent writes in) ──────────────
+# See docs/agents/language.md for the full convention. This governs language ONLY — never
+# which tools run or what the work is; an `en` run and a `th` run take the same process.
+language: en                       # en (default) | th
+                                   # th → "English spine, Thai prose": write prose in Thai (CLI chat,
+                                   #   ticket bodies/comments, PR/MR descriptions + review discussion,
+                                   #   code-review comments, plans/PRDs shown to you, Slack), but keep an
+                                   #   English SPINE — titles + every section heading + labels/enum values,
+                                   #   ALL code + code comments + git commit messages + branch names, and
+                                   #   technical/transliterated/domain terms + proper nouns. Code and
+                                   #   checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files)
+                                   #   are ALWAYS English. Numerals/dates stay Arabic. Default en = no change.
 
 # ── Version control ──────────────────────────────────────────────────────────
 vcs:

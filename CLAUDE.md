@@ -22,14 +22,26 @@ gitignored clones and only the meta-repo shows.
 ## Configuration (read these first)
 
 - `workspace.config.yaml` — the org's providers, ticket prefix, status lifecycle,
-  branch model, auto-merge policy, planning policy (`planning.auto_approve` /
+  branch model, output-language policy (`language` — `en` default | `th`), auto-merge
+  policy, planning policy (`planning.auto_approve` /
   `planning.to_html`), notification policy (`notify.enabled` / `notify.channel`), design
   policy (`design.enabled` — the workspace-wide Figma switch, default OFF —
   `design.figma_file_key` / `design.page_naming`), image-generation policy
   (`image_generation.enabled` — default OFF — `image_generation.quality` /
   `image_generation.max_per_request`), and the `products[].repos[]` registry
   (repo URLs). The source of truth for this workspace; `scripts/aiworks sync` sets
-  everything up from it.
+  everything up from it. Personal, non-shared overrides go in the git-ignored
+  `workspace.config.local.yaml` (analogue of `.claude/settings.local.json`; see
+  `workspace.config.local.example.yaml`) — it overrides this file for everything read at
+  runtime (chat, agents, interactive skills); the committed workflow mirror stays shared-only.
+- `CONTEXT.md` — the workspace glossary (ubiquitous language: orchestration, providers, repos,
+  language, config). One place to look up a term; each entry links to its fuller home.
+- `docs/adr/` — architecture decision records: why the workspace is shaped as it is
+  (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides).
+- `docs/agents/language.md` — the output-language convention: `language: th` ⇒ **English
+  spine, Thai prose** (prose in Thai; titles/headings/labels, all code + commits + branch
+  names, and technical/domain terms stay English; code & checked-in repo docs never Thai).
+  Default `en` = unchanged. See the `## Language` section below.
 - `docs/agents/issue-tracker.md` — how to read/write tickets (the tracker adapter,
   status names, id format).
 - `docs/agents/human-review.md` — the `Human:` convention: a human reviewer's required
@@ -54,6 +66,16 @@ gitignored clones and only the meta-repo shows.
 - **Test environment:** automated runs target **local** by default; staging is an
   explicit, QA-reserved opt-in (`CYPRESS_ENV=staging`). Defer to each repo's default —
   never hardcode an environment in agents/skills/workflow.
+
+## Language
+Output language follows `language` — from `workspace.config.local.yaml` if that personal
+override exists, else `workspace.config.yaml` (full policy: `docs/agents/language.md`). When it
+is **`th`**, write **English spine, Thai prose** — prose
+in Thai (this CLI chat, tickets, PR/MR discussion, code review, plans, Slack) while the English
+**spine** stays English: titles + every section heading + labels/enum values, ALL code + code
+comments + git commit messages + branch names, and technical/transliterated/domain terms +
+proper nouns (Arabic numerals always). **Code and checked-in repo docs** (`docs/`, `README`,
+ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** ⇒ everything English, no change.
 
 ## Product Overview
 {{PRODUCT_DESCRIPTION}}

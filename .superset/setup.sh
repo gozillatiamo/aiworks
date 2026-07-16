@@ -85,6 +85,10 @@ scripts/aiworks sync "${sync_args[@]}"
 #     workspace is provisioned. SUPERSET_DB_DATA (default symlink — instant, no big copy,
 #     no sudo) → symlink the root's, =copy for an isolated per-worktree copy, or =skip to
 #     manage it yourself.
+#   • workspace.config.local.yaml + .claude/settings.local.json — your PERSONAL, git-ignored
+#     config (the runtime config override + your local Claude Code settings). Neither is tracked,
+#     so a fresh worktree carries neither. SUPERSET_LOCAL (default symlink → your prefs follow you
+#     into every worktree, edited once at the root) → =skip to manage them yourself.
 # Runs BEFORE the MCP services start so they come up on real config + a seeded DB, not defaults.
 # SUPERSET_ROOT_PATH is set by Superset to the root workspace path; the root stays the source of
 # truth (an existing file/link at the destination is replaced to match it).
@@ -194,6 +198,26 @@ if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; 
           warn "$db_dst: permission denied and 'sudo' not available. Copy it by hand (root needed — PGDATA is owned by the container uid):  rsync -a \"$db_src/\" \"$PWD/$db_dst/\"  (run as root, or stop the $db_repo containers first)."
         fi
       fi
+    done
+  fi
+
+  # ── 2b. Personal, git-ignored LOCAL config — the workspace-config + Claude-settings analogues
+  # of the per-repo .env above: workspace.config.local.yaml (runtime override of
+  # workspace.config.yaml — see docs/agents/language.md) and .claude/settings.local.json (your
+  # local Claude Code settings). Neither is tracked, so a fresh worktree carries neither — link
+  # each at the root's so your prefs follow you in. SUPERSET_LOCAL (default symlink) → =skip to
+  # manage them yourself. A missing source file is simply skipped (best-effort, never aborts).
+  local_mode="${SUPERSET_LOCAL:-symlink}"
+  if [[ "$local_mode" == skip ]]; then
+    log "personal local config: SUPERSET_LOCAL=skip — leaving workspace.config.local.yaml / .claude/settings.local.json as-is."
+  else
+    for rel in workspace.config.local.yaml .claude/settings.local.json; do
+      if [[ ! -f "$root_ws/$rel" ]]; then log "no $rel at the root workspace — skipping (nothing to link)."; continue; fi
+      if [[ -L "$rel" && "$(readlink "$rel")" == "$root_ws/$rel" ]]; then log "$rel already symlinked to the root workspace."; continue; fi
+      mkdir -p "$(dirname "$rel")"
+      rm -f "$rel" 2>/dev/null   # replace any stale link / copied file with the link
+      if ln -s "$root_ws/$rel" "$rel" 2>/dev/null; then log "$rel → root workspace (symlinked; personal, shared across your worktrees)."
+      else warn "could not symlink $rel from the root workspace."; fi
     done
   fi
 else

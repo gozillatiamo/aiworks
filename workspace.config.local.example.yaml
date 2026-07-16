@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# workspace.config.local.yaml — PERSONAL, non-shared overrides (the workspace-config
+# analogue of .claude/settings.local.json).
+#
+# Copy this to `workspace.config.local.yaml` (git-ignored — it never travels to teammates)
+# and set ONLY the keys you want to override. Anything you omit falls through to the shared
+# `workspace.config.yaml`. This is a shallow per-top-level-key merge: a key you set here
+# replaces that key from the shared file.
+#
+# PRECEDENCE — where an override actually takes effect:
+#   • Everything read at RUNTIME honors it: this CLI chat (the main session), the agents
+#     (they read it before producing output), and interactive skills.
+#   • The committed workflow CONFIG mirror (.claude/workflows/{dev-cycle,prd}.js) is
+#     generated from `workspace.config.yaml` ONLY — a local override NEVER rewrites that
+#     tracked file (that is the whole point: no personal pref leaks into git). So a headless
+#     workflow's own control-flow (auto_merge, auto_approve, statuses, REPOS, …) follows the
+#     SHARED value. `language` is the exception that still works headlessly: it reaches the
+#     workflow's agents through their per-agent pointer (a runtime read), not the baked const.
+#
+# The realistic use for this file is a personal preference like output language:
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Write in Thai locally while the team default stays English — see docs/agents/language.md.
+# language: th

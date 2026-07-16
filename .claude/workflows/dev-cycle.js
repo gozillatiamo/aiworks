@@ -64,6 +64,10 @@ export const meta = {
 //   performance) reports ONLY must-fixes: no "[minor / fold-in]" comments, no Improvement tickets,
 //   and fold_in items never hold the merge. 'thorough' ⇒ must-fixes PLUS nice-to-have (fold-ins
 //   folded into the PR, Improvement tickets filed). See STRICT / levelDirective below.
+// LANGUAGE — language (workspace output language). 'th' ⇒ English spine, Thai prose: every
+//   prose-producing role gets LANGUAGE_DIRECTIVE appended (write prose in Thai; keep titles/
+//   headings/labels + ALL code + commit messages + branch names + technical/domain terms English;
+//   code & checked-in repo docs are never Thai). 'en' (default) ⇒ no directive. See docs/agents/language.md.
 // ──────────────────────────────────────────────────────────────────────────
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const TICKET_PREFIX = 'FM'
@@ -76,6 +80,7 @@ const NOTIFY_CHANNEL = '#code-reviews'  // from workspace.config.yaml notify.cha
 const DESIGN_ENABLED = false     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = 'none'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = 'strict'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
+const LANGUAGE = 'en'     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE below); 'en' ⇒ unchanged
 const STATUS = {
   to_do: 'To do',
   in_progress: 'In progress',
@@ -113,6 +118,12 @@ const REPOS = {
 const FIGMA_DIRECTIVE = (typeof DESIGN_ENABLED !== 'undefined' ? DESIGN_ENABLED : false)
   ? ''
   : ' Figma is DISABLED workspace-wide (design.enabled=false): do NOT call any Figma tools (get_screenshot/get_metadata/get_design_context) — build strictly from the ticket spec/written plan.'
+
+// Workspace output language (language). When 'th', every prose-producing role gets this appended so
+// it writes Thai prose with an English spine (reinforces the agent-level rule). See docs/agents/language.md.
+const LANGUAGE_DIRECTIVE = (typeof LANGUAGE !== 'undefined' ? LANGUAGE : 'en') === 'th'
+  ? ' OUTPUT LANGUAGE = th (docs/agents/language.md): write ALL prose — chat, ticket description & comments, PR/MR description & review discussion, plans, summaries — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). Code and checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files) are NEVER Thai. If a git-ignored workspace.config.local.yaml sets a different language, that personal override wins — read it before you write.'
+  : ''
 
 // ──────────────────────────────────────────────────────────────────────────
 // Inputs
@@ -480,7 +491,7 @@ async function writeSummary(runStatus, runResult) {
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.
 ${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. As the LAST step, RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write the file AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
-Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.`,
+Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.` + LANGUAGE_DIRECTIVE,
     { agentType: 'documentor', phase: 'Summary', label: `summary:${ticket}`, schema: SUMMARY_SCHEMA },
   )
   tick('summary')
@@ -552,7 +563,7 @@ async function runRepoPipeline(rp, desc) {
 6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, status="complete" (a green run, OR a red caused only by reported app bugs / expected pre-merge reds — both are a valid complete handoff for this phase) else "partial"/"blocked" with what's left in "remaining", and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
     : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /coding-feature (it loads this repo's CLAUDE.md + coding_standards AND the workspace coding-style — storytelling code, NO body comments — "read before your first edit", and its Step 4 drives the build test-first through /tdd's red-green-refactor loop) and /karpathy-guidelines, committing each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.`
   let dev = await safeAgent(
-    buildPrompt + BUILD_DISCIPLINE + FIGMA_DIRECTIVE,
+    buildPrompt + BUILD_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE,
     { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
   )
   // CONVERGENCE RETRY — a null build means the agent never produced a structured
@@ -587,7 +598,7 @@ async function runRepoPipeline(rp, desc) {
     ? `${tag(R, desc.build, 'open-pr')} The ticket scope (spec(s) + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${prTitle(rp)}" --body "<what was automated + the scoped (ticket spec(s) + regression) green evidence>"\`. The title is Conventional Commits (\`<type>(${ticket}): <title>\`) — keep it exactly as given. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
     : `${tag(R, desc.build, 'open-pr')} ${ticket} is built in ${R} — open the PR/MR now so the reviewers (code-reviewer + guardian + performance) can review it on the host. ${inRepo} Ensure git status is clean (commit any stray artifact), then run /open-pr ${ticket} to open the PR/MR for ${rp.work_branch} → ${rp.base_branch}, titled per Conventional Commits "${prTitle(rp)}". Do NOT merge it. Return the PR/MR URL + number.`
   const pr = await safeAgent(
-    openPrPrompt,
+    openPrPrompt + LANGUAGE_DIRECTIVE,
     { agentType: desc.build, phase: 'Open PR', label: `open-pr:${ticket}:${R}`, schema: PR_SCHEMA },
   )
   if (!pr) {
@@ -674,7 +685,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // (inconclusive, re-run next round).
     const runReviewer = async (rv) => {
       try {
-        return await agent(promptFor(rv), { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
+        return await agent(promptFor(rv) + LANGUAGE_DIRECTIVE, { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
       } catch (e) {
         const msg = String(e?.message || e).slice(0, 200)
         if (rv.key === 'guard' || rv.key === 'perf') {
@@ -729,7 +740,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
 
     // Developer fixes the WHOLE combined batch (every open reviewer's PR comments) in ONE pass, pushing to the PR.
     const fix = await safeAgent(
-      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.`,
+      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + LANGUAGE_DIRECTIVE,
       { agentType: desc.build, phase: 'Review', label: `pr-fix:${ticket}:${R}#${reviewRound}`, schema: DEV_SCHEMA },
     )
     if (fix) fixPasses++
@@ -879,7 +890,7 @@ const plans = (await parallel(scoped.map((r) => () => {
   const prompt = desc.kind === 'test-suite'
     ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
     : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
-  return agent(prompt + FIGMA_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
+  return agent(prompt + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
 // Normalize the recorded paths to the ABSOLUTE, repo-anchored forms — consistently for every
 // repo, regardless of what the planner echoed back (a planner that returned a bare-relative or

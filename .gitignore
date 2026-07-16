@@ -43,6 +43,13 @@ docs/brd/
 # (settings.local.json itself is ignored via the global gitignore).
 .claude/settings.local.json.bak
 
+# Personal, non-shared workspace-config overrides — the workspace-config analogue of
+# .claude/settings.local.json. workspace.config.local.yaml overrides workspace.config.yaml
+# for everything read at runtime (chat, agents, interactive skills); it is git-ignored so
+# your prefs never travel to teammates. The committed workspace.config.local.example.yaml
+# documents the pattern (kept, since the ignore matches only the exact real filename).
+workspace.config.local.yaml
+
 # product repo clones (cloned by aiworks; not committed to the workspace meta-repo).
 # `aiworks add` appends one `<repo-dir>/` line per onboarded repo below this comment,
 # and `aiworks remove` drops it again — no hand-editing needed.
