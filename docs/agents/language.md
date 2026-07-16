@@ -34,6 +34,13 @@ language: en   # en (default) | th
 An existing workspace stays English until it explicitly sets `language: th` — it does not
 switch on by itself.
 
+**The resolved value is authoritative, not the user's input language.** Agents must not mirror
+whatever language the user happens to type their message in — `language: en` means respond in
+English even if the user writes in Thai (or any other language), and `language: th` means English
+spine / Thai prose even if the user writes in English. The `SessionStart` hook (§4) injects the
+resolved value at the start of every session precisely so this doesn't depend on inferring intent
+from the user's own message.
+
 **Personal override.** Set `language` for yourself only — without touching the team default — in a
 git-ignored **`workspace.config.local.yaml`** (see `workspace.config.local.example.yaml`). It
 overrides `workspace.config.yaml` at RUNTIME (this chat, the agents, interactive skills). The

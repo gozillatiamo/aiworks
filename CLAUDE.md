@@ -70,13 +70,17 @@ gitignored clones and only the meta-repo shows.
 ## Language
 Output language follows `language` — from `workspace.config.local.yaml` if that personal
 override exists, else `workspace.config.yaml` (full policy: `docs/agents/language.md`).
-**Resolve this by reading the file on disk before your first output each session — never from
-memory or from a value already quoted earlier in context.** `workspace.config.local.yaml` is
-git-ignored, so it will not appear in any committed-file listing or prior summary of
-`workspace.config.yaml`; its absence/presence must be checked directly (e.g. `ls`/`cat`), every
-session, even if `workspace.config.yaml` was already read. When it is **`th`**, write **English
-spine, Thai prose** — prose
-in Thai (this CLI chat, tickets, PR/MR discussion, code review, plans, Slack) while the English
+**This is resolved mechanically, not from memory:** a `SessionStart` hook
+(`.claude/hooks/resolve-language.sh`, wired in `.claude/settings.json`) reads
+`workspace.config.local.yaml` if present (it's git-ignored and personal — see
+`docs/adr/0003`), else falls back to `workspace.config.yaml`, and injects the resolved
+language into context at the start of every session, for every teammate. A prose
+reminder to "check the file" was tried first and was missed twice, since it depended on
+the model remembering to act — the hook removes that dependency. If the hook's injected
+context is ever missing (e.g. a stripped session), fall back to reading the file directly
+before your first output. When the resolved language is **`th`**, write **English spine,
+Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, plans,
+Slack) while the English
 **spine** stays English: titles + every section heading + labels/enum values, ALL code + code
 comments + git commit messages + branch names, and technical/transliterated/domain terms +
 proper nouns (Arabic numerals always). **Code and checked-in repo docs** (`docs/`, `README`,

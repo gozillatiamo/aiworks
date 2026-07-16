@@ -80,6 +80,11 @@
           {
             "type": "command",
             "command": ".superset/mcp-services.sh up"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/resolve-language.sh",
+            "timeout": 10
           }
         ]
       }
