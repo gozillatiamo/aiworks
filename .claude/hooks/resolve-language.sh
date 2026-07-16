@@ -48,7 +48,7 @@ else
   policy="Unchanged — respond in English, no localization applied."
 fi
 
-context="Resolved workspace output language: '$lang' (source: $source_file). $policy Full convention: docs/agents/language.md."
+context="Resolved workspace output language: '$lang' (source: $source_file). $policy This is authoritative regardless of what language the user's own messages are written in — do not mirror the user's input language. Full convention: docs/agents/language.md."
 
 jq -n --arg ctx "$context" \
   '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'
