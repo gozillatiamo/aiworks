@@ -29,6 +29,24 @@ const repoPath = `docs/brd/${workKey}.md`
 
 const tag = (role, phase) => `[brd ${workKey} role=${role} phase=${phase}]`
 
+// Workspace output language (language) — resolved dynamically (see docs/agents/language.md; the
+// same pattern as prd.js/dev-cycle.js). Note the SCOPE here is narrow: the BRD file itself
+// (docs/brd/<key>.md, step 5 below) is a checked-in repo doc and MUST stay English regardless —
+// only the run-summary (a working deliverable, not committed beside code) is Thai-eligible.
+const LANG_SCHEMA = { type: 'object', additionalProperties: false, required: ['language'], properties: {
+  language: { type: 'string', enum: ['en', 'th'] }, source: { type: 'string' } } }
+let RESOLVED_LANGUAGE = 'en'
+try {
+  const langCheck = await agent(
+    'Read `workspace.config.local.yaml` in the repo root if it exists AND has a `language:` line — that value wins, source="workspace.config.local.yaml". Otherwise read `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". Return ONLY the resolved language ("en" or "th") and the source file — nothing else, no other files, no other analysis.',
+    { agentType: 'documentor', label: 'resolve-language', schema: LANG_SCHEMA },
+  )
+  if (langCheck?.language === 'en' || langCheck?.language === 'th') RESOLVED_LANGUAGE = langCheck.language
+} catch { /* any failure here keeps the 'en' fallback */ }
+const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
+  ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write the run-summary prose in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, and technical/transliterated/domain terms + proper nouns (Arabic numerals always).'
+  : ''
+
 // Round cap — hard ceiling of 3 for any review↔revise loop (mirrors dev-cycle's
 // MAX_GATE_ROUNDS). This linear pipeline has no loop wired yet; the constant
 // bounds a future one to ≤3 (override LOWER via args.maxRounds — never higher).
@@ -115,7 +133,7 @@ const tick = (label) => { const now = budget.spent(); spend.push({ label, out: n
 async function writeSummary(runResult) {
   phase('Summary')
   const s = await agent(
-    `Run-recorder for the business/BRD workflow on work-key ${workKey}. Write the run-summary to agent_logs/${workKey}-BRD-SUMMARY.md (git-ignored): a short narrative — what the BRD covers, the repo path + Notion URL, and any feasibility blockers — from this run result: ${JSON.stringify(runResult).slice(0, 3500)}. Then, as the LAST step, run:\n  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${workKey} --workflow brd\nand append its Markdown output VERBATIM under a "## Token & time usage" heading at the bottom of the file. Return the summary_path.`,
+    `Run-recorder for the business/BRD workflow on work-key ${workKey}. Write the run-summary to agent_logs/${workKey}-BRD-SUMMARY.md (git-ignored): a short narrative — what the BRD covers, the repo path + Notion URL, and any feasibility blockers — from this run result: ${JSON.stringify(runResult).slice(0, 3500)}. Then, as the LAST step, run:\n  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${workKey} --workflow brd\nand append its Markdown output VERBATIM under a "## Token & time usage" heading at the bottom of the file. Return the summary_path.` + LANGUAGE_DIRECTIVE,
     { agentType: 'documentor', phase: 'Summary', label: `summary:${workKey}`, schema: SUMMARY_SCHEMA },
   )
   tick('summary')

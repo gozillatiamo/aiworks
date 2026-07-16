@@ -121,8 +121,27 @@ const FIGMA_DIRECTIVE = (typeof DESIGN_ENABLED !== 'undefined' ? DESIGN_ENABLED 
 
 // Workspace output language (language). When 'th', every prose-producing role gets this appended so
 // it writes Thai prose with an English spine (reinforces the agent-level rule). See docs/agents/language.md.
-const LANGUAGE_DIRECTIVE = (typeof LANGUAGE !== 'undefined' ? LANGUAGE : 'en') === 'th'
-  ? ' OUTPUT LANGUAGE = th (docs/agents/language.md): write ALL prose — chat, ticket description & comments, PR/MR description & review discussion, plans, summaries — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). Code and checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files) are NEVER Thai. If a git-ignored workspace.config.local.yaml sets a different language, that personal override wins — read it before you write.'
+//
+// RESOLVED DYNAMICALLY, not just from the committed LANGUAGE const above: the const is generated
+// from workspace.config.yaml ONLY (a personal workspace.config.local.yaml override can never land
+// in a committed file), and asking every downstream prose-producing agent to re-check that file
+// itself proved unreliable in practice (measured ~0-100% compliance across roles — some roles
+// reliably skip the check when absorbed in their actual task). A single dedicated resolver agent,
+// whose ENTIRE job is that one Read, is far more reliable — do it once, here, and bake the result
+// into every downstream prompt instead of hoping each one remembers.
+const LANG_SCHEMA = { type: 'object', additionalProperties: false, required: ['language'], properties: {
+  language: { type: 'string', enum: ['en', 'th'] }, source: { type: 'string' } } }
+let RESOLVED_LANGUAGE = (typeof LANGUAGE !== 'undefined' ? LANGUAGE : 'en')
+try {
+  const langCheck = await agent(
+    'Read `workspace.config.local.yaml` in the repo root if it exists AND has a `language:` line — that value wins, source="workspace.config.local.yaml". Otherwise read `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". Return ONLY the resolved language ("en" or "th") and the source file — nothing else, no other files, no other analysis.',
+    { agentType: 'documentor', label: 'resolve-language', schema: LANG_SCHEMA },
+  )
+  if (langCheck?.language === 'en' || langCheck?.language === 'th') RESOLVED_LANGUAGE = langCheck.language
+} catch { /* any failure here keeps the committed-default fallback above */ }
+
+const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
+  ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write ALL prose — chat, ticket description & comments, PR/MR description & review discussion, plans, summaries — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). Code and checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files) are NEVER Thai.'
   : ''
 
 // ──────────────────────────────────────────────────────────────────────────
