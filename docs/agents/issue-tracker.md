@@ -17,6 +17,7 @@ adapter in `scripts/tracker/`, which dispatches by `TRACKER_PROVIDER`
 | Read a ticket | `scripts/tracker/get-ticket-details.sh <KEY>` |
 | Read comments | `scripts/tracker/get-ticket-comments.sh [--deep] <KEY>` |
 | Set status/fields | `scripts/tracker/upsert-ticket-details.sh <KEY> --status … --priority … --title … --description …` |
+| Set project + label | `scripts/tracker/upsert-ticket-details.sh <KEY> --project "<name>" --label <name>` (both work on create AND update) |
 | Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --effort …` |
 | Create a child / sub-task | `scripts/tracker/upsert-ticket-details.sh new --parent <KEY> --subtask --title … --component <name> --link Implements:<KEY> --body-file …` |
 | Add a comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
@@ -24,6 +25,17 @@ adapter in `scripts/tracker/`, which dispatches by `TRACKER_PROVIDER`
 Both write scripts accept `--dry-run`. The flags are **abstract**; the adapter maps them
 to the provider (Notion properties; Jira fields + a status transition; Linear GraphQL fields
 + a workflow-state id).
+
+**Every ticket carries a project + a type label — the product-owner owns this.** When the
+product-owner creates or completes a ticket it MUST end up with a **project** and a **type
+label** (`Feature` | `Improvement` | `Bug`). *Checkable:* `get-ticket-details.sh <KEY>`
+prints a `Project:` line and a `Labels:` line. On **create** (`new`) the adapter auto-applies
+the configured default project (`LINEAR_PROJECT` in `.env`), so only the `--label` need be
+passed; on an **existing** ticket, pass both `--project "<name>"` and `--label <name>` to
+back-fill. Provider mapping of the two flags: **Linear** — `--project` resolves by name/id
+and sets it on create *and* update, `--label` is a workspace label (must already exist);
+**Jira** — `--label` → issue labels, `--project` is not per-issue (warned); **Notion** —
+`--label` → the Component multi_select, `--project` not applicable (warned).
 
 **Estimate points are FIELDS, not a comment.** `--dev-points` / `--qa-points` write the
 estimation split into dedicated number fields (Notion "Developer Points" / "QA Points";

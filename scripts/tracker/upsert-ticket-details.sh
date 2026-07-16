@@ -30,6 +30,9 @@ Options:
   --status <name>      Set the workflow status. Use the org's real status name (see
                        docs/agents/issue-tracker.md). Jira moves via a transition.
   --priority <name>    Set Priority (e.g. High / Medium / Low).
+  --project <name|id>  Assign the ticket to a project. Linear: resolved by name or id and
+                       set on create AND update. Jira/Notion: not a per-ticket field —
+                       WARNed and skipped (no silent drop).
   --effort <name>      Set the overall effort/size field (provider-dependent; optional).
   --dev-points <n>     Set the Developer-points number field (estimation; optional).
   --qa-points <n>      Set the QA-points number field (estimation; optional).
@@ -44,6 +47,9 @@ Options:
                        (resolved from the provider). Create-only; requires --parent.
   --component <name>   Add a component/tag (Jira: project component, validated;
                        Notion: a multi_select option). Repeatable.
+  --label <name>       Add a label/tag. Repeatable. Linear: a workspace label (must already
+                       exist; missing → WARN+skip). Jira: an issue label. Notion: a
+                       multi_select option (same property as --component).
   --link <TYPE>:<KEY>  Link the new issue to <KEY> as the outward subject — e.g.
                        --link Implements:APP-123 means "<new> implements APP-123".
                        Repeatable. Jira: an issue link (closest type if exact missing);
@@ -77,8 +83,9 @@ setf() { fields="$(jq -n --argjson cur "$fields" --arg k "$1" --arg v "$2" '$cur
 need() { [[ -n "${1:-}" ]] || die "$2"; }
 
 # Repeatable child-issue relations accumulate into arrays (merged into $fields below).
-components_json='[]'; links_json='[]'
+components_json='[]'; links_json='[]'; labels_json='[]'
 addcomp() { components_json="$(jq -n --argjson cur "$components_json" --arg v "$1" '$cur + [$v]')"; }
+addlabel() { labels_json="$(jq -n --argjson cur "$labels_json" --arg v "$1" '$cur + [$v]')"; }
 addlink() { links_json="$(jq -n --argjson cur "$links_json" --arg t "$1" --arg k "$2" '$cur + [{type: $t, key: $k}]')"; }
 
 ticket=""; dry=0; body_md=""; have_body=0
@@ -86,6 +93,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --status)      need "${2:-}" "--status needs a value";      setf status      "$2"; shift 2 ;;
     --priority)    need "${2:-}" "--priority needs a value";    setf priority    "$2"; shift 2 ;;
+    --project)     need "${2:-}" "--project needs a value";     setf project     "$2"; shift 2 ;;
     --effort)      need "${2:-}" "--effort needs a value";      setf effort      "$2"; shift 2 ;;
     --dev-points)  need "${2:-}" "--dev-points needs a number"; setf dev_points  "$2"; shift 2 ;;
     --qa-points)   need "${2:-}" "--qa-points needs a number";  setf qa_points   "$2"; shift 2 ;;
@@ -95,6 +103,7 @@ while [[ $# -gt 0 ]]; do
     --issuetype)   need "${2:-}" "--issuetype needs a value";   setf issuetype   "$2"; shift 2 ;;
     --subtask)     setf subtask true; shift ;;
     --component)   need "${2:-}" "--component needs a value";   addcomp "$2"; shift 2 ;;
+    --label)       need "${2:-}" "--label needs a value";       addlabel "$2"; shift 2 ;;
     --link)        need "${2:-}" "--link needs <TYPE>:<KEY>";
                    _lt="${2%%:*}"; _lk="${2#*:}"
                    [[ "$2" == *:* && -n "$_lt" && -n "$_lk" ]] \
@@ -112,9 +121,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Fold the repeatable relations into the abstract field set (omit when empty).
-fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --argjson links "$links_json" \
+fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --argjson links "$links_json" --argjson labels "$labels_json" \
   '$cur
    + (if ($comps | length) > 0 then {components: $comps} else {} end)
+   + (if ($labels | length) > 0 then {labels: $labels}   else {} end)
    + (if ($links | length) > 0 then {links: $links}      else {} end)')"
 
 [[ -n "$ticket" ]] || die "usage: $(basename "$0") <ticket> [options]   (see -h)"

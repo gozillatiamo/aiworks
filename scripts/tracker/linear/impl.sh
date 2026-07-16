@@ -198,6 +198,23 @@ linear_project_id() {
   printf '%s' "$id"
 }
 
+# linear_resolve_project <name-or-id> -> project UUID for an EXPLICIT --project value.
+# A raw UUID (8-4-4-4-12) is used verbatim; anything else is resolved by exact
+# (case-insensitive) NAME. Empty arg -> empty. No name match -> loud failure with candidates.
+linear_resolve_project() {
+  local q="$1"; [[ -n "$q" ]] || return 0
+  if [[ "$q" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+    printf '%s' "$q"; return
+  fi
+  local data id
+  data="$(linear_gql 'query($q:String!){projects(filter:{name:{containsIgnoreCase:$q}},first:50){nodes{id name}}}' \
+    "$(jq -n --arg q "$q" '{q:$q}')")"
+  id="$(printf '%s' "$data" | jq -r --arg n "$q" '
+    [ .projects.nodes[] | select((.name | ascii_downcase) == ($n | ascii_downcase)) | .id ][0] // empty')"
+  [[ -n "$id" ]] || die "no Linear project named '$q' — candidates: $(printf '%s' "$data" | jq -r '[.projects.nodes[].name] | join(", ")')"
+  printf '%s' "$id"
+}
+
 # ── tracker interface ─────────────────────────────────────────────────────────
 
 tracker_get_details() {
@@ -251,7 +268,7 @@ tracker_get_comments() {
 
 tracker_upsert() {
   local ticket="$1" dry="$2" fields="$3" body_md="${4:-}"
-  local status priority title description parent subtask issuetype
+  local status priority title description parent subtask issuetype project
   status="$(printf '%s' "$fields"      | jq -r '.status // empty')"
   priority="$(printf '%s' "$fields"    | jq -r '.priority // empty')"
   title="$(printf '%s' "$fields"       | jq -r '.title // empty')"
@@ -259,11 +276,12 @@ tracker_upsert() {
   parent="$(printf '%s' "$fields"      | jq -r '.parent // empty')"
   subtask="$(printf '%s' "$fields"     | jq -r '.subtask // empty')"
   issuetype="$(printf '%s' "$fields"   | jq -r '.issuetype // empty')"
+  project="$(printf '%s' "$fields"     | jq -r '.project // empty')"
 
-  # --issuetype + --component both become LABELS (Linear has no issue-type field).
+  # --issuetype + --component + --label all become LABELS (Linear has no issue-type field).
   local label_names estimate desc_field
   label_names="$(printf '%s' "$fields" | jq -c \
-    --arg it "$issuetype" '(.components // []) + (if ($it | length) > 0 then [$it] else [] end)')"
+    --arg it "$issuetype" '(.components // []) + (.labels // []) + (if ($it | length) > 0 then [$it] else [] end)')"
   estimate="$(linear_estimate "$fields")"
   # The full spec (--body) is the description; a bare --description is the fallback text.
   desc_field="$body_md"; [[ -z "$desc_field" && -n "$description" ]] && desc_field="$description"
@@ -293,8 +311,12 @@ tracker_upsert() {
     [[ "$(printf '%s' "$label_names" | jq 'length')" -gt 0 ]] \
       && printf '  labels: %s\n' "$(printf '%s' "$label_names" | jq -r 'join(", ")')"
     [[ -n "$parent" ]]       && printf '  parent: %s\n' "$parent"
-    [[ "$ticket" =~ ^[Nn][Ee][Ww]$ && ( -n "$LINEAR_PROJECT_ID" || -n "$LINEAR_PROJECT" ) ]] \
-      && printf '  project: %s\n' "${LINEAR_PROJECT_ID:-$LINEAR_PROJECT}"
+    if [[ "$ticket" =~ ^[Nn][Ee][Ww]$ ]]; then
+      _proj_show="${project:-${LINEAR_PROJECT_ID:-$LINEAR_PROJECT}}"
+      [[ -n "$_proj_show" ]] && printf '  project: %s\n' "$_proj_show"
+    else
+      [[ -n "$project" ]] && printf '  project: %s\n' "$project"
+    fi
     [[ -n "$desc_field" ]]   && printf '  description: %s char(s) of Markdown\n' "${#desc_field}"
     printf '%s' "$links_json" | jq -r '.[]? | "  then issueRelationCreate — \(.type) → \(.key)"'
     return 0
@@ -322,7 +344,8 @@ tracker_upsert() {
     team_id="$(printf '%s' "$bundle" | jq -r '.id')"
     states="$(printf '%s' "$bundle" | jq -c '.states.nodes')"
     [[ -n "$status" ]] && state_id="$(linear_resolve_state "$states" "$status")"
-    project_id="$(linear_project_id)"   # default project for new issues (empty if unset)
+    # Explicit --project wins; otherwise the env default (LINEAR_PROJECT_ID/LINEAR_PROJECT).
+    if [[ -n "$project" ]]; then project_id="$(linear_resolve_project "$project")"; else project_id="$(linear_project_id)"; fi
 
     local input resp created_ident created_id
     input="$(jq -n --arg teamId "$team_id" --arg title "$title" --arg desc "$desc_field" \
@@ -360,10 +383,15 @@ tracker_upsert() {
     state_id="$(linear_resolve_state "$states" "$status")"
   fi
 
+  # --project on an existing issue: resolve the name/id → projectId (the create path
+  # already handles project; this closes the update-path gap).
+  local project_upd_id=""
+  [[ -n "$project" ]] && project_upd_id="$(linear_resolve_project "$project")"
+
   local input
   input="$(jq -n --arg title "$title" --arg desc "$desc_field" --arg stateId "$state_id" \
     --argjson prio "$prio_int" --argjson est "$estimate" --argjson labelIds "$label_ids" \
-    --arg parentId "$parent_id" '
+    --arg parentId "$parent_id" --arg projectId "$project_upd_id" '
     {}
     + (if ($title | length) > 0    then {title: $title}       else {} end)
     + (if ($desc | length) > 0     then {description: $desc}  else {} end)
@@ -371,7 +399,8 @@ tracker_upsert() {
     + (if $prio != null            then {priority: $prio}     else {} end)
     + (if $est != null             then {estimate: $est}      else {} end)
     + (if ($labelIds | length) > 0 then {labelIds: $labelIds} else {} end)
-    + (if ($parentId | length) > 0 then {parentId: $parentId} else {} end)')"
+    + (if ($parentId | length) > 0 then {parentId: $parentId} else {} end)
+    + (if ($projectId | length) > 0 then {projectId: $projectId} else {} end)')"
 
   if [[ "$input" != "{}" ]]; then
     linear_gql 'mutation($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success issue{identifier}}}' \

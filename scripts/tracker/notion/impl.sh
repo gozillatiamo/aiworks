@@ -241,10 +241,16 @@ tracker_upsert() {
   # page ids on a real run; in --dry-run they're noted, not resolved, to stay offline). For
   # Notion --subtask is a no-op — the parent relation already models the sub-item.
   local comps_json links_json issuetype want_parent
-  comps_json="$(printf '%s' "$fields" | jq -c '.components // []')"
+  # --component and --label both map to the Component multi_select on Notion (tags).
+  comps_json="$(printf '%s' "$fields" | jq -c '(.components // []) + (.labels // [])')"
   links_json="$(printf '%s' "$fields" | jq -c '.links // []')"
   issuetype="$(printf '%s' "$fields" | jq -r '.issuetype // empty')"
   want_parent="$(printf '%s' "$fields" | jq -r '.parent // empty')"
+
+  # --project is not a per-ticket field on Notion (the tasks database is the project) —
+  # be honest rather than silently drop it.
+  [[ "$(printf '%s' "$fields" | jq -r '((.project // "") | tostring | length) > 0')" == "true" ]] \
+    && echo "WARN: --project ignored on Notion — the tasks database is the project; there is no per-ticket project field." >&2
 
   if [[ "$(printf '%s' "$comps_json" | jq 'length')" -gt 0 ]]; then
     if [[ -n "$NOTION_PROP_COMPONENT" ]]; then
