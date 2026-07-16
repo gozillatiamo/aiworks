@@ -70,15 +70,18 @@ gitignored clones and only the meta-repo shows.
 ## Language
 Output language follows `language` — from `workspace.config.local.yaml` if that personal
 override exists, else `workspace.config.yaml` (full policy: `docs/agents/language.md`).
-**This is resolved mechanically, not from memory:** a `SessionStart` hook
+**This is resolved mechanically, not from memory:** a hook
 (`.claude/hooks/resolve-language.sh`, wired in `.claude/settings.json`) reads
 `workspace.config.local.yaml` if present (it's git-ignored and personal — see
 `docs/adr/0003`), else falls back to `workspace.config.yaml`, and injects the resolved
-language into context at the start of every session, for every teammate. A prose
-reminder to "check the file" was tried first and was missed twice, since it depended on
-the model remembering to act — the hook removes that dependency. If the hook's injected
-context is ever missing (e.g. a stripped session), fall back to reading the file directly
-before your first output. When the resolved language is **`th`**, write **English spine,
+language into context at `SessionStart` (full policy, once) AND on every
+`UserPromptSubmit` (a compact reminder, every turn) — for every teammate, since both the
+hook and its wiring are committed. A prose reminder to "check the file" was tried first
+and was missed twice, since it depended on the model remembering to act; a SessionStart-only
+injection was tried next and was still missed over a long tool-heavy session (the one-time
+injection gets crowded out) — the per-turn reinjection closes that gap. If the hook's
+injected context is ever missing (e.g. a stripped session), fall back to reading the file
+directly before your first output. When the resolved language is **`th`**, write **English spine,
 Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, plans,
 Slack) while the English
 **spine** stays English: titles + every section heading + labels/enum values, ALL code + code

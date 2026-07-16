@@ -101,5 +101,15 @@ body is Thai prose; a PRD committed into a product repo is English.
   can't read the live config at runtime).
 - **`CLAUDE.md`** carries the operative one-liner for the main session (this chat + interactive
   skills that run in the main context).
+- **`.claude/hooks/resolve-language.sh`** is wired under BOTH `SessionStart` (full policy
+  explanation, once per session) and `UserPromptSubmit` (a compact one-line reminder,
+  re-injected on every single turn) in `.claude/settings.json`. The per-turn reinjection exists
+  because a single SessionStart injection was found (2026-07-16) to get crowded out of attention
+  over a long, tool-heavy session — the model can quietly drift back to English even with `th`
+  resolved. This brings the interactive CLI session to parity with the per-prompt
+  `LANGUAGE_DIRECTIVE` that `dev-cycle.js`/`prd.js` already give headless workflow agents on
+  every prompt. Because `.claude/settings.json` and the hook script are both committed, this
+  reinforcement applies to every teammate's session automatically — it does not depend on any
+  one person's Claude Code memory, which is local to that person and never reaches a teammate.
 
 Default `en` ⇒ every directive above is a no-op and behavior is unchanged.
