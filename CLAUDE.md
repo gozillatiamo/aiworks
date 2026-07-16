@@ -69,8 +69,13 @@ gitignored clones and only the meta-repo shows.
 
 ## Language
 Output language follows `language` — from `workspace.config.local.yaml` if that personal
-override exists, else `workspace.config.yaml` (full policy: `docs/agents/language.md`). When it
-is **`th`**, write **English spine, Thai prose** — prose
+override exists, else `workspace.config.yaml` (full policy: `docs/agents/language.md`).
+**Resolve this by reading the file on disk before your first output each session — never from
+memory or from a value already quoted earlier in context.** `workspace.config.local.yaml` is
+git-ignored, so it will not appear in any committed-file listing or prior summary of
+`workspace.config.yaml`; its absence/presence must be checked directly (e.g. `ls`/`cat`), every
+session, even if `workspace.config.yaml` was already read. When it is **`th`**, write **English
+spine, Thai prose** — prose
 in Thai (this CLI chat, tickets, PR/MR discussion, code review, plans, Slack) while the English
 **spine** stays English: titles + every section heading + labels/enum values, ALL code + code
 comments + git commit messages + branch names, and technical/transliterated/domain terms +
