@@ -13,6 +13,7 @@ tools:
   - Read
   - Grep
   - Glob
+  - Edit
   - Write
   - Skill
   - Bash(git *)

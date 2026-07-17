@@ -17,6 +17,7 @@ tools:
   - Grep
   - Glob
   - Skill
+  - Edit
   - Write
   - Bash(git *)
   # Codegraph (per-repo index): `codegraph sync` to refresh, and codegraph explore/search
