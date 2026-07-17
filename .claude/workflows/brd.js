@@ -44,7 +44,7 @@ try {
   if (langCheck?.language === 'en' || langCheck?.language === 'th') RESOLVED_LANGUAGE = langCheck.language
 } catch { /* any failure here keeps the 'en' fallback */ }
 const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
-  ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write the run-summary prose in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, and technical/transliterated/domain terms + proper nouns (Arabic numerals always).'
+  ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write your chat/Slack prose in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). ANY file you author with a .md extension — including the run-summary Markdown in agent_logs/ and the BRD file (docs/brd/<key>.md) — is NEVER Thai; the th prose rule applies to chat, tickets, PR/MR discussion, Slack, and .html docs only.'
   : ''
 
 // Round cap — hard ceiling of 3 for any review↔revise loop (mirrors dev-cycle's
