@@ -78,6 +78,18 @@ needed. **Completion:** all three gates have returned a verdict.
 
 ### 3. Aggregate
 
+**Backstop — verify every finding actually landed inline (do this FIRST, before presenting).**
+A gate can return a verdict yet fail to post its findings — most often it wrongly concludes it
+"has no shell / no Bash" and leaves them only in its return text (a genuine denial is different:
+it comes with a real error). So for each repo's MR/PR, list the posted review threads
+(`scripts/vcs/pr-threads.sh <num>`, run from inside that repo) and reconcile them against the
+must-fixes each gate reported. For any gate finding **not** present on the MR/PR, post it on that
+gate's behalf via `scripts/vcs/pr-comment.sh --path <file> --line <n> --body …` — anchored +
+quoting the code, in the resolved OUTPUT LANGUAGE, attributed to the gate (e.g.
+`[Performance gate (Liam)]`). The gate definitions now require them to post their own; this is
+the safety net for when one still doesn't. Note in your summary which findings you posted on
+whose behalf.
+
 Present the three results under `## Code (Daniel)`, `## Guardian (Ethan)`, and
 `## Performance (Liam)` — verbatim or lightly cleaned, **not merged or reranked**: the gates
 are deliberately independent so the user sees each. **Language check first:** if a gate

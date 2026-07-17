@@ -692,29 +692,47 @@ else
   else skip "5. install ran but $kp_plugin isn't in this repo's settings — enable by hand: (cd $PATH_REL && claude plugin enable $kp_plugin --scope project)"; fi
 fi
 
-# ── 6. mattpocock skills — PROJECT scope, one --skill per call ──────────────────
+# ── 6. third-party skills — PROJECT scope, one --skill per call ─────────────────
 # The `skills` CLI selects a skill with a single `--skill <name>` (NOT a comma list — a CSV
-# is taken as one bogus skill name), so install each skill in its own invocation. Already-
-# present skills are skipped. Project scope is guaranteed by being inside the repo with a
-# .claude/ marker + -y (no --global).
-step "6. Install mattpocock skills — project scope (one per skill)"
-mp_skills=(caveman grill-me grill-with-docs grilling domain-modeling diagnose setup-matt-pocock-skills)
+# is taken as one bogus skill name) and pulls it from ONE source repo per call, so install
+# each skill in its own invocation FROM ITS OWN SOURCE — they all ship from mattpocock/skills
+# today, but the "<skill>|<source>" form keeps multi-source support. Already-present skills are
+# skipped. Project scope is guaranteed by being inside the repo with a .claude/ marker + -y (no
+# --global).
+# NOTE: caveman is intentionally NOT installed per-repo. It's the user-scope `caveman@caveman`
+# plugin (enabledPlugins in the meta repo's .claude/settings.json), and the meta-repo agents
+# invoke the `caveman:caveman` skill themselves, so a per-repo copy would be redundant.
+step "6. Install third-party skills — project scope (one per skill)"
+# "<skill>|<source>" — <source> is the `skills` CLI repo spec that ships that one skill.
+ext_skills=(
+  "grill-me|mattpocock/skills"
+  "grill-with-docs|mattpocock/skills"
+  "grilling|mattpocock/skills"
+  "domain-modeling|mattpocock/skills"
+  "diagnose|mattpocock/skills"
+  "setup-matt-pocock-skills|mattpocock/skills"
+)
 if ! have npx; then
-  skip "6. 'npx' (Node) not found — run later, one per skill: npx skills@latest add mattpocock/skills --skill <name> -y"
+  skip "6. 'npx' (Node) not found — run later, one per skill: npx skills@latest add <source> --skill <name> -y"
 else
   mkdir -p "$REPO_DIR/.claude"   # project marker so the CLI's scope auto-detect picks "project", not "global"
   installed=(); already=(); failed=(); crashed=()
-  for s in "${mp_skills[@]}"; do
+  for entry in "${ext_skills[@]}"; do
+    s="${entry%%|*}"; src="${entry#*|}"
     if [[ -d "$REPO_DIR/.claude/skills/$s" && "$FORCE" -ne 1 ]]; then already+=("$s"); continue; fi
-    npx -y skills@latest add mattpocock/skills --skill "$s" --agent '*' -y >/dev/null 2>&1; npx_rc=$?
+    # --agent claude-code (NOT '*'): '*' installs to EVERY agent the CLI knows (~40 — eve, codex,
+    # cursor, cline, …), scattering per-agent dirs into the repo (e.g. eve's `agent/skills/`, plus
+    # a `.agents/skills/` canonical + `.claude/skills/` symlinks). This is a Claude Code workspace,
+    # so install only claude-code → a single clean `.claude/skills/<name>/` real dir, no stray dirs.
+    npx -y skills@latest add "$src" --skill "$s" --agent claude-code -y >/dev/null 2>&1; npx_rc=$?
     if   [[ "$npx_rc" -eq 0 ]]; then installed+=("$s")
     elif [[ "$(classify_rc "$npx_rc")" == signal ]]; then crashed+=("$s (signal $((npx_rc - 128)))")   # npx/node killed on launch, NOT an install failure
     else failed+=("$s"); fi
   done
   [[ "${#already[@]}"   -gt 0 ]] && skip "6. already present: ${already[*]}"
-  [[ "${#installed[@]}" -gt 0 ]] && ok "installed mattpocock skills (project scope): ${installed[*]}"
+  [[ "${#installed[@]}" -gt 0 ]] && ok "installed third-party skills (project scope): ${installed[*]}"
   [[ "${#crashed[@]}"   -gt 0 ]] && skip "6. npx CRASHED (killed by a signal — likely memory pressure or a security agent on this machine, not an install problem): ${crashed[*]} — re-run 'aiworks add' to retry"
-  [[ "${#failed[@]}"    -gt 0 ]] && skip "6. failed to install: ${failed[*]} — retry: npx skills@latest add mattpocock/skills --skill <name> -y"
+  [[ "${#failed[@]}"    -gt 0 ]] && skip "6. failed to install: ${failed[*]} — retry: npx skills@latest add <source> --skill <name> -y"
 fi
 
 # ── 7. project knowledge (CLAUDE.md) — anatomy-driven, ≤60 lines + .claude/rules/ ─
