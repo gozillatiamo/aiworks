@@ -1,18 +1,17 @@
 ---
 name: ultra-review
-description: Run a ticket's open MR/PR through three specialist review gates at once — code-reviewer (clean-code + spec), guardian-engineer (SonarQube security + data-protection), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + security + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
+description: Run a ticket's open MR/PR through two specialist review gates at once — code-reviewer (clean-code + spec), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
 disable-model-invocation: true
 ---
 
 # Ultra-review
 
-Runs one ticket's open MR/PR through **three specialist gates in parallel** — Daniel
-(code-reviewer), Ethan (guardian-engineer), Liam (performance-engineer) — then aggregates
-their verdicts into one. A **blocking finding at ANY gate caps the combined verdict**, no
-matter how clean the others are.
+Runs one ticket's open MR/PR through **two specialist gates in parallel** — Daniel
+(code-reviewer), Liam (performance-engineer) — then aggregates their verdicts into one. A
+**blocking finding at ANY gate caps the combined verdict**, no matter how clean the other is.
 
 Distinct from `/review` (the single 2-axis spec+standards pass by two `general-purpose`
-sub-agents): ultra-review fans out the three *acting* specialist agents, which comment
+sub-agents): ultra-review fans out the two *acting* specialist agents, which comment
 inline on the live MR/PR and render their own verdicts. The verdict grounding is shared —
 [`.claude/skills/review/basis.md`](../review/basis.md) — and every gate reads it first.
 
@@ -22,7 +21,7 @@ review pass — merge stays a separate, later decision.
 
 ## 0. Resolve language + review level BEFORE spawning (do this FIRST)
 
-These two values are resolved **once here** and pasted **verbatim** into all three gate
+These two values are resolved **once here** and pasted **verbatim** into both gate
 briefs. The gates are real sub-agents that would otherwise each re-resolve from disk and can
 drift; passing the resolved directive is the proven fix (mirrors `/review` step 4). Both
 agent definitions honor an in-prompt directive over any self-resolution.
@@ -61,26 +60,25 @@ first (`/open-pr`), or use `/review` for a branch-only pass. Do not fabricate a 
 *(Multi-repo ticket: collect every repo's open MR/PR and hand each gate the full list — the
 gates review each. No wave engine here; that is dev-cycle's job.)*
 
-### 2. Spawn the three gates in parallel
+### 2. Spawn the two gates in parallel
 
-Send **one message with three `Agent` tool calls** — `code-reviewer`, `guardian-engineer`,
-`performance-engineer` — so they run concurrently and don't pollute each other's context.
-Into **each** brief put:
+Send **one message with two `Agent` tool calls** — `code-reviewer`, `performance-engineer` —
+so they run concurrently and don't pollute each other's context. Into **each** brief put:
 
 - The shared directive block from §0 (language + review level), verbatim.
 - The ticket `<KEY>` and the open MR/PR ref(s) + branch + target.
 - `"This is an ultra-review pass — review, comment findings inline on the MR/PR, and render
   your verdict. Do NOT merge, even if auto_merge is on; merge is a separate decision."`
-- **A force-shell first line** (proven fix for the perf/guardian "no Bash" give-up — see §3):
+- **A force-shell first line** (proven fix for the perf "no Bash" give-up — see §3):
   `"Your FIRST action is a real Bash call — run `scripts/vcs/pr-view.sh <num>` (or `git
   rev-parse --show-toplevel`) from inside the target repo BEFORE any analysis or prose. Do NOT
   reason about whether Bash/tools are available — you HAVE a scoped Bash grant (the code-reviewer
   uses the identical mechanism). Never self-report 'no Bash / no shell' without an actual failed
   attempt; a real denial comes with a real error you must quote."`
 
-Each gate then runs its own instrument (Daniel: `/review` + codegraph blast radius; Ethan:
-SonarQube static analysis; Liam: profiling) per its own definition — no extra tool grant
-needed. **Completion:** all three gates have returned a verdict.
+Each gate then runs its own instrument (Daniel: `/review` + codegraph blast radius; Liam:
+profiling) per its own definition — no extra tool grant needed. **Completion:** both gates
+have returned a verdict.
 
 ### 3. Aggregate
 
@@ -96,40 +94,35 @@ quoting the code, in the resolved OUTPUT LANGUAGE, attributed to the gate (e.g.
 the safety net for when one still doesn't. Note in your summary which findings you posted on
 whose behalf.
 
-**Two known gate failures the backstop MUST expect (root-caused 2026-07-17):**
-- **`performance-engineer` / `guardian-engineer` return "no Bash" — BEHAVIORAL, not a missing
-  grant.** Ground-truth probe: forced with a prompt whose only allowed first action was a Bash
-  call, `performance-engineer` executed `echo` fine (real `tool_use`, stdout returned, 0 errors).
+**Known gate failure the backstop MUST expect (root-caused 2026-07-17):**
+- **`performance-engineer` returns "no Bash" — BEHAVIORAL, not a missing grant.** Ground-truth
+  probe: forced with a prompt whose only allowed first action was a Bash call,
+  `performance-engineer` executed `echo` fine (real `tool_use`, stdout returned, 0 errors).
   So the Bash grant WORKS; the agent just talks itself into "no Bash / no shell" and emits
   `tool_uses: 0` whenever the task lets it reason first (its `tool_uses:0` "not in toolset"
   self-reports are unreliable model introspection, NOT schema truth — they even contradicted each
   other across probes). `code-reviewer` doesn't do this (34 real Bash calls same spawn). The fix is
   the **force-shell first line in every gate brief (§2)** — make a real Bash call the gate's
-  literal first action, before any reasoning. This is the prevention; the backstop below is the
+  literal first action, before any reasoning. This is the prevention; the backstop above is the
   guaranteed net: for any gate finding not on the MR/PR, post it yourself via `pr-comment.sh`.
-- **`guardian-engineer` dies on the real-time cyber-safeguard.** A false-positive on a first-party
-  defensive review; it has tripped Sonnet 5 AND Opus 4.8, so a `model:` override is not a reliable
-  dodge. When the guardian gate terminates this way, run the guardian axis INLINE yourself
-  (routine secure-coding pass: query parameterization, tenant isolation, secrets/PII) and post its
-  findings + verdict on its behalf.
 
-Present the three results under `## Code (Daniel)`, `## Guardian (Ethan)`, and
-`## Performance (Liam)` — verbatim or lightly cleaned, **not merged or reranked**: the gates
-are deliberately independent so the user sees each. **Language check first:** if a gate
-returned prose in the wrong language, rewrite that prose into the resolved OUTPUT LANGUAGE
-before presenting — never ship a finding in the wrong language.
+Present the two results under `## Code (Daniel)` and `## Performance (Liam)` — verbatim or
+lightly cleaned, **not merged or reranked**: the gates are deliberately independent so the user
+sees each. **Language check first:** if a gate returned prose in the wrong language, rewrite that
+prose into the resolved OUTPUT LANGUAGE before presenting — never ship a finding in the wrong
+language.
 
 End with **one combined verdict** line: requirements genuinely **met / partially met / not
 met**, then the review level and the worst single issue per gate. The combined verdict is
-**capped by any blocking finding at any gate** — a guardian security must-fix or a critical
-perf regression caps the verdict at "partially met" even when the code-quality gate is clean.
+**capped by any blocking finding at any gate** — a critical perf regression caps the verdict at
+"partially met" even when the code-quality gate is clean.
 
 ### 4. Notify — orchestrator-owned, deterministic (ALWAYS runs when `notify.enabled`)
 
-Do **NOT** leave notify to the gates. A gate that crashed (guardian on the cyber-safeguard) or
-lost its shell (perf hallucinating "no Bash") posts nothing — so gate-owned notify is
-non-deterministic and silently drops. After aggregating, the **orchestrator itself** posts the
-**one combined verdict** as a threaded reply under the ticket's review-request:
+Do **NOT** leave notify to the gates. A gate that lost its shell (perf hallucinating "no Bash")
+posts nothing — so gate-owned notify is non-deterministic and silently drops. After aggregating,
+the **orchestrator itself** posts the **one combined verdict** as a threaded reply under the
+ticket's review-request:
 
 ```
 scripts/notify/send.sh --reply <KEY>   # threads under the "please review" msg; top-level fallback if none
