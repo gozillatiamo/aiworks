@@ -53,9 +53,15 @@ their per-agent pointer (§4), not the baked `const LANGUAGE`.
 When `language: th`, write human-readable **prose in Thai**, but keep an **English spine**.
 Default every string to Thai; keep English for exactly the three spine buckets:
 
+> **File-type invariant (overrides everything below): any `.md` file you author is English —
+> always.** A plan, testcases, PRD, BRD, or summary Markdown in `agent_logs/` is English even under
+> `th`, exactly like a checked-in repo doc. The English-spine / Thai-prose rules in this section
+> govern only the non-`.md` surfaces — CLI chat, ticket bodies & comments, PR/MR descriptions
+> & review discussion, Slack, and the `.html` interactive render.
+
 - **Structure** — titles, **every section heading / topic / subject**, field labels, table
-  headers, and status/enum values. (A Thai plan reads `## Acceptance Criteria` with the criteria
-  themselves in Thai.)
+  headers, and status/enum values. (A Thai ticket description reads `## Acceptance Criteria` with the
+  criteria themselves in Thai; the sibling plan `.md` stays fully English.)
 - **Code** — all code and code comments, identifiers, file paths, commands, **git commit
   messages, and branch names**. Code and code-adjacent text are **never** Thai.
 - **Terms** — technical terms, transliterated words, product & domain jargon, and proper nouns
@@ -75,16 +81,21 @@ The test the agent runs on each token: **is it on the English spine? → English
 | Issue-tracker ticket | English | **Summary/title English**; description & comments Thai |
 | PR/MR | English | **Title English** (conventional-commit); description & review discussion Thai |
 | Code-review / guardian / perf comments | English | Thai prose; the code & identifiers they cite stay English |
-| Plans, PRDs, BRDs, summaries **as working deliverables** — `agent_logs/`, ticket bodies, anything shown to you | English | Thai prose (English spine) |
+| Plans, PRDs, BRDs, summaries — the **`.md` deliverable** (`agent_logs/`) | English | **English — never Thai** (see the `.md` rule below) |
+| Plans, PRDs, summaries — the **`.html` interactive render** (via `/write-interactive-docs`) | English | Thai prose (English spine) |
+| Plan/PRD/summary content **posted into a ticket body or comment** | English | Thai prose (English spine) |
 | Slack / chat notifications | English | Thai prose (English spine) |
 | **Code & code comments** | English | English — never Thai |
 | **Git commit messages & branch names** | English | English — never Thai |
-| **Checked-in repo docs committed beside code** — `docs/`, `README`, `docs/adr/` ADRs, `CONTEXT.md`, and PRD/BRD **files committed into a product repo** | English | English — they live beside code for future / non-Thai devs |
+| **ANY `.md` file you author** — plans, testcases, PRD/BRD/summary Markdown in `agent_logs/`, and every checked-in repo doc (`docs/`, `README`, `docs/adr/` ADRs, `CONTEXT.md`, PRD/BRD committed into a product repo) | English | English — never Thai |
 
-The dividing line for structured artifacts: a **file committed beside code** is English; a
-**collaboration / working surface** (chat, tickets, Slack, PR discussion, plans shown to you) is
-Thai. The *same* document type splits by destination — a PRD written into `agent_logs/` or a ticket
-body is Thai prose; a PRD committed into a product repo is English.
+The dividing line for structured artifacts is **file type first, then destination**: **any `.md`
+file is English — always**, whether it lives in `agent_logs/` as a working deliverable or is
+committed beside code. The `th` prose rule applies only to the non-`.md` surfaces — CLI chat, ticket
+bodies & comments, PR/MR descriptions & review discussion, Slack, and the `.html`
+interactive render. So the *same* plan/PRD splits by output form: its `.md` is English (a stable
+artifact the next-phase agent reads); the same content posted into a ticket body or rendered to
+`.html` is Thai prose.
 
 ## 4. How it's enforced
 

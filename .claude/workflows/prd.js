@@ -64,7 +64,7 @@ try {
 } catch { /* any failure here keeps the committed-default fallback above */ }
 
 const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
-  ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write ALL prose — ticket description & comments, plans, the run summary — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). A ticket SUMMARY/title stays English; its description & comments are Thai. Code and checked-in repo docs are NEVER Thai.'
+  ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write ALL prose — ticket description & comments and the .html render of a plan — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). A ticket SUMMARY/title stays English; its description & comments are Thai. Code, checked-in repo docs, AND ANY file you author with a .md extension (plans, PRD/summary Markdown in agent_logs/) are NEVER Thai — the th prose rule applies to chat, tickets, PR/MR discussion, Slack, and .html docs only.'
   : ''
 
 // Build the per-feature directive the planner/designer get about WHERE to build. When a

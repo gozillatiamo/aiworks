@@ -40,7 +40,8 @@ gitignored clones and only the meta-repo shows.
   (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides).
 - `docs/agents/language.md` — the output-language convention: `language: th` ⇒ **English
   spine, Thai prose** (prose in Thai; titles/headings/labels, all code + commits + branch
-  names, and technical/domain terms stay English; code & checked-in repo docs never Thai).
+  names, and technical/domain terms stay English; code, checked-in repo docs, and **any `.md`
+  file** never Thai — only `.html` renders/tickets/chat/Slack localize).
   Default `en` = unchanged. See the `## Language` section below.
 - `docs/agents/issue-tracker.md` — how to read/write tickets (the tracker adapter,
   status names, id format).
@@ -82,12 +83,13 @@ injection was tried next and was still missed over a long tool-heavy session (th
 injection gets crowded out) — the per-turn reinjection closes that gap. If the hook's
 injected context is ever missing (e.g. a stripped session), fall back to reading the file
 directly before your first output. When the resolved language is **`th`**, write **English spine,
-Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, plans,
-Slack) while the English
-**spine** stays English: titles + every section heading + labels/enum values, ALL code + code
-comments + git commit messages + branch names, and technical/transliterated/domain terms +
-proper nouns (Arabic numerals always). **Code and checked-in repo docs** (`docs/`, `README`,
-ADRs, committed PRD/BRD files) are **never** Thai. Default **`en`** ⇒ everything English, no change.
+Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, Slack,
+and the `.html` interactive render of a plan) while the English **spine** stays English: titles +
+every section heading + labels/enum values, ALL code + code comments + git commit messages + branch
+names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). **Any
+`.md` file you author is English — always** (plans, testcases, PRD/BRD/summary Markdown in
+`agent_logs/`, and every checked-in repo doc — `docs/`, `README`, ADRs, committed PRD/BRD files):
+the `th` prose rule never touches `.md`. Default **`en`** ⇒ everything English, no change.
 
 ## Product Overview
 {{PRODUCT_DESCRIPTION}}
