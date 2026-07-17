@@ -720,7 +720,11 @@ else
   for entry in "${ext_skills[@]}"; do
     s="${entry%%|*}"; src="${entry#*|}"
     if [[ -d "$REPO_DIR/.claude/skills/$s" && "$FORCE" -ne 1 ]]; then already+=("$s"); continue; fi
-    npx -y skills@latest add "$src" --skill "$s" --agent '*' -y >/dev/null 2>&1; npx_rc=$?
+    # --agent claude-code (NOT '*'): '*' installs to EVERY agent the CLI knows (~40 — eve, codex,
+    # cursor, cline, …), scattering per-agent dirs into the repo (e.g. eve's `agent/skills/`, plus
+    # a `.agents/skills/` canonical + `.claude/skills/` symlinks). This is a Claude Code workspace,
+    # so install only claude-code → a single clean `.claude/skills/<name>/` real dir, no stray dirs.
+    npx -y skills@latest add "$src" --skill "$s" --agent claude-code -y >/dev/null 2>&1; npx_rc=$?
     if   [[ "$npx_rc" -eq 0 ]]; then installed+=("$s")
     elif [[ "$(classify_rc "$npx_rc")" == signal ]]; then crashed+=("$s (signal $((npx_rc - 128)))")   # npx/node killed on launch, NOT an install failure
     else failed+=("$s"); fi
