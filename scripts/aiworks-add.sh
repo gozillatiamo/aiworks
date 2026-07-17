@@ -695,14 +695,16 @@ fi
 # ── 6. third-party skills — PROJECT scope, one --skill per call ─────────────────
 # The `skills` CLI selects a skill with a single `--skill <name>` (NOT a comma list — a CSV
 # is taken as one bogus skill name) and pulls it from ONE source repo per call, so install
-# each skill in its own invocation FROM ITS OWN SOURCE. caveman comes from juliusbrussee/caveman
-# (a dedicated multi-level implementation; mattpocock dropped caveman upstream); the rest come
-# from mattpocock/skills. Already-present skills are skipped. Project scope is guaranteed by
-# being inside the repo with a .claude/ marker + -y (no --global).
+# each skill in its own invocation FROM ITS OWN SOURCE — they all ship from mattpocock/skills
+# today, but the "<skill>|<source>" form keeps multi-source support. Already-present skills are
+# skipped. Project scope is guaranteed by being inside the repo with a .claude/ marker + -y (no
+# --global).
+# NOTE: caveman is intentionally NOT installed per-repo. It's the user-scope `caveman@caveman`
+# plugin (enabledPlugins in the meta repo's .claude/settings.json), and the meta-repo agents
+# invoke the `caveman:caveman` skill themselves, so a per-repo copy would be redundant.
 step "6. Install third-party skills — project scope (one per skill)"
 # "<skill>|<source>" — <source> is the `skills` CLI repo spec that ships that one skill.
 ext_skills=(
-  "caveman|juliusbrussee/caveman"
   "grill-me|mattpocock/skills"
   "grill-with-docs|mattpocock/skills"
   "grilling|mattpocock/skills"
