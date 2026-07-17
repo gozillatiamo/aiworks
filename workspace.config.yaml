@@ -81,7 +81,7 @@ products:
         desc: The monolithic backend service for the platform. It's contains mostly the business logic for the platform.
         lang: rust
         green: "unit tests + integration tests passed successfully"
-        guardian_focus: "secrets, data-protection, injection attacks"
+        guardian_focus: "secrets, data-protection, input validation"
 
       - url: git@gitlab.com:bluepicode/qa/agent-paotung-cypress.git
         kind: test-suite
