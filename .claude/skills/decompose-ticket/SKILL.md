@@ -2,6 +2,7 @@
 name: decompose-ticket
 description: Split an oversized ticket (total Dev+QA points over 24) into smaller tickets that can each be built and shipped in parallel (no hard cross-piece dependency), then re-estimate every piece — parallel independence is first-class; only a truly huge ticket (over 36) may instead split along hard 'is blocked by' dependencies, and a ticket with no valid parallel cut is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs right after /estimate-ticket whenever the total exceeds 24, including inside the /prd workflow. Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
 argument-hint: "<KEY> (e.g. OFB-1952) [advise|execute]"
+disable-model-invocation: true
 model: opus
 effort: high
 allowed-tools:
