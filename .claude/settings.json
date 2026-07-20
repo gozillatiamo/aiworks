@@ -172,7 +172,8 @@
   },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "debugging-code@debug-skill-marketplace": true
   },
   "extraKnownMarketplaces": {
     "karpathy-skills": {
@@ -185,6 +186,12 @@
       "source": {
         "source": "github",
         "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "debug-skill": {
+      "source": {
+        "source": "github",
+        "repo": "AlmogBaku/debug-skill"
       }
     }
   }
