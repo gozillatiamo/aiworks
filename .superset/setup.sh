@@ -26,9 +26,11 @@
 #    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
 #    phase's optional third-party hook (run.sh Phase 4 can tunnel a port through it; macOS: Homebrew, Linux:
 #    the official apt repo, else a static binary); glab, the GitLab CLI the VCS adapter
-#    (scripts/vcs/) drives (Homebrew, else the official release tarball); and pnpm, the package
+#    (scripts/vcs/) drives (Homebrew, else the official release tarball); pnpm, the package
 #    manager the pnpm-based repos need for the step-6 dependency install (corepack, else
-#    Homebrew / npm -g / the official standalone installer). Best-effort.
+#    Homebrew / npm -g / the official standalone installer); and dap, the Debug Adapter Protocol
+#    client the debugging-code skill drives (Homebrew tap AlmogBaku/tap/dap, else the official
+#    install script). Best-effort.
 # 4. `aiworks sync -y` clones + FULLY onboards every product repo declared under
 #    products[] in workspace.config.yaml (via the generated mani.d/<product>.yaml)
 #    — repos are gitignored and don't travel with a new git worktree. Full onboard
@@ -172,13 +174,15 @@ fi
 # ── 3. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
 # phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter;
-# pnpm so step 6 can install deps for the pnpm-based repos (else node_install skips them). Best-effort —
-# guarded so a failure never aborts setup.
-log "Ensuring host tooling (jq, ngrok, glab, pnpm)…"
+# pnpm so step 6 can install deps for the pnpm-based repos (else node_install skips them); dap
+# (Debug Adapter Protocol client) for the debugging-code skill. Best-effort — guarded so a failure
+# never aborts setup.
+log "Ensuring host tooling (jq, ngrok, glab, pnpm, dap)…"
 ensure_jq || true
 ensure_ngrok || true
 ensure_glab || true
 ensure_pnpm || true
+ensure_dap || true
 
 # ── 4. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
 # full `aiworks add` toolchain per repo (codegraph index, skill packs, adapter symlinks into
