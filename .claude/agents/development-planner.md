@@ -17,6 +17,10 @@ tools:
   - Skill
   - Bash(git *)
   - Bash(codegraph *)
+  # Interactive debugger (read-only investigation): the `debugging-code` skill drives `dap` to step
+  # through and inspect a running program — grounds a fix-ticket plan in real runtime behavior when
+  # codegraph + reading can't reveal HOW execution reaches the buggy state. Investigate, never fix.
+  - Bash(dap *)
   - Bash(*scripts/tracker/*)
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
@@ -78,6 +82,7 @@ This is a **multi-repo workspace** (Next.js web apps, the Rust backend, Postgres
 4. **Verify against Figma — DEV mode, 100% or nothing (🛑 MUST DO when a frame exists).** **Gate first: Figma is governed by `design.enabled` (`docs/agents/figma.md`) — if it's OFF (or the workflow says Figma is disabled), skip this step and plan from acceptance criteria + design-system docs.** If `figma_url` exists (or the ticket otherwise references a Figma page/screen), read it as **Dev Mode**, not a glance: `get_design_context` is the PRIMARY read (the Dev-Mode payload — variables/tokens, exact specs, measurements, code), backed by `get_metadata` (node tree → exact px positions/sizes/spacing) and `get_screenshot` (visual truth). Capture exact components, every state, spacing, sizing, color/typography tokens, and motion. **The plan must direct Noah to match the Figma 100% — pixel-exact, no compromise, no "close enough"** (encode the spec as a verifiable checklist: tokens, dimensions, states, motion). No link → say so and plan from acceptance criteria + design-system docs.
 5. **Locate the work — codegraph FIRST.** Find the module(s)/package(s) this ticket touches (and the layers within them), the entities, interfaces/contracts, handlers/services, and what exists vs. what's new by **querying the repo's codegraph index** — it is the pre-built directory index for THIS repo, so use it instead of a grep+read loop that just repeats work it already did. Lead with `codegraph explore` (a natural-language "where is X / how does X work" question, or a bag of symbol/file names — usually the only call you need); add `codegraph search` (locate a named symbol) and `codegraph callers`/`codegraph callees`/`codegraph impact` (blast radius of a change) as needed. **Use `Grep`/`Glob` only as a last resort** — to confirm one detail codegraph didn't cover (a non-code asset, a config string). (Workspace-level codegraph is forbidden per `CLAUDE.md`; this per-repo index is the allowed one.)
    - **🛑 MUST DO — already-implemented short-circuit.** If every acceptance criterion is **already satisfied** in code (Bug: buggy path already correct), do NOT plan or hand off: `scripts/tracker/add-ticket-comment.sh FM-<n> "already implemented"` + evidence (file/symbol + commit/PR), `scripts/tracker/upsert-ticket-details.sh FM-<n> --status Done`, then stop and return a one-line summary. Only on **complete** coverage — if partial, plan just the gap.
+   - **Bug / `fix/<KEY>` ticket — confirm the cause at runtime when static lookup can't.** When codegraph + reading the code can't reveal *how* execution reaches the buggy state (a vague cause makes a vague plan, and the short-circuit above needs a real answer), step through the running program with **`/debugging-code:debugging-code`** (interactive DAP debugger — breakpoints, step, live variable / call-stack inspection). Investigate **read-only** to ground the plan; you never fix here — the red repro loop + fix are Noah's job.
 6. **Produce the plan** (write to `agent_logs/George_development-planner/FM-<n>-plan.md` and return it):
    - **Goal & acceptance criteria** (verifiable checklist).
    - **Assumptions** (anything inferred).

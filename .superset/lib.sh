@@ -428,6 +428,50 @@ ensure_pnpm() {
   return 0
 }
 
+# Ensure the `dap` CLI is installed. `dap` is a Debug Adapter Protocol client the debugging-code
+# skill drives to attach to / step a running program over DAP. Best-effort + idempotent: present →
+# no-op; otherwise install. NEVER fatal to setup — only the debugging-code skill needs it, and
+# that skill degrades on its own if dap is absent. macOS bash 3.2 safe. Install prefers the
+# Homebrew tap (mac + Linuxbrew: `AlmogBaku/tap/dap`) → the official cross-platform install script.
+ensure_dap() {
+  if command -v dap >/dev/null 2>&1; then
+    log "dap already installed ($(dap --version 2>/dev/null | head -1))."
+    return 0
+  fi
+  log "dap not found — installing…"
+  # Homebrew's tap is dap's canonical install on BOTH macOS and Linuxbrew (brew is already
+  # assumed — setup needs `mani` via brew). Fall back to the official install script otherwise.
+  if command -v brew >/dev/null 2>&1; then
+    run_glance "dap: brew install" brew install AlmogBaku/tap/dap \
+      || { warn "brew install AlmogBaku/tap/dap failed — falling back to the official install script."; install_dap_script; }
+  else
+    warn "Homebrew not found — falling back to the official dap install script."
+    install_dap_script
+  fi
+  if command -v dap >/dev/null 2>&1; then
+    log "dap installed ($(dap --version 2>/dev/null | head -1))."
+  else
+    warn "dap still not on PATH after install — the debugging-code skill needs it. Install it by hand (brew install AlmogBaku/tap/dap); if the install script ran, open a new shell so its PATH edit takes effect."
+  fi
+  return 0
+}
+
+# Install dap via the official cross-platform (macOS + Linux) install script — the no-Homebrew
+# and brew-install-failed fallback. The script self-detects os/arch and drops the binary onto
+# PATH (we surface the common user-local bin dirs afterward so ensure_dap's check sees it in
+# THIS shell). Returns non-zero on any failure so ensure_dap's final PATH check warns.
+install_dap_script() {
+  command -v curl >/dev/null 2>&1 || { warn "dap: curl unavailable — install by hand: brew install AlmogBaku/tap/dap"; return 1; }
+  run_glance "dap: official install script" \
+    sh -c 'curl -fsSL https://raw.githubusercontent.com/AlmogBaku/debug-skill/master/skills/debugging-code/scripts/install-dap.sh | bash' \
+    || { warn "dap: install script failed — install by hand: brew install AlmogBaku/tap/dap"; return 1; }
+  local d
+  for d in "$HOME/.local/bin" "$HOME/bin"; do
+    if [[ -x "$d/dap" && ":$PATH:" != *":$d:"* ]]; then export PATH="$d:$PATH"; fi
+  done
+  return 0
+}
+
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>

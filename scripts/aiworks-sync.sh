@@ -442,6 +442,37 @@ seed_sonar_scaffold() {
   } > "$dir/sonar-project.properties" && ok "seeded sonar-project.properties (projectKey=$pkey)"
 }
 
+# ── parallel pre-clone: clone the WHOLE set up front, concurrently ────────────────
+# The per-repo loop below delegates to `aiworks add`, whose step 3 clones via a BARE
+# `mani sync` — so a fresh workspace clones all N repos ONE AT A TIME. Measured on a large
+# set (~18 repos): 125s sequential vs 42s with `mani sync --parallel` (~3x, saves ~83s). On a
+# fresh Superset worktree the clone is the single biggest, CACHE-IMMUNE cost — node installs
+# hit the machine-global pnpm/npm store (warm) and codegraph indexes fast, but every new
+# worktree must re-clone from scratch. So clone the whole set here, in parallel, BEFORE the
+# onboard loop; each per-repo `aiworks add` then finds its repo already cloned (step 3 SKIP)
+# and only onboards. `mani sync` is idempotent (only MISSING repos are cloned), so this is a
+# fast no-op on re-runs. SSH-key auth via ssh-agent means --parallel needs no per-repo prompt
+# (mani cautions against --parallel only for repos needing INTERACTIVE credentials).
+# Covers the full sweep AND a product-scoped sync: product == tags[0] on every mani.d entry
+# (guaranteed by `aiworks add`), so `mani sync -t <product>` clones exactly that product's
+# repos. A --repo/repo-name filter is small and left to the per-repo clone (cloning one repo
+# gains nothing). Tunable: raise concurrency with `-f <N>` (mani's default forks: 4).
+if [[ -z "$REPO_FILTER" ]]; then
+  mani_scope=(); [[ -n "$PRODUCT" ]] && mani_scope=(-t "$PRODUCT")
+  step "Pre-clone every repo in parallel (mani sync --parallel${PRODUCT:+ -t $PRODUCT})"
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould run: mani sync --parallel%s  (clone every MISSING repo concurrently, ~3x vs sequential)%s\n' "$c_dim" "${PRODUCT:+ -t $PRODUCT}" "$c_off"
+  elif ! command -v mani >/dev/null 2>&1; then
+    warn "mani not installed — skipping the parallel pre-clone; each repo clones during its own onboard"
+  else
+    preclone_rc=0
+    if [[ "$VERBOSE" -eq 1 ]]; then mani sync --parallel ${mani_scope[@]+"${mani_scope[@]}"} || preclone_rc=$?
+    else mani sync --parallel ${mani_scope[@]+"${mani_scope[@]}"} >/dev/null 2>&1 || preclone_rc=$?; fi
+    if [[ "$preclone_rc" -eq 0 ]]; then ok "parallel pre-clone done (already-present repos skipped)"
+    else warn "parallel pre-clone exited $preclone_rc — each repo's onboard will retry its own clone"; fi
+  fi
+fi
+
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
 total=0; synced=0; failed=0; noted=(); MATCHED=""
 while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) — empty fields aren't collapsed
