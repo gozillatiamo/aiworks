@@ -65,11 +65,15 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
 ## Flow
 
 1. **Read the target ticket.** `get-ticket-details.sh <KEY>` (+ `get-ticket-comments.sh`
-   for prior estimation notes). You are estimating the **effort to satisfy every
-   acceptance criterion** — and that effort lives in the description's *how to develop
-   this* explanation, not just the count of AC. So if the ticket has no AC, no described
-   approach, or either is too vague to size — **stop and say so**: the right move is
-   `/clarifying-ticket <KEY>` first, then estimate. An estimate on an unclear spec is
+   for prior estimation notes). **Bug gate — check Type before anything else.** If the
+   ticket's Type is Bug, STOP here: this skill never estimates a Bug, no matter who asked
+   — its size signal is severity/priority plus the triage facts (root cause, reproduce
+   steps), not Dev/QA points. Report `note: ticket is a Bug — never estimated` and do not
+   calibrate or write. For a non-Bug ticket, continue: you are estimating the **effort to
+   satisfy every acceptance criterion** — and that effort lives in the description's *how
+   to develop this* explanation, not just the count of AC. So if the ticket has no AC, no
+   described approach, or either is too vague to size — **stop and say so**: the right move
+   is `/clarifying-ticket <KEY>` first, then estimate. An estimate on an unclear spec is
    noise with a number on it. Note any Dev/QA points already set — `get-ticket-details.sh`
    prints them on its `Estimate:` line (see *Re-estimation* below).
 

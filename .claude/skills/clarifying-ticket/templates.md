@@ -37,14 +37,25 @@ Technical pointers (rough, optional):
 
 ## Bug
 
+Write **Reproduce steps** as a **runbook a stranger can follow blind** — never a past-tense
+narration of what happened. Each numbered step is ONE concrete action the reader *performs*:
+the exact command, the click path, or the field + value, phrased as an imperative (`Run …`,
+`Open …`, `Click …`, `Enter …`) and kept to one short line. Lead with a `Precondition:` line
+that states the clean starting state (env/URL, logged-in-as which role, seeded data) so the
+reader can set it up themselves; the last step is the observation where the bug surfaces. Test:
+a teammate who has never seen the bug can reproduce it from these lines alone.
+
 ```
 Title: <concise title>
 
 Reproduce steps:
-1. <step>
+Precondition: <clean starting state — env/URL, logged in as which role, data seeded before step 1>
+1. <action — the exact command / click path / field+value, imperative, one short line>
+2. <action>
+3. <observe — the screen or output where the bug shows>
 
-Expected: <expected behavior>
-Actual: <actual behavior>
+Expected: <what should happen at the last step>
+Actual: <what actually happens — the bug>
 
 Assumptions:
 - <assumption>
@@ -57,4 +68,17 @@ Edge cases / related scenarios:
 
 Technical pointers (rough, optional):
 - <suspected area/component — high level only, not a fix prescription>
+```
+
+Example — every step reads as an action you can DO, not a description of what broke:
+
+```
+Reproduce steps:
+Precondition: staging, logged in as an Admin with one pending payout in the queue.
+1. Open Payouts → Pending.
+2. Select the pending row and click Approve.
+3. Reload the page, re-open Payouts → Pending.
+
+Expected: the payout has left Pending and shows under Approved.
+Actual: the payout still shows as Pending (duplicated after reload).
 ```

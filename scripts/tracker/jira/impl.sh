@@ -115,7 +115,7 @@ tracker_get_details() {
   key="$(jira_key "$1")"
   # Append the configured point/effort field ids so the estimate is visible (e.g. for
   # /estimate-ticket re-estimation) — the endpoint returns only the fields requested.
-  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks"
+  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks,attachment"
   for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD" "$JIRA_SPRINT_FIELD"; do
     [[ -n "$f" ]] && fields_q="$fields_q,$f"
   done
@@ -541,6 +541,46 @@ tracker_add_attachment() {
   fi
   printf 'Attached %s to %s\n' "$filename" "$key"
   rm -f "$tmp"
+}
+
+# List a ticket's attachments (filename, id, size, mime type) — the ground truth for
+# what a consumer (e.g. the CPO in /prd) must fetch and view before treating a ticket
+# as understood. This is the top-level `attachment` field (separate downloadable
+# files), NOT the inline `[image/attachment]` markers adf_to_text prints for images
+# pasted into the description body (those are covered by tracker_get_details' own
+# "embedded image" warning) — a ticket can carry either or both.
+tracker_get_attachments() {
+  local key issue
+  key="$(jira_key "$1")"
+  issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
+  printf '%s' "$issue" | jq -r '
+    (.fields.attachment // []) as $a
+    | if ($a | length) == 0 then "No attachments on this issue."
+      else "Attachments (\($a | length)):\n"
+        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]") | join("\n") )
+        + "\n\nDownload one with: download-ticket-attachment.sh '"$key"' <filename-or-id> <local-path>"
+      end'
+}
+
+# Download one attachment's binary content to a local path — REF is the attachment's
+# filename or id (as printed by tracker_get_attachments). Needed because Jira attachment
+# URLs require the same auth as the API; a bare WebFetch/curl on the URL 401s.
+tracker_download_attachment() {
+  local ticket="$1" ref="$2" dest="$3" key issue att_id att_name err http
+  key="$(jira_key "$ticket")"
+  issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
+  att_id="$(printf '%s' "$issue" | jq -r --arg ref "$ref" '
+    (.fields.attachment // []) | map(select(.filename == $ref or (.id|tostring) == $ref)) | (.[0].id // "")')"
+  [[ -n "$att_id" ]] || die "no attachment matching '$ref' on $key — run get-ticket-attachments.sh $key to list them"
+  att_name="$(printf '%s' "$issue" | jq -r --arg id "$att_id" '(.fields.attachment // []) | map(select((.id|tostring) == $id)) | .[0].filename // "attachment"')"
+  err="$(mktemp)"
+  http="$(curl -sS -L -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -o "$dest" -w '%{http_code}' \
+    "$JIRA_BASE_URL/rest/api/3/attachment/content/$att_id" 2>"$err")" || {
+      die "download of $att_name ($att_id) failed: $(cat "$err")"; rm -f "$err"
+    }
+  rm -f "$err"
+  [[ "${http:-000}" -lt 400 ]] || die "Jira API GET /rest/api/3/attachment/content/$att_id -> HTTP $http"
+  printf 'Downloaded %s (id %s) -> %s\n' "$att_name" "$att_id" "$dest"
 }
 
 # tracker_find OPTS_JSON — OPTS = {query, open, limit, as_json, types:[...]}.

@@ -201,6 +201,7 @@ def issue_details_text($base):
   | ($rows | map(.k | length) | max // 0) as $w
   | ($i.fields.description | adf_to_text) as $desc
   | ($i.fields.description | adf_media_blocks | length) as $nmedia
+  | ($i.fields.attachment // []) as $attach
   # Issue links, grouped by the phrase THIS issue sees. In a GET, Jira names the OTHER end in
   # the field that matches the phrase to show FROM THIS ISSUE: an `outwardIssue` field → show
   # the OUTWARD phrase (e.g. "blocks") toward it; an `inwardIssue` field → show the INWARD
@@ -225,6 +226,9 @@ def issue_details_text($base):
         else "" end)
     + (if $nmedia > 0
         then "\n⚠ \($nmedia) embedded image/attachment(s) in the description — carried over automatically when the body is rewritten via upsert-ticket-details.sh.\n"
+        else "" end)
+    + (if ($attach | length) > 0
+        then "\n📎 \($attach | length) attachment(s) — CORE input, fetch before relying on the description alone: \($attach | map(.filename) | join(", ")). List + download via get-ticket-attachments.sh / download-ticket-attachment.sh.\n"
         else "" end);
 
 # Render the /comment payload to plain text.

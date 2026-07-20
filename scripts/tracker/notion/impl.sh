@@ -368,6 +368,25 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$ticket" "${cid:-?}"
 }
 
+# Notion has no separate attachment endpoint to enumerate: images/files already carry
+# their direct URL inline in tracker_get_details' output ("[image: URL]" in the body,
+# "name (URL)" in a files property) — read that output, there is nothing more to fetch.
+tracker_get_attachments() {
+  printf 'Notion tickets have no separate attachment list — images/files already appear as direct URLs inline in get-ticket-details.sh output. Fetch that and download-ticket-attachment.sh any URL you find there.\n'
+}
+
+# REF is a direct URL (as printed inline by tracker_get_details, e.g. the "(https://...)"
+# in an image block or files property) — Notion's file/external URLs need no auth.
+tracker_download_attachment() {
+  local ref="$2" dest="$3" http err
+  [[ "$ref" =~ ^https?:// ]] || die "REF must be the direct URL printed by get-ticket-details.sh (got '$ref')"
+  err="$(mktemp)"
+  http="$(curl -sS -L -o "$dest" -w '%{http_code}' "$ref" 2>"$err")" || { die "download of $ref failed: $(cat "$err")"; rm -f "$err"; }
+  rm -f "$err"
+  [[ "${http:-000}" -lt 400 ]] || die "GET $ref -> HTTP $http"
+  printf 'Downloaded %s -> %s\n' "$ref" "$dest"
+}
+
 tracker_edit_comment() {
   die "edit-ticket-comment.sh is not implemented for TRACKER_PROVIDER=notion yet (Notion's comment API has no update endpoint) — edit the comment manually for now"
 }
