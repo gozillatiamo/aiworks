@@ -65,6 +65,8 @@ Options:
                        dividers and fenced code blocks.
   --body-file <path>   Same as --body, but read the Markdown from a file ("-" = stdin).
   --dry-run            Print the request body instead of sending it.
+  --skip-language-check  Bypass the write-time language gate (see below). Use only when a
+                       body is genuinely spine-only (all code/identifiers, no prose).
   -h, --help           Show this help and exit.
 
 Behavior:
@@ -74,6 +76,16 @@ Behavior:
 
 Environment:
   TRACKER_PROVIDER     notion | jira (default: notion). Provider creds live in .env.
+  WORKSPACE_LANGUAGE   Override the resolved output-language policy for the gate below.
+  TRACKER_SKIP_LANGUAGE_CHECK=1   Same as --skip-language-check.
+
+Language gate:
+  When the resolved output policy is 'th' (WORKSPACE_LANGUAGE, else the session's cached
+  .claude/.resolved-language, else workspace.config[.local].yaml), a ticket BODY that is
+  all-English prose is REJECTED before it reaches the tracker — the ticket must be Thai
+  prose on an English spine (headings/labels/code/identifiers/versions stay English; see
+  docs/agents/language.md). A body with any Thai prose, or a pure-spine body with no prose,
+  passes. Degrades open: if 'th' can't be positively confirmed, the gate is a no-op.
 EOF
 }
 
@@ -117,6 +129,7 @@ while [[ $# -gt 0 ]]; do
                    if [[ "$2" == "-" ]]; then body_md="$(cat)"; else [[ -f "$2" ]] || die "--body-file: no such file: $2"; body_md="$(cat "$2")"; fi
                    have_body=1; shift 2 ;;
     --dry-run)     dry=1; shift ;;
+    --skip-language-check) TRACKER_SKIP_LANGUAGE_CHECK=1; shift ;;
     -h|--help)     usage; exit 0 ;;
     -*)            die "unknown option: $1   (see -h)" ;;
     *)             ticket="$1"; shift ;;
@@ -132,5 +145,10 @@ fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --arg
 [[ -n "$ticket" ]] || die "usage: $(basename "$0") <ticket> [options]   (see -h)"
 [[ "$fields" != "{}" || "$have_body" -eq 1 ]] \
   || die "nothing to update — pass at least one property flag or --body (see -h)"
+
+# Under a `th` output policy, refuse an all-English ticket body (see lib.sh). This is the
+# single choke point every ticket body flows through, so it catches the failure regardless
+# of which agent/workflow/model composed it.
+[[ "$have_body" -eq 1 ]] && tracker_assert_body_language "$body_md"
 
 tracker_upsert "$ticket" "$dry" "$fields" "$body_md"

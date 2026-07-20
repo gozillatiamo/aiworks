@@ -47,3 +47,70 @@ IMPL="$TRACKER_DIR/$TRACKER_PROVIDER/impl.sh"
 # shellcheck disable=SC1090
 . "$IMPL"
 tracker_require_config
+
+# Resolve the workspace output-language policy the SAME way the session hook does
+# (.claude/hooks/resolve-language.sh), for write-time enforcement in the adapter.
+# Precedence: explicit WORKSPACE_LANGUAGE env > the hook's cached resolution
+# (.claude/.resolved-language) > workspace.config.local.yaml > workspace.config.yaml > "en".
+# Degrades OPEN: any path that cannot positively resolve `th` returns "en", so the gate
+# never blocks a workspace it can't confirm is Thai (e.g. a worktree without the personal
+# override). Prints the resolved code (th|en|…) on stdout.
+resolve_output_language() {
+  if [[ -n "${WORKSPACE_LANGUAGE:-}" ]]; then printf '%s\n' "$WORKSPACE_LANGUAGE"; return; fi
+
+  local root="${CLAUDE_PROJECT_DIR:-}"
+  if [[ -z "$root" ]]; then
+    # Walk up from the tracker dir to the workspace root (the dir holding the configs).
+    local d="$TRACKER_DIR"
+    while [[ "$d" != "/" ]]; do
+      [[ -f "$d/workspace.config.yaml" || -f "$d/.claude/.resolved-language" ]] && { root="$d"; break; }
+      d="$(dirname "$d")"
+    done
+  fi
+  [[ -n "$root" ]] || { echo "en"; return; }
+
+  if [[ -s "$root/.claude/.resolved-language" ]]; then
+    head -n1 "$root/.claude/.resolved-language" | tr -d '[:space:]'; return
+  fi
+
+  local f lang=""
+  for f in "$root/workspace.config.local.yaml" "$root/workspace.config.yaml"; do
+    [[ -f "$f" ]] || continue
+    lang="$(grep -m1 -E '^language:' "$f" 2>/dev/null \
+      | sed -E 's/^language:[[:space:]]*"?'"'"'?([a-zA-Z_-]+)"?'"'"'?.*/\1/')"
+    [[ -n "$lang" ]] && { printf '%s\n' "$lang"; return; }
+  done
+  echo "en"
+}
+
+# Write-time language gate: under a `th` policy, a ticket BODY must not be all-English
+# prose. Strips fenced/inline code and heading lines (the legitimate English spine), then
+# blocks only the stark failure — substantial prose with ZERO Thai characters. A body with
+# ANY Thai prose passes, so this never fires on a correctly bilingual (English-spine) ticket;
+# a pure-code / heading-only body has no prose to judge and also passes. Dies loud on a
+# violation (adapter convention) unless the caller opts out. Args: BODY_MD.
+tracker_assert_body_language() {
+  local body="$1"
+  [[ -n "$body" ]] || return 0
+  [[ "${TRACKER_SKIP_LANGUAGE_CHECK:-0}" == "1" ]] && return 0
+  [[ "$(resolve_output_language)" == "th" ]] || return 0
+  command -v perl >/dev/null || return 0   # no perl → skip rather than false-block
+
+  local counts thai nonspace
+  counts="$(printf '%s' "$body" | perl -CS -0777 -e '
+    my $b = do { local $/; <STDIN> };
+    $b =~ s/```.*?```//gs;                 # fenced code
+    $b =~ s/`[^`]*`//g;                    # inline code
+    my @l = grep { !/^\s*#{1,6}\s/ } split /\n/, $b;   # heading lines
+    my $p = join "\n", @l;
+    my $t = () = $p =~ /\p{Thai}/g;
+    my $n = () = $p =~ /\S/g;
+    print "$t $n\n";
+  ' 2>/dev/null)" || return 0
+  thai="${counts%% *}"; nonspace="${counts##* }"
+  [[ "$thai" =~ ^[0-9]+$ && "$nonspace" =~ ^[0-9]+$ ]] || return 0
+
+  if [[ "$thai" -eq 0 && "$nonspace" -ge 80 ]]; then
+    die "language gate: output policy is 'th' but this ticket body is all-English prose ($nonspace prose chars, 0 Thai). Rewrite the prose in Thai (English spine — headings/labels/code/identifiers/versions stay English; see docs/agents/language.md). Override with TRACKER_SKIP_LANGUAGE_CHECK=1 only if this body is genuinely spine-only."
+  fi
+}

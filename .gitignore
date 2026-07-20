@@ -36,6 +36,11 @@ docs/brd/
 # (settings.local.json itself is ignored via the global gitignore).
 .claude/settings.local.json.bak
 
+# Runtime cache of the resolved output language, written by the resolve-language hook so
+# non-interactive tooling (the tracker adapter's language gate) reads the same resolution.
+# Derived state, per-machine — never committed.
+.claude/.resolved-language
+
 # Personal, non-shared workspace-config overrides — the workspace-config analogue of
 # .claude/settings.local.json. workspace.config.local.yaml overrides workspace.config.yaml
 # for everything read at runtime (chat, agents, interactive skills); it is git-ignored so

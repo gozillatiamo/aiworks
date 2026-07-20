@@ -53,6 +53,16 @@ if [ -z "$lang" ]; then
   source_file="default (no language: line found in either config)"
 fi
 
+# Persist the resolved value to a known path so non-interactive tooling that never sees
+# the injected context — notably the tracker adapter's write-time language gate
+# (scripts/tracker/upsert-ticket-details.sh) — can read the SAME resolution the session
+# uses, without re-deriving it (and without depending on a personal, git-ignored
+# workspace.config.local.yaml being reachable from a worktree). Best-effort: a failed
+# write must never break the hook.
+if mkdir -p "$root/.claude" 2>/dev/null; then
+  printf '%s\n' "$lang" > "$root/.claude/.resolved-language" 2>/dev/null || true
+fi
+
 if [ "$lang" = "th" ]; then
   full_policy="English spine, Thai prose: write prose in Thai; keep titles, headings, labels/enum values, all code + code comments + git commit messages + branch names, and technical/domain/proper-noun terms in English. Code and checked-in repo docs (docs/, README, ADRs, PRD/BRD) stay English."
   brief_policy="write THIS reply's prose in Thai (English spine: headings/labels, code, commit messages/branch names, and technical/domain terms stay English)."

@@ -166,7 +166,11 @@ a clear irreducible verdict with the reason. No tickets are created in this bran
    → *epic*.
 5. **Create each piece** through the adapter with a self-contained spec in its body (goal, its
    slice of the acceptance criteria, scope boundary, build-order note, and a pointer back to the
-   original / epic). Write the spec to a temp `.md` and pass `--body-file`. Give it the org's
+   original / epic). **Compose every piece body and the epic summary from the companion
+   `templates.md` next to this file** — it carries the skeleton for each shape AND the
+   authoritative language rule for the filled-in prose (under a `th` policy the body is Thai
+   prose on an English spine; an all-English body is a defect the adapter now hard-blocks).
+   Write the spec to a temp `.md` and pass `--body-file`. Give it the org's
    not-started status (see `issue-tracker.md`) and the same work issue-type as the original
    (Story/feature), not a sub-task. **Both shapes reuse the original as one of the pieces** —
    update it in place (retitle + rewrite body, plus `--parent <EPIC-KEY>` for epic shape) rather
