@@ -63,6 +63,18 @@
     {
       "name": "crypto-watcher",
       "path": "crypto-watcher"
+    },
+    {
+      "name": "bet-aggregator",
+      "path": "bet-aggregator"
+    },
+    {
+      "name": "campaign-sub",
+      "path": "campaign-sub"
+    },
+    {
+      "name": "live-sub",
+      "path": "live-sub"
     }
   ],
   "settings": {

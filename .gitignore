@@ -62,3 +62,6 @@ seamless-api/
 game/
 cashback-batch/
 crypto-watcher/
+bet-aggregator/
+campaign-sub/
+live-sub/

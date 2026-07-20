@@ -74,6 +74,25 @@ if ! command -v mani >/dev/null 2>&1; then
   exit 1
 fi
 
+# ── Setup progress lock (per-worktree; git-ignored under .superset/run/). Written the moment
+# real work begins and removed on exit via trap. A fresh Superset worktree starts a Claude Code
+# session BEFORE this long clone+onboard finishes, so the SessionStart health check
+# (.claude/hooks/repo-health-check.sh) reads this lock to steer Claude to WAIT rather than treat
+# an un-cloned repo as missing — and, crucially, to tell "setup is still running" apart from
+# "setup never ran / crashed": a graceful failure trips the EXIT trap and removes the lock (the
+# user already saw the error), while a hard kill (kill -9 / crash / power loss) skips the trap and
+# leaves a STALE lock the health check detects by testing the recorded pid's liveness. Best-effort:
+# a failed write never breaks setup. Placed AFTER the --help/mani-missing exits so neither leaves
+# a lock behind.
+SETUP_LOCK=".superset/run/setup.lock"
+mkdir -p .superset/run 2>/dev/null || true
+trap 'rm -f "$SETUP_LOCK" 2>/dev/null || true' EXIT INT TERM
+{
+  printf 'pid=%s\n'            "$$"
+  printf 'started_epoch=%s\n'  "$(date +%s)"
+  printf 'started=%s\n'        "$(date +%Y-%m-%dT%H:%M:%S)"
+} > "$SETUP_LOCK" 2>/dev/null || true
+
 # ── Resolve the root workspace — the source of the git-ignored local state a fresh worktree
 # carries NONE of. Superset sets SUPERSET_ROOT_PATH; for a MANUAL `git worktree` (no Superset)
 # it's unset, so fall back to git's MAIN worktree — the root checkout holding the real

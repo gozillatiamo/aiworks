@@ -15,6 +15,9 @@
     "agent-webservice/target": true,
     "commission-batch/target": true,
     "cashback-batch/target": true,
-    "crypto-watcher/target": true
+    "crypto-watcher/target": true,
+    "bet-aggregator/target": true,
+    "campaign-sub/target": true,
+    "live-sub/target": true
   }
 }

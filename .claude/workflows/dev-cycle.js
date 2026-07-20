@@ -226,6 +226,33 @@ const REPOS = {
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
+  'bet-aggregator': {
+    path: 'bet-aggregator', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests + integration tests passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
+  'campaign-sub': {
+    path: 'campaign-sub', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests + integration tests passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
+  'live-sub': {
+    path: 'live-sub', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests + integration tests passed successfully',
+    guardianFocus: 'secrets, data-protection',
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 

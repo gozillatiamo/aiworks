@@ -142,3 +142,24 @@ products:
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection"
+      
+      - url: git@gitlab.com:bluepicode/ofb/bet-aggregator.git
+        kind: backend
+        desc: A Rust service to aggregate the bet data full cycle bet + payout, including free-spin and feature-bet when the bet is compeleted then feed it into the redis stream.
+        lang: rust
+        green: "unit tests + integration tests passed successfully"
+        guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/campaign-sub.git
+        kind: backend
+        desc: A service to subscribe the campaign events stream to process the next process, currently it subscribe for tournament and daily-checkin.
+        lang: rust
+        green: "unit tests + integration tests passed successfully"
+        guardian_focus: "secrets, data-protection"
+
+      - url: git@gitlab.com:bluepicode/ofb/live-sub.git
+        kind: backend
+        desc: A service to subscribe the live events stream or any subscribeable events to process anything related to live features, like raindrop, live-chat/room, public-chat.
+        lang: rust
+        green: "unit tests + integration tests passed successfully"
+        guardian_focus: "secrets, data-protection"

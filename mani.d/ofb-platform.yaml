@@ -1,5 +1,20 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  live-sub:
+    desc: A service to subscribe the live events stream or any subscribeable events to process anything related to live features, like raindrop, live-chat/room, public-chat.
+    url: git@gitlab.com:bluepicode/ofb/live-sub.git
+    path: ../live-sub
+    tags: [ofb-platform, rust]
+  campaign-sub:
+    desc: A service to subscribe the campaign events stream to process the next process, currently it subscribe for tournament and daily-checkin.
+    url: git@gitlab.com:bluepicode/ofb/campaign-sub.git
+    path: ../campaign-sub
+    tags: [ofb-platform, rust]
+  bet-aggregator:
+    desc: A Rust service to aggregate the bet data full cycle bet + payout, including free-spin and feature-bet when the bet is compeleted then feed it into the redis stream.
+    url: git@gitlab.com:bluepicode/ofb/bet-aggregator.git
+    path: ../bet-aggregator
+    tags: [ofb-platform, rust]
   crypto-watcher:
     desc: A Rust service crypto watcher to listen the crypto events/transactions from the blockchain and map into the agency wallet.
     url: git@gitlab.com:bluepicode/ofb/crypto-watcher.git
