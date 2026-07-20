@@ -18,6 +18,10 @@
 #                                             print matching tickets newest-first (the dedup search)
 #   tracker_add_comment   KEY DRY TEXT      — add one comment
 #   tracker_add_attachment KEY DRY FILE     — upload a local file as an attachment (Jira; Notion dies loud)
+#   tracker_get_attachments KEY             — list a ticket's attachments/images (filename, id, size) —
+#                                             CORE input, fetch before treating a ticket as understood
+#   tracker_download_attachment KEY REF DEST — download one attachment (REF = filename, id, or URL
+#                                             per provider) to a local path DEST, for viewing (e.g. Read)
 #   tracker_comments_for_block BLOCK_ID     — internal --deep worker (no-op for providers without it)
 #
 # A ticket KEY is provider-neutral: a full key (FM-9 / APP-123), a bare number, or a

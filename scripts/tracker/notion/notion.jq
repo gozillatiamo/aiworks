@@ -70,7 +70,7 @@ def prop_to_text:
     elif $t == "url"              then ($p.url // "")
     elif $t == "number"           then (if ($p.number // null) == null then "" else ($p.number | tostring) end)
     elif $t == "checkbox"         then (if $p.checkbox then "yes" else "no" end)
-    elif $t == "files"            then ($p.files | map(.name // "file") | join(", "))
+    elif $t == "files"            then ($p.files | map((.name // "file") + " (" + (.external.url // .file.url // "") + ")") | join(", "))
     else ""
     end;
 
