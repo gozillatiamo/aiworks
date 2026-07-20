@@ -64,6 +64,12 @@ Options:
                        Supports headings, bullet/numbered/to-do lists, quotes,
                        dividers and fenced code blocks.
   --body-file <path>   Same as --body, but read the Markdown from a file ("-" = stdin).
+  --estimate-reason <text>       The calibration + comparables that justify the story
+                       points. REQUIRED whenever --dev-points/--qa-points is set (and only
+                       valid with them): points and their reasoning are committed together
+                       in this one call — the reason is posted as a comment, then the point
+                       fields are written. See /estimate-ticket for the comment shape.
+  --estimate-reason-file <path>  Same, read from a file ("-" = stdin).
   --dry-run            Print the request body instead of sending it.
   --skip-language-check  Bypass the write-time language gate (see below). Use only when a
                        body is genuinely spine-only (all code/identifiers, no prose).
@@ -104,7 +110,7 @@ components_json='[]'; links_json='[]'
 addcomp() { components_json="$(jq -n --argjson cur "$components_json" --arg v "$1" '$cur + [$v]')"; }
 addlink() { links_json="$(jq -n --argjson cur "$links_json" --arg t "$1" --arg k "$2" '$cur + [{type: $t, key: $k}]')"; }
 
-ticket=""; dry=0; body_md=""; have_body=0
+ticket=""; dry=0; body_md=""; have_body=0; estimate_reason=""; have_estimate_reason=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --status)      need "${2:-}" "--status needs a value";      setf status      "$2"; shift 2 ;;
@@ -128,6 +134,10 @@ while [[ $# -gt 0 ]]; do
     --body-file)   need "${2:-}" "--body-file needs a path";
                    if [[ "$2" == "-" ]]; then body_md="$(cat)"; else [[ -f "$2" ]] || die "--body-file: no such file: $2"; body_md="$(cat "$2")"; fi
                    have_body=1; shift 2 ;;
+    --estimate-reason) need "${2:-}" "--estimate-reason needs a value"; estimate_reason="$2"; have_estimate_reason=1; shift 2 ;;
+    --estimate-reason-file) need "${2:-}" "--estimate-reason-file needs a path";
+                   if [[ "$2" == "-" ]]; then estimate_reason="$(cat)"; else [[ -f "$2" ]] || die "--estimate-reason-file: no such file: $2"; estimate_reason="$(cat "$2")"; fi
+                   have_estimate_reason=1; shift 2 ;;
     --dry-run)     dry=1; shift ;;
     --skip-language-check) TRACKER_SKIP_LANGUAGE_CHECK=1; shift ;;
     -h|--help)     usage; exit 0 ;;
@@ -143,12 +153,33 @@ fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --arg
    + (if ($links | length) > 0 then {links: $links}      else {} end)')"
 
 [[ -n "$ticket" ]] || die "usage: $(basename "$0") <ticket> [options]   (see -h)"
+
+# Estimation coupling: story points and their justification travel TOGETHER through this one
+# call — you cannot set points without recording the reasoning that a human reads when they
+# challenge the estimate. Setting points via a bare --dev-points/--qa-points and posting the
+# reason as a separate (skippable) add-ticket-comment call was the seam that let calibrated
+# numbers land with no recorded basis; requiring --estimate-reason here closes it structurally.
+points_set=0
+printf '%s' "$fields" | jq -e 'has("dev_points") or has("qa_points")' >/dev/null 2>&1 && points_set=1
+if [[ "$points_set" -eq 1 && "$have_estimate_reason" -eq 0 ]]; then
+  die "setting story points requires --estimate-reason (or --estimate-reason-file): the calibration + comparables that justify Dev/QA points. An estimate with no recorded reasoning is the inconsistency this guards — see /estimate-ticket for the comment shape."
+fi
+if [[ "$have_estimate_reason" -eq 1 && "$points_set" -eq 0 ]]; then
+  die "--estimate-reason justifies an estimate — pass it together with --dev-points/--qa-points, or use add-ticket-comment.sh for a plain comment."
+fi
+
 [[ "$fields" != "{}" || "$have_body" -eq 1 ]] \
   || die "nothing to update — pass at least one property flag or --body (see -h)"
 
-# Under a `th` output policy, refuse an all-English ticket body (see lib.sh). This is the
-# single choke point every ticket body flows through, so it catches the failure regardless
-# of which agent/workflow/model composed it.
+# Under a `th` output policy, refuse all-English prose (see lib.sh). This upsert is the single
+# choke point every ticket body flows through, so the gate catches the failure regardless of
+# which agent/workflow/model composed it. The estimation reason is posted prose too — gate it.
 [[ "$have_body" -eq 1 ]] && tracker_assert_body_language "$body_md"
+[[ "$have_estimate_reason" -eq 1 ]] && tracker_assert_body_language "$estimate_reason"
+
+# Post the reason FIRST, then commit the numbers: if the reason can't be posted we abort
+# before writing any point field, so the recoverable failure mode is "reason without number"
+# (the reason block itself names the numbers) rather than the silent "number without reason".
+[[ "$have_estimate_reason" -eq 1 ]] && tracker_add_comment "$ticket" "$dry" "$estimate_reason"
 
 tracker_upsert "$ticket" "$dry" "$fields" "$body_md"

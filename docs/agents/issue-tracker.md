@@ -17,7 +17,7 @@ from `scripts/tracker/.env`:
 | Read a ticket | `scripts/tracker/get-ticket-details.sh <KEY>` |
 | Read comments | `scripts/tracker/get-ticket-comments.sh [--deep] <KEY>` |
 | Set status/fields | `scripts/tracker/upsert-ticket-details.sh <KEY> --status … --priority … --title … --description …` |
-| Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --effort …` |
+| Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --estimate-reason-file <r.md>` |
 | Create a child / sub-task | `scripts/tracker/upsert-ticket-details.sh new --parent <KEY> --subtask --title … --component <name> --link Implements:<KEY> --body-file …` |
 | Add a comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
 
@@ -31,6 +31,13 @@ Jira `JIRA_DEV_POINTS_FIELD` / `JIRA_QA_POINTS_FIELD`), and `--effort` the overa
 that skill. A provider with no point fields configured now **warns** and lists the flag
 under a `Skipped:` line (it no longer drops the value silently) — check `Changed:` /
 `Skipped:`.
+
+**Points require their reasoning — coupled in one call.** Whenever `--dev-points`/
+`--qa-points` is set, `--estimate-reason` (or `--estimate-reason-file`, `-` = stdin) is
+**mandatory** — and it's only valid alongside points. The adapter posts the reason as a
+comment, then writes the fields, so a calibrated number can never land with no recorded
+basis. A bare points write with no reason is rejected. (A re-estimation that only *confirms*
+existing points changes no field, so it takes a plain `add-ticket-comment.sh` note instead.)
 
 **Child issues are create-only flags through the same adapter** — `--subtask` (or
 `--issuetype`), `--component`, and `--link <TYPE>:<KEY>` on the ref `new` build a child

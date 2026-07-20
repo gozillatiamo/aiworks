@@ -34,8 +34,8 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
   find-tickets.sh         [--query <text>] [--type <name>] [--open|--done] [--estimated] [--limit n] [--json]
   get-ticket-details.sh   <ref>            # title + props + body + an "Estimate: Dev … · QA …" line
   get-ticket-comments.sh  <ref> [--deep]   # prior estimation notes live here
-  upsert-ticket-details.sh <ref> --dev-points <n> --qa-points <n> [--dry-run]
-  add-ticket-comment.sh   <ref> "text"
+  upsert-ticket-details.sh <ref> --dev-points <n> --qa-points <n> --estimate-reason-file <r.md> [--dry-run]
+  add-ticket-comment.sh   <ref> "text"    # only for re-estimation CONFIRM notes (no point change)
 ```
 
 > **Two human inputs — Dev and QA — and nothing else.** You estimate exactly two numbers,
@@ -52,9 +52,11 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
 > points *are* your estimate of that effort; there is no separate "effort" property to
 > set, so never pass `--effort` here.
 >
-> **Numbers go in fields; only the reasoning goes in the comment.** A point a human can't
-> filter or sum on is half a point — never leave the split living only in a comment. The
-> estimation **comment** (step 5) carries what no field can hold: the comparables, the
+> **Numbers go in fields; the reasoning is required alongside them.** A point a human can't
+> filter or sum on is half a point — never leave the split living only in a comment. But a
+> number with no recorded basis is just as bad, so the two are **coupled in one call**: the
+> adapter requires `--estimate-reason(-file)` whenever `--dev-points`/`--qa-points` is set
+> (step 5). The estimation **comment** carries what no field can hold: the comparables, the
 > per-side drivers, the assumptions, the confidence. Never write any of this into the
 > ticket body — the body is the spec, owned by `/clarifying-ticket`, off-limits here.
 >
@@ -113,20 +115,17 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
    The two move independently — a one-line logic fix in a payment flow is small Dev,
    large QA. When torn between two values, take the higher: unknowns rarely shrink work.
 
-5. **Write the estimate to the ticket.**
-   - Write the two points into their **fields** in one call — `--dev-points` and
-     `--qa-points` (plain integers). Do **not** pass `--effort` — effort is not a field
-     (see the callout); the Dev/QA points are the estimate, the total is derived.
+5. **Write the estimate to the ticket — points and reasoning in ONE coupled call.** The
+   two points go into their **fields** (`--dev-points` / `--qa-points`, plain integers) and
+   the justification rides along in the SAME call via `--estimate-reason-file` — the adapter
+   posts the reason as a comment, then writes the fields. You cannot set points without it:
+   the adapter **hard-requires** `--estimate-reason(-file)` whenever points are set (and
+   rejects it without them), so a calibrated number can never land with no recorded basis.
+   Do **not** pass `--effort` — effort is not a field (see the callout); the Dev/QA points
+   are the estimate, the total is derived.
+   - Write the reasoning to a temp file, then make the one call:
      ```sh
-     "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh <KEY> \
-       --dev-points <X> --qa-points <Y>
-     ```
-     Confirm the adapter's `Changed:` line lists the point fields. If it doesn't, the
-     provider has no point fields configured — note it in the output (see the callout).
-   - Post the **reasoning** as a comment — *not* the numbers as the source of truth (those
-     live in the fields now), but the justification a human reads when they challenge the
-     estimate:
-     ```
+     cat > /tmp/est.md <<'EOF'
      Estimation — calibrated against <n> estimated Done tickets
      Dev points: <X> — <one line: dominant effort driver>
      QA points:  <Y> — <one line: scenarios/platforms/regression driver>
@@ -134,7 +133,17 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
      Comparables: <KEY-a> (Dev <d>/QA <q>) — <why similar>; <KEY-b> (…) — <why similar>
      Assumptions: <anything inferred; "none" if none>
      Confidence: high | medium | low
+     EOF
+     "$CLAUDE_PROJECT_DIR"/scripts/tracker/upsert-ticket-details.sh <KEY> \
+       --dev-points <X> --qa-points <Y> --estimate-reason-file /tmp/est.md
      ```
+     The labels (`Dev points:`, `Comparables:`, `Confidence:` …) stay English; under a `th`
+     policy the drivers / why-similar / assumptions are Thai prose (the adapter's language
+     gate rejects an all-English reason under `th`). Confirm the adapter's `Changed:` line
+     lists the point fields. If it doesn't, the provider has no point fields configured —
+     note it in the output (see the callout). The reasoning is what no field can hold — the
+     comparables, per-side drivers, assumptions, confidence — *not* the numbers as source of
+     truth (those live in the fields now).
 
 6. **Report back** in the compact form under *Output*.
 
@@ -151,8 +160,10 @@ the tickets after them, so the honesty compounds.
 If the ticket already has Dev/QA points set, don't overwrite them silently. Read the
 current values first — `get-ticket-details.sh <KEY>` prints them on its `Estimate:` line.
 Change them only when the spec changed or the old values clearly contradict the
-comparables — and record the move in the comment: `Re-estimated from <old> to <new> —
-<reason>`. Otherwise keep the existing values and note that they were confirmed.
+comparables — and when you do, it's the same coupled step 5 call (new `--dev-points`/
+`--qa-points` + an `--estimate-reason(-file)` whose first line is `Re-estimated from <old>
+to <new> — <reason>`). Otherwise keep the existing values and just post a confirm note with
+`add-ticket-comment.sh` (no points change ⇒ no coupled call needed).
 
 ## Guardrails
 
@@ -161,6 +172,10 @@ comparables — and record the move in the comment: `Re-estimated from <old> to 
 - **Dev and QA only; the total is the tracker's.** Write points through `--dev-points` /
   `--qa-points` and nothing else — never set the derived total, and never bypass the
   adapter to a raw tracker API to poke a point field.
+- **Points and reason are inseparable.** Every point-setting call carries
+  `--estimate-reason(-file)`; the adapter rejects points without it. Never split them into a
+  bare points write + a hoped-for follow-up comment — that was the seam that let numbers land
+  unexplained.
 - Estimate **effort, not value** — how important a ticket is belongs to priority, set
   elsewhere. Mixing the two corrupts both signals.
 - Don't ask the user to confirm a routine estimate; do flag (via the comment and the
