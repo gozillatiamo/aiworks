@@ -85,11 +85,16 @@ deliverable. Only continue past this point when it's `true`.
    1. Fetch the current description as ADF: `jira_api GET
       "/rest/api/3/issue/<KEY>?fields=description"` → this is your last-known-good
       backup — keep it until step 8 passes.
-   2. Build three ADF nodes: a `paragraph` with a `link` mark
+   2. Build two ADF nodes: a `paragraph` with a `link` mark
       (`href: https://mermaid.live/edit#pako:<link from step 4>`) referencing the
-      diagram, a `mediaSingle` > `media` node (`type: "file"`, `id: <UUID from step 6>`,
-      `collection: ""`), and a `codeBlock` holding the raw Mermaid source.
-   3. Splice those three nodes into the fetched `content` array right after the section
+      diagram, and a `mediaSingle` > `media` node (`type: "file"`,
+      `id: <UUID from step 6>`, `collection: ""`). **Don't also add a `codeBlock` with
+      the raw Mermaid source** — the live-editor link already carries the full source
+      (verified in step 8), so a second copy is pure duplication that just adds noise
+      to the ticket body. Don't post the link as a comment either, for the same
+      reason: it's already in-body on the reference paragraph — a comment would be a
+      second, redundant copy of the same link.
+   3. Splice those two nodes into the fetched `content` array right after the section
       the diagram illustrates (typically `Scope:` or `Reproduce steps:`) and before
       `Acceptance criteria:` — via `jq`, not by hand-editing JSON text.
    4. PUT the whole modified document back: `jira_api PUT "/rest/api/3/issue/<KEY>"`
@@ -103,9 +108,9 @@ deliverable. Only continue past this point when it's `true`.
       construction before writing to a live ticket.
 8. **Verify — both the structure and that the link actually opens.** Re-`GET` the
    description and confirm all of:
-   - the node-type sequence includes your `mediaSingle` and `codeBlock` at the intended
-     position, with the rest of the original content byte-identical to the step-7.1
-     backup;
+   - the node-type sequence includes your `mediaSingle` at the intended position (no
+     `codeBlock`), with the rest of the original content byte-identical to the
+     step-7.1 backup;
    - `get-ticket-attachments.sh <KEY>` lists the rendered file;
    - the posted mermaid.live link decodes locally to a non-blank diagram: base64url-
      decode + zlib-inflate the `#pako:` fragment, `json.loads` the result, then
