@@ -75,6 +75,10 @@
     {
       "name": "live-sub",
       "path": "live-sub"
+    },
+    {
+      "name": "ofb-k6-loadtests",
+      "path": "ofb-k6-loadtests"
     }
   ],
   "settings": {

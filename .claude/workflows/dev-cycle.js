@@ -253,6 +253,15 @@ const REPOS = {
     guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
+  'ofb-k6-loadtests': {
+    path: 'ofb-k6-loadtests', kind: 'test-suite',
+    base: { feature: 'main', fix: 'main' },
+    plan: 'qa-planner', build: 'qa-runner', review: null,
+    guard: false, perf: false,
+    green: 'tests via k6 passed successfully',
+    testSuite: true,
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 

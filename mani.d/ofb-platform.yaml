@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  ofb-k6-loadtests:
+    desc: K6 load tests for the platform, mostly for the backend services.
+    url: git@gitlab.com:bluepicode/qa/ofb-k6-loadtests.git
+    path: ../ofb-k6-loadtests
+    tags: [ofb-platform, javascript]
   live-sub:
     desc: A service to subscribe the live events stream or any subscribeable events to process anything related to live features, like raindrop, live-chat/room, public-chat.
     url: git@gitlab.com:bluepicode/ofb/live-sub.git
