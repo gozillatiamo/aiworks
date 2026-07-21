@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  lotto-service:
+    desc: A service to handle the lotto gambling features, currently it using the AML aggregator.
+    url: git@gitlab.com:bluepicode/ofb/lotto-service.git
+    path: ../lotto-service
+    tags: [ofb-platform, rust]
   ofb-k6-loadtests:
     desc: K6 load tests for the platform, mostly for the backend services.
     url: git@gitlab.com:bluepicode/qa/ofb-k6-loadtests.git

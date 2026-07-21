@@ -175,3 +175,10 @@ products:
         desc: K6 load tests for the platform, mostly for the backend services.
         lang: javascript
         green: "tests via k6 passed successfully"
+
+      - url: git@gitlab.com:bluepicode/ofb/lotto-service.git
+        kind: backend
+        desc: A service to handle the lotto gambling features, currently it using the AML aggregator.
+        lang: rust
+        green: "unit tests + integration tests passed successfully"
+        guardian_focus: "secrets, data-protection, input validation"

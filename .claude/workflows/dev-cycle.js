@@ -262,6 +262,15 @@ const REPOS = {
     testSuite: true,
     distribute: null,
   },
+  'lotto-service': {
+    path: 'lotto-service', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: 'unit tests + integration tests passed successfully',
+    guardianFocus: 'secrets, data-protection, input validation',
+    distribute: null,
+  },
 }
 // <<< AIWORKS:CONFIG END >>>
 
