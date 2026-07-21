@@ -279,15 +279,35 @@ render_glance() {
 # Accumulates TOK_*. Returns claude's (or timeout's) rc.
 claude_run() {
   local prompt="$1"; shift
-  # `env` is a harmless no-op prefix so the array is never empty (set -u safe); swap in
-  # timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set. CLAUDE_UNDER_TIMEOUT
-  # records whether the child runs under `timeout` so the caller's classify_rc can tell a
-  # timeout grace-kill (124 / 137 / 143) apart from a real machine crash (other 128+sig).
-  local -a TO=(env)
+  # rtk's own PreToolUse hook (see rtk RTK.md / this repo's .claude/settings.json) rewrites
+  # plain commands it recognizes (ls, find, grep, git, gh, ...) into `rtk <cmd>` but never sets
+  # "permissionDecision":"allow" in its hook output — so Claude Code always demands a fresh
+  # interactive approval for the rewritten command, ignoring permissions.allow AND
+  # --dangerously-skip-permissions/--permission-mode. Headless has no one to approve it, so the
+  # run hangs on the first ls/find it makes. Confirmed via isolated repro: identical `ls -la`
+  # call denied with rtk on PATH, allowed instantly with rtk off PATH. Shadow rtk with a no-op
+  # stub (prepended ahead of the real one on PATH) for just this subprocess, so its hook's own
+  # `command -v rtk || exit 0` guard finds a binary but the hook body does nothing — real
+  # rtk-adjacent tools (timeout, gtimeout, ...) stay reachable since we only shadow the one
+  # name, not the whole directory. Interactive sessions (real rtk first on PATH there) are
+  # unaffected.
+  local run_path="$PATH"
+  if have rtk; then
+    local shim_dir; shim_dir="$(mktemp -d -t aiworks-rtk-shim.XXXXXX)"
+    printf '#!/bin/sh\nexit 0\n' > "$shim_dir/rtk"
+    chmod +x "$shim_dir/rtk"
+    run_path="$shim_dir:$PATH"
+  fi
+  # `env` carries PATH plus is a harmless no-op prefix so the array is never empty (set -u
+  # safe); swap in timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set.
+  # CLAUDE_UNDER_TIMEOUT records whether the child runs under `timeout` so the caller's
+  # classify_rc can tell a timeout grace-kill (124 / 137 / 143) apart from a real crash (other
+  # 128+sig).
+  local -a TO=(env "PATH=$run_path")
   CLAUDE_UNDER_TIMEOUT=0
   if [[ "${CLAUDE_TIMEOUT:-0}" -gt 0 ]]; then
-    if   have timeout;  then TO=(timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
-    elif have gtimeout; then TO=(gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
+    if   have timeout;  then TO=(env "PATH=$run_path" timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
+    elif have gtimeout; then TO=(env "PATH=$run_path" gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
   fi
   # stdin ← /dev/null: a headless `claude -p` must never read the terminal, or it eats the
   # keystrokes meant for our own prompts (step 7) and muddies Ctrl+C handling.
@@ -709,7 +729,7 @@ ext_skills=(
   "grill-with-docs|mattpocock/skills"
   "grilling|mattpocock/skills"
   "domain-modeling|mattpocock/skills"
-  "diagnose|mattpocock/skills"
+  "diagnosing-bugs|mattpocock/skills"   # upstream renamed from "diagnose" — old name 404s
   "setup-matt-pocock-skills|mattpocock/skills"
 )
 if ! have npx; then
@@ -863,8 +883,8 @@ read -r -d '' BASE_SETTINGS <<'JSON'
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
-      "Read", "Grep", "Glob", "WebSearch", "WebFetch",
-      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)"
+      "Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write", "Edit",
+      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)", "Bash(rtk *)"
     ],
     "deny": [
       "Bash(rm -rf *)", "Bash(rm -fr *)",
@@ -944,8 +964,11 @@ else
 This repo's scripts/dev.sh already has a 'run' subcommand that is the SINGLE SOURCE OF TRUTH for how to build, launch and drive this app (just generated for this exact stack). To stay lean on tokens, DO NOT re-derive how to run, and DO NOT build/launch the app yourself to discover it — trust scripts/dev.sh run. The generated run skill MUST be a THIN WRAPPER: its 'Run (agent path)' section simply invokes 'scripts/dev.sh run' (and points at 'scripts/dev.sh status' / 'scripts/dev.sh why run' for diagnosis). Do NOT write a separate driver script that duplicates dev.sh, and keep Prerequisites/Setup to the few lines dev.sh assumes."
   fi
   glance "running ${SKILL_CMD} ..."
-  if claude_run "$skill_prompt"; then ok "$SKILL_CMD ran (delegates to scripts/dev.sh run)"; mark_done step10_5-skillgen
-  else skip "10.5. $SKILL_CMD $(claude_fail_hint 'is the skill installed? override the name with --skill-cmd')"; fi
+  if claude_run "$skill_prompt" && [[ -n "$(find "$REPO_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)" ]]; then
+    ok "$SKILL_CMD ran (delegates to scripts/dev.sh run)"; mark_done step10_5-skillgen
+  else
+    skip "10.5. $SKILL_CMD exited but no generated skill dir landed under .claude/skills/ — not marking done (retry, or run $SKILL_CMD by hand in $PATH_REL/)"
+  fi
 fi
 
 # ── 10.6 sync the codegraph index (before leaving the repo) ─────────────────────
