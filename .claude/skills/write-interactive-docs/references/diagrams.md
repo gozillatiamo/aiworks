@@ -13,9 +13,11 @@ idea**, then render it with Mermaid (loaded via CDN in the template).
 | Who talks to whom, in what order, over time | Sequence | `sequenceDiagram` |
 | The states a thing moves through (lifecycle) | State | `stateDiagram-v2` |
 | Data entities and their relationships | ER | `erDiagram` |
+| Classes/interfaces, inheritance, OOP structure | Class | `classDiagram` |
 | A hierarchy / breakdown / taxonomy | Tree or mindmap | `mindmap` / `flowchart TD` |
 | Modules/layers of a system (architecture) | Grouped flowchart | `flowchart` + `subgraph` |
 | Tasks across a schedule | Timeline | `gantt` |
+| Ranking/prioritizing items on two axes (2×2) | Quadrant | `quadrantChart` |
 | Parts of a whole (proportions) | Pie | `pie` (or a Chart.js doughnut) |
 | Quantities, trends, comparisons of numbers | **Chart, not a diagram** | Chart.js (see components.md) |
 | User journey with sentiment | Journey | `journey` |
@@ -64,6 +66,29 @@ erDiagram
   OWNER ||--o{ PET : has
   PET ||--o{ RECORD : "health record"
   PET { string name; string species; date birthday }
+```
+
+**Class** (OOP structure / interfaces / inheritance):
+```
+classDiagram
+  class Animal { +String name +feed() }
+  class Dog
+  Animal <|-- Dog
+  Owner "1" --> "*" Pet : owns
+```
+
+**Quadrant** (rank items on two axes — priority calls, effort/impact):
+```
+quadrantChart
+  title Effort vs impact
+  x-axis Low Effort --> High Effort
+  y-axis Low Impact --> High Impact
+  quadrant-1 Do first
+  quadrant-2 Plan
+  quadrant-3 Fill-in
+  quadrant-4 Reconsider
+  Cache layer: [0.3, 0.8]
+  Rewrite in Rust: [0.9, 0.5]
 ```
 
 **Mindmap** (hierarchy / concept breakdown):
@@ -167,6 +192,23 @@ works for power users: set `securityLevel:"loose"` and write
 Reach for interactivity when it genuinely helps — an architecture map whose boxes
 each open a detail, a flow you want to walk through. A tiny 3-node diagram is
 already clear; don't gild it.
+
+### Which diagram types this works on
+`nodes`/`walkthrough` key by **visible label** (or id), so authoring is identical
+across types — but which SVG element a key resolves to depends on the diagram's
+renderer:
+
+| Diagram type | Keys resolve to | Notes |
+| --- | --- | --- |
+| flowchart, stateDiagram-v2, erDiagram, classDiagram, mindmap | the node box | one shared renderer — these five just work |
+| sequenceDiagram | the participant box | key by the participant's name (e.g. `"Server"`); both the top and bottom copy of its lifeline box wire to the same key |
+| gantt | the task bar | key by the task's **visible label** (e.g. `"Task1"`), not its internal alias (`a1`) |
+| gitGraph | the commit dot | give commits an explicit `commit id: "…"` and key by that id — a bare `commit` gets an auto hash, which isn't a usable key |
+| pie, journey, quadrantChart | — (not wired) | pie is chart territory (use Chart.js — see the table above); journey/quadrantChart labels aren't robustly extractable yet — these stay zoom/pan/fullscreen only, which every diagram gets for free regardless of `nodes` |
+
+Zoom, pan, fullscreen, and reset need no authoring and apply to **every** diagram
+type, including the unwired three above. `nodes`/`detail`/`walkthrough` is the
+opt-in layer on top, and only pays off on the types in the first four rows.
 
 ### Don't let it break — the two rules that bite
 

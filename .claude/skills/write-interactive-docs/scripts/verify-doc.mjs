@@ -8,7 +8,9 @@
  *   1. a diagram's source is invalid Mermaid (won't render in a browser);
  *   2. the exported island `source` drifted from the visible diagram;
  *   3. a declared interactive node never matches a real SVG node (clicks /
- *      walkthrough silently do nothing — the "doesn't respond" bug);
+ *      walkthrough silently do nothing — the "doesn't respond" bug) — checked across
+ *      every diagram type the engine wires (flowchart/state/ER/class/mindmap nodes,
+ *      sequence actors, gantt tasks, gitGraph commits), not just flowchart;
  *   4. the page no longer exports valid JSON.
  *   5. (plan-approval docs) the markdown contract is broken — no Implementation Plan
  *      island, engine not inlined, data-plan-md missing/pointing at the HTML, or the
@@ -101,10 +103,10 @@ for (const r of rendered) {
   const fig = win.document.getElementById("f" + r.i);
   const declared = Object.keys(r.island.nodes || {});
   if (!declared.length) continue;
-  const wired = fig.querySelectorAll("g.node.wid-act").length;
+  const wired = fig.querySelectorAll(".wid-act").length;
   ok(wired === declared.length, `${r.title}: ${wired}/${declared.length} interactive nodes resolve to real SVG nodes`);
   const next = fig.querySelector('.wid-dgm-walk button[title^="Next"]');
-  if (next) { next.click(); ok(fig.querySelectorAll("g.node.wid-hot, g.node.wid-sel").length >= 1, `${r.title}: walkthrough highlights a node`); }
+  if (next) { next.click(); ok(fig.querySelectorAll(".wid-hot, .wid-sel").length >= 1, `${r.title}: walkthrough highlights a node`); }
 }
 
 /* whole-page JSON export must be valid (run export-engine via the real doc) */
@@ -227,17 +229,24 @@ if (declaredTotal === 0) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 1100 });
     await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
-    await page.waitForFunction((n) => document.querySelectorAll("g.node.wid-act").length >= n, { timeout: 15000 }, declaredTotal);
-    const wired = await page.evaluate(() => document.querySelectorAll("g.node.wid-act").length);
+    await page.waitForFunction((n) => document.querySelectorAll(".wid-act").length >= n, { timeout: 15000 }, declaredTotal);
+    const wired = await page.evaluate(() => document.querySelectorAll(".wid-act").length);
     ok(wired >= declaredTotal, `real browser: ${wired}/${declaredTotal} interactive nodes wired on natural load`);
     // a real mouse click on a detail node must open the drawer
     let clickWorks = "no detail node to test";
     if (detailKey) {
+      // the shared-node-renderer family (flowchart/state/ER/class/mindmap) keys by an
+      // id substring; sequence/gantt/gitGraph don't carry the key in `id` at all, so also
+      // try a class token (gitGraph's custom commit id) and the visible text (everything else).
       const re = new RegExp("-" + detailKey.replace(/[^A-Za-z0-9_]/g, "") + "-");
-      const h = await page.evaluateHandle((rs) => {
+      const h = await page.evaluateHandle((rs, key) => {
         const rx = new RegExp(rs);
-        return [...document.querySelectorAll("g.node.wid-act")].find((g) => rx.test(g.id)) || null;
-      }, re.source);
+        const els = [...document.querySelectorAll(".wid-act")];
+        return els.find((g) => rx.test(g.id))
+          || els.find((g) => (g.getAttribute("class") || "").split(/\s+/).indexOf(key) >= 0)
+          || els.find((g) => (g.textContent || "").replace(/\s+/g, " ").trim() === key)
+          || null;
+      }, re.source, detailKey);
       const el = h.asElement && h.asElement();
       if (el) { try { await el.click(); } catch (_) {} await new Promise((r) => setTimeout(r, 150)); }
       clickWorks = await page.evaluate(() => !!document.querySelector(".wid-dgm-panel.is-open"));
@@ -249,7 +258,7 @@ if (declaredTotal === 0) {
   try {
     const { execFileSync } = await import("node:child_process");
     const dom = execFileSync(chrome, ["--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=15000", "--dump-dom", url], { maxBuffer: 64 * 1024 * 1024, timeout: 45000 }).toString();
-    const wired = (dom.match(/class="node[^"]*\bwid-act\b/g) || []).length;
+    const wired = (dom.match(/class="[^"]*\bwid-act\b/g) || []).length;
     ok(wired === declaredTotal, `real browser (wiring only): ${wired}/${declaredTotal} nodes wired — install puppeteer-core to also test real clicks`);
   } catch (e) { console.log("  · real-browser check errored (skipped): " + String(e.message || e).split("\n")[0]); }
 } else {
