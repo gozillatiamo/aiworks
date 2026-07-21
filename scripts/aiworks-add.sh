@@ -729,7 +729,7 @@ ext_skills=(
   "grill-with-docs|mattpocock/skills"
   "grilling|mattpocock/skills"
   "domain-modeling|mattpocock/skills"
-  "diagnose|mattpocock/skills"
+  "diagnosing-bugs|mattpocock/skills"   # upstream renamed from "diagnose" — old name 404s
   "setup-matt-pocock-skills|mattpocock/skills"
 )
 if ! have npx; then
