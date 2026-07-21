@@ -9,6 +9,7 @@ skills:
   - caveman:caveman
   - ticket-kickoff
   - write-interactive-docs
+  - diagram-ticket
 tools:
   - Read
   - Grep
@@ -17,6 +18,7 @@ tools:
   - Skill
   - Bash(git *)
   - Bash(codegraph *)
+  - Bash(*scripts/diagram/*)
   # Interactive debugger (read-only investigation): the `debugging-code` skill drives `dap` to step
   # through and inspect a running program — grounds a fix-ticket plan in real runtime behavior when
   # codegraph + reading can't reveal HOW execution reaches the buggy state. Investigate, never fix.

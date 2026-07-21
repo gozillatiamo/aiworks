@@ -14,6 +14,16 @@
  * Mermaid <script>. It waits for Mermaid to finish via a MutationObserver, so it
  * doesn't matter whether Mermaid runs on load or you call mermaid.run() yourself.
  *
+ * ── Diagram types supported ─────────────────────────────────────────────────
+ * flowchart, stateDiagram-v2, erDiagram, classDiagram, and mindmap all share one
+ * Mermaid node renderer, so `nodes`/`walkthrough` work identically across all five
+ * with zero extra code. sequenceDiagram (actors), gantt (tasks), and gitGraph
+ * (commits) use their own renderers — each has a dedicated finder below
+ * (collectSequenceActors / collectGanttTasks / collectGitCommits) so the same
+ * `nodes`/`walkthrough` island authoring works there too. pie/journey/quadrantChart
+ * stay zoom-and-pan only (see diagrams.md for why). Full picks-and-gotchas per type
+ * live in references/diagrams.md — this file is the mechanism, not the guide.
+ *
  * ── Where the interactivity comes from ─────────────────────────────────────
  * Zoom/pan/hover/fullscreen need NO authoring — they apply to every diagram.
  * Click actions + walkthrough are declared in the diagram's export-data island,
@@ -81,17 +91,21 @@
     .wid-dgm-hint{position:absolute; left:10px; bottom:8px; z-index:3; font-size:11px; color:var(--color-muted,#778);
       background:var(--color-surface,#fff); border:1px solid var(--color-border,rgba(127,127,127,.25));
       border-radius:999px; padding:2px 9px; opacity:.85; pointer-events:none}
-    /* hover spotlight (wid-hot) + persistent click selection (wid-sel) — Mermaid node
-       groups carry class "node". Both stay full-opacity while the rest is dimmed. */
-    .wid-dim .node{opacity:.3; transition:${REDUCED ? "none" : "opacity .15s"}}
-    .wid-dim .node.wid-hot, .wid-dim .node.wid-sel{opacity:1}
+    /* hover spotlight (wid-hot) + persistent click selection (wid-sel) — "wid-item" is OUR
+       marker (added by collectAll(), not Mermaid's), so it applies uniformly whether the
+       underlying element is a flowchart/state/ER/class/mindmap <g class="node">, a sequence
+       actor group, a gantt <rect>, or a gitGraph <circle>. Both stay full-opacity while the
+       rest of the diagram is dimmed. */
+    .wid-dim .wid-item{opacity:.3; transition:${REDUCED ? "none" : "opacity .15s"}}
+    .wid-dim .wid-item.wid-hot, .wid-dim .wid-item.wid-sel{opacity:1}
     .wid-dim .edgePaths,.wid-dim .edgeLabels,.wid-dim .relation,.wid-dim .messageLine0,.wid-dim .messageLine1{opacity:.18}
-    .node.wid-act{cursor:pointer}
-    .node.wid-act:focus{outline:none}
-    .node.wid-act:hover :is(rect,circle,polygon,path,ellipse){stroke-width:2.4px}
-    .node.wid-hot :is(rect,circle,polygon,path,ellipse){filter:drop-shadow(0 0 6px var(--color-accent,#22c3d6))}
+    .wid-item.wid-act{cursor:pointer}
+    .wid-item.wid-act:focus{outline:none}
+    /* self-OR-descendant: a gantt/gitGraph item IS the shape; a flowchart/sequence item WRAPS one */
+    .wid-item.wid-act:hover, .wid-item.wid-act:hover :is(rect,circle,polygon,path,ellipse){stroke-width:2.4px}
+    .wid-item.wid-hot, .wid-item.wid-hot :is(rect,circle,polygon,path,ellipse){filter:drop-shadow(0 0 6px var(--color-accent,#22c3d6))}
     /* the clicked/selected node — a stronger, distinct (primary-colour) highlight that persists */
-    .node.wid-sel :is(rect,circle,polygon,path,ellipse){filter:drop-shadow(0 0 8px var(--color-primary,#7c6cff)); stroke:var(--color-primary,#7c6cff); stroke-width:2.6px}
+    .wid-item.wid-sel, .wid-item.wid-sel :is(rect,circle,polygon,path,ellipse){filter:drop-shadow(0 0 8px var(--color-primary,#7c6cff)); stroke:var(--color-primary,#7c6cff); stroke-width:2.6px}
     /* section pulse when a node navigates to it */
     @keyframes wid-flash{0%{box-shadow:0 0 0 0 var(--color-accent,#22c3d6)}100%{box-shadow:0 0 0 8px transparent}}
     .wid-flash{animation:${REDUCED ? "none" : "wid-flash 1.1s ease-out"}; border-radius:12px}
@@ -210,6 +224,44 @@
 
   /* --------------------------- node helpers ------------------------------- */
   function nodeText(g) { return (g.textContent || "").replace(/\s+/g, " ").trim(); }
+  // flowchart / stateDiagram-v2 / erDiagram / classDiagram / mindmap all share Mermaid's
+  // common node renderer, so their items already carry a "node" class token — nodeKeys()
+  // below handles that whole family for free. sequenceDiagram, gantt, and gitGraph use
+  // their OWN renderers with no "node" class at all, so each gets its own finder here.
+  function collectSequenceActors(svg) {
+    // each participant draws TWO boxes (top + bottom of its lifeline); both wire to the
+    // same key — either box firing the same click is harmless, not a bug.
+    return [].slice.call(svg.querySelectorAll("text.actor-box")).map(function (t) {
+      return { g: t.closest("g") || t.parentNode, keys: [nodeText(t)] };
+    });
+  }
+  function collectGanttTasks(svg) {
+    // a task bar's id is its internal alias (e.g. "a1"); the human-readable name is a
+    // sibling <text>, rendered in the same task order — zip them positionally.
+    var bars = [].slice.call(svg.querySelectorAll("rect.task"));
+    var labels = [].slice.call(svg.querySelectorAll("text[class*='taskText']"));
+    return bars.map(function (r, i) { return { g: r, keys: [nodeText(labels[i] || r)] }; });
+  }
+  function collectGitCommits(svg) {
+    // a commit's class carries its `id:"…"` verbatim when the author gave one; a bare
+    // `commit` gets an auto hash instead, which isn't a meaningful key (see diagrams.md).
+    return [].slice.call(svg.querySelectorAll("circle[class*='commit']")).map(function (c) {
+      var custom = (c.getAttribute("class") || "").split(/\s+/).filter(function (t) {
+        return t && t !== "commit" && !/^commit\d+$/.test(t) && !/^\d+-[0-9a-f]+$/.test(t);
+      });
+      return { g: c, keys: custom.length ? custom : [nodeText(c)] };
+    });
+  }
+  // The single collector every diagram type funnels through. Marks every item with
+  // "wid-item" — the one CSS hook hover/select/dim styling keys off, regardless of
+  // whether the underlying element is a Mermaid "node" <g>, a bare <rect>, or a <circle>.
+  function collectAll(svg) {
+    var items = [].map.call(svg.querySelectorAll("g.node"), function (g) { return { g: g, keys: nodeKeys(g) }; })
+      .concat(collectSequenceActors(svg), collectGanttTasks(svg), collectGitCommits(svg))
+      .filter(function (o) { return o.g && o.keys[0]; });
+    items.forEach(function (o) { o.g.classList.add("wid-item"); });
+    return items;
+  }
   // Resolve every key a node could be matched by. Mermaid v11 ids look like
   // "<renderId>-flowchart-<NODEID>-<index>" (the renderId contains digits, and
   // there is NO data-id), so naive parsing fails — we try several strategies and
@@ -270,8 +322,8 @@
     // re-fires as Mermaid inserts them); otherwise just wait for any rendered content.
     var island = readIsland(fig);
     var wantsNodes = !!(island && (island.nodes || (island.walkthrough && island.walkthrough.length)));
-    var hasNodes = !!svg.querySelector("g.node, .node, .actor, .classGroup, .statediagram-state, .er.entityBox");
-    if (wantsNodes) { if (!hasNodes) return false; }
+    var items = collectAll(svg);
+    if (wantsNodes) { if (!items.length) return false; }
     else if (mer.getAttribute("data-processed") !== "true" && !svg.querySelector("g")) return false;
     fig.__widDgm = true;
 
@@ -374,8 +426,8 @@
       b.addEventListener("click", fn); return b;
     }
 
-    /* walkthrough (optional) — `island` already read above */
-    var gNodes = [].map.call(svg.querySelectorAll("g.node"), function (g) { return { g: g, keys: nodeKeys(g) }; });
+    /* walkthrough (optional) — `island` already read above; `items` from the readiness gate */
+    var gNodes = items;
     var find = function (key) {
       return gNodes.filter(function (o) { return o.keys.indexOf(key) >= 0; })[0];
     };
