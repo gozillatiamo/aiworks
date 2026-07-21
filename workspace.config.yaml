@@ -37,7 +37,13 @@ review:
 
 planning:
   auto_approve: false
-  to_html: false 
+  to_html: false
+
+diagrams:
+  enabled: true
+  provider: mermaid-ink
+  theme: default
+  max_per_ticket: 2
 
 products:
   - id: ofb-platform

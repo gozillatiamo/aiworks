@@ -9,12 +9,14 @@ skills:
   - clarifying-ticket
   - estimate-ticket
   - decompose-ticket
+  - diagram-ticket
 tools:
   - Read
   - Grep
   - Glob
   - Skill
   - Bash(*scripts/tracker/*)
+  - Bash(*scripts/diagram/*)
 ---
 
 ## Output language — resolve BEFORE writing (do this FIRST, before your role)

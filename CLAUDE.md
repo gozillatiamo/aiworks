@@ -28,7 +28,9 @@ gitignored clones and only the meta-repo shows.
   policy (`design.enabled` — the workspace-wide Figma switch, default OFF —
   `design.figma_file_key` / `design.page_naming`), image-generation policy
   (`image_generation.enabled` — default OFF — `image_generation.quality` /
-  `image_generation.max_per_request`), and the `products[].repos[]` registry
+  `image_generation.max_per_request`), diagram-generation policy (`diagrams.enabled` —
+  default OFF — `diagrams.provider` / `diagrams.theme` / `diagrams.max_per_ticket`), and
+  the `products[].repos[]` registry
   (repo URLs). The source of truth for this workspace; `scripts/aiworks sync` sets
   everything up from it. Personal, non-shared overrides go in the git-ignored
   `workspace.config.local.yaml` (analogue of `.claude/settings.local.json`; see
@@ -56,6 +58,10 @@ gitignored clones and only the meta-repo shows.
 - `docs/agents/figma.md` — how every agent works with Figma: the `design.enabled`
   kill-switch (default OFF) and the canonical-file convention (`design.figma_file_key` —
   build product screens into ONE file on a new page per feature, never `create_new_file`).
+- `docs/agents/diagram-generation.md` — how `/diagram-ticket` renders a Mermaid
+  diagram and attaches it to a ticket (image + a mermaid.live edit link), gated by
+  `diagrams.enabled` (default OFF); skipped quietly (not a fail-loud gate) when off,
+  since a diagram is an enhancement to a ticket's spec, not a required deliverable.
 - `docs/agents/submodules.md` — never develop inside a git **submodule** checkout: it's a
   read-only pointer to a repo that is *also* cloned as its own primary clone at the
   workspace root — branch/commit/PR in that primary clone (the coding-lifecycle skills

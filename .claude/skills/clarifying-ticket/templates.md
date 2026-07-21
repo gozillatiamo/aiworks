@@ -25,6 +25,9 @@ Scope:
 Out of scope:
 - <out-of-scope item>
 
+Diagram (optional, via /diagram-ticket — omit this section entirely if none was generated):
+<reference line + live-editor link>
+
 Acceptance criteria:
 - [ ] <criterion>
 

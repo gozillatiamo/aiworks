@@ -22,3 +22,8 @@
 
 # Write in Thai locally while the team default stays English — see docs/agents/language.md.
 # language: th
+
+# Try /diagram-ticket locally without turning it on for the whole team yet — see
+# docs/agents/diagram-generation.md.
+# diagrams:
+#   enabled: true

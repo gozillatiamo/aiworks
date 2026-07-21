@@ -8,6 +8,7 @@ maxTurns: 60
 skills:
   - caveman:caveman
   - decompose-ticket
+  - diagram-ticket
 tools:
   - Read
   - Grep
@@ -17,6 +18,7 @@ tools:
   - WebSearch
   - WebFetch
   - Bash(*scripts/tracker/*)
+  - Bash(*scripts/diagram/*)
   # DB access (read + query) — assess feasibility/architecture against the REAL schema and run SELECT via execute_sql.
   # NOTE: execute_sql is NOT verb-restricted at the tool layer; enforce true read-only with a read-only DB role.
   - mcp__postgres_ass__list_schemas
