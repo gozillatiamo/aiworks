@@ -6,6 +6,14 @@ history, remote, `CLAUDE.md`) — read a repo's own `CLAUDE.md` first.
 ⚠️ **Before any git op:** `git rev-parse --show-toplevel` to confirm the
 repo.
 
+⚠️ **Never read `.env` / `.env.*` files** (any adapter's `scripts/{vcs,tracker,notify}/.env`,
+or any other secrets file matched by the workspace's blanket `.env`/`.env.*` gitignore rule) —
+**except `.env.example`** templates, which are safe (no real values). This means no `Read`, no
+`cat`/`grep`/`sed`/`head`/`tail` on them, and no `bash -x`/`set -x` around code that sources one
+(tracing prints the sourced values into the transcript/logs verbatim). To check a var is set
+without exposing it, use `grep -q '^VAR=.\+' .env` (prints only a boolean via exit code), never
+a form that echoes the value.
+
 **Discover repos:** declared under `products[].repos[]` in `workspace.config.yaml`
 (the source of truth); `mani.yaml` imports the per-product `mani.d/<product>.yaml`
 files generated from it by `scripts/aiworks`. `mani list projects` for the full list.
@@ -109,6 +117,9 @@ The group's repos are declared under `products:` in @workspace.config.yaml
 (and cloned via the generated `mani.d/<product>.yaml` files).
 
 **DO NOT:**
+- Read, print, or trace-dump any `.env` / `.env.*` file (except `.env.example`) — see the
+  ⚠️ warning above. Highest priority: a leaked adapter secret (Jira/GitLab/Slack/...)
+  is a live credential, not just a file.
 - codegraph is not allowed at the organization (workspace) level — only inside an
   individual repo.
 - Never edit, add, or commit **inside a git submodule checkout** (e.g.
