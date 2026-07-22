@@ -20,51 +20,50 @@ obs_require_config() {
 }
 
 # obs_get_trace TRACE_ID [SPAN_ID] -> prints the span waterfall (indented by call depth),
-# marking SPAN_ID (if given) with "→". Falls back to pretty raw JSON if the response shape
+# marking SPAN_ID (if given) with "->". Falls back to pretty raw JSON if the response shape
 # doesn't match what's expected (e.g. a SigNoz version with a different payload).
+#
+# GET /api/v1/traces/{id} returns a columnar shape: [{"columns":[...],"events":[[...],...]}],
+# each row a positional array matching `columns` (SpanId, ServiceName, Name, DurationNano,
+# References, HasError, StatusCodeString, ...). `References` is a stringified struct like
+# "{TraceId=.., SpanId=<parentId>, RefType=CHILD_OF}" (empty SpanId = root span) — parsed
+# below to build the parent-child tree for indentation.
 obs_get_trace() {
   local trace_id="$1" span_id="${2:-}" resp
 
   resp="$(curl -sS -H "${SIGNOZ_AUTH_HEADER}: ${SIGNOZ_API_KEY}" \
     "${SIGNOZ_BASE_URL}/api/v1/traces/${trace_id}")" || die "signoz request failed (network)"
 
-  if printf '%s' "$resp" | jq -e '.error' >/dev/null 2>&1; then
-    die "signoz rejected the request: $(printf '%s' "$resp" | jq -r '.error')"
+  if printf '%s' "$resp" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
+    die "signoz rejected the request: $(printf '%s' "$resp" | jq -r '.error.message // .error')"
   fi
 
-  local spans
-  spans="$(printf '%s' "$resp" | jq -c '
-    (.data.spans // .data // empty) | if type == "array" then . else empty end
-  ' 2>/dev/null)"
-
-  if [[ -z "$spans" || "$spans" == "empty" ]]; then
+  if ! printf '%s' "$resp" | jq -e '(.[0].columns? and .[0].events?) // false' >/dev/null 2>&1; then
     echo "note: unrecognized response shape — printing raw JSON" >&2
     printf '%s' "$resp" | jq '.'
     return 0
   fi
 
   printf '%s' "$resp" | jq -r --arg mark "$span_id" '
-    (.data.spans // .data) as $spans
-    | ($spans | map({(.spanID // .spanId // .id): (.parentSpanID // .parentSpanId // .references[0].spanID // "")}) | add // {}) as $parents
+    .[0] as $t
+    | ($t.columns) as $cols
+    | ($t.events | map( . as $row | [$cols, $row] | transpose | map({(.[0]): .[1]}) | add )) as $spans
+    | ($spans | map({(.SpanId): ( (.References[0] // "") | capture("SpanId=(?<p>[a-f0-9]*)").p // "" ) }) | add) as $parents
     | def depth(id; seen):
         if (id == null or id == "" or ($parents[id] // "") == "" or (seen | index(id)))
         then (seen | length)
         else depth($parents[id]; seen + [id])
         end;
     $spans
-    | sort_by(.startTimeUnixNano // .startTime // 0)
+    | sort_by(.__time)
     | .[]
     | . as $s
-    | ($s.spanID // $s.spanId // $s.id // "") as $id
-    | (depth($id; []) ) as $d
-    | ($s.durationNano // ($s.duration * 1000) // 0) as $durNano
-    | (if $id == $mark and $mark != "" then "→ " else "  " end) as $prefix
+    | (depth($s.SpanId; [])) as $d
+    | (if $s.SpanId == $mark and $mark != "" then "-> " else "   " end) as $prefix
     | "\($prefix)" + ("  " * $d) +
-      "\($s.name // $s.operationName // "?") " +
-      "[\($s.serviceName // $s.resource.\"service.name\" // "?")] " +
-      "\(($durNano/1000000)|tostring)ms " +
-      "\($s.statusCode // $s.status.code // "")" +
-      (if $id == $mark and $mark != "" then "  <-- requested spanId" else "" end)
+      "\($s.Name) [\($s.ServiceName)] \(($s.DurationNano | tonumber) / 1000000)ms \($s.StatusCodeString)" +
+      (if $s.HasError == "true" then " ERROR: \($s.StatusMessage)" else "" end) +
+      (if $s.SpanId == $mark and $mark != "" then "  <-- requested spanId" else "" end)
   '
 }
 
