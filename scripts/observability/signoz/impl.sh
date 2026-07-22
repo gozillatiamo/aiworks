@@ -8,9 +8,17 @@
 #
 # Endpoints used (query-service HTTP API):
 #   GET  {base}/api/v1/traces/{traceId}   — full span waterfall for one trace
-#   POST {base}/api/v4/query_range        — builder query, dataSource=logs, filter.expression=QUERY
+#   POST {base}/api/v4/query_range        — builder query, dataSource=logs, STRUCTURED filters
 # These are query-service's stable OSS routes as of SigNoz v0.55+; if your instance is on an
 # older/newer build and a call 404s, check that instance's /api docs and adjust the path below.
+#
+# ⚠️ Filtering MUST use the structured `filters: {op, items:[...]}` builder form, NOT the
+# free-text `filter: {expression}` form. This instance SILENTLY IGNORES a free-text expression
+# — a query for severity_text='ERROR' returns INFO/WARN rows too, and service.name='x' returns
+# other services — so a broken filter looks like "no matching logs / wrong logs" rather than an
+# error. Each semantic filter maps to one item: resource attributes (service.name,
+# deployment.environment) carry type:"resource",isColumn:false; log columns (severity_text,
+# body, trace_id) carry type:"",isColumn:true. Verified filtering live 2026-07-22.
 
 obs_require_config() {
   [[ -n "${SIGNOZ_BASE_URL:-}" ]] || die "signoz observability needs SIGNOZ_BASE_URL in scripts/observability/.env"
@@ -67,13 +75,32 @@ obs_get_trace() {
   '
 }
 
-# obs_query_logs QUERY FROM_MS TO_MS [LIMIT] -> prints matching log lines, newest first.
-# QUERY is a SigNoz filter expression, e.g.: service.name = 'agent-webservice' AND severity_text = 'ERROR'
+# obs_query_logs FILTERS_JSON FROM_MS TO_MS [LIMIT] [RAW] -> prints matching log lines, newest first.
+#
+# FILTERS_JSON is a provider-agnostic SEMANTIC filter object built by get-logs.sh — any subset of:
+#   { "service": "x" | ["a","b"],   "severity": "ERROR" | ["ERROR","FATAL"],
+#     "env": "staging",   "body_contains": "timeout",   "trace_id": "<hex>" }
+# It is translated below into SigNoz's structured filters.items (see the ⚠️ note at the top of this
+# file for why the free-text expression form is unusable). An empty object ({}) filters nothing —
+# just the time window. RAW=1 prints the raw JSON response instead of parsed lines.
 obs_query_logs() {
-  local query="$1" from_ms="$2" to_ms="$3" limit="${4:-100}" body resp
+  local filters="$1" from_ms="$2" to_ms="$3" limit="${4:-100}" raw="${5:-0}" items body resp
+
+  # Semantic filters -> SigNoz filters.items. Scalars use "="/"contains"; arrays use "in".
+  items="$(printf '%s' "$filters" | jq -c '
+    def col(k): {key:{key:k,dataType:"string",type:"",isColumn:true}};
+    def res(k): {key:{key:k,dataType:"string",type:"resource",isColumn:false}};
+    def eq(base; v): if (v|type)=="array" then (base + {op:"in", value:v}) else (base + {op:"=", value:v}) end;
+    [
+      (if .service       then eq(res("service.name"); .service) else empty end),
+      (if .env           then res("deployment.environment") + {op:"=", value:.env} else empty end),
+      (if .severity      then eq(col("severity_text"); .severity) else empty end),
+      (if .body_contains then col("body") + {op:"contains", value:.body_contains} else empty end),
+      (if .trace_id      then col("trace_id") + {op:"=", value:.trace_id} else empty end)
+    ]')"
 
   body="$(jq -n \
-    --argjson start "$from_ms" --argjson end "$to_ms" --argjson limit "$limit" --arg expr "$query" '
+    --argjson start "$from_ms" --argjson end "$to_ms" --argjson limit "$limit" --argjson items "$items" '
     {
       start: $start, end: $end, step: 60,
       compositeQuery: {
@@ -82,7 +109,7 @@ obs_query_logs() {
           A: {
             dataSource: "logs", queryName: "A", aggregateOperator: "noop",
             expression: "A", disabled: false, limit: $limit,
-            filter: { expression: $expr },
+            filters: { op: "AND", items: $items },
             orderBy: [{ columnName: "timestamp", order: "desc" }]
           }
         }
@@ -96,11 +123,16 @@ obs_query_logs() {
     die "signoz rejected the request: $(printf '%s' "$resp" | jq -r '.error')"
   fi
 
+  if [[ "$raw" -eq 1 ]]; then
+    printf '%s' "$resp" | jq '.'
+    return 0
+  fi
+
   local rows
   rows="$(printf '%s' "$resp" | jq -c '[.. | objects | select(has("timestamp") and (has("body") or has("data")))] // []' 2>/dev/null)"
 
   if [[ -z "$rows" || "$rows" == "[]" ]]; then
-    echo "note: unrecognized response shape — printing raw JSON" >&2
+    echo "note: no logs matched (filters + time window), or unrecognized response shape — raw JSON:" >&2
     printf '%s' "$resp" | jq '.'
     return 0
   fi

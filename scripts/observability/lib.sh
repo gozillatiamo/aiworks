@@ -5,9 +5,11 @@
 # Selects a provider implementation by OBSERVABILITY_PROVIDER (signoz) and sources
 # scripts/observability/<provider>/impl.sh, which defines the provider interface:
 #
-#   obs_require_config                         — validate the provider's env (base url/key), die if missing
-#   obs_get_trace TRACE_ID [SPAN_ID]            — print the trace's span waterfall; SPAN_ID (optional) highlights one span
-#   obs_query_logs QUERY FROM_MS TO_MS [LIMIT]  — print log lines matching QUERY in [FROM_MS, TO_MS)
+#   obs_require_config                                    — validate the provider's env (base url/key), die if missing
+#   obs_get_trace TRACE_ID [SPAN_ID]                       — print the trace's span waterfall; SPAN_ID (optional) highlights one span
+#   obs_query_logs FILTERS_JSON FROM_MS TO_MS [LIMIT] [RAW] — print log lines matching a semantic filter object in [FROM_MS, TO_MS).
+#                                                            FILTERS_JSON is provider-agnostic (any subset of service/severity/env/
+#                                                            body_contains/trace_id); the provider impl translates it. RAW=1 -> raw JSON.
 #
 # Like the vcs/tracker/notify adapters, this reads a git-ignored scripts/observability/.env
 # for the provider + secrets (already covered by the workspace's blanket .env / .env.* gitignore

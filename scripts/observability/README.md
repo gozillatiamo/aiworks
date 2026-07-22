@@ -20,16 +20,27 @@ cp scripts/observability/.env.example scripts/observability/.env
 # Trace waterfall (from a SigNoz trace URL: /trace/<trace_id>?spanId=<span_id>)
 scripts/observability/get-trace.sh <trace_id> [--span <span_id>] [--raw]
 
-# Logs
-scripts/observability/get-logs.sh --query "service.name = 'x' AND severity_text = 'ERROR'" \
+# Logs — explicit filter flags (each ANDed; comma-separate --service/--severity for several)
+scripts/observability/get-logs.sh \
+  [--service <name>] [--severity <level>] [--env local|dev|staging|prod] \
+  [--body-contains <substr>] [--trace-id <hex>] \
   [--from -1h] [--to now] [--limit 100] [--raw]
 ```
+
+> **Filters use the backend's STRUCTURED filter form, not a free-text expression.** This SigNoz
+> instance silently *ignores* a free-text `filter.expression` — it returns the latest logs
+> regardless, so a wrong query looks like "wrong/extra logs", not an error. The flags above map
+> to structured filter items in `signoz/impl.sh`; that is the only reliable path. Don't add a
+> free-text query flag back.
 
 ## Provider interface (`lib.sh`)
 
 - `obs_require_config` — validate the provider's env, die if missing
 - `obs_get_trace TRACE_ID [SPAN_ID]` — print the trace's span waterfall
-- `obs_query_logs QUERY FROM_MS TO_MS [LIMIT]` — print matching log lines, newest first
+- `obs_query_logs FILTERS_JSON FROM_MS TO_MS [LIMIT] [RAW]` — print matching log lines, newest
+  first. `FILTERS_JSON` is a provider-agnostic semantic object (any subset of `service`,
+  `severity`, `env`, `body_contains`, `trace_id`); the provider impl translates it into the
+  backend's native filter. `RAW=1` prints the raw JSON response.
 
 ## Notes
 
