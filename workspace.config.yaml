@@ -13,6 +13,11 @@ notify:
   provider: slack
   channel: "#dev-oneforbet"
 
+observability:
+  enabled: true
+  provider: signoz
+  base_url: "https://signoz.afufc.com"
+
 tracker:
   provider: jira
   ticket_prefix: OFB
