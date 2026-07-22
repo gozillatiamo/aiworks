@@ -16,8 +16,10 @@ inline on the live MR/PR and render their own verdicts. The verdict grounding is
 [`.claude/skills/review/basis.md`](../review/basis.md) — and every gate reads it first.
 
 **Scope — review, never merge.** The gates review, comment findings inline, and render a
-verdict/approval; they must **NOT merge** (even where `auto_merge` is on). Ultra-review is a
-review pass — merge stays a separate, later decision.
+verdict; the **orchestrator** posts the single ticket-wide PASS **approval** — and only when
+every gate on every repo is clean (§3.5), never a gate per-repo. No one **merges** — not the
+gates, not the orchestrator, even where `auto_merge` is on. Approve says "cleared the bar";
+merge stays a separate, later human decision.
 
 ## 0. Resolve language + review level BEFORE spawning (do this FIRST)
 
@@ -89,7 +91,9 @@ so they run concurrently and don't pollute each other's context. Into **each** b
 - The shared directive block from §0 (language + review level), verbatim.
 - The ticket `<KEY>` and the open MR/PR ref(s) + branch + target.
 - `"This is an ultra-review pass — review, comment findings inline on the MR/PR, and render
-  your verdict. Do NOT merge, even if auto_merge is on; merge is a separate decision."`
+  your verdict. Do NOT approve and do NOT merge (even if auto_merge is on): the orchestrator
+  posts the single ticket-wide PASS approval once every gate on every repo is clean, and merge
+  is a separate, later decision."`
 - **A force-shell first line** (proven fix for the perf "no Bash" give-up — see §3):
   `"Your FIRST action is a real Bash call — run `scripts/vcs/pr-view.sh <num>` (or `git
   rev-parse --show-toplevel`) from inside the target repo BEFORE any analysis or prose. Do NOT
@@ -170,6 +174,38 @@ met**, then the review level and the worst single issue per gate — on a re-vis
 remaining item is either a still-open prior must-fix or a new one from the fix commit. The
 combined verdict is **capped by any blocking finding at any gate** — a critical perf regression
 caps the verdict at "partially met" even when the code-quality gate is clean.
+
+### 3.5 PASS signal — orchestrator-owned, gated on ticket-wide MET (still never merge)
+
+The combined verdict answers one **ticket-wide** question: are the ticket's requirements
+*genuinely met* across **every** repo's MR/PR? Post the PASS signal **only** on a clean **met**
+— zero unresolved must-fix at *every* gate on *every* repo, and no open `Human:` directive. When
+met, the orchestrator itself posts it on **each** repo's MR/PR: one host-level approval + one
+loud verdict line, via
+
+```
+scripts/vcs/pr-approve.sh <num> --body "✅ APPROVED — <KEY>: requirements met, standards clean, 0 must-fix."
+```
+
+body in the resolved OUTPUT LANGUAGE. Like notify (§4) this is **orchestrator-owned and
+deterministic, never left to the gates** — a gate that lost its shell (perf "no Bash") can't
+approve, so a gate-owned approval would silently drop; and the §2 brief tells each gate NOT to
+approve on its own, so the one PASS signal is single-sourced here.
+
+**Hold the approval until the WHOLE ticket is met — ticket-wide, never per-repo.** A
+**partially met / not met** verdict (any must-fix anywhere — this run's OFB-2244 shape) posts
+**no** approval on **any** MR/PR, not even on a repo that came back clean. The ticket is one
+unit and its repos are usually ship-order-coupled (OFB-2244: the agent-db migration must land
+before the agent-webservice INSERT, or site-creation breaks platform-wide) — approving the
+clean repo alone reads as "this MR is ready to merge on its own", which the coupling makes
+false. When not fully met the inline must-fix threads (posted/backstopped in §3) plus the
+combined-verdict notify (§4) are the whole communication: the **absence** of an approval *is*
+the "changes requested" signal.
+
+**Approve is decoupled from merge (scope holds).** A PASS signal says "cleared the bar"; it is
+**not** a merge. Ultra-review still never merges (even with `auto_merge` on) — `pr-approve.sh`
+registers the host approval + verdict note only; whether/when it then merges stays a separate,
+later human decision.
 
 ### 4. Notify — orchestrator-owned, deterministic (ALWAYS runs when `notify.enabled`)
 
