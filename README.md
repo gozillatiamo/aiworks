@@ -104,14 +104,27 @@ gcloud auth application-default login
 4.3 SonarQube MCP token — the `sonarqube` MCP server runs as a **shared** container
 (`aiworks-mcp-sonarqube`, HTTP transport, like the postgres MCP services). Its
 `.mcp.json` entry sends your SonarCloud token as a per-request `Authorization: Bearer`
-header, expanded from `SONARQUBE_TOKEN` in your shell env. Authenticate once, then export
-the token (sourced from the OS keychain, so it never lands in a file) in your shell profile:
+header, expanded from **`SONARQUBE_TOKEN` in the environment Claude Code is launched
+from**. Claude Code does not auto-load `.env`, and `settings.json` `env` does not feed
+`.mcp.json` expansion — so load a `.env` into your shell before launching Claude.
+
+Get a token: on [sonarcloud.io](https://sonarcloud.io) sign in with an account that is a
+**member of the `ofb` organization** (ask an org admin to add you under Organization `ofb`
+→ Administration → Members if not), then **My Account → Security**
+(https://sonarcloud.io/account/security) → Generate Tokens → type **User Token** → copy the
+`squ_…` value.
+
+Put it in a git-ignored `.env`; the committed `.envrc` (a one-line `dotenv`) auto-loads it
+with [`direnv`](https://direnv.net):
 ```sh
-sonar auth login                                    # one-time; stores the token in the OS keychain
-export SONARQUBE_TOKEN="$(security find-generic-password -s sonarqube-cli -a sonarcloud.io:couple-t -w)"
+brew install direnv                       # + hook your shell:  eval "$(direnv hook zsh)"  in ~/.zshrc
+printf 'SONARQUBE_TOKEN=squ_your_token\n' >> .env   # workspace root; already git-ignored
+direnv allow                              # trust the checked-in .envrc once
 ```
-Restart Claude Code after setting it so the MCP config reloads. The org defaults to
-`couple-t`; override with `SONARQUBE_ORG` in `.superset/.env` if yours differs.
+Now every shell entering the workspace exports `SONARQUBE_TOKEN`; launch Claude Code from
+there and restart it after the first time so the MCP config reloads. (No direnv? Instead
+`export SONARQUBE_TOKEN=…` from a file sourced in your shell profile.) The org defaults to
+`ofb`; override with `SONARQUBE_ORG` in `.superset/.env` only if yours differs.
 
 **5. Run the product** — starts the full local stack (databases + migrations, backend,
 backoffice, **one** player site, AMB aggregator):

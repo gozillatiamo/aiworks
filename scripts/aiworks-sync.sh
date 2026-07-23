@@ -418,7 +418,7 @@ QG_PROVIDER="$(awk '
 QG_PROVIDER="${QG_PROVIDER:-none}"
 
 seed_sonar_scaffold() {
-  local prod="$1" key="$2" repokind="$3" reldir="$4"
+  local prod="$1" key="$2" repokind="$3" reldir="$4" url="$5"
   [[ "$QG_PROVIDER" == "sonarqube" ]] || return 0
   case "$repokind" in test-suite) return 0 ;; esac     # the QA repo has no guardian gate
   local dir="$ROOT/${reldir:-$key}"
@@ -430,14 +430,32 @@ seed_sonar_scaffold() {
        "$dir/package.json" "$dir/.sonarlint/connectedMode.json" 2>/dev/null; then
     return 0
   fi
-  local pkey="${prod:+${prod}_}${key}"
+  # SonarCloud keys a project as `<gitlab-top-level-group>_<repo>` and scopes it to a
+  # SonarCloud organization slug — BOTH come from the repo's GitLab path, NOT from the
+  # workspace product id (`prod`, which was the old — wrong — prefix). Parse the path from
+  # either URL form (git@host:<group>/<subgroup…>/<repo>.git or
+  # https://host/<group>/<subgroup…>/<repo>.git): the top-level group is the key prefix, and
+  # the first subgroup (when the path nests group/subgroup/repo) is the org slug. Override
+  # with SONAR_KEY_PREFIX / SONAR_ORG in the environment when a setup names them differently.
+  local gpath="${url%.git}"      # drop .git
+  gpath="${gpath#*://}"          # drop scheme://          (https form; no-op for ssh)
+  gpath="${gpath#*@}"            # drop user@              (ssh form; no-op for https)
+  gpath="${gpath#*[:/]}"         # drop host + its : or /  → group[/subgroup…]/repo
+  local oldifs="$IFS"; IFS='/'; set -f; local segs=($gpath); set +f; IFS="$oldifs"
+  local prefix="${SONAR_KEY_PREFIX:-${segs[0]:-}}"   # :- guards keep this nounset-safe (set -u)
+  local org="${SONAR_ORG:-}"
+  if [[ -z "$org" ]]; then
+    if [[ "${#segs[@]}" -ge 3 ]]; then org="${segs[1]:-}"; else org="${segs[0]:-}"; fi
+  fi
+  local pkey="${prefix:+${prefix}_}${key}"
   {
     printf '# Seeded by `aiworks sync` (quality_gate.provider: sonarqube) so the dev-cycle guardian gate\n'
     printf '# resolves a project. Set sonar.host.url + auth in CI/locally; tune sources/exclusions per repo.\n'
+    [[ -n "$org" ]] && printf 'sonar.organization=%s\n' "$org"
     printf 'sonar.projectKey=%s\n' "$pkey"
     printf 'sonar.projectName=%s\n' "$key"
     printf 'sonar.sources=.\n'
-  } > "$dir/sonar-project.properties" && ok "seeded sonar-project.properties (projectKey=$pkey)"
+  } > "$dir/sonar-project.properties" && ok "seeded sonar-project.properties (org=${org:-–}, projectKey=$pkey)"
 }
 
 # ── parallel pre-clone: clone the WHOLE set up front, concurrently ────────────────
@@ -509,7 +527,7 @@ while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) �
   # </dev/null so aiworks-add never consumes this loop's parse stream. Its own prompts read
   # /dev/tty (not stdin), so when -y is OMITTED they still fire here; with no tty they fall back
   # to defaults. Ctrl+C is signal-based, so it still stops the whole sweep.
-  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path"
+  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path" "$url"
   else
     rc=$?
     [[ "$rc" -eq 130 ]] && { printf '\n%s✗ interrupted during %s/%s%s\n' "$c_warn" "$prod" "$key" "$c_off" >&2; exit 130; }
