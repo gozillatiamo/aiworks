@@ -1,0 +1,21 @@
+# Dedicated Redis for the Slack dispatcher's dedup + correlation store.
+# Isolated from any other Redis in the stack: own container name, own host port
+# (6370), own volume under this dir (git-ignored). Version is pinned to a concrete
+# tag (never `latest`) so a `docker compose pull` can't silently change engines.
+name: aiworks-slack-dispatch
+
+services:
+  redis:
+    image: redis:8.8.0-alpine
+    container_name: aiworks-slack-dispatch-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6370:6379"
+    volumes:
+      - ./.redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

@@ -23,6 +23,10 @@ agent-paotung-cypress/
 .superset/run/
 .superset/logs/
 
+# Slack-dispatcher per-worktree runtime context (correlationId + reply target the
+# dispatched agent posts back with; written into each worktree, never committed).
+.aiworks/
+
 # logs
 agent_logs/
 docs/brd/

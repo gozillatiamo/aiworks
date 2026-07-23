@@ -15,6 +15,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat <<'EOF'
 Usage: send.sh [--channel <id|#name>] [text] [--dry-run]
+       send.sh --channel <ch> --thread-ts <ts> [text] [--dry-run]
        send.sh --review <ticket-key> [--title <text>] [--channel <ch>] [--dry-run]
        send.sh --reply <ticket-key> [text] [--channel <ch>] [--dry-run]
 
@@ -41,6 +42,11 @@ webhook always skips.
 Options:
   --review <KEY>  Compose + send the review digest for ticket KEY (don't also pass text).
   --reply <KEY>   Post [text] as a reply in the review-request thread for KEY; skip if none.
+  --thread-ts <ts> Reply UNDER an explicit thread (the parent message ts). Unlike --reply
+                  (which searches for a review-request by ticket key), this threads under a
+                  ts you already hold — e.g. the Slack mention a bot is answering. Needs a
+                  bot token (webhooks can't thread) and an explicit --channel. Cannot be
+                  combined with --review/--reply.
   --title <text>  Header title for --review (default: looked up from the tracker adapter).
   --channel <ch>  Target channel (id or #name). Default: $NOTIFY_CHANNEL from .env.
                   Ignored by providers whose destination is fixed (e.g. a Slack webhook).
@@ -104,13 +110,14 @@ compose_review_digest() {  # KEY [TITLE]  -> prints the digest, or nothing if no
   printf '%s' "${rows%$'\n'}"
 }
 
-channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""
+channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --channel) channel="${2:-}";      shift 2 ;;
-    --review)  review_key="${2:-}";   shift 2 ;;
-    --reply)   reply_key="${2:-}";    shift 2 ;;
-    --title)   review_title="${2:-}"; shift 2 ;;
+    --channel)   channel="${2:-}";      shift 2 ;;
+    --review)    review_key="${2:-}";   shift 2 ;;
+    --reply)     reply_key="${2:-}";    shift 2 ;;
+    --thread-ts) thread_ts_arg="${2:-}"; shift 2 ;;
+    --title)     review_title="${2:-}"; shift 2 ;;
     --dry-run) dry=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*)        die "unknown option: $1   (see -h)" ;;
@@ -119,6 +126,10 @@ while [[ $# -gt 0 ]]; do
       shift ;;
   esac
 done
+
+if [[ -n "$thread_ts_arg" && ( -n "$review_key" || -n "$reply_key" ) ]]; then
+  die "--thread-ts can't combine with --review/--reply (those choose their own thread)"
+fi
 
 if [[ -n "$review_key" ]]; then
   [[ -n "$reply_key" ]] && die "--review and --reply are different modes — pick one"
@@ -140,5 +151,6 @@ if [[ -n "$reply_key" ]]; then
   fi
   notify_send "$channel" "$text" "$dry" "$ts"
 else
-  notify_send "$channel" "$text" "$dry"
+  # thread_ts_arg is empty for a top-level post, or the parent ts to reply under.
+  notify_send "$channel" "$text" "$dry" "$thread_ts_arg"
 fi

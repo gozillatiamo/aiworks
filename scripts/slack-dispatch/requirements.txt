@@ -1,0 +1,3 @@
+# aiworks-dispatch runtime deps. slack-bolt pulls slack-sdk transitively.
+slack-bolt>=1.21,<2
+redis>=5.0,<6
