@@ -95,6 +95,15 @@ against the must-fixes each gate reported, checking BOTH:
 2. **Language** — under `th`, does the posted body actually contain Thai prose (not just an
    English body with technical terms)? Under `en`, is it English?
 
+**MR/PR numbers collide across repos — verify cwd before every post.** `pr-comment.sh`
+resolves its target repo from cwd, not from the number you pass. A multi-repo ticket
+routinely has the SAME number in two different repos (e.g. OFB-1803: `backoffice` !806 AND
+`agent-webservice` !806 — unrelated MRs, same number). Run `git remote get-url origin`
+immediately before every `pr-comment.sh`/`pr-threads.sh` call and confirm it matches the repo
+you intend — do not trust a `cd` from a prior step to have stuck (root-caused 2026-07-22,
+OFB-1803: a stale cwd sent a backoffice-repo finding to an unrelated, already-merged MR in
+agent-webservice that happened to share the number).
+
 For any finding that fails either check — missing, or present but in the wrong language — post
 (or re-post) it yourself via `scripts/vcs/pr-comment.sh --path <file> --line <n> --body …` —
 anchored + quoting the code, in the resolved OUTPUT LANGUAGE, attributed to the gate (e.g.
@@ -121,6 +130,12 @@ doesn't. Note in your summary which findings you posted or reposted, and why.
   guarantee — treat it the same as the Bash case: prevention in §2, guaranteed net in the
   backstop above (the language check on every posted thread, every run, not just when something
   looks off).
+- **A repost lands on the wrong repo's MR/PR because two repos share the same number**
+  (root-caused 2026-07-22, OFB-1803, discovered on a re-visit of this same ticket). The
+  backstop's own remediation step is itself at risk here — verify cwd (`git remote get-url
+  origin`) immediately before every `pr-comment.sh` call, per the guard above; when it still
+  happens, the adapter has no delete, so post a short retraction/disregard note on the
+  wrong MR pointing at the correct one, and post the real finding on the correct repo.
 
 Present the two results under `## Code (Daniel)` and `## Performance (Liam)` — verbatim or
 lightly cleaned, **not merged or reranked**: the gates are deliberately independent so the user
