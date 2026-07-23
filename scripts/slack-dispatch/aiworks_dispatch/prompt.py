@@ -13,7 +13,13 @@ from __future__ import annotations
 from .correlation import CorrelationContext
 
 
-def build_prompt(ctx: CorrelationContext, workspace_root: str, *, is_followup: bool = False) -> str:
+def build_prompt(
+    ctx: CorrelationContext,
+    workspace_root: str,
+    *,
+    redis_url: str,
+    is_followup: bool = False,
+) -> str:
     """The initial prompt handed to the Claude agent inside the worktree.
 
     `workspace_root` is the absolute path of the OFB meta-repo MAIN clone — the
@@ -21,14 +27,23 @@ def build_prompt(ctx: CorrelationContext, workspace_root: str, *, is_followup: b
     through that absolute path, so it works from inside a fresh worktree whose own
     adapter .env is an unconfigured stub.
 
+    `redis_url` lets the agent free its thread's busy flag as its final step, so
+    thread continuity does not depend on the Stop-hook firing (it may not in a
+    Superset-launched session) or on the dispatcher writing the context file.
+
     `is_followup` marks a later mention in the SAME Slack thread: the worktree is
     reused (same branch, prior work present) and .aiworks/thread-log.md already
     holds the history of earlier turns. The CLI cannot resume the previous agent's
     live session, so that log is how context carries across turns.
     """
+    thread_key = f"thread:{ctx.slack_channel}:{ctx.slack_thread_ts}"
     postback = (
         f"{workspace_root}/scripts/notify/send.sh "
         f"--channel {ctx.slack_channel} --thread-ts {ctx.slack_thread_ts} \"<your summary>\""
+    )
+    free_thread = (
+        f"( cd {workspace_root}/scripts/slack-dispatch && "
+        f"./.venv/bin/python -m aiworks_dispatch.clear_busy --url {redis_url} --key {thread_key} )"
     )
     intro = (
         "This is a FOLLOW-UP in an ongoing Slack thread. You are in the SAME reused git "
@@ -68,9 +83,13 @@ def build_prompt(ctx: CorrelationContext, workspace_root: str, *, is_followup: b
             "",
             f"       {postback}",
             "",
-            "  3. Create the marker file so the dispatcher knows you already posted:",
+            "  3. Free this thread so the next mention isn't rejected as busy, by running:",
             "",
-            "       touch .aiworks/slack-posted",
+            f"       {free_thread}",
+            "",
+            "  4. Mark this turn as answered (so the backstop doesn't double-post):",
+            "",
+            f"       touch .aiworks/slack-posted-{ctx.correlation_id}",
             "",
             "Your summary should state: what you did, the branch name, and any PR/MR link —",
             "a few lines, no secrets or tokens.",

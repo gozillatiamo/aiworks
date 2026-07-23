@@ -23,7 +23,6 @@ transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/
 [[ -n "$cwd" ]] || cwd="${CLAUDE_PROJECT_DIR:-$PWD}"
 
 ctx="$cwd/.aiworks/slack-context.json"
-posted="$cwd/.aiworks/slack-posted"
 [[ -f "$ctx" ]] || exit 0        # not a dispatcher worktree
 
 channel="$(jq -r '.slack_channel // empty' "$ctx" 2>/dev/null || true)"
@@ -32,6 +31,7 @@ corr="$(jq -r '.correlation_id // empty' "$ctx" 2>/dev/null || true)"
 root="$(jq -r '.workspace_root // empty' "$ctx" 2>/dev/null || true)"
 redis_url="$(jq -r '.redis_url // empty' "$ctx" 2>/dev/null || true)"
 thread_key="$(jq -r '.thread_key // empty' "$ctx" 2>/dev/null || true)"
+posted="$cwd/.aiworks/slack-posted-$corr"   # per-turn marker (agent touches it)
 
 # 1) Always free the thread (session has ended), via the service's venv + package.
 py="$root/scripts/slack-dispatch/.venv/bin/python"

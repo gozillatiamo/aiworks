@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,9 +140,32 @@ class SupersetLocalDispatcher(Dispatcher):
             "redis_url": self.cfg.redis_url,
             "thread_key": thread_key,
         }
-        # A fresh dispatch replaces any stale marker so the Stop-hook fires for THIS turn.
         (aiworks_dir / "slack-context.json").write_text(json.dumps(payload, indent=2))
-        (aiworks_dir / "slack-posted").unlink(missing_ok=True)
+
+    def _await_worktree(self, workspace_id: str, hint: str | None, timeout: int = 300) -> str:
+        """Resolve the worktree path, polling `ws get` until the dir exists.
+
+        `ws create` returns before the worktree is materialized (worktreePath is
+        null in its response), so the path must be fetched afterwards — this is what
+        lets the context file actually get written. A stale/empty hint (e.g. a null
+        stored on a thread mapping) self-heals here.
+        """
+        if hint and Path(hint).is_dir():
+            return hint
+        deadline = time.monotonic() + timeout
+        last = hint or ""
+        while True:
+            try:
+                data = self._run(["workspaces", "get", workspace_id], timeout=30)
+                last = _first(data, "worktreePath", "workspace.worktreePath", "path") or last
+                if data.get("worktreeExists") and last and Path(last).is_dir():
+                    return last
+            except Exception as e:  # noqa: BLE001
+                log.debug("ws get poll error: %s", e)
+            if time.monotonic() >= deadline:
+                log.warning("worktree for %s not ready after %ds — context file may be skipped", workspace_id, timeout)
+                return last
+            time.sleep(2.0)
 
     def workspace_alive(self, workspace_id: str) -> bool:
         """True if the workspace still exists with a present worktree (reuse is safe)."""
@@ -174,14 +198,15 @@ class SupersetLocalDispatcher(Dispatcher):
         carries via .aiworks/thread-log.md (the CLI cannot resume the prior session).
         """
         if reuse:
+            ws_id = reuse["workspace_id"]
             branch = reuse.get("branch")
             try:
-                worktree = reuse.get("worktree_path") or ""
+                prompt = build_prompt(ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url, is_followup=True)
+                session_id = self._create_agent(ws_id, prompt)
+                worktree = self._await_worktree(ws_id, reuse.get("worktree_path"), timeout=120)
                 self._write_context_file(worktree, ctx)
-                prompt = build_prompt(ctx, self.cfg.workspace_root, is_followup=True)
-                session_id = self._create_agent(reuse["workspace_id"], prompt)
                 return DispatchResult(
-                    ok=True, workspace_id=reuse["workspace_id"], session_id=session_id,
+                    ok=True, workspace_id=ws_id, session_id=session_id,
                     worktree_path=worktree or None, branch=branch, reused=True,
                 )
             except Exception as e:  # noqa: BLE001
@@ -192,9 +217,12 @@ class SupersetLocalDispatcher(Dispatcher):
         name = branch = f"slack/{slug}"
         try:
             ws_id, worktree = self._create_workspace(name, branch)
-            self._write_context_file(worktree, ctx)
-            prompt = build_prompt(ctx, self.cfg.workspace_root, is_followup=False)
+            prompt = build_prompt(ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url, is_followup=False)
             session_id = self._create_agent(ws_id, prompt)
+            # ws create returns before the worktree materializes — resolve it now so
+            # the context file (Stop-hook backstop) lands in the real worktree.
+            worktree = self._await_worktree(ws_id, worktree, timeout=self.cfg.dispatch_timeout_sec)
+            self._write_context_file(worktree, ctx)
             return DispatchResult(
                 ok=True,
                 workspace_id=ws_id,

@@ -92,8 +92,13 @@ spam on the host.
 - **Concurrency.** One agent per thread worktree at a time. A mention that lands while
   the previous turn is still running is **refused** ("still working… mention me again"),
   never queued — two agents on one worktree would collide on the git index. A Redis busy
-  flag enforces it; the Stop-hook clears it the moment the session ends (with a
-  `BUSY_TTL_SEC` safety cap so a crash can't wedge the thread forever).
+  flag enforces it, freed in three layers: the agent clears it as its final step (from
+  the prompt — reliable, doesn't depend on the Stop-hook firing in a Superset session),
+  the Stop-hook clears it as a belt, and a `BUSY_TTL_SEC` cap frees it if both fail.
+- **Worktree path.** `superset ws create` returns before the worktree materializes
+  (worktreePath is null in its response), so the dispatcher polls `ws get` until the dir
+  exists before writing `.aiworks/slack-context.json` — otherwise the Stop-hook backstop
+  is silently disabled.
 
 ## Stop-hook backstop (needs one manual settings edit)
 
@@ -102,10 +107,11 @@ prompt preamble in `prompt.py`). `.claude/hooks/slack-postback.sh` (already inst
 executable) fires on session Stop and does two things, but only inside a worktree that
 has `.aiworks/slack-context.json` (so it is inert for every normal Claude session):
 
-1. **Frees the thread** — clears the Redis busy flag every time (so the next mention in
-   the thread isn't rejected), via the service venv at `scripts/slack-dispatch/.venv`.
-2. **Backstops the reply** — if `.aiworks/slack-posted` is absent (the agent forgot or
-   crashed), posts the last assistant message so the thread is never left silent.
+1. **Frees the thread (belt)** — clears the Redis busy flag, via the service venv at
+   `scripts/slack-dispatch/.venv`. The agent normally clears it itself as its last step;
+   this covers the case where it can't.
+2. **Backstops the reply** — if `.aiworks/slack-posted-<ref>` is absent (the agent forgot
+   or crashed), posts the last assistant message so the thread is never left silent.
 
 Editing `.claude/settings.json` is gated, so wire it yourself — add this `Stop` block
 under `"hooks"`:
