@@ -99,8 +99,8 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             log.error("dispatch failed correlation=%s error=%s", ctx.correlation_id, result.error)
             _post(
                 client, ctx.slack_channel, ctx.slack_thread_ts,
-                f":x: Couldn't dispatch (ref `{ctx.correlation_id}`): {result.error}\n"
-                f"The Superset host may be offline — try again once it's back.",
+                f":im_deadq: อยู่ไม่ไหว อยู่ไม่ไหว เฮ้ย อยู่ไม่ไหว อ้าว! (ref `{ctx.correlation_id}`): {result.error}\n"
+                f"บ้านนี้มันน่ากลัว กลัว ๆ ๆ อร๊าย! — กูไม่อยากอยู่ กูไม่อยากอยู่ กูไม่อยากอยู่ที่นี่.",
             )
             return
 
@@ -125,15 +125,15 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         except Exception:
             log.exception("failed to persist thread mapping for %s", thread_key)
 
-        verb = "Reusing" if result.reused else "Created"
+        verb = "โยนเข้า" if result.reused else "เสก"
         log.info(
             "dispatched ok correlation=%s reused=%s workspace=%s session=%s",
             ctx.correlation_id, result.reused, result.workspace_id, result.session_id,
         )
         _post(
             client, ctx.slack_channel, ctx.slack_thread_ts,
-            f":white_check_mark: {verb} worktree `{result.branch}` — Claude is on it now "
-            f"(session `{result.session_id or 'n/a'}`). I'll reply here when it finishes. "
+            f":claude-code: {verb} worktree `{result.branch}` — น้อง Claude รายงานตัวฮ่ะ "
+            f"(session `{result.session_id or 'n/a'}`). เสร็จแล้วเดี๋ยวมาบอกนะฮ่ะ. "
             f"(ref: `{ctx.correlation_id}`)",
         )
         # On success the busy flag stays set until the agent's session ends
@@ -155,7 +155,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
 
         if not _is_allowed(cfg, channel, user):
             log.warning("denied mention channel=%s user=%s", channel, user)
-            _post(client, channel, thread_ts, ":no_entry: I'm not enabled for this channel or user.")
+            _post(client, channel, thread_ts, ":pepe-tumtum: แก่... ไม่... มีสิทธิิ์!!!.")
             return
 
         request_text = _strip_mentions(event.get("text", ""))
@@ -171,8 +171,8 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             log.info("thread %s busy — rejecting concurrent mention", thread_key)
             _post(
                 client, channel, thread_ts,
-                ":hourglass: I'm still working on the previous request in this thread. "
-                "I'll reply here when it's done — mention me again after that.",
+                ":angry-monkey: ใจเย็นดิ๊!! รอก่อนได้ไหมล่ะ. "
+                "ก็แดดมันร้อน คนไม่ใช่หุ่นยนต์ ที่จะทนตากแดดทั้งวัน — ค่อยถามใหม่นะจ๊ะ.",
             )
             return
 
@@ -220,8 +220,8 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         log.info("accepted correlation=%s channel=%s user=%s continuing=%s", ctx.correlation_id, channel, user, continuing)
         _post(
             client, channel, thread_ts,
-            f":hourglass_flowing_sand: On it — {'continuing this thread' if continuing else 'creating a worktree'} "
-            f"and dispatching Claude. I'll reply in this thread when it's done. (ref: `{ctx.correlation_id}`)",
+            f":typingcat: จัดไปไอหนู — {'พี่ไม่เหนื่อยอยู่แล้ว!!' if continuing else 'ใช้งานมาหนักๆ ไม่ต้องเกรงใจหรอก :glassespepeq:'} "
+            f"ตื่นๆ มีเรื่องว่ะ :petclaude:. ใจร่มๆ พักชมสิ่งที่น่าสนใจสักครู่ :bananadance_duo:. (ref: `{ctx.correlation_id}`)",
         )
         # Heavy (fresh worktree setup can take minutes). Do it off the socket thread.
         threading.Thread(
