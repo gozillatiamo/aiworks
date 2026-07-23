@@ -9,6 +9,9 @@ skills:
   - caveman:caveman
   - decompose-ticket
   - diagram-ticket
+  # Runtime root-cause from SigNoz logs/traces (read-only) — ground a feasibility/risk call in
+  # what the deployed system ACTUALLY does, not just the code.
+  - telemetry-triage
 tools:
   - Read
   - Grep
@@ -19,6 +22,8 @@ tools:
   - WebFetch
   - Bash(*scripts/tracker/*)
   - Bash(*scripts/diagram/*)
+  # Observability adapter (scripts/observability/, signoz): read-only logs/traces for telemetry-triage.
+  - Bash(*scripts/observability/*)
   # DB access (read + query) — assess feasibility/architecture against the REAL schema and run SELECT via execute_sql.
   # NOTE: execute_sql is NOT verb-restricted at the tool layer; enforce true read-only with a read-only DB role.
   - mcp__postgres_ass__list_schemas

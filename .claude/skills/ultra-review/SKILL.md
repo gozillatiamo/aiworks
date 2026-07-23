@@ -16,8 +16,10 @@ inline on the live MR/PR and render their own verdicts. The verdict grounding is
 [`.claude/skills/review/basis.md`](../review/basis.md) — and every gate reads it first.
 
 **Scope — review, never merge.** The gates review, comment findings inline, and render a
-verdict/approval; they must **NOT merge** (even where `auto_merge` is on). Ultra-review is a
-review pass — merge stays a separate, later decision.
+verdict; the **orchestrator** posts the single ticket-wide PASS **approval** — and only when
+every gate on every repo is clean (§3.5), never a gate per-repo. No one **merges** — not the
+gates, not the orchestrator, even where `auto_merge` is on. Approve says "cleared the bar";
+merge stays a separate, later human decision.
 
 ## 0. Resolve language + review level BEFORE spawning (do this FIRST)
 
@@ -45,6 +47,27 @@ Review level = <strict|thorough> (passed in — do NOT re-read the config). At s
 blocking must-fixes only; at thorough also triage the nice-to-have tier.
 ```
 
+## 0.5 Detect the run: fresh vs re-visit
+
+Two shapes of run, and the shape changes both the gate briefs (§2) and the aggregate (§3):
+
+- **Fresh** — first ultra-review pass on this ticket's MR/PR. Gates review the whole diff and
+  surface every must-fix they find.
+- **Re-visit** — the user says "re-visit" / "revisit" / "re-review" / "recheck", or names a fix
+  ("the author just fixed X"), for a ticket that already carries gate comments on its MR/PR. A
+  re-visit is **not** a second fresh pass: each gate checks its **own prior findings** against
+  the new commit — resolved, or still open — and raises nothing outside the lines the fix
+  commit touched. **One exception:** if the fix commit itself introduces a new bug in those
+  touched lines, that IS reportable as a new must-fix; it stays scoped to the fix diff, never a
+  fresh full-file sweep.
+
+Detect re-visit from the user's **phrasing**, not from prior comments merely existing — an
+ordinary second look after unrelated commits is still a fresh pass. Default to fresh when unsure.
+
+**Completion:** you know the run's mode, and — for re-visit — you hold the prior must-fix
+thread list (`scripts/vcs/pr-threads.sh <num>`, run from inside each repo) plus the fix commit's
+SHA.
+
 ## Process
 
 ### 1. Pin the ticket + its open MR/PR
@@ -68,17 +91,27 @@ so they run concurrently and don't pollute each other's context. Into **each** b
 - The shared directive block from §0 (language + review level), verbatim.
 - The ticket `<KEY>` and the open MR/PR ref(s) + branch + target.
 - `"This is an ultra-review pass — review, comment findings inline on the MR/PR, and render
-  your verdict. Do NOT merge, even if auto_merge is on; merge is a separate decision."`
+  your verdict. Do NOT approve and do NOT merge (even if auto_merge is on): the orchestrator
+  posts the single ticket-wide PASS approval once every gate on every repo is clean, and merge
+  is a separate, later decision."`
 - **A force-shell first line** (proven fix for the perf "no Bash" give-up — see §3):
   `"Your FIRST action is a real Bash call — run `scripts/vcs/pr-view.sh <num>` (or `git
   rev-parse --show-toplevel`) from inside the target repo BEFORE any analysis or prose. Do NOT
   reason about whether Bash/tools are available — you HAVE a scoped Bash grant (the code-reviewer
   uses the identical mechanism). Never self-report 'no Bash / no shell' without an actual failed
   attempt; a real denial comes with a real error you must quote."`
+- **Re-visit mode only** (§0.5): replace the generic review instruction above with — paste the
+  prior must-fix thread list (file/line/body/resolved-state) and the fix commit SHA, then:
+  `"This is a RE-VISIT, not a fresh review. Check ONLY your own prior must-fix findings above
+  against commit <SHA> — mark each resolved or still-open, with evidence. Do NOT review other
+  code, do NOT raise nice-to-have/style findings you skipped last round, do NOT re-sweep the
+  whole diff. One exception: if <SHA> introduces a new bug in the lines it touches, report that
+  as a new must-fix — nothing further afield."`
 
 Each gate then runs its own instrument (Daniel: `/review` + codegraph blast radius; Liam:
 profiling) per its own definition — no extra tool grant needed. **Completion:** both gates
-have returned a verdict.
+have returned a verdict — fresh: every must-fix found; re-visit: resolved/still-open per prior
+finding, plus any new must-fix strictly confined to the fix commit's touched lines.
 
 ### 3. Aggregate
 
@@ -144,10 +177,50 @@ finding on the MR/PR itself; separately, rewrite any wrong-language prose in wha
 here into the resolved OUTPUT LANGUAGE before presenting — never show the user a finding in the
 wrong language even if the MR/PR copy has since been corrected.
 
+**Re-visit presentation (§0.5).** Under each gate's header, list every prior must-fix by
+status — **resolved** (say how the commit fixed it) or **still open** (say why it isn't) — then
+any genuinely new must-fix, marked `(new, introduced by <SHA>)` so it reads as distinct from a
+re-surfaced old finding. If a gate's return smuggles in a fresh, previously-unraised finding that
+is NOT confined to the fix commit's touched lines, drop it from this pass (or note it separately
+as out-of-scope) — a re-visit reports on the prior round, not a second fresh sweep.
+
 End with **one combined verdict** line: requirements genuinely **met / partially met / not
-met**, then the review level and the worst single issue per gate. The combined verdict is
-**capped by any blocking finding at any gate** — a critical perf regression caps the verdict at
-"partially met" even when the code-quality gate is clean.
+met**, then the review level and the worst single issue per gate — on a re-visit, the worst
+remaining item is either a still-open prior must-fix or a new one from the fix commit. The
+combined verdict is **capped by any blocking finding at any gate** — a critical perf regression
+caps the verdict at "partially met" even when the code-quality gate is clean.
+
+### 3.5 PASS signal — orchestrator-owned, gated on ticket-wide MET (still never merge)
+
+The combined verdict answers one **ticket-wide** question: are the ticket's requirements
+*genuinely met* across **every** repo's MR/PR? Post the PASS signal **only** on a clean **met**
+— zero unresolved must-fix at *every* gate on *every* repo, and no open `Human:` directive. When
+met, the orchestrator itself posts it on **each** repo's MR/PR: one host-level approval + one
+loud verdict line, via
+
+```
+scripts/vcs/pr-approve.sh <num> --body "✅ APPROVED — <KEY>: requirements met, standards clean, 0 must-fix."
+```
+
+body in the resolved OUTPUT LANGUAGE. Like notify (§4) this is **orchestrator-owned and
+deterministic, never left to the gates** — a gate that lost its shell (perf "no Bash") can't
+approve, so a gate-owned approval would silently drop; and the §2 brief tells each gate NOT to
+approve on its own, so the one PASS signal is single-sourced here.
+
+**Hold the approval until the WHOLE ticket is met — ticket-wide, never per-repo.** A
+**partially met / not met** verdict (any must-fix anywhere — this run's OFB-2244 shape) posts
+**no** approval on **any** MR/PR, not even on a repo that came back clean. The ticket is one
+unit and its repos are usually ship-order-coupled (OFB-2244: the agent-db migration must land
+before the agent-webservice INSERT, or site-creation breaks platform-wide) — approving the
+clean repo alone reads as "this MR is ready to merge on its own", which the coupling makes
+false. When not fully met the inline must-fix threads (posted/backstopped in §3) plus the
+combined-verdict notify (§4) are the whole communication: the **absence** of an approval *is*
+the "changes requested" signal.
+
+**Approve is decoupled from merge (scope holds).** A PASS signal says "cleared the bar"; it is
+**not** a merge. Ultra-review still never merges (even with `auto_merge` on) — `pr-approve.sh`
+registers the host approval + verdict note only; whether/when it then merges stays a separate,
+later human decision.
 
 ### 4. Notify — orchestrator-owned, deterministic (ALWAYS runs when `notify.enabled`)
 

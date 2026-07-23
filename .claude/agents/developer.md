@@ -16,6 +16,9 @@ skills:
   - caveman:caveman
   - karpathy-guidelines
   - open-pr
+  # Runtime root-cause from SigNoz logs/traces for a deployed-env bug — investigate, then its
+  # developer branch seeds /diagnosing-bugs with the captured trace/payload and fixes test-first.
+  - telemetry-triage
 tools:
   - Read
   - Grep
@@ -40,6 +43,9 @@ tools:
   - Bash(codegraph *)
   # VCS adapter (scripts/vcs/, github|gitlab): open PRs/MRs, reply to review comments.
   - Bash(*scripts/vcs/*)
+  # Observability adapter (scripts/observability/, signoz): logs/traces for telemetry-triage —
+  # root-cause a deployed-env bug from real telemetry before reproducing it locally.
+  - Bash(*scripts/observability/*)
   # Tracker adapter (scripts/tracker/, notion|jira): close the ticket after shipping
   # (Status → Done) via /update-ticket. The build role owns the Done transition post-distribute.
   - Bash(*scripts/tracker/*)
@@ -96,6 +102,8 @@ What each maps to is repo-specific — check the repo's `scripts/dev.sh` header 
 - anything a teammate or the user reports as **broken / throwing / failing / slow**.
 
 The non-negotiable core of the skill is **Phase 1: stand up a tight, red-capable feedback loop** — a failing `scripts/dev.sh test`, a curl, a CLI or headless repro — that reproduces the **user's exact symptom** and that you have **already run once** (paste the invocation + output), **before** you theorize a cause or edit a line. That loop is then the `/tdd` red test you fix to green and the Phase-5 regression test. If you catch yourself reading code to build a theory before that command exists, **stop** — jumping to a hypothesis is the exact failure this skill prevents. If you genuinely cannot build a loop, say so explicitly (what you tried + what you need) rather than guessing.
+
+**Bug only shows in a deployed env (staging/prod/dev) and won't reproduce locally? Get the ground truth FIRST with `/telemetry-triage`** — pull the real SigNoz logs + trace for the failing request, then use that captured trace/payload to seed the Phase 1 loop (its "replay a captured trace" option). Telemetry finds *what happened*; it is the seed for the repro loop, never a substitute for it — you still fix against a red loop.
 
 **Cause still hidden after the loop goes red? Step through it — don't guess and don't spin another print cycle.** When print-debugging isn't revealing enough, or you need to see exactly how execution reached a bad state, drive **`/debugging-code:debugging-code`** (interactive DAP debugger: breakpoints — incl. conditional — step line-by-line, inspect live variables + the call stack, evaluate expressions against the running process). This is escalation *inside* `/diagnosing-bugs`, **never** a replacement: the red repro loop still comes first and still becomes the Phase-5 regression test; the debugger just beats another `println!`/`console.log` round to the root cause. Works across the workspace stacks (Rust backend, Node/TS web apps, …).
 

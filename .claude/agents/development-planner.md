@@ -10,6 +10,9 @@ skills:
   - ticket-kickoff
   - write-interactive-docs
   - diagram-ticket
+  # Runtime root-cause from SigNoz logs/traces (read-only) — ground a fix-ticket plan in the real
+  # deployed behavior when codegraph + reading can't reveal WHY the running system misbehaves.
+  - telemetry-triage
 tools:
   - Read
   - Grep
@@ -25,6 +28,8 @@ tools:
   # codegraph + reading can't reveal HOW execution reaches the buggy state. Investigate, never fix.
   - Bash(dap *)
   - Bash(*scripts/tracker/*)
+  # Observability adapter (scripts/observability/, signoz): read-only logs/traces for telemetry-triage.
+  - Bash(*scripts/observability/*)
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context

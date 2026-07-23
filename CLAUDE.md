@@ -6,6 +6,15 @@ history, remote, `CLAUDE.md`) — read a repo's own `CLAUDE.md` first.
 ⚠️ **Before any git op:** `git rev-parse --show-toplevel` to confirm the
 repo.
 
+⚠️ **Never read `.env` / `.env.*` files** (any adapter's `scripts/{vcs,tracker,notify,
+observability}/.env`, or any other secrets file matched by the workspace's blanket
+`.env`/`.env.*` gitignore rule) — **except `.env.example`** templates, which are safe
+(no real values). This means no `Read`, no `cat`/`grep`/`sed`/`head`/`tail` on them, and
+no `bash -x`/`set -x` around code that sources one (tracing prints the sourced values
+into the transcript/logs verbatim). To check a var is set without exposing it, use
+`grep -q '^VAR=.\+' .env` (prints only a boolean via exit code), never a form that echoes
+the value.
+
 **Discover repos:** declared under `products[].repos[]` in `workspace.config.yaml`
 (the source of truth); `mani.yaml` imports the per-product `mani.d/<product>.yaml`
 files generated from it by `scripts/aiworks`. `mani list projects` for the full list.
@@ -67,8 +76,9 @@ gitignored clones and only the meta-repo shows.
   workspace root — branch/commit/PR in that primary clone (the coding-lifecycle skills
   consult this to redirect submodule'd changes to the right repo).
 - Provider adapters: `scripts/vcs/` (PR/MR via `github`|`gitlab`),
-  `scripts/tracker/` (tickets via `notion`|`jira`), and `scripts/notify/` (chat via
-  `slack`). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack
+  `scripts/tracker/` (tickets via `notion`|`jira`), `scripts/notify/` (chat via
+  `slack`), and `scripts/observability/` (traces/logs via `signoz`). **Always go
+  through the adapters — never call `gh`/`glab`/Notion/Jira/Slack/the SigNoz API
   directly.**
 - **Test environment:** automated runs target **local** by default; staging is an
   explicit, QA-reserved opt-in (`CYPRESS_ENV=staging`). Defer to each repo's default —
@@ -130,6 +140,9 @@ to build calibration history before producing an estimate; do not conclude
 'no calibration history' without querying those fields.
 
 **DO NOT:**
+- Read, print, or trace-dump any `.env` / `.env.*` file (except `.env.example`) — see the
+  ⚠️ warning above. Highest priority: a leaked adapter secret (Jira/GitLab/Slack/SigNoz/...)
+  is a live credential, not just a file.
 - codegraph is not allowed at the organization (workspace) level — only inside an
   individual repo.
 - Never edit, add, or commit **inside a git submodule checkout** (e.g.
