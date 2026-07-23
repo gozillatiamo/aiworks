@@ -63,6 +63,10 @@ cp .env.example .env          # fill in the two Slack tokens; defaults cover the
 reference: see `.env.example`. The trigger allowlist **defaults to deny** — set
 `ALLOWED_CHANNEL_IDS` and/or `ALLOWED_USER_IDS` or nothing dispatches.
 
+> **`RUNBOOK.md`** is the full run + test drill — prerequisites, the terminal layout,
+> every test scenario (first mention, reuse, concurrency, in-thread context), inspect
+> commands, teardown, and troubleshooting.
+
 ## Usage (in Slack)
 
 ```
@@ -179,3 +183,4 @@ project's setup or reuse worktrees if this is too heavy for your usage.
 | `docker-compose.yml` | dedicated Redis (port 6370) |
 | `slack-app-manifest.yaml` | Slack app definition |
 | `run.sh` | boot Redis + venv + service |
+| `RUNBOOK.md` | operational run + test drill |
