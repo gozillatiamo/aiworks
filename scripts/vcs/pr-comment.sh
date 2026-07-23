@@ -2,22 +2,26 @@
 # Comment on a PR/MR — inline at PATH:LINE where the provider supports it, else a
 # normal PR/MR comment that references PATH:LINE in its text.
 #
-# Review-comment convention (all reviewers): a review comment MUST anchor to the
-# code — pass --path + --line so it lands inline at the exact spot, AND quote the
-# offending line/block as a fenced code snippet in --body. No vague, location-less
-# review comments.
+# Review-comment convention (all reviewers): a review comment MUST anchor to the code —
+# pass --path + --line so it lands inline at the exact spot. When the finding is about a
+# MULTI-LINE block, pass the FULL RANGE as --line START-END so the inline highlight covers
+# the ENTIRE block, not just its first line. The highlighted range makes the code explicit,
+# so DO NOT re-paste the block as a fenced code snippet in --body — keep --body to the
+# finding + the fix (a short inline `token` reference is fine). No vague, location-less
+# review comments, and no comment that dumps the code it's already pointing at.
 #
-# Anchor precision: the FIRST line of the quoted snippet is the exact offending line, and
-# --line is VERIFIED against it. If the anchored line doesn't contain that quoted line, the
-# anchor auto-corrects to the unique match within ±ANCHOR_WINDOW lines (the small off-by-N
-# slip — e.g. a definition whose --line landed on the blank/attribute line above the
-# signature), printing the correction; with no unique nearby match it posts as given and
-# WARNs. So the highlight always covers the code the comment is about.
+# Anchor precision (single --line only): if --body happens to quote the offending line as a
+# fenced snippet, --line is VERIFIED against its FIRST line and auto-corrects to the unique
+# match within ±ANCHOR_WINDOW lines (the small off-by-N slip — e.g. a definition whose --line
+# landed on the blank/attribute line above the signature), printing the correction; with no
+# unique nearby match it posts as given and WARNs. A range (--line N-M) skips this check —
+# the reviewer states the exact span, and the provider anchors both ends.
 #
-#   ./pr-comment.sh 42 --path lib/foo.dart --line 88 \
-#       --body $'Guard the null case.\n\n```dart\nfinal pet = cache[id]; // can be null\nreturn pet.name;       // NPE if absent\n```'
+#   ./pr-comment.sh 42 --path lib/foo.dart --line 88-92 \
+#       --body 'Guard the null case: cache[id] can be null before the return.'
+#   ./pr-comment.sh 42 --path lib/foo.dart --line 88 --body 'Off-by-one in the loop bound.'
 #   ./pr-comment.sh 42 --body "Overall LGTM."
-#   ./pr-comment.sh 42 --path … --line … --body … --dry-run
+#   ./pr-comment.sh 42 --path … --line N-M --body … --dry-run
 #
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,7 +33,8 @@ Usage: pr-comment.sh <number> --body <text> [--path <file> --line <n>] [--dry-ru
 Options:
   --body <text>  Comment body (required).
   --path <file>  File to anchor an inline comment to (optional).
-  --line <n>     Line number for the inline comment (optional; needs --path).
+  --line <n|n-m> Line, or an inclusive range n-m that highlights the whole block
+                 (optional; needs --path).
   --dry-run      Print what would be posted, without posting.
   -h, --help     Show this help and exit.
 EOF
@@ -64,6 +69,7 @@ done
 ANCHOR_WINDOW=15
 verify_anchor() {
   [[ -n "$path" && -n "$line" && -f "$path" ]] || return 0
+  [[ "$line" != *-* ]] || return 0   # a range states its exact span; nothing to auto-correct
   local quoted q at lo hi matches n newline
   # First non-blank line inside the first fenced ``` block of the body.
   quoted="$(printf '%s\n' "$body" | awk '
