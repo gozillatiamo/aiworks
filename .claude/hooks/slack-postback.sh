@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Stop-hook BACKSTOP for the Slack dispatcher (scripts/slack-dispatch/).
+# Stop-hook for the Slack dispatcher (scripts/slack-dispatch/). Two jobs when a
+# dispatched Claude session ends inside a worktree the dispatcher created:
 #
-# When a Claude session ends inside a worktree that the dispatcher created, this
-# guarantees the Slack thread hears back even if the agent forgot to post or
-# crashed. It is GATED and IDEMPOTENT, so it is inert for every normal session:
+#   1. ALWAYS free the thread — clear its Redis busy flag so the next mention in
+#      the thread isn't rejected as "still working" (runs whether or not the agent
+#      posted its own summary).
+#   2. BACKSTOP the reply — if the agent did NOT post its own summary
+#      (.aiworks/slack-posted absent), post the last assistant message to the thread
+#      so it's never left silent.
 #
-#   • Fires only when  .aiworks/slack-context.json  exists in the session cwd
-#     (the dispatcher writes it; a normal dev session has no such file → exit 0).
-#   • Skips if  .aiworks/slack-posted  exists (the agent's own post-back, done via
-#     the preamble instruction, touches this marker → no double-post).
-#
-# Reads the Stop-hook JSON on stdin (cwd, transcript_path). Best-effort: any
-# failure exits 0 so it never blocks the session from ending.
+# GATED + IDEMPOTENT, so it is inert for every normal session: it does nothing
+# unless  .aiworks/slack-context.json  exists in the session cwd (a normal dev
+# session has none). Reads the Stop-hook JSON on stdin (cwd, transcript_path).
+# Best-effort throughout — any failure exits 0 so the session can end.
 set -uo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
@@ -24,17 +25,26 @@ transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/
 ctx="$cwd/.aiworks/slack-context.json"
 posted="$cwd/.aiworks/slack-posted"
 [[ -f "$ctx" ]] || exit 0        # not a dispatcher worktree
-[[ -f "$posted" ]] && exit 0     # the agent already posted its own summary
 
 channel="$(jq -r '.slack_channel // empty' "$ctx" 2>/dev/null || true)"
 thread_ts="$(jq -r '.slack_thread_ts // empty' "$ctx" 2>/dev/null || true)"
 corr="$(jq -r '.correlation_id // empty' "$ctx" 2>/dev/null || true)"
 root="$(jq -r '.workspace_root // empty' "$ctx" 2>/dev/null || true)"
-send="$root/scripts/notify/send.sh"
+redis_url="$(jq -r '.redis_url // empty' "$ctx" 2>/dev/null || true)"
+thread_key="$(jq -r '.thread_key // empty' "$ctx" 2>/dev/null || true)"
 
+# 1) Always free the thread (session has ended), via the service's venv + package.
+py="$root/scripts/slack-dispatch/.venv/bin/python"
+if [[ -n "$redis_url" && -n "$thread_key" && -x "$py" ]]; then
+  ( cd "$root/scripts/slack-dispatch" && "$py" -m aiworks_dispatch.clear_busy --url "$redis_url" --key "$thread_key" ) >/dev/null 2>&1 || true
+fi
+
+# 2) Backstop the reply only if the agent didn't already post its own summary.
+[[ -f "$posted" ]] && exit 0
+
+send="$root/scripts/notify/send.sh"
 [[ -n "$channel" && -n "$thread_ts" && -x "$send" ]] || exit 0
 
-# Last assistant text from the transcript (JSONL), as the summary snippet.
 snippet=""
 if [[ -n "$transcript" && -f "$transcript" ]]; then
   snippet="$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text] | last // ""' "$transcript" 2>/dev/null | head -c 1200 || true)"

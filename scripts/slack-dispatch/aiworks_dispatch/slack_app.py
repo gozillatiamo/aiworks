@@ -15,7 +15,7 @@ import threading
 from slack_bolt import App
 
 from .config import Config
-from .correlation import CorrelationContext, git_safe_slug, new_correlation_id, now_iso
+from .correlation import CorrelationContext, new_correlation_id, now_iso
 from .dispatcher import Dispatcher
 from .store import RedisStore
 
@@ -54,31 +54,65 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         except Exception:
             log.exception("failed to post to %s/%s", channel, thread_ts)
 
-    def _run_dispatch(ctx: CorrelationContext, client) -> None:
-        slug = git_safe_slug(ctx.correlation_id)
-        result = dispatcher.dispatch(ctx)
+    def _run_dispatch(ctx: CorrelationContext, thread_key: str, mapping: dict | None, client) -> None:
+        # Reuse the thread's worktree if it still exists; otherwise fall back to fresh.
+        reuse = None
+        if mapping and mapping.get("workspace_id") and dispatcher.workspace_alive(mapping["workspace_id"]):
+            reuse = mapping
+        elif mapping:
+            log.info("thread %s mapping stale (worktree gone) — creating a fresh worktree", thread_key)
+
+        result = dispatcher.dispatch(ctx, reuse=reuse)
         try:
             store.save_outcome(ctx.correlation_id, result.to_dict())
         except Exception:
             log.exception("failed to persist outcome for %s", ctx.correlation_id)
-        if result.ok:
-            log.info(
-                "dispatched ok correlation=%s workspace=%s session=%s",
-                ctx.correlation_id, result.workspace_id, result.session_id,
-            )
-            _post(
-                client, ctx.slack_channel, ctx.slack_thread_ts,
-                f":white_check_mark: Worktree `slack/{slug}` created — Claude is on it now "
-                f"(session `{result.session_id or 'n/a'}`). I'll reply here when it finishes. "
-                f"(ref: `{ctx.correlation_id}`)",
-            )
-        else:
+
+        if not result.ok:
+            # No agent was launched — free the thread so a retry isn't blocked.
+            store.clear_busy(thread_key)
             log.error("dispatch failed correlation=%s error=%s", ctx.correlation_id, result.error)
             _post(
                 client, ctx.slack_channel, ctx.slack_thread_ts,
                 f":x: Couldn't dispatch (ref `{ctx.correlation_id}`): {result.error}\n"
                 f"The Superset host may be offline — try again once it's back.",
             )
+            return
+
+        # Persist the thread->worktree mapping. Fixed TTL from creation (never refreshed).
+        try:
+            if result.reused:
+                store.touch_thread(thread_key, {
+                    **(mapping or {}),
+                    "last_correlation_id": ctx.correlation_id,
+                    "last_activity": ctx.created_at,
+                })
+            else:
+                store.create_thread(thread_key, {
+                    "workspace_id": result.workspace_id,
+                    "worktree_path": result.worktree_path,
+                    "branch": result.branch,
+                    "correlation_id": ctx.correlation_id,
+                    "created_at": ctx.created_at,
+                    "last_correlation_id": ctx.correlation_id,
+                    "last_activity": ctx.created_at,
+                }, cfg.thread_ttl_sec)
+        except Exception:
+            log.exception("failed to persist thread mapping for %s", thread_key)
+
+        verb = "Reusing" if result.reused else "Created"
+        log.info(
+            "dispatched ok correlation=%s reused=%s workspace=%s session=%s",
+            ctx.correlation_id, result.reused, result.workspace_id, result.session_id,
+        )
+        _post(
+            client, ctx.slack_channel, ctx.slack_thread_ts,
+            f":white_check_mark: {verb} worktree `{result.branch}` — Claude is on it now "
+            f"(session `{result.session_id or 'n/a'}`). I'll reply here when it finishes. "
+            f"(ref: `{ctx.correlation_id}`)",
+        )
+        # On success the busy flag stays set until the agent's session ends
+        # (the Stop-hook clears it) — that's what rejects concurrent mentions.
 
     @app.event("app_mention")
     def handle_app_mention(event, client, logger):  # noqa: ANN001
@@ -104,6 +138,23 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             _post(client, channel, thread_ts, _USAGE)
             return
 
+        thread_key = store.thread_key(channel, thread_ts)
+
+        # Concurrency: one agent per thread's worktree at a time. A mention that
+        # arrives while the previous turn is still running is refused, not queued.
+        if store.is_busy(thread_key):
+            log.info("thread %s busy — rejecting concurrent mention", thread_key)
+            _post(
+                client, channel, thread_ts,
+                ":hourglass: I'm still working on the previous request in this thread. "
+                "I'll reply here when it's done — mention me again after that.",
+            )
+            return
+
+        # Reuse this thread's existing worktree if we've seen the thread before
+        # (validated in the background before dispatch). None => a fresh worktree.
+        mapping = store.get_thread(thread_key)
+
         ctx = CorrelationContext(
             correlation_id=new_correlation_id(),
             slack_channel=channel,
@@ -117,15 +168,20 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         except Exception:
             log.exception("failed to persist context for %s", ctx.correlation_id)
 
-        log.info("accepted correlation=%s channel=%s user=%s", ctx.correlation_id, channel, user)
+        # Claim the thread before acking so a near-simultaneous mention is rejected.
+        store.set_busy(thread_key, ctx.correlation_id, cfg.busy_ttl_sec)
+
+        continuing = mapping is not None
+        log.info("accepted correlation=%s channel=%s user=%s continuing=%s", ctx.correlation_id, channel, user, continuing)
         _post(
             client, channel, thread_ts,
-            f":hourglass_flowing_sand: On it — creating a worktree and dispatching Claude. "
-            f"I'll reply in this thread when it's done. (ref: `{ctx.correlation_id}`)",
+            f":hourglass_flowing_sand: On it — {'continuing this thread' if continuing else 'creating a worktree'} "
+            f"and dispatching Claude. I'll reply in this thread when it's done. (ref: `{ctx.correlation_id}`)",
         )
-        # Heavy: worktree setup can take minutes. Do it off the socket thread.
+        # Heavy (fresh worktree setup can take minutes). Do it off the socket thread.
         threading.Thread(
-            target=_run_dispatch, args=(ctx, client), name=f"dispatch-{ctx.correlation_id}", daemon=True,
+            target=_run_dispatch, args=(ctx, thread_key, mapping, client),
+            name=f"dispatch-{ctx.correlation_id}", daemon=True,
         ).start()
 
     return app

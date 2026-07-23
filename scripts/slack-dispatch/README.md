@@ -74,14 +74,38 @@ A leading slash command runs the matching skill exactly as if typed in a Claude 
 session. Plain text is handled as a task. The bot acks immediately, then replies in
 the same thread when the agent finishes (`ref: req-…` ties the messages together).
 
+## Thread continuity
+
+Keep mentioning the bot **in the same thread** and it reuses that thread's worktree
+instead of spawning a new one each time — no re-clone, no `setup.sh`, no worktree
+spam on the host.
+
+- **Mapping.** `thread:<channel>:<thread_ts>` in Redis → the thread's worktree
+  (`workspace_id`, `worktree_path`, `branch`). Lives **`THREAD_TTL_SEC` from creation**
+  (fixed 7d default, not refreshed on reuse).
+- **What "continue" means.** The `superset` CLI cannot resume a live Claude session, so
+  a follow-up launches a *new* agent session in the *same* worktree/branch. Context
+  carries via **`.aiworks/thread-log.md`** — each turn reads it for history and appends
+  its own summary (the prompt enforces this).
+- **Stale mapping.** If the worktree is gone (`workspaces get` says so) or the mapping
+  expired, the next mention transparently starts a fresh worktree and re-maps the thread.
+- **Concurrency.** One agent per thread worktree at a time. A mention that lands while
+  the previous turn is still running is **refused** ("still working… mention me again"),
+  never queued — two agents on one worktree would collide on the git index. A Redis busy
+  flag enforces it; the Stop-hook clears it the moment the session ends (with a
+  `BUSY_TTL_SEC` safety cap so a crash can't wedge the thread forever).
+
 ## Stop-hook backstop (needs one manual settings edit)
 
 The **primary** post-back is the agent calling `send.sh` itself (instructed in the
-prompt preamble in `prompt.py`). The **backstop** guarantees the thread hears back
-even if the agent forgets or crashes: `.claude/hooks/slack-postback.sh` (already
-installed + executable) fires on session Stop, but only inside a worktree that has
-`.aiworks/slack-context.json`, and only if `.aiworks/slack-posted` was not written —
-so it is inert for every normal Claude session.
+prompt preamble in `prompt.py`). `.claude/hooks/slack-postback.sh` (already installed +
+executable) fires on session Stop and does two things, but only inside a worktree that
+has `.aiworks/slack-context.json` (so it is inert for every normal Claude session):
+
+1. **Frees the thread** — clears the Redis busy flag every time (so the next mention in
+   the thread isn't rejected), via the service venv at `scripts/slack-dispatch/.venv`.
+2. **Backstops the reply** — if `.aiworks/slack-posted` is absent (the agent forgot or
+   crashed), posts the last assistant message so the thread is never left silent.
 
 Editing `.claude/settings.json` is gated, so wire it yourself — add this `Stop` block
 under `"hooks"`:
@@ -132,7 +156,8 @@ project's setup or reuse worktrees if this is too heavy for your usage.
 | `aiworks_dispatch/config.py` | env → typed `Config`, fail-fast |
 | `aiworks_dispatch/correlation.py` | `CorrelationContext`, id + git-safe slug |
 | `aiworks_dispatch/prompt.py` | trusted preamble + untrusted request block |
-| `aiworks_dispatch/store.py` | Redis dedup + correlation/outcome store |
+| `aiworks_dispatch/store.py` | Redis dedup + correlation/outcome store + thread mapping/busy |
+| `aiworks_dispatch/clear_busy.py` | Stop-hook helper: free a thread's busy flag |
 | `aiworks_dispatch/dispatcher.py` | `Dispatcher` interface + `SupersetLocalDispatcher` |
 | `aiworks_dispatch/slack_app.py` | Socket Mode `app_mention` handler |
 | `aiworks_dispatch/__main__.py` | entrypoint / wiring / graceful shutdown |

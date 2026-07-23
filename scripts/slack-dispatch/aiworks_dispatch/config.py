@@ -69,10 +69,18 @@ class Config:
     dedup_ttl_sec: int = 86400        # 1d — window Slack may redeliver within
     context_ttl_sec: int = 604800     # 7d — keep correlation context for tracing
 
+    # Thread continuity: a Slack thread reuses ITS worktree so a follow-up mention
+    # never re-spawns one. The mapping lives thread_ttl_sec from CREATION (fixed, not
+    # sliding). While a thread's agent is running, a busy flag (busy_ttl_sec, a safety
+    # cap — the Stop-hook clears it promptly) rejects concurrent mentions.
+    thread_ttl_sec: int = 604800      # 7d fixed from thread creation
+    busy_ttl_sec: int = 1800          # cap; defaults to dispatch_timeout_sec
+
     log_level: str = "info"
 
     @staticmethod
     def from_env() -> "Config":
+        dispatch_timeout = int(_optional("DISPATCH_TIMEOUT_SEC", "1800"))
         cfg = Config(
             slack_bot_token=_require("SLACK_BOT_TOKEN"),
             slack_app_token=_require("SLACK_APP_TOKEN"),
@@ -82,11 +90,13 @@ class Config:
             superset_host_id=_optional("SUPERSET_HOST_ID", ""),
             superset_agent_preset=_optional("SUPERSET_AGENT_PRESET", "claude"),
             superset_base_branch=_optional("SUPERSET_BASE_BRANCH", "develop"),
-            dispatch_timeout_sec=int(_optional("DISPATCH_TIMEOUT_SEC", "1800")),
+            dispatch_timeout_sec=dispatch_timeout,
             workspace_root=_optional("WORKSPACE_ROOT", _default_workspace_root()),
             redis_url=_optional("REDIS_URL", "redis://localhost:6370/0"),
             dedup_ttl_sec=int(_optional("DEDUP_TTL_SEC", "86400")),
             context_ttl_sec=int(_optional("CONTEXT_TTL_SEC", "604800")),
+            thread_ttl_sec=int(_optional("THREAD_TTL_SEC", "604800")),
+            busy_ttl_sec=int(_optional("BUSY_TTL_SEC", str(dispatch_timeout))),
             log_level=_optional("LOG_LEVEL", "info"),
         )
         cfg.validate()

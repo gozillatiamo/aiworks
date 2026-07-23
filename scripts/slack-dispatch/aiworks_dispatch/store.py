@@ -52,3 +52,32 @@ class RedisStore:
     def get_context(self, correlation_id: str) -> CorrelationContext | None:
         raw = self._r.get(f"corr:{correlation_id}")
         return CorrelationContext.from_dict(json.loads(raw)) if raw else None
+
+    # -- thread continuity --------------------------------------------------
+
+    @staticmethod
+    def thread_key(channel: str, thread_ts: str) -> str:
+        return f"thread:{channel}:{thread_ts}"
+
+    def get_thread(self, key: str) -> dict | None:
+        """The worktree mapping for a Slack thread, or None if never seen / expired."""
+        raw = self._r.get(key)
+        return json.loads(raw) if raw else None
+
+    def create_thread(self, key: str, data: dict, ttl_sec: int) -> None:
+        """First mapping for a thread — TTL is FIXED from here (not refreshed on reuse)."""
+        self._r.set(key, json.dumps(data), ex=ttl_sec)
+
+    def touch_thread(self, key: str, data: dict) -> None:
+        """Record latest activity WITHOUT resetting the fixed creation TTL."""
+        self._r.set(key, json.dumps(data), keepttl=True)
+
+    def is_busy(self, key: str) -> bool:
+        return self._r.exists(f"{key}:busy") == 1
+
+    def set_busy(self, key: str, value: str, ttl_sec: int) -> None:
+        """Mark a thread's worktree in-use (safety-capped; cleared by the Stop-hook)."""
+        self._r.set(f"{key}:busy", value, ex=ttl_sec)
+
+    def clear_busy(self, key: str) -> None:
+        self._r.delete(f"{key}:busy")
