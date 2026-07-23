@@ -101,6 +101,18 @@ glab auth login
 gcloud auth application-default login
 ```
 
+4.3 SonarQube MCP token — the `sonarqube` MCP server runs as a **shared** container
+(`aiworks-mcp-sonarqube`, HTTP transport, like the postgres MCP services). Its
+`.mcp.json` entry sends your SonarCloud token as a per-request `Authorization: Bearer`
+header, expanded from `SONARQUBE_TOKEN` in your shell env. Authenticate once, then export
+the token (sourced from the OS keychain, so it never lands in a file) in your shell profile:
+```sh
+sonar auth login                                    # one-time; stores the token in the OS keychain
+export SONARQUBE_TOKEN="$(security find-generic-password -s sonarqube-cli -a sonarcloud.io:couple-t -w)"
+```
+Restart Claude Code after setting it so the MCP config reloads. The org defaults to
+`couple-t`; override with `SONARQUBE_ORG` in `.superset/.env` if yours differs.
+
 **5. Run the product** — starts the full local stack (databases + migrations, backend,
 backoffice, **one** player site, AMB aggregator):
 

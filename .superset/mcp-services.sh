@@ -43,11 +43,31 @@ strays_for() {
   done
 }
 
+# Force-remove every stray (non-compose) MCP container — the old per-client
+# `docker run` sediment. Compose-managed containers carry the project label and
+# are left untouched. Echoes a one-line summary; always returns 0.
+reap_strays() {
+  local reaped=0 image ids
+  for image in $STRAY_IMAGES; do
+    ids="$(strays_for "$image")"
+    if [[ -n "${ids// }" ]]; then
+      # shellcheck disable=SC2086
+      docker rm -f $ids >/dev/null 2>&1 && echo "mcp-services: reaped strays for $image:$ids" && reaped=1
+    fi
+  done
+  [[ $reaped -eq 0 ]] && echo "mcp-services: no stray MCP containers to reap."
+  return 0
+}
+
 cmd="${1:-up}"
 case "$cmd" in
   up)
     have_docker || { echo "mcp-services: docker unavailable — skipping shared MCP startup." >&2; exit 0; }
     compose up -d --quiet-pull && echo "mcp-services: shared MCP stack up (project $PROJECT)."
+    # Sweep any old-model per-client stdio containers left over from before the
+    # shared stack (or from a client still on an old .mcp.json). The compose
+    # containers just started carry the project label and are never touched.
+    reap_strays
     ;;
   down)
     have_docker || exit 0
@@ -55,15 +75,7 @@ case "$cmd" in
     ;;
   reap)
     have_docker || exit 0
-    reaped=0
-    for image in $STRAY_IMAGES; do
-      ids="$(strays_for "$image")"
-      if [[ -n "${ids// }" ]]; then
-        # shellcheck disable=SC2086
-        docker rm -f $ids >/dev/null 2>&1 && echo "mcp-services: reaped strays for $image:$ids" && reaped=1
-      fi
-    done
-    [[ $reaped -eq 0 ]] && echo "mcp-services: no stray MCP containers to reap."
+    reap_strays
     ;;
   status)
     have_docker || { echo "mcp-services: docker unavailable."; exit 0; }
