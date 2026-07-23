@@ -187,3 +187,9 @@ products:
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection, input validation"
+      
+      - url: git@gitlab.com:bluepicode/ofb/dev-script.git
+        kind: script
+        desc: The developer scripts that use for troubleshooting on production(and usable for staging and local). It's variants of scripts for different purposes like postgres queries, and shell scripts to generate curl commands, and might add more in the future.
+        lang: shell
+        guardian_focus: "secrets, data-protection"

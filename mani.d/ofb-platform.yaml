@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  dev-script:
+    desc: The developer scripts that use for troubleshooting on production(and usable for staging and local). It's variants of scripts for different purposes like postgres queries, and shell scripts to generate curl commands, and might add more in the future.
+    url: git@gitlab.com:bluepicode/ofb/dev-script.git
+    path: ../dev-script
+    tags: [ofb-platform, shell, postgres]
   lotto-service:
     desc: A service to handle the lotto gambling features, currently it using the AML aggregator.
     url: git@gitlab.com:bluepicode/ofb/lotto-service.git
