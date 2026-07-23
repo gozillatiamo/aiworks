@@ -80,6 +80,13 @@ resolve. If it's about master/global data, use `mad`. If you must compare a reco
 the fleet, fan out over shards `0`–`f` explicitly and say so — don't pretend one shard is
 the whole picture.
 
+**Resolving a target from a `player_code`.** OFB `player_code`s begin with their 5-char
+**`site_code`** — e.g. `GC78900000021` → site `GC789` (`ABCDE00000001` → `ABCDE`). When you
+only have a player_code and need the shard, resolve that site to its `agency_id` (the
+`master_site` registry on `mad` maps sites to agencies), then the shard is `agency_id[0]` as
+above. This beats a blind 16-shard fan-out — reach for the fan-out only when the site/agency
+genuinely can't be resolved.
+
 ## Workflow
 
 1. **Resolve language** (above) and **preflight** the MCP.
@@ -109,6 +116,11 @@ Keep it tight and evidence-led:
 - Root cause / conclusion: <…>
 - Next step: <ticket / fix handoff / further query>  (or: no action)
 ```
+
+**Amounts are scaled ×1,000,000.** OFB stores currency as integers with 6 implied decimal
+places — a stored `100000000` is `100`, `1000000` is `1`. Divide a raw amount by `1e6` and
+name the unit before quoting a human-facing figure (balances, `bet`/`payout`, `turnover`,
+transaction `amount`, …); never present the raw integer as the money value.
 
 Post to a ticket/Slack only through the normal adapters, and only the PII-safe summary —
 never a raw dump of production rows.
