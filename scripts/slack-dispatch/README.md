@@ -45,7 +45,8 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
 2. **Project + agent preset.** `superset projects list` (the OFB meta-repo →
    `SUPERSET_PROJECT_ID`), `superset agents list --local` (confirm the `claude` preset).
 3. **Slack app** with Socket Mode — see `slack-app-manifest.yaml`. You need a bot
-   token (`xoxb-…`, scopes `app_mentions:read` + `chat:write`) and an app-level token
+   token (`xoxb-…`, scopes `app_mentions:read` + `chat:write`, plus `channels:history` /
+   `groups:history` to read a thread when mentioned inside one) and an app-level token
    (`xapp-…`, scope `connections:write`). Invite the bot to the trigger channel.
 4. **Docker** for the Redis container.
 
@@ -87,6 +88,13 @@ spam on the host.
   a follow-up launches a *new* agent session in the *same* worktree/branch. Context
   carries via **`.aiworks/thread-log.md`** — each turn reads it for history and appends
   its own summary (the prompt enforces this).
+- **Mentioned inside an existing thread.** If the FIRST mention lands in a thread whose
+  root did not address the bot, the whole thread up to that mention is pulled in as
+  context (each line tagged with its Slack author id) and injected into the prompt as
+  untrusted DATA. This needs the `channels:history` / `groups:history` bot scopes — if
+  the thread can't be read, the bot **hard-fails** (posts what scope to add, dispatches
+  nothing). Only on the first request; follow-ups rely on `thread-log.md`. Capped by
+  `THREAD_CONTEXT_MAX_MSGS`.
 - **Stale mapping.** If the worktree is gone (`workspaces get` says so) or the mapping
   expired, the next mention transparently starts a fresh worktree and re-maps the thread.
 - **Concurrency.** One agent per thread worktree at a time. A mention that lands while

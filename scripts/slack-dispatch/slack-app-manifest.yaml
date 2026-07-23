@@ -28,6 +28,8 @@ oauth_config:
     bot:
       - app_mentions:read   # receive @-mentions
       - chat:write          # post acks + the agent's reply into the thread
+      - channels:history    # read a thread's messages when first mentioned inside one (public)
+      - groups:history      # same, for private channels
       - channels:join       # optional: self-join public channels
       - channels:read       # optional: resolve #name -> id for self-join
 

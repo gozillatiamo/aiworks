@@ -45,6 +45,31 @@ def _is_allowed(cfg: Config, channel: str, user: str) -> bool:
     return False
 
 
+def _ts_before(a: str, b: str) -> bool:
+    """True if Slack ts `a` is strictly earlier than `b` (numeric, not lexical)."""
+    try:
+        return float(a) < float(b)
+    except (TypeError, ValueError):
+        return False
+
+
+def fetch_thread_context(client, channel: str, thread_ts: str, before_ts: str, max_msgs: int) -> str:
+    """Whole thread up to (excluding) the mention, one line per message tagged with
+    its Slack author id. Raises on API error so the caller can hard-fail."""
+    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=max_msgs)
+    lines: list[str] = []
+    for m in resp.get("messages", []) or []:
+        mts = m.get("ts", "")
+        if before_ts and not _ts_before(mts, before_ts):
+            continue  # skip the mention itself and anything after it
+        text = (m.get("text") or "").strip()
+        if not text:
+            continue
+        author = m.get("user") or (f"bot:{m.get('bot_id')}" if m.get("bot_id") else "unknown")
+        lines.append(f"[{author}] {text}")
+    return "\n".join(lines)
+
+
 def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
     app = App(token=cfg.slack_bot_token, logger=log)
 
@@ -54,7 +79,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         except Exception:
             log.exception("failed to post to %s/%s", channel, thread_ts)
 
-    def _run_dispatch(ctx: CorrelationContext, thread_key: str, mapping: dict | None, client) -> None:
+    def _run_dispatch(ctx: CorrelationContext, thread_key: str, mapping: dict | None, thread_context: str, client) -> None:
         # Reuse the thread's worktree if it still exists; otherwise fall back to fresh.
         reuse = None
         if mapping and mapping.get("workspace_id") and dispatcher.workspace_alive(mapping["workspace_id"]):
@@ -62,7 +87,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         elif mapping:
             log.info("thread %s mapping stale (worktree gone) — creating a fresh worktree", thread_key)
 
-        result = dispatcher.dispatch(ctx, reuse=reuse)
+        result = dispatcher.dispatch(ctx, reuse=reuse, thread_context=thread_context)
         try:
             store.save_outcome(ctx.correlation_id, result.to_dict())
         except Exception:
@@ -155,6 +180,26 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         # (validated in the background before dispatch). None => a fresh worktree.
         mapping = store.get_thread(thread_key)
 
+        # First bot request INSIDE a pre-existing thread (its root did not @ the bot):
+        # pull the conversation so far as context. Hard-fail (no dispatch) if unreadable.
+        mention_ts = event.get("ts", "")
+        thread_context = ""
+        if mapping is None and thread_ts and thread_ts != mention_ts:
+            try:
+                thread_context = fetch_thread_context(
+                    client, channel, thread_ts, mention_ts, cfg.thread_context_max_msgs
+                )
+                log.info("pulled thread context channel=%s thread=%s chars=%d", channel, thread_ts, len(thread_context))
+            except Exception as e:  # noqa: BLE001
+                log.warning("thread fetch failed channel=%s thread=%s: %s", channel, thread_ts, e)
+                _post(
+                    client, channel, thread_ts,
+                    ":lock: I was mentioned inside a thread but can't read its history. Add the bot "
+                    "scopes `channels:history` (and `groups:history` for private channels), reinstall "
+                    "the app, then mention me again.",
+                )
+                return
+
         ctx = CorrelationContext(
             correlation_id=new_correlation_id(),
             slack_channel=channel,
@@ -180,7 +225,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         )
         # Heavy (fresh worktree setup can take minutes). Do it off the socket thread.
         threading.Thread(
-            target=_run_dispatch, args=(ctx, thread_key, mapping, client),
+            target=_run_dispatch, args=(ctx, thread_key, mapping, thread_context, client),
             name=f"dispatch-{ctx.correlation_id}", daemon=True,
         ).start()
 

@@ -54,7 +54,7 @@ class DispatchResult:
 
 class Dispatcher(ABC):
     @abstractmethod
-    def dispatch(self, ctx: CorrelationContext, reuse: dict | None = None) -> DispatchResult:  # pragma: no cover
+    def dispatch(self, ctx: CorrelationContext, reuse: dict | None = None, thread_context: str = "") -> DispatchResult:  # pragma: no cover
         ...
 
     @abstractmethod
@@ -190,7 +190,7 @@ class SupersetLocalDispatcher(Dispatcher):
 
     # -- interface ----------------------------------------------------------
 
-    def dispatch(self, ctx: CorrelationContext, reuse: dict | None = None) -> DispatchResult:
+    def dispatch(self, ctx: CorrelationContext, reuse: dict | None = None, thread_context: str = "") -> DispatchResult:
         """Fresh worktree (reuse is None) or reuse an existing one for a thread follow-up.
 
         Reuse skips `workspaces create` entirely — no re-clone, no setup.sh — and just
@@ -217,7 +217,7 @@ class SupersetLocalDispatcher(Dispatcher):
         name = branch = f"slack/{slug}"
         try:
             ws_id, worktree = self._create_workspace(name, branch)
-            prompt = build_prompt(ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url, is_followup=False)
+            prompt = build_prompt(ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url, is_followup=False, thread_context=thread_context)
             session_id = self._create_agent(ws_id, prompt)
             # ws create returns before the worktree materializes — resolve it now so
             # the context file (Stop-hook backstop) lands in the real worktree.
