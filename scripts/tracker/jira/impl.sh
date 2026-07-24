@@ -14,7 +14,12 @@
 #   JIRA_SPRINT_FIELD     optional custom-field id for --sprint (the Agile "Sprint" field).
 #                     Read as the current/last sprint's id+name; written as a bare sprint id
 #                     (an integer, not the array GET returns) — e.g. copy an original ticket's
-#                     sprint onto a freshly split-off piece.
+#                     sprint onto a freshly split-off piece. --sprint takes ONLY that raw id,
+#                     never a name/number — resolve "Sprint 72" -> id with
+#                     jira/discover-sprints.sh 72 (Agile API; never hand-roll a curl against
+#                     it — see docs/agents/issue-tracker.md and the workspace .env guard).
+#   JIRA_BOARD_ID     optional Agile board id for discover-sprints.sh, to skip its board
+#                     auto-discovery (only needed with more than one board per project).
 #                     find the ids with jira/discover-fields.sh; when one is unset the
 #                     matching flag is WARNed + listed under "Skipped:" (not dropped silently).
 #   JIRA_SUBTASK_ISSUETYPE optional sub-task issue type NAME for --subtask (e.g. "Sub-task").
