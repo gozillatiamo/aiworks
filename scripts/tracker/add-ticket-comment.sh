@@ -52,4 +52,5 @@ done
 if [[ "$have_text" -eq 0 && ! -t 0 ]]; then text="$(cat)"; fi
 [[ -n "$text" ]] || die "no comment text — pass it as an argument or pipe it via stdin"
 
+tracker_assert_no_pii "$text"
 tracker_add_comment "$ticket" "$dry" "$text"

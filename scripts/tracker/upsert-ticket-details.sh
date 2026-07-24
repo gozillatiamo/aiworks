@@ -133,4 +133,9 @@ fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --arg
 [[ "$fields" != "{}" || "$have_body" -eq 1 ]] \
   || die "nothing to update — pass at least one property flag or --body (see -h)"
 
+# PII egress gate: external-world PII (phone/email/wallet/bank/national-id) must not leave the
+# prod boundary into a ticket. Inner-system identity, aggregates, money integers and reproduce
+# SQL pass (see tracker_assert_no_pii in lib.sh).
+[[ "$have_body" -eq 1 ]] && tracker_assert_no_pii "$body_md"
+
 tracker_upsert "$ticket" "$dry" "$fields" "$body_md"

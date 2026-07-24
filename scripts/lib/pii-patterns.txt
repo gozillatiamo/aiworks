@@ -1,0 +1,33 @@
+# scripts/lib/pii-patterns.txt — canonical external-PII detector list (the single policy).
+#
+# Loaded by BOTH engines so the policy lives in one place:
+#   - scripts/lib/pii-scan.sh          — egress gate for tickets/Slack (grep)
+#   - scripts/db/prod_repro_seed.py    — value-level mask on prod→local seed (Python re)
+#
+# Format: one detector per line, TAB-separated:  <category><TAB><mode><TAB><ERE>
+#   mode = plain  → case-sensitive match
+#   mode = ci     → case-insensitive match (used for the label-gated detectors)
+# Blank lines and #-comments are ignored.
+#
+# These detect EXTERNAL-WORLD PII in value form (block). They are shaped NOT to trip on the
+# ALLOW set — inner-system identity (any *_code identifier, internal UUID), reproduce SQL,
+# aggregates, and money integers (a bare long digit run is NOT matched; it can collide with a
+# fixed-point money value stored as an integer — national ids are caught only in their
+# formatted/labelled form). Names have no reliable shape and are the SOFT (prompt) layer, not here.
+
+email	plain	[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}
+phone	plain	(\+[0-9]{10,15}|\b0[0-9]{9}\b)
+# IPv4 with 0-255 octets. A 4-part dotted version string (e.g. 1.2.3.4) also matches — rare in
+# ticket prose (semver is 3-part); use the break-glass env if it ever false-blocks. IPv6 is
+# omitted on purpose: its shape collides with a HH:MM:SS time.
+ip_address	plain	\b((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\b
+crypto_wallet_eth	plain	\b0x[a-fA-F0-9]{40}\b
+crypto_wallet_btc	plain	\b(bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b
+crypto_wallet_tron	plain	\bT[1-9A-HJ-NP-Za-km-z]{33}\b
+iban	plain	\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b
+# Formatted national id (dashed groups, e.g. 1-2345-67890-12-3). Value form only.
+national_id	plain	\b[0-9]-[0-9]{4}-[0-9]{5}-[0-9]{2}-[0-9]\b
+# Label-gated so a bare digit run (which may be a money integer or a *_code) isn't nuked.
+national_id	ci	(national[ _-]?id|citizen[ _-]?id)[^0-9]{0,20}[0-9]{6,13}
+passport	ci	passport[^A-Za-z0-9]{0,20}[A-Z]{1,2}[0-9]{6,8}
+bank_account	ci	(bank[ _-]?acc(ount)?|acct[ _-]?no|account[ _-]?no)[^0-9]{0,20}[0-9]{6,17}
