@@ -177,6 +177,12 @@ fi
 [[ "$have_body" -eq 1 ]] && tracker_assert_body_language "$body_md"
 [[ "$have_estimate_reason" -eq 1 ]] && tracker_assert_body_language "$estimate_reason"
 
+# Same choke point, second gate: external-world PII (phone/email/wallet/bank/national-id)
+# must not leave the prod boundary into a ticket. Inner-system identity, aggregates, money
+# integers and reproduce SQL pass (see tracker_assert_no_pii in lib.sh).
+[[ "$have_body" -eq 1 ]] && tracker_assert_no_pii "$body_md"
+[[ "$have_estimate_reason" -eq 1 ]] && tracker_assert_no_pii "$estimate_reason"
+
 # Post the reason FIRST, then commit the numbers: if the reason can't be posted we abort
 # before writing any point field, so the recoverable failure mode is "reason without number"
 # (the reason block itself names the numbers) rather than the silent "number without reason".

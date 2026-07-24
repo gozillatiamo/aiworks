@@ -118,3 +118,25 @@ tracker_assert_body_language() {
     die "language gate: output policy is 'th' but this ticket body is all-English prose ($nonspace prose chars, 0 Thai). Rewrite the prose in Thai (English spine — headings/labels/code/identifiers/versions stay English; see docs/agents/language.md). Override with TRACKER_SKIP_LANGUAGE_CHECK=1 only if this body is genuinely spine-only."
   fi
 }
+
+# Write-time PII egress gate. Production-derived data must not leave the prod boundary into a
+# ticket (which fans out to Jira/Slack). Blocks external-world PII in value form — phone,
+# email, crypto wallet, IBAN/bank account, formatted national-id/passport — via the shared
+# scanner (scripts/lib/pii-scan.sh). Inner-system identity (player_code/site_code/*_code,
+# internal UUID), reproduce SQL, aggregate stats, and money integers all PASS: those are the
+# ground truth a triage summary legitimately needs and identify no real-world person. Dies
+# loud on a hit (adapter convention), naming only the matched CATEGORY, never the value (that
+# would itself leak PII into the transcript). Break-glass: TRACKER_SKIP_PII_CHECK=1 — human
+# only, for a genuine false positive; an agent must instead rewrite as an aggregate. Args: TEXT.
+tracker_assert_no_pii() {
+  local text="$1"
+  [[ -n "$text" ]] || return 0
+  [[ "${TRACKER_SKIP_PII_CHECK:-0}" == "1" ]] && return 0
+  local scanner="$TRACKER_DIR/../lib/pii-scan.sh"
+  [[ -f "$scanner" ]] || return 0   # scanner absent → degrade open, never false-block
+  # shellcheck disable=SC1090
+  . "$scanner"
+  if ! pii_scan_text "$text"; then
+    die "PII egress gate: this ticket text carries external-world PII ($(pii_scan_categories)) leaving the prod boundary. De-identify first — quote the inner-system identity (player_code/site_code/UUID), an aggregate (counts / GROUP BY), or the reproduce SQL instead of the raw phone/email/wallet/bank value. Break-glass (human only, genuine false positive): TRACKER_SKIP_PII_CHECK=1."
+  fi
+}
