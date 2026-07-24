@@ -11,6 +11,9 @@ skills:
   - coding-automate
   - report-test-results
   - update-ticket
+  # Deployed-env (staging) suite red → pull the real SigNoz trace to judge app-fault vs env issue
+  # before reporting. Finding only (Phase 4) — folds into the report; QA never edits app code.
+  - telemetry-triage
   - handoff
 tools:
   - Read
@@ -32,6 +35,9 @@ tools:
   - Bash(npm run why:*)
   - Bash(npm run appium:*)
   - Bash(node test.js:*)
+  # Observability adapter (scripts/observability/, signoz): read-only logs/traces for telemetry-triage
+  # — ground a deployed-env red in the real trace (app-fault vs env). Read-only; QA never edits code.
+  - Bash(*scripts/observability/*)
   # Ground truth — inspect the REAL schema before seeding (structure only; no execute_sql / no data writes).
   - mcp__postgres_ass__list_schemas
   - mcp__postgres_ass__list_objects

@@ -10,6 +10,9 @@ skills:
   - plan-testcases
   - update-ticket
   - plan-automate
+  # Deployed-env (staging) test red → pull the real SigNoz trace to judge app-fault vs env issue.
+  # Finding only (Phase 4) — folds into the verdict; QA never edits app code.
+  - telemetry-triage
   - handoff
   - write-interactive-docs
 tools:
@@ -25,6 +28,9 @@ tools:
   - Bash(codegraph *)
   # Read the ticket (plan-testcases) and publish to it (update-ticket).
   - Bash(*scripts/tracker/*)
+  # Observability adapter (scripts/observability/, signoz): read-only logs/traces for telemetry-triage
+  # — ground a deployed-env red in the real trace (app-fault vs env). Read-only; QA never edits code.
+  - Bash(*scripts/observability/*)
   # Ground truth — inspect the REAL schema when planning prerequisites (structure only; no execute_sql).
   - mcp__postgres_ass__list_schemas
   - mcp__postgres_ass__list_objects

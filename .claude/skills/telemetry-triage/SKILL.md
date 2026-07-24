@@ -63,7 +63,7 @@ The **`trace_id` ↔ logs** link is the spine of a distributed investigation: a 
 - Find the **first thing that goes wrong** — the earliest span with `HasError`, the latency jump in the waterfall, the first error log — not a downstream symptom of it.
 - If you will fix it, map that failing span/service to code (`codegraph` / Grep) so the finding points at a real location.
 
-## Phase 4 — Root-cause finding — cto & development-planner STOP HERE
+## Phase 4 — Root-cause finding — advisory/gate roles STOP HERE
 
 Completion criterion — a finding that is **checkable**, not a hunch. It must carry:
 
@@ -72,13 +72,16 @@ Completion criterion — a finding that is **checkable**, not a hunch. It must c
 - [ ] **Suspected root cause**, tied to that evidence (not to a general theory).
 - [ ] **Suggested fix direction** — one sentence pointing at the code/config to change.
 
-This is read-only. Where the caller takes it:
+This is read-only. **The gate is by role capability, not a fixed roster:** only the role that OWNS the code fix continues to Phase 5; every other consumer STOPS here and routes the finding into its own output. Where the caller takes it:
 
 - **cto** — fold into a risk / architecture note; decide if it needs a ticket (`/clarifying-ticket`).
 - **development-planner** — fold into the implementation plan as grounding, so the plan targets the real cause.
-- **developer** — continue to Phase 5.
+- **performance-engineer** — treat a latency/throughput finding like any perf finding: anchor it as a PR/MR comment (critical regression) or file an Improvement ticket (nice-to-have) via `/clarifying-ticket`. Never edits code.
+- **QA (qa-planner / qa-runner)** — fold into the test verdict / bug report on the ticket: is a deployed-env red a real app fault or an env issue? Never edits app code.
+- **developer** — OWNS the fix: continue to Phase 5.
+- **any future consumer** — same rule: finding only, unless it owns the code fix.
 
-## Phase 5 — Apply the fix — DEVELOPER ONLY
+## Phase 5 — Apply the fix — CODE-OWNER ONLY (the developer)
 
 Do **not** edit against a prod symptom directly. Convert the ground truth into a red loop first:
 
