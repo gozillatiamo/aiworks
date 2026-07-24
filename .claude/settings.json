@@ -64,7 +64,14 @@
       "Read(**/.aws/credentials)",
       "Read(**/secrets/**)",
       "Write(**/.env)",
-      "Edit(**/.env)"
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.claude/**)",
+      "Read(//etc/**)",
+      "Edit(~/.ssh/**)",
+      "Write(~/.ssh/**)",
+      "Edit(~/.aws/**)",
+      "Write(~/.aws/**)"
     ]
   },
   "enabledMcpjsonServers": [
