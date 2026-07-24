@@ -82,3 +82,45 @@ mechanism:
 
 Credentials live only in `scripts/db/.env`, read only by this server process — never through
 Claude, the MCP config, or the transcript. Do not Read/cat/grep the `.env`.
+
+## Repro seeding — `prod_repro_seed.py`
+
+`prod_repro_seed.py` is the **one sanctioned path** to move production data into a **local**
+repro database, used by the developer inside `/diagnosing-bugs` when a data bug only
+reproduces against the actual offending rows. It reads prod through the same read-only DSNs,
+then **masks external PII and loads an entity-scoped slice into a throwaway `ofb_repro_<ticket>`
+database** — never the shared local dev DB. `reproduce-then-DROP`, so nothing prod-derived
+lingers locally.
+
+Enforced invariants (in code, not memory):
+
+1. **Read-only prod** — same read-only role + read-only transaction as the MCP; never writes prod.
+2. **Hard mask on persist** — every external-PII value (`scripts/lib/pii-patterns.txt`, the same
+   list the tracker egress gate uses) and PII-named column is masked before the local write.
+   Inner-system identity (`player_code`/`site_code`/`*_code`, UUID), money integers and status survive.
+3. **Throwaway, isolated DBs** — data lands in `ofb_repro_<ticket>_<seed>` (created from a
+   `template_db` that has the schema); `--teardown` DROPs every one for the ticket, across
+   instances. Never the shared local dev DB.
+4. **Entity-scoped** — seed the rows reachable from the ticket's identifier; a run above the
+   row caps (per-table 500 / total 2000 across all seeds) needs `--approve-large`.
+
+**Split-topology, multi-source.** OFB's service connects to the master (MAD) **and** a player
+shard (ASS) at once, so a spec is a list of `seeds` — each pulls one prod source (`target`/
+`agency_id`) into one throwaway DB on one local instance (chosen by `local.admin_env`). Seed a
+MAD+shard bug with both in one run; the tool prints which DB to wire to the service's MASTER vs
+SHARD connection. A single-source bug can use the flat `{source, template_db, tables}` shorthand.
+
+Extra config in `scripts/db/.env` — **local** maintenance DSNs with CREATEDB/DROPDB rights (NOT
+prod): `PGLOCAL_MAD_ADMIN` (local master instance, default :5432), `PGLOCAL_ASS_ADMIN` (local
+shard instance, default :5433), and `PGLOCAL_ADMIN` (fallback for shorthand specs). Leave unset
+on machines that don't run repro seeding.
+
+```bash
+uv run scripts/db/prod_repro_seed.py --selftest                          # deps/config/mask, no DB access
+uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json --dry-run   # pull+mask preview
+uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json             # create + load masked
+uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --teardown                   # DROP the throwaway DB
+```
+
+The read-only triage MCP does **not** use `PGLOCAL_ADMIN` and never seeds — reading and finding
+is its whole job. Only the developer's `/diagnosing-bugs` flow persists, and only through this tool.
