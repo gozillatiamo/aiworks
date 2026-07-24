@@ -1,0 +1,44 @@
+# Slack app manifest for the aiworks dispatcher.
+#
+# Use it one of two ways:
+#   • New dedicated app: https://api.slack.com/apps → Create New App → From a manifest,
+#     paste this, then Install to Workspace.
+#   • Extend the existing notify app: mirror the settings below onto it — enable Socket
+#     Mode, add the app_mention event subscription, add the app_mentions:read scope, and
+#     generate an app-level token with connections:write.
+#
+# After install you need TWO tokens for .env:
+#   SLACK_BOT_TOKEN — OAuth & Permissions → Bot User OAuth Token (xoxb-…)
+#   SLACK_APP_TOKEN — Basic Information → App-Level Tokens → generate one with
+#                     scope connections:write (xapp-…)
+# Then invite the bot to #your-channel:  /invite @aiworks
+
+display_information:
+  name: aiworks
+  description: Dispatches a Claude agent into a Superset worktree from a Slack mention.
+  background_color: "#1a1a2e"
+
+features:
+  bot_user:
+    display_name: aiworks
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read   # receive @-mentions
+      - chat:write          # post acks + the agent's reply into the thread
+      - channels:history    # read a thread's messages when first mentioned inside one (public)
+      - groups:history      # same, for private channels
+      - channels:join       # optional: self-join public channels
+      - channels:read       # optional: resolve #name -> id for self-join
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+  interactivity:
+    is_enabled: false
+  socket_mode_enabled: true
+  org_deploy_enabled: false
+  token_rotation_enabled: false

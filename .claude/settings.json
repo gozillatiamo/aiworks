@@ -163,6 +163,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/slack-postback.sh",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {

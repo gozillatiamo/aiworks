@@ -1,0 +1,10 @@
+# Redis persistence for the dedicated dedup container (docker-compose.yml).
+.redis-data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# .env is already ignored by the root .gitignore (.env / .env.*), listed here for clarity.
+.env

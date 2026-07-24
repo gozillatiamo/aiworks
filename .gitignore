@@ -26,6 +26,10 @@ __pycache__/
 .superset/run/
 .superset/logs/
 
+# Slack-dispatcher per-worktree runtime context (correlationId + reply target the
+# dispatched agent posts back with; written into each worktree, never committed).
+.aiworks/
+
 # the org's real product definitions — copy .superset/products/example.sh to <product-id>.sh
 .superset/products/*.sh
 !.superset/products/example.sh
