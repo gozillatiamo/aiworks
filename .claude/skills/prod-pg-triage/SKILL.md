@@ -58,10 +58,14 @@ would answer a prod question with dev data and mislead the whole investigation.
   them — you are investigating, not changing prod.
 - **`explain_query(analyze=True)` actually runs the query.** Leave `analyze` off unless you
   specifically need real timings; a plan (`analyze=False`) is free.
-- **Production data is sensitive.** Do not dump raw PII (phone numbers, emails, tokens, full
-  KYC rows) into chat, tickets, or Slack. Aggregate, count, mask, or quote the single field
-  that proves the point. Prefer `COUNT(*)` / `GROUP BY` / a single targeted row over
-  `SELECT *` on a wide table.
+- **Production data is sensitive — know the egress line.** What may leave the prod boundary
+  into a ticket / Slack: **inner-system identity** (`player_code` / `site_code` / any `*_code`,
+  internal UUID), an **aggregate** (`COUNT(*)` / `GROUP BY` — prefer this), the **reproduce
+  SQL**, and money integers. What may **not**: **external-world PII in value form** — phone,
+  email, crypto wallet, IBAN / bank account, national-id / passport. The tracker adapter's
+  egress gate (`tracker_assert_no_pii`, backed by `scripts/lib/pii-patterns.txt`) **hard-blocks**
+  a ticket body carrying that PII; treat a block as a signal to re-state as an aggregate, not
+  something to override. Prefer a single targeted row over `SELECT *` on a wide table.
 - **Confirm the target before a heavy query.** A cross-shard scan is 16 queries against
   prod; be deliberate about whether you need MAD, one shard, or a fan-out.
 
@@ -104,6 +108,14 @@ genuinely can't be resolved.
    hand that off — this skill does not write code or change prod.
 7. **Teardown**: call `disconnect` to close every prod pool. Always do this when the
    investigation is done — it leaves zero open connections to prod.
+
+## Persisting to a local repro (developer, `/diagnosing-bugs` only)
+Reading prod here is transient and read-only. If a bug needs the *actual* rows reproduced
+against local source, that is a **developer** step inside `/diagnosing-bugs`, and the only
+sanctioned way to move prod-derived data onto local disk is **`scripts/db/prod_repro_seed.py`**
+— it masks external PII, is entity-scoped, and loads into a **throwaway `ofb_repro_<KEY>` DB**
+that `--teardown` DROPs wholesale. Never hand-craft local `INSERT`s from prod values. Investigation
+agents (e.g. `performance-triage`) do **not** seed — they read, find, and hand the fix off.
 
 ## Reporting
 

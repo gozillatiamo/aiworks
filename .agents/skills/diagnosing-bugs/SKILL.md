@@ -36,6 +36,23 @@ Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give
 
 Build the right feedback loop, and the bug is 90% fixed.
 
+### When the loop needs the *actual* production data (OFB)
+Some data bugs only reproduce against the real offending rows — a `×1e6` money value that
+overflows, a `player_code` that resolves the wrong shard, a race-triggering timestamp — that
+synthetic fixtures don't recreate. Get the ground truth with **`/prod-pg-triage`** (read-only),
+then persist an entity-scoped, PII-masked slice into a **throwaway local DB** via the one
+sanctioned path, **`scripts/db/prod_repro_seed.py`**, and point the local service at it:
+
+```bash
+uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json   # → ofb_repro_<KEY> (masked)
+# ... reproduce against local source ...
+uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown         # DROP it wholesale (Phase 6 cleanup)
+```
+
+Never hand-craft local `INSERT`s from prod values — the tool enforces mask + isolation +
+teardown in code. This is a developer step and lives entirely within this skill's sandbox;
+the `--teardown` DROP is part of Phase 6 cleanup. (Full contract: developer.md "Prod data for a repro".)
+
 ### Tighten the loop
 
 Treat the loop as a product. Once you have _a_ loop, **tighten** it:
