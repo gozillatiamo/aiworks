@@ -11,8 +11,11 @@
       }
     },
     "sonarqube": {
-      "command": "sonar",
-      "args": ["run", "mcp"]
+      "type": "http",
+      "url": "http://localhost:25434/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SONARQUBE_TOKEN}"
+      }
     },
     "postgres_main": {
       "type": "sse",

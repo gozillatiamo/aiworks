@@ -25,10 +25,20 @@
 #                      host port each SSE endpoint is published on (defaults
 #                      25432 / 25433; if you change one, update the matching
 #                      URL in .mcp.json)
+#   SONARQUBE_ORG      SonarCloud org slug the sonarqube-mcp server binds to
+#                      (default `your-org` — override to yours). MCP_SONARQUBE_PORT: host port for its
+#                      HTTP endpoint (default 25434; update .mcp.json if changed).
 #
 # The `secondary` service is for stacks with a SECOND host Postgres (e.g. a
 # separate analytics/shard DB). One database? Delete it, plus the
 # `postgres_secondary` entry in .mcp.json.
+#
+# The `sonarqube-mcp` service replaces the old per-client `sonar run mcp` stdio
+# server (which spawned a fresh `mcp/sonarqube` container per agent and orphaned
+# them on crash — same failure the postgres services were migrated away from).
+# It runs the SonarQube MCP server in HTTP transport; the client's own SonarCloud
+# token rides in per-request as `Authorization: Bearer` (see .mcp.json), so the
+# container itself holds NO secret — only the (non-secret) org slug.
 # ─────────────────────────────────────────────────────────────────────────────
 name: aiworks-mcp                       # fixed project name → ONE shared stack regardless of cwd
 
@@ -54,6 +64,30 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  sonarqube-mcp:
+    image: mcp/sonarqube
+    container_name: aiworks-mcp-sonarqube
+    environment:
+      # SonarCloud org the server proxies to (matches each repo's
+      # sonar-project.properties `sonar.organization`). The per-request Bearer token
+      # (Authorization header, set in .mcp.json) carries the caller's credential —
+      # the container stores no token itself.
+      SONARQUBE_ORG: ${SONARQUBE_ORG:-your-org}
+      SONARQUBE_TRANSPORT: http
+      SONARQUBE_HTTP_HOST: 0.0.0.0
+      SONARQUBE_HTTP_PORT: "8000"
+    ports:
+      - "127.0.0.1:${MCP_SONARQUBE_PORT:-25434}:8000"
+    restart: unless-stopped
+    healthcheck:
+      # BusyBox image — no python/curl. `nc` (busybox) has no -z; a plain connect
+      # with EOF on stdin returns 0 iff the HTTP port is accepting connections.
+      test: ["CMD-SHELL", "nc -w 1 127.0.0.1 8000 </dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   postgres-secondary-mcp:
     image: crystaldba/postgres-mcp
