@@ -19,7 +19,7 @@ gated here, so the mask/isolation/teardown invariants are enforced in code, not 
      (player_code/site_code/*_code, UUID), money integers and status survive (the bug needs
      them); phone/email/wallet/bank/national-id do not.
   3. THROWAWAY, ISOLATED DBs — data lands in dedicated `ofb_repro_<ticket>_<seed>` databases,
-     never the shared local dev DB. `--teardown` DROPs every one for the ticket, across instances.
+     never the shared local DB. `--teardown` DROPs every one for the ticket, across instances.
   4. ENTITY-SCOPED — you seed the rows reachable from the ticket's identifier, not a table
      dump; a seed above the row caps needs an explicit `--approve-large`.
 
@@ -29,12 +29,12 @@ one local instance — reproduce a MAD+shard bug by seeding both in a single run
 service's master + shard connections at the two DBs this prints.
 
 Normal development is untouched: this only governs prod-DERIVED data into throwaway DBs.
-`execute_sql` INSERTs of synthetic/fixture data into the normal local dev DB stay free.
+`execute_sql` INSERTs of synthetic/fixture data into the normal local DB stay free.
 
   seed:      prod_repro_seed.py --ticket OFB-123 --spec seed.json [--approve-large] [--dry-run] [--fk-bypass]
   teardown:  prod_repro_seed.py --ticket OFB-123 --teardown
-  into-db:   prod_repro_seed.py --into-db <devdb> --spec seed.json --fk-bypass   # load into the DB the
-             service already uses (no throwaway/reconfig); teardown: --into-db <devdb> --spec seed.json --teardown
+  into-db:   prod_repro_seed.py --into-db <localdb> --spec seed.json --fk-bypass   # load into the DB the
+             service already uses (no throwaway/reconfig); teardown: --into-db <localdb> --spec seed.json --teardown
   list:      prod_repro_seed.py --list
   selftest:  prod_repro_seed.py --selftest      # deps/config/mask, no prod or local access
 
@@ -262,7 +262,7 @@ def do_seed(args) -> int:
     if into_db:
         print(f"[seed] into-db mode: loading MASKED prod-derived rows into EXISTING local DB "
               f"'{into_db}' (NOT isolated). Clean up with `--into-db {into_db} --spec <spec> --teardown` "
-              f"(targeted DELETE) or reset the dev DB. Never used against prod.")
+              f"(targeted DELETE) or reset the local DB. Never used against prod.")
     print(f"[seed] ticket={args.ticket} seeds={[s['name'] for s in seeds]} dry_run={args.dry_run}")
     masked_cells = 0
     wired = []  # (seed_name, prod_key, db_name, admin_env, local_loc) for the final report

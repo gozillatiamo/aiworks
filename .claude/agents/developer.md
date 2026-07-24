@@ -135,22 +135,22 @@ Some data bugs only reproduce against the *actual* offending prod rows (a `×1e6
 1. **Read prod (transient), read-only.** Use `/prod-pg-triage` to find the offending row(s) and resolve the target (shard = `agency_id[0]`; a `player_code` starts with its 5-char `site_code`). Reading prod into your context is fine; **`disconnect` when done.**
 2. **Persist ONLY via the seed tool.** Moving any prod-derived data onto local disk goes through **`uv run scripts/db/prod_repro_seed.py`** — the single enforced path. Never hand-craft `INSERT`s of prod values into a local DB; the tool exists so the mask/isolation/teardown invariants hold in code, not memory. It:
    - **masks external PII** (phone/email/wallet/bank/national-id — the shared `scripts/lib/pii-patterns.txt`) and PII-named columns before any local write. Inner-system identity (player_code/site_code/UUID), money integers and status survive — those are what the bug needs.
-   - lands data in **throwaway `ofb_repro_<KEY>_<seed>` DBs** (from a `template_db` that has the schema), **isolated** from the shared local dev DB — so normal `execute_sql` dev work is untouched.
+   - lands data in **throwaway `ofb_repro_<KEY>_<seed>` DBs** (from a `template_db` that has the schema), **isolated** from the shared local DB — so normal `execute_sql` dev work is untouched.
    - **handles OFB's split topology**: the spec is a list of `seeds`, so one run can seed both the master (MAD) and the player shard (ASS) the service needs — each into its own throwaway DB on its own local instance. The tool prints which DB to point the service's MASTER vs SHARD connection at.
    - is **entity-scoped**: seed the rows reachable from the ticket's identifier, not a table dump; a run above the row caps needs `--approve-large`.
    ```bash
    uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json --dry-run    # pull+mask preview, no local write
    uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json --fk-bypass  # throwaway ofb_repro_<KEY>_*, load masked
    ```
-   - **two persist modes.** Default = **isolated throwaway** (above): point the service at the new `ofb_repro_<KEY>_*` DBs. If reconfiguring the service is friction (or a `docker compose up` trips the auto-mode safety classifier in a prod-heavy session), use **`--into-db <devdb>`** to load the masked slice into the **existing local DB the service already uses** — reproduce with zero reconfig. Trades isolation for simplicity (the dev DB carries masked prod rows until cleaned); its `--teardown` is a **targeted DELETE** (needs the spec), never a DROP, so it preserves the DB + all other data. Pair either mode with `--fk-bypass` so an entity slice loads without seeding every FK parent.
+   - **two persist modes.** Default = **isolated throwaway** (above): point the service at the new `ofb_repro_<KEY>_*` DBs. If reconfiguring the service is friction (or a `docker compose up` trips the auto-mode safety classifier in a prod-heavy session), use **`--into-db <localdb>`** to load the masked slice into the **existing local DB the service already uses** — reproduce with zero reconfig. Trades isolation for simplicity (the local DB carries masked prod rows until cleaned); its `--teardown` is a **targeted DELETE** (needs the spec), never a DROP, so it preserves the DB + all other data. Pair either mode with `--fk-bypass` so an entity slice loads without seeding every FK parent.
    ```bash
-   uv run scripts/db/prod_repro_seed.py --into-db <devdb> --spec seed.json --fk-bypass   # load into the running dev DB
-   uv run scripts/db/prod_repro_seed.py --into-db <devdb> --spec seed.json --teardown    # DELETE only the seeded rows
+   uv run scripts/db/prod_repro_seed.py --into-db <localdb> --spec seed.json --fk-bypass   # load into the running local DB
+   uv run scripts/db/prod_repro_seed.py --into-db <localdb> --spec seed.json --teardown    # DELETE only the seeded rows
    ```
 3. **Reproduce against local source** — point the local service at `ofb_repro_<KEY>`, run your red repro loop, root-cause.
 4. **Teardown — always.** `uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown` DROPs the throwaway DB wholesale. Zero prod-derived data remains locally. This is the DB analogue of the sandbox restore above; do it before you report, same as `git clean`.
 
-This add-on is **additive** — it governs only prod-derived data into the throwaway DB. Your existing `mcp__postgres_*` writes of synthetic/fixture data into the normal local dev DB stay exactly as free as before.
+This add-on is **additive** — it governs only prod-derived data into the throwaway DB. Your existing `mcp__postgres_*` writes of synthetic/fixture data into the normal local DB stay exactly as free as before.
 
 ## Workflow
 

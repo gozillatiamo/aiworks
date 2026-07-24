@@ -89,7 +89,7 @@ Claude, the MCP config, or the transcript. Do not Read/cat/grep the `.env`.
 repro database, used by the developer inside `/diagnosing-bugs` when a data bug only
 reproduces against the actual offending rows. It reads prod through the same read-only DSNs,
 then **masks external PII and loads an entity-scoped slice into a throwaway `ofb_repro_<ticket>`
-database** — never the shared local dev DB. `reproduce-then-DROP`, so nothing prod-derived
+database** — never the shared local DB. `reproduce-then-DROP`, so nothing prod-derived
 lingers locally.
 
 Enforced invariants (in code, not memory):
@@ -100,7 +100,7 @@ Enforced invariants (in code, not memory):
    Inner-system identity (`player_code`/`site_code`/`*_code`, UUID), money integers and status survive.
 3. **Throwaway, isolated DBs** — data lands in `ofb_repro_<ticket>_<seed>` (created from a
    `template_db` that has the schema); `--teardown` DROPs every one for the ticket, across
-   instances. Never the shared local dev DB.
+   instances. Never the shared local DB.
 4. **Entity-scoped** — seed the rows reachable from the ticket's identifier; a run above the
    row caps (per-table 500 / total 2000 across all seeds) needs `--approve-large`.
 
@@ -122,11 +122,11 @@ uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json --fk-bypa
 uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --teardown                   # DROP the throwaway DB
 ```
 
-**Two persist modes.** The default (above) is the **isolated throwaway** — a fresh `ofb_repro_<ticket>_<seed>` DB the service must be pointed at. Reconfiguring the service's DB connection is extra friction (and, under auto mode, a `docker compose up` with prod-shaped env can trip the safety classifier). The alternative is `--into-db <devdb>`: load the masked slice straight into the **existing local DB the running service already uses**, so the service reproduces with **zero reconfig**. It trades isolation for simplicity — the dev DB is polluted with masked prod-derived rows until cleaned — and `--teardown` becomes a **targeted DELETE** (by each table's `where`), never a `DROP`, so it needs the spec and preserves the DB + all other data.
+**Two persist modes.** The default (above) is the **isolated throwaway** — a fresh `ofb_repro_<ticket>_<seed>` DB the service must be pointed at. Reconfiguring the service's DB connection is extra friction (and, under auto mode, a `docker compose up` with prod-shaped env can trip the safety classifier). The alternative is `--into-db <localdb>`: load the masked slice straight into the **existing local DB the running service already uses** (the local Postgres from `agent-db run`, not the deployed `dev` server), so the service reproduces with **zero reconfig**. It trades isolation for simplicity — the local DB is polluted with masked prod-derived rows until cleaned — and `--teardown` becomes a **targeted DELETE** (by each table's `where`), never a `DROP`, so it needs the spec and preserves the DB + all other data.
 
 ```bash
-uv run scripts/db/prod_repro_seed.py --into-db ofb_dev --spec seed.json --fk-bypass   # load into the dev DB, no throwaway
-uv run scripts/db/prod_repro_seed.py --into-db ofb_dev --spec seed.json --teardown     # DELETE only the seeded rows (DB kept)
+uv run scripts/db/prod_repro_seed.py --into-db ofb_local --spec seed.json --fk-bypass   # load into the local DB, no throwaway
+uv run scripts/db/prod_repro_seed.py --into-db ofb_local --spec seed.json --teardown     # DELETE only the seeded rows (DB kept)
 ```
 
 The read-only triage MCP does **not** use `PGLOCAL_ADMIN` and never seeds — reading and finding
