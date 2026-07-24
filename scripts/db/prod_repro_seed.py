@@ -95,7 +95,9 @@ PATTERNS_FILE = Path(__file__).parent.parent / "lib" / "pii-patterns.txt"
 
 PII_COLUMN_RE = re.compile(
     r"(phone|tel|mobile|msisdn|e?mail|passport|national_?id|citizen|id_?card|"
-    r"bank_?acc|account_?no|iban|wallet|addr(ess)?|token|secret|passw(or)?d|"
+    r"bank_?acc|account_?no|iban|crypto_?wallet|addr(ess)?|token|secret|passw(or)?d|"
+    # `crypto_?wallet` not bare `wallet`, so wallet_type/player_wallet_id (inner-system enum/uuid)
+    # aren't hit; a real wallet_address is still caught by addr(ess)?.
     r"(^|_)ip(_|$)|"  # ip / player_ip / ip_addr — external PII the value scanner can't shape-match
     r"(first|last|full|holder|real|customer)_?name)",
     re.IGNORECASE,
@@ -135,7 +137,11 @@ def mask_row(columns: list[str], row: dict, extra_mask: set[str]) -> tuple[dict,
     masked, n = {}, 0
     for col in columns:
         val = row.get(col)
-        if val is not None and (col in extra_mask or PII_COLUMN_RE.search(col) or value_has_pii(str(val))):
+        # Only a STRING value can carry the PII shapes we mask (phone/email/ip/token/wallet-
+        # address/name). Masking a non-text value (bool/int/uuid/enum returned as non-str) is
+        # both semantically wrong AND type-unsafe — writing "***MASKED***" into a bool/enum/uuid
+        # column fails the local INSERT (InvalidTextRepresentation). So a mask only replaces a str.
+        if isinstance(val, str) and (col in extra_mask or PII_COLUMN_RE.search(col) or value_has_pii(val)):
             masked[col] = MASK
             n += 1
         else:
@@ -303,6 +309,11 @@ def do_seed(args) -> int:
 
         inserted = 0
         with psycopg.connect(_swap_dbname(admin, dbname), autocommit=False) as lconn:
+            # Optional: load an entity slice into a full-schema template without seeding every
+            # FK parent. session_replication_role=replica disables FK/user triggers for THIS
+            # local load session only (never prod) — a repro convenience, not a prod bypass.
+            if getattr(args, "fk_bypass", False):
+                lconn.execute("SET session_replication_role = replica")
             for tinfo, mrows, cols in pulled:
                 if not mrows:
                     continue
@@ -386,17 +397,25 @@ def do_selftest(_args) -> int:
     print(f"loaded {len(_PATTERNS)} PII detectors: {sorted({c for c, _ in _PATTERNS})}")
     for var in ADMIN_ENVS + ["PGPROD_MAD"]:
         print(f"  {var:<18} {'set' if os.environ.get(var) else 'unset'}")
-    cols = ["player_code", "phone", "email", "balance", "note", "ip", "chat_token", "status"]
+    import uuid as _uuid
+    cols = ["player_code", "phone", "email", "balance", "note", "ip", "chat_token", "status",
+            "wallet_type", "player_wallet_id", "requires_secondary_password"]
     row = {"player_code": "GC78900000021", "phone": "0891234567", "email": "x@y.com",
            "balance": 100000000, "note": "wallet 0x" + "a" * 40, "ip": "203.0.113.7",
-           "chat_token": "eyJhbGciOi_secrettoken", "status": "ACTIVE"}
+           "chat_token": "eyJhbGciOi_secrettoken", "status": "ACTIVE",
+           # non-text / inner-system cols whose NAMES brush the PII patterns — must survive
+           # untouched (masking them would corrupt the type and break the INSERT).
+           "wallet_type": "CASH", "player_wallet_id": _uuid.UUID(int=1),
+           "requires_secondary_password": True}
     masked, n = mask_row(cols, row, set())
     ok = (masked["player_code"] == "GC78900000021" and masked["balance"] == 100000000
-          and masked["status"] == "ACTIVE"
+          and masked["status"] == "ACTIVE" and masked["wallet_type"] == "CASH"
+          and masked["player_wallet_id"] == _uuid.UUID(int=1)
+          and masked["requires_secondary_password"] is True
           and masked["phone"] == MASK and masked["email"] == MASK and masked["note"] == MASK
           and masked["ip"] == MASK and masked["chat_token"] == MASK)
     print(f"  mask demo: {masked}")
-    print(f"  masked {n} cells; identity+money+status preserved, PII/secret masked: {'PASS' if ok else 'FAIL'}")
+    print(f"  masked {n} cells; identity+money+status+enum/uuid/bool preserved, PII/secret masked: {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1
 
 
@@ -409,6 +428,7 @@ def main() -> int:
     p.add_argument("--spec", help="path to the seed spec JSON")
     p.add_argument("--approve-large", action="store_true", help="allow a run above the entity-scope caps")
     p.add_argument("--dry-run", action="store_true", help="pull+mask from prod but write nothing locally")
+    p.add_argument("--fk-bypass", action="store_true", help="SET session_replication_role=replica during the LOCAL load so an entity slice loads into a full-schema template without seeding every FK parent (repro convenience; local throwaway only, never prod)")
     p.add_argument("--teardown", action="store_true", help="DROP every ofb_repro_<ticket>_* DB across instances")
     p.add_argument("--list", action="store_true", help="list ofb_repro_* DBs on every configured local instance")
     p.add_argument("--selftest", action="store_true", help="validate deps/config/mask, no DB access")
