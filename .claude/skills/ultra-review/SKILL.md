@@ -1,6 +1,6 @@
 ---
 name: ultra-review
-description: Run a ticket's open MR/PR through two specialist review gates at once — code-reviewer (clean-code + spec), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
+description: Run a ticket's open MR/PR through two specialist review gates at once — code-reviewer (clean-code + spec), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. On a clean ticket-wide pass it posts the PASS approval on every MR/PR and advances the ticket to the configured ready-to-merge status (config-gated, skipped when that status is not configured). Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
 disable-model-invocation: true
 ---
 
@@ -222,6 +222,37 @@ the "changes requested" signal.
 registers the host approval + verdict note only; whether/when it then merges stays a separate,
 later human decision.
 
+### 3.6 Advance the ticket to READY TO MERGE — only after EVERY MR/PR is approved (config-gated)
+
+Runs **only** once §3.5 has actually posted the PASS approval on **every** repo's MR/PR — the
+same ticket-wide MET bar (zero unresolved must-fix at every gate on every repo, no open `Human:`
+directive). If the verdict is anything but a clean met, or if the `pr-approve.sh` call was
+**refused/failed on any repo** (e.g. denied by a permission gate — the approval didn't actually
+land), the precondition "all MRs approved" is **not** satisfied: do **NOT** advance the ticket.
+
+**Config gate — never hardcode the status name.** Read `tracker.statuses.ready_to_merge` from
+config (`workspace.config.local.yaml` if that personal override has it, else
+`workspace.config.yaml`). If there is **no** `ready_to_merge` entry, this step is a **quiet
+skip** — log `no ready_to_merge status configured — leaving the ticket where it is` and move on;
+it is **not** an error (a board without that status simply doesn't move). Only when the key
+exists do you transition, using its configured value **verbatim** as the status name:
+
+```
+scripts/tracker/upsert-ticket-details.sh <KEY> --status "<tracker.statuses.ready_to_merge>"
+```
+
+(the tracker adapter maps that abstract status name to the provider's own transition — Jira
+transition / Notion property — so this stays provider-agnostic).
+
+**Monotonic — only ever move forward.** If the ticket is already at the ready-to-merge status,
+or already past it (e.g. Testing / Done), **skip** — never regress a ticket backward. A
+transition the board rejects because there is no valid path from the current status is
+**logged, not fatal** (the review verdict still stands; the status just didn't move).
+
+**Still never merge.** Advancing to READY TO MERGE is a *status* signal that the ticket cleared
+review — it is **not** a merge, exactly like the §3.5 approval. Merge stays the separate, later
+human decision. Report the status move (old → new, or the skip reason) in the §4 notify.
+
 ### 4. Notify — orchestrator-owned, deterministic (ALWAYS runs when `notify.enabled`)
 
 Do **NOT** leave notify to the gates. A gate that lost its shell (perf hallucinating "no Bash")
@@ -234,7 +265,8 @@ scripts/notify/send.sh --reply <KEY>   # threads under the "please review" msg; 
 ```
 
 Pipe the combined verdict (met / partially met / not met + review level + the worst finding per
-gate) on stdin, in the resolved OUTPUT LANGUAGE. This is per `workspace.config.yaml`
+gate — and, on a clean met that advanced the ticket in §3.6, the status move e.g. `CODE REVIEW →
+READY TO MERGE`) on stdin, in the resolved OUTPUT LANGUAGE. This is per `workspace.config.yaml`
 `notify.enabled` + channel and is **not optional — never ask first**. This orchestrator post is
 the guaranteed one; gates MAY still thread their own per-gate verdict per their definition, but
 the run's notify does not depend on them. Report the returned `permalink`.
