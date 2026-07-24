@@ -12,6 +12,8 @@ by hand. See `README.md` for architecture; this is the operational drill.
   - `app_mentions:read`, `chat:write` — receive mentions + post replies.
   - `channels:history` (+ `groups:history` for private channels) — read a thread when
     first mentioned inside one. **Add a scope ⇒ reinstall the app.**
+  - `files:read` — download files attached to the mention + its thread. `users:read` —
+    resolve author ids to display names in context lines. **Add a scope ⇒ reinstall.**
   - App-level token (`xapp-…`) with `connections:write` — Socket Mode.
 - Import `slack-app-manifest.yaml` to create/align the app.
 
@@ -125,6 +127,22 @@ reinstall, restart, retry.
 - **Allowlist**: mention from a channel/DM not in `ALLOWED_CHANNEL_IDS`/`ALLOWED_USER_IDS` →
   `:no_entry: I'm not enabled for this channel or user.`
 
+### T6 — attachments (image / file)
+Attach an image (or PDF/text file) to the mention message:
+```
+@<bot> what does this screenshot show? [attach image]
+```
+Expected: the log shows `attachment downloaded id=F… name=…`; the agent's reply reflects the
+file's contents. Verify the file landed in `<worktreePath>/.aiworks/attachments/`. Variants:
+- **Image-only parent**: reply-mention inside a thread whose parent is an image with no text —
+  the agent still sees it (image-only messages are no longer dropped).
+- **Idempotent follow-up**: mention again in the same thread — the log should NOT re-download an
+  already-present file (only messages after `last_read_ts` are re-scanned).
+- **Missing scope**: without `files:read`, the bot hard-fails with
+  `:lock: …couldn't download the file(s)…`. Add the scope, reinstall, retry.
+- **Unsupported/oversized**: attach a `.mp4` or a >15MB file — it is skipped and the agent's
+  context notes it under "ATTACHMENTS SKIPPED".
+
 ## 5. Inspect state (Terminal 2)
 
 ```bash
@@ -172,4 +190,7 @@ superset ws list --json | jq -r '.[] | select(.name|startswith("slack/")) | .id'
 | Agent finished but no reply in thread | Post-back token (`scripts/notify/.env`) broken, or that bot isn't in the channel (redo §0/`send.sh --channel '#dev-oneforbet' test`). The Stop-hook backstop should post `:warning: Session ended (backstop…)` instead. |
 | Every follow-up says "still working" | Busy flag stuck. The agent clears it as its last step and the Stop-hook is the belt; a stuck flag frees itself after `BUSY_TTL_SEC`. Clear manually: `docker exec aiworks-slack-dispatch-redis redis-cli del 'thread:<ch>:<ts>:busy'`. |
 | `:lock: …can't read its history` | Missing `channels:history` / `groups:history` scope. Add, reinstall the app, restart. |
+| `:lock: …couldn't download the file(s)` | Missing `files:read` scope. Add it (+ `users:read` for names), reinstall the app, restart. |
+| Attachment `skipped (unsupported type …)` in the agent's context | Not a bug — audio/video/binary aren't Read-able. Widen `_TEXT_EXT` in `attachments.py` only for text-like types. |
+| Context lines show raw ids (`U0…`) not names | Missing `users:read` scope (names degrade to ids by design). Add it, reinstall the app. |
 | Code change not taking effect | Restart the service — the running process holds the old code (§3). |

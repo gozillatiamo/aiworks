@@ -81,7 +81,22 @@ class Config:
     # of messages fetched so a giant thread can't blow up the prompt.
     thread_context_max_msgs: int = 200
 
+    # Attachments: files on the mention + its thread are downloaded into the worktree
+    # so the agent can Read them. Cap count and size so a media-heavy thread can't
+    # blow up disk / the prompt (idempotent by file id; per-file soft-degrade).
+    attachment_max_files: int = 20
+    attachment_max_file_mb: int = 15
+    attachment_total_mb: int = 50
+
     log_level: str = "info"
+
+    @property
+    def attachment_max_file_bytes(self) -> int:
+        return self.attachment_max_file_mb * 1024 * 1024
+
+    @property
+    def attachment_total_bytes(self) -> int:
+        return self.attachment_total_mb * 1024 * 1024
 
     @staticmethod
     def from_env() -> "Config":
@@ -103,6 +118,9 @@ class Config:
             thread_ttl_sec=int(_optional("THREAD_TTL_SEC", "604800")),
             busy_ttl_sec=int(_optional("BUSY_TTL_SEC", str(dispatch_timeout))),
             thread_context_max_msgs=int(_optional("THREAD_CONTEXT_MAX_MSGS", "200")),
+            attachment_max_files=int(_optional("ATTACHMENT_MAX_FILES", "20")),
+            attachment_max_file_mb=int(_optional("ATTACHMENT_MAX_FILE_MB", "15")),
+            attachment_total_mb=int(_optional("ATTACHMENT_TOTAL_MB", "50")),
             log_level=_optional("LOG_LEVEL", "info"),
         )
         cfg.validate()

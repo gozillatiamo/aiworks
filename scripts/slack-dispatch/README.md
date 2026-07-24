@@ -46,8 +46,9 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
    `SUPERSET_PROJECT_ID`), `superset agents list --local` (confirm the `claude` preset).
 3. **Slack app** with Socket Mode — see `slack-app-manifest.yaml`. You need a bot
    token (`xoxb-…`, scopes `app_mentions:read` + `chat:write`, plus `channels:history` /
-   `groups:history` to read a thread when mentioned inside one) and an app-level token
-   (`xapp-…`, scope `connections:write`). Invite the bot to the trigger channel.
+   `groups:history` to read a thread when mentioned inside one, and `files:read` +
+   `users:read` for attachment support) and an app-level token (`xapp-…`, scope
+   `connections:write`). Invite the bot to the trigger channel.
 4. **Docker** for the Redis container.
 
 ## Setup
@@ -94,11 +95,23 @@ spam on the host.
   its own summary (the prompt enforces this).
 - **Mentioned inside an existing thread.** If the FIRST mention lands in a thread whose
   root did not address the bot, the whole thread up to that mention is pulled in as
-  context (each line tagged with its Slack author id) and injected into the prompt as
-  untrusted DATA. This needs the `channels:history` / `groups:history` bot scopes — if
-  the thread can't be read, the bot **hard-fails** (posts what scope to add, dispatches
-  nothing). Only on the first request; follow-ups rely on `thread-log.md`. Capped by
-  `THREAD_CONTEXT_MAX_MSGS`.
+  context (each line tagged with its Slack author **name** and **timestamp** — names via
+  `users:read`, ids as fallback) and injected into the prompt as untrusted DATA. This
+  needs the `channels:history` / `groups:history` bot scopes — if the thread can't be
+  read, the bot **hard-fails** (posts what scope to add, dispatches nothing). Capped by
+  `THREAD_CONTEXT_MAX_MSGS`. On follow-ups only messages **after** the last turn's
+  high-water mark (`last_read_ts` on the mapping) are re-scanned — the rest of the
+  history lives in `thread-log.md`.
+- **Attachments.** Files on the mention message AND its thread (an image-only post
+  counts) are downloaded into `<worktree>/.aiworks/attachments/` and listed in the prompt
+  as untrusted DATA with author + timestamp + relative path — the agent Reads them
+  itself (images/PDF natively, text-like as text; Claude has no audio/video modality, so
+  those are skipped). Downloads are **idempotent** by Slack file id (a re-scanned file
+  already on disk is not re-fetched) and **capped** (`ATTACHMENT_MAX_FILES` /
+  `ATTACHMENT_MAX_FILE_MB` / `ATTACHMENT_TOTAL_MB`). Needs `files:read`; a missing scope
+  **hard-fails** with a fix-it message, while a single broken/oversized/unsupported file
+  soft-degrades (noted in the prompt, turn continues). Files download BEFORE the agent
+  launches, so they are on disk when it Reads them.
 - **Stale mapping.** If the worktree is gone (`workspaces get` says so) or the mapping
   expired, the next mention transparently starts a fresh worktree and re-maps the thread.
 - **Concurrency.** One agent per thread worktree at a time. A mention that lands while
