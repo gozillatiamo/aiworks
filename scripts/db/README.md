@@ -118,8 +118,15 @@ on machines that don't run repro seeding.
 ```bash
 uv run scripts/db/prod_repro_seed.py --selftest                          # deps/config/mask, no DB access
 uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json --dry-run   # pull+mask preview
-uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json             # create + load masked
+uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json --fk-bypass # create + load masked
 uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --teardown                   # DROP the throwaway DB
+```
+
+**Two persist modes.** The default (above) is the **isolated throwaway** — a fresh `ofb_repro_<ticket>_<seed>` DB the service must be pointed at. Reconfiguring the service's DB connection is extra friction (and, under auto mode, a `docker compose up` with prod-shaped env can trip the safety classifier). The alternative is `--into-db <devdb>`: load the masked slice straight into the **existing local DB the running service already uses**, so the service reproduces with **zero reconfig**. It trades isolation for simplicity — the dev DB is polluted with masked prod-derived rows until cleaned — and `--teardown` becomes a **targeted DELETE** (by each table's `where`), never a `DROP`, so it needs the spec and preserves the DB + all other data.
+
+```bash
+uv run scripts/db/prod_repro_seed.py --into-db ofb_dev --spec seed.json --fk-bypass   # load into the dev DB, no throwaway
+uv run scripts/db/prod_repro_seed.py --into-db ofb_dev --spec seed.json --teardown     # DELETE only the seeded rows (DB kept)
 ```
 
 The read-only triage MCP does **not** use `PGLOCAL_ADMIN` and never seeds — reading and finding

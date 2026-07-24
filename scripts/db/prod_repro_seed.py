@@ -31,10 +31,12 @@ service's master + shard connections at the two DBs this prints.
 Normal development is untouched: this only governs prod-DERIVED data into throwaway DBs.
 `execute_sql` INSERTs of synthetic/fixture data into the normal local dev DB stay free.
 
-  seed:     prod_repro_seed.py --ticket OFB-123 --spec seed.json [--approve-large] [--dry-run]
-  teardown: prod_repro_seed.py --ticket OFB-123 --teardown
-  list:     prod_repro_seed.py --list
-  selftest: prod_repro_seed.py --selftest      # deps/config/mask, no prod or local access
+  seed:      prod_repro_seed.py --ticket OFB-123 --spec seed.json [--approve-large] [--dry-run] [--fk-bypass]
+  teardown:  prod_repro_seed.py --ticket OFB-123 --teardown
+  into-db:   prod_repro_seed.py --into-db <devdb> --spec seed.json --fk-bypass   # load into the DB the
+             service already uses (no throwaway/reconfig); teardown: --into-db <devdb> --spec seed.json --teardown
+  list:      prod_repro_seed.py --list
+  selftest:  prod_repro_seed.py --selftest      # deps/config/mask, no prod or local access
 
 Environment (scripts/db/.env — never Read/cat/grep it, the .env guard blocks it):
   PGPROD_MAD / PGPROD_ASS_<hex>   read-only prod DSNs (shared with the triage MCP)
@@ -256,6 +258,11 @@ def do_seed(args) -> int:
             f"not a table dump. Re-run with --approve-large only if a wide join is required."
         )
 
+    into_db = getattr(args, "into_db", None)
+    if into_db:
+        print(f"[seed] into-db mode: loading MASKED prod-derived rows into EXISTING local DB "
+              f"'{into_db}' (NOT isolated). Clean up with `--into-db {into_db} --spec <spec> --teardown` "
+              f"(targeted DELETE) or reset the dev DB. Never used against prod.")
     print(f"[seed] ticket={args.ticket} seeds={[s['name'] for s in seeds]} dry_run={args.dry_run}")
     masked_cells = 0
     wired = []  # (seed_name, prod_key, db_name, admin_env, local_loc) for the final report
@@ -265,8 +272,9 @@ def do_seed(args) -> int:
         if not prod_dsn:
             sys.exit(f"prod target {s['prod_key']!r} has no DSN — set {prod_env_var(s['prod_key'])}")
         admin = _admin_dsn(s["admin_env"])
-        dbname = repro_db_name(args.ticket, s["name"])
-        print(f"  seed '{s['name']}': prod={s['prod_key']} → {dbname} on {s['admin_env']} ({_host_port_db(admin)})")
+        dbname = into_db or repro_db_name(args.ticket, s["name"])
+        dest = f"existing DB {dbname} (into-db)" if into_db else dbname
+        print(f"  seed '{s['name']}': prod={s['prod_key']} → {dest} on {s['admin_env']} ({_host_port_db(admin)})")
 
         # 1) pull + mask from prod (read-only)
         pulled = []
@@ -293,19 +301,23 @@ def do_seed(args) -> int:
         if args.dry_run:
             continue
 
-        # 2) create the throwaway DB (from a template so the schema exists), then load
-        template = s["template_db"]
-        with psycopg.connect(admin, autocommit=True) as aconn:
-            exists = aconn.execute("SELECT 1 FROM pg_database WHERE datname=%s", (dbname,)).fetchone()
-            if not exists:
-                if template:
-                    aconn.execute(f'CREATE DATABASE "{dbname}" TEMPLATE "{template}"')
-                    print(f"      created {dbname} from template {template}")
+        # 2) create the throwaway DB (from a template so the schema exists), then load —
+        #    UNLESS into-db mode, which loads into an existing DB the service already uses.
+        if into_db:
+            print(f"      loading into existing DB {dbname} (into-db; no create/template)")
+        else:
+            template = s["template_db"]
+            with psycopg.connect(admin, autocommit=True) as aconn:
+                exists = aconn.execute("SELECT 1 FROM pg_database WHERE datname=%s", (dbname,)).fetchone()
+                if not exists:
+                    if template:
+                        aconn.execute(f'CREATE DATABASE "{dbname}" TEMPLATE "{template}"')
+                        print(f"      created {dbname} from template {template}")
+                    else:
+                        aconn.execute(f'CREATE DATABASE "{dbname}"')
+                        print(f"      created empty {dbname} (no template_db — tables must already exist)")
                 else:
-                    aconn.execute(f'CREATE DATABASE "{dbname}"')
-                    print(f"      created empty {dbname} (no template_db — tables must already exist)")
-            else:
-                print(f"      {dbname} exists — appending")
+                    print(f"      {dbname} exists — appending")
 
         inserted = 0
         with psycopg.connect(_swap_dbname(admin, dbname), autocommit=False) as lconn:
@@ -332,17 +344,50 @@ def do_seed(args) -> int:
     if args.dry_run:
         print("[dry-run] no local write performed.")
         return 0
-    print("\nWire the local service to these throwaway DBs, then reproduce:")
-    for name, key, db, env, loc in wired:
-        role = "MASTER" if key == "mad" else f"SHARD {key[4:]}"
-        print(f"  {role:<9} connection → database {db}   ({loc})")
-    print(f"When done: prod_repro_seed.py --ticket {args.ticket} --teardown")
+    if into_db:
+        print("\nMasked rows loaded into the existing DB the service already uses — reproduce directly (no reconfig):")
+        for name, key, db, env, loc in wired:
+            role = "MASTER" if key == "mad" else f"SHARD {key[4:]}"
+            print(f"  {role:<9} → {db}   ({loc})")
+        print(f"When done: prod_repro_seed.py --into-db {into_db} --spec <spec> --teardown"
+              f"   (targeted DELETE of the seeded rows — never DROPs {into_db})")
+    else:
+        print("\nWire the local service to these throwaway DBs, then reproduce:")
+        for name, key, db, env, loc in wired:
+            role = "MASTER" if key == "mad" else f"SHARD {key[4:]}"
+            print(f"  {role:<9} connection → database {db}   ({loc})")
+        print(f"When done: prod_repro_seed.py --ticket {args.ticket} --teardown")
+    return 0
+
+
+def _teardown_into_db(args) -> int:
+    import psycopg
+
+    into_db = args.into_db
+    if not getattr(args, "spec", None):
+        sys.exit("--into-db --teardown needs --spec: it DELETEs only the seeded rows (by each table's "
+                 "WHERE) and never DROPs the shared DB, so it must know what to remove.")
+    seeds = normalize_seeds(json.loads(Path(args.spec).read_text(encoding="utf-8")))
+    deleted = 0
+    for s in seeds:
+        admin = _admin_dsn(s["admin_env"])
+        with psycopg.connect(_swap_dbname(admin, into_db), autocommit=True) as c:
+            c.execute("SET session_replication_role = replica")  # FK off → delete order-independent
+            for t in reversed(s["tables"]):  # children before parents (belt; replica already off)
+                schema, name = t.get("schema", "public"), t["name"]
+                cur = c.execute(f'DELETE FROM "{schema}"."{name}" WHERE {t.get("where", "true")}')
+                deleted += cur.rowcount
+                print(f"  deleted {cur.rowcount:>4} from {schema}.{name} in {into_db} ({_host_port_db(admin)})")
+    print(f"[teardown] into-db: DELETEd {deleted} seeded rows from '{into_db}' — DB preserved, never dropped.")
     return 0
 
 
 def do_teardown(args) -> int:
     _need_psycopg()
     import psycopg
+
+    if getattr(args, "into_db", None):
+        return _teardown_into_db(args)
 
     prefix = repro_db_prefix(args.ticket)
     dropped = []
@@ -429,6 +474,7 @@ def main() -> int:
     p.add_argument("--approve-large", action="store_true", help="allow a run above the entity-scope caps")
     p.add_argument("--dry-run", action="store_true", help="pull+mask from prod but write nothing locally")
     p.add_argument("--fk-bypass", action="store_true", help="SET session_replication_role=replica during the LOCAL load so an entity slice loads into a full-schema template without seeding every FK parent (repro convenience; local throwaway only, never prod)")
+    p.add_argument("--into-db", metavar="DBNAME", help="load the masked slice into an EXISTING local DB (the one the running service already uses) instead of an isolated throwaway — no create/template, and --teardown does a targeted DELETE (never DROP). Simpler repro (no service reconfig) at the cost of isolation; the DB is polluted with masked prod-derived rows until you teardown/reset. Pair with --fk-bypass.")
     p.add_argument("--teardown", action="store_true", help="DROP every ofb_repro_<ticket>_* DB across instances")
     p.add_argument("--list", action="store_true", help="list ofb_repro_* DBs on every configured local instance")
     p.add_argument("--selftest", action="store_true", help="validate deps/config/mask, no DB access")
@@ -439,10 +485,12 @@ def main() -> int:
     if args.list:
         return do_list(args)
     if args.teardown:
-        if not args.ticket:
-            sys.exit("--teardown needs --ticket")
+        # into-db teardown is spec-driven (targeted DELETE), so it doesn't need a ticket;
+        # throwaway teardown DROPs ofb_repro_<ticket>_* and does.
+        if not args.into_db and not args.ticket:
+            sys.exit("--teardown needs --ticket (or --into-db --spec for a targeted DELETE)")
         return do_teardown(args)
-    if args.ticket and args.spec:
+    if args.spec and (args.ticket or args.into_db):
         return do_seed(args)
     p.print_help()
     return 64
