@@ -99,8 +99,9 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             log.error("dispatch failed correlation=%s error=%s", ctx.correlation_id, result.error)
             _post(
                 client, ctx.slack_channel, ctx.slack_thread_ts,
-                f":im_deadq: อยู่ไม่ไหว อยู่ไม่ไหว เฮ้ย อยู่ไม่ไหว อ้าว! (ref `{ctx.correlation_id}`): {result.error}\n"
-                f"บ้านนี้มันน่ากลัว กลัว ๆ ๆ อร๊าย! — กูไม่อยากอยู่ กูไม่อยากอยู่ กูไม่อยากอยู่ที่นี่.",
+                f":im_deadq: อยู่ไม่ไหว อยู่ไม่ไหว เฮ้ย อยู่ไม่ไหว อ้าว! (ref `{ctx.correlation_id}`)\n"
+                f"บ้านนี้มันน่ากลัว กลัว ๆ ๆ อร๊าย! — กูไม่อยากอยู่ กูไม่อยากอยู่ กูไม่อยากอยู่ที่นี่.\n",
+                f":red_circle: *{result.error}*"
             )
             return
 
