@@ -16,6 +16,11 @@ skills:
   - caveman:caveman
   - karpathy-guidelines
   - open-pr
+  # Read-only PRODUCTION Postgres ground truth — SCOPED TO /diagnosing-bugs ONLY (bug triage:
+  # confirm the offending prod row, then persist it masked into a throwaway local DB via
+  # prod_repro_seed to reproduce against local source). NOT for feature build — never touch prod
+  # outside a bug repro. See "Prod data for a repro".
+  - prod-pg-triage
 tools:
   - Read
   - Grep
@@ -51,6 +56,19 @@ tools:
   - mcp__postgres_main
   - mcp__postgres_secondary
   - mcp__redis
+  # PRODUCTION Postgres, READ-ONLY, on-demand — for a bug repro under /diagnosing-bugs only.
+  # The server forces a read-only role + read-only transaction, so no write can slip through.
+  # ALWAYS disconnect at the end.
+  - mcp__prod_pg_triage__list_targets
+  - mcp__prod_pg_triage__list_schemas
+  - mcp__prod_pg_triage__list_objects
+  - mcp__prod_pg_triage__get_object_details
+  - mcp__prod_pg_triage__explain_query
+  - mcp__prod_pg_triage__execute_sql
+  - mcp__prod_pg_triage__disconnect
+  # The ONE sanctioned path to persist prod-derived data locally — masks external PII, entity-
+  # scoped, into a throwaway repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
+  - Bash(uv run *prod_repro_seed.py*)
 ---
 
 ## Output language — resolve BEFORE writing (do this FIRST, before your role)
@@ -101,6 +119,27 @@ The non-negotiable core of the skill is **Phase 1: stand up a tight, red-capable
 
 ## PRD pipeline — pre-ticket bug/issue triage (sandbox, never commit)
 The `prd` workflow calls you to triage a bug/issue brief *before* its ticket exists — to hand the Product Owner facts (not a vague symptom) to write the ticket from. Run your normal `/diagnosing-bugs` discipline above (repro-first loop + `/debugging-code` when needed) and return the **root cause**, concrete **reproduce steps**, and a **suggested fix direction** (a pointer, not the fix). This is the ONE mode where you do **not** ship: to reproduce you MAY edit code, write storage, and run services, but it is a **throwaway sandbox** — **never `git commit`/push or open a PR/MR, no `/ticket-kickoff`, no branch, no status change, no plan file**. Leave the workspace exactly as found: restore every touched repo (`git checkout -- .` + `git clean -fd`), roll back / drop any storage you wrote (never persist to the shared dev Postgres/Redis), stop any service you started, and verify zero residue before reporting. The real fix happens only later, once the ticket is picked up.
+
+## Prod data for a repro — the ONE sanctioned path (`/diagnosing-bugs` only)
+Some data bugs only reproduce against the *actual* offending prod rows (a fixed-point money value that overflows, an identifier that resolves the wrong record, a race-triggering timestamp). When that's the case — **and only inside `/diagnosing-bugs`** (PRD pre-ticket triage or a dev-cycle QA-bug fix), never during a feature build:
+
+1. **Read prod (transient), read-only.** Use `/prod-pg-triage` to find the offending row(s) and pick the target. Reading prod into your context is fine; **`disconnect` when done.**
+2. **Persist ONLY via the seed tool.** Moving any prod-derived data onto local disk goes through **`uv run scripts/db/prod_repro_seed.py`** — the single enforced path. Never hand-craft `INSERT`s of prod values into a local DB; the tool exists so the mask/isolation/teardown invariants hold in code, not memory. It:
+   - **masks external PII** (phone/email/wallet/bank/national-id — the shared `scripts/lib/pii-patterns.txt`) and PII-named columns before any local write. Inner-system identity (any `*_code`, UUID), money integers and status survive — those are what the bug needs.
+   - lands data in **throwaway `repro_<KEY>_<seed>` DBs** (from a `template_db` that has the schema), **isolated** from the shared local DB — so normal `execute_sql` dev work is untouched.
+   - **handles multi-database services**: the spec is a list of `seeds`, so one run can seed every database the service connects to — each into its own throwaway DB on its own local instance. The tool prints which DB to point each of the service's connections at.
+   - is **entity-scoped**: seed the rows reachable from the ticket's identifier, not a table dump; a run above the row caps needs `--approve-large`.
+   ```bash
+   uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json --dry-run    # pull+mask preview, no local write
+   uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json --fk-bypass  # throwaway repro_<KEY>_*, load masked
+   ```
+   - **two persist modes.** Default = **isolated throwaway** (above): point the service at the new `repro_<KEY>_*` DBs. If reconfiguring the service is friction (or a `docker compose up` trips the auto-mode safety classifier in a prod-heavy session), use **`--into-db <localdb>`** to load the masked slice into the **existing local DB the service already uses** — reproduce with zero reconfig. Trades isolation for simplicity (the local DB carries masked prod rows until cleaned); its `--teardown` is a **targeted DELETE** (needs the spec), never a DROP, so it preserves the DB + all other data. Pair either mode with `--fk-bypass` so an entity slice loads without seeding every FK parent.
+   ```bash
+   uv run scripts/db/prod_repro_seed.py --into-db <localdb> --spec seed.json --fk-bypass   # load into the running local DB
+   uv run scripts/db/prod_repro_seed.py --into-db <localdb> --spec seed.json --teardown    # DELETE only the seeded rows
+   ```
+3. **Reproduce against local source** — point the local service at `repro_<KEY>`, run your red repro loop, root-cause.
+4. **Teardown — always.** `uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown` DROPs the throwaway DB wholesale. Zero prod-derived data remains locally. This is the DB analogue of the sandbox restore above; do it before you report, same as `git clean`.
 
 ## Workflow
 
