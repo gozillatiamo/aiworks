@@ -46,9 +46,9 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
    `SUPERSET_PROJECT_ID`), `superset agents list --local` (confirm the `claude` preset).
 3. **Slack app** with Socket Mode — see `slack-app-manifest.yaml`. You need a bot
    token (`xoxb-…`, scopes `app_mentions:read` + `chat:write`, plus `channels:history` /
-   `groups:history` to read a thread when mentioned inside one, and `files:read` +
-   `users:read` for attachment support) and an app-level token (`xapp-…`, scope
-   `connections:write`). Invite the bot to the trigger channel.
+   `groups:history` to read a thread when mentioned inside one, `files:read` for attachment
+   support, `files:write` to reply with a file, and `users:read` to resolve names) and an
+   app-level token (`xapp-…`, scope `connections:write`). Invite the bot to the trigger channel.
 4. **Docker** for the Redis container.
 
 ## Setup
@@ -112,6 +112,15 @@ spam on the host.
   **hard-fails** with a fix-it message, while a single broken/oversized/unsupported file
   soft-degrades (noted in the prompt, turn continues). Files download BEFORE the agent
   launches, so they are on disk when it Reads them.
+- **Reply with a file (outbound).** When the request asks for a **deliverable file** —
+  "give me a csv of…", "export … as a pdf", "สรุปเป็นไฟล์ md" — the agent writes it under
+  `<worktree>/.aiworks/out/` (never committed) and attaches it with `scripts/notify/send.sh
+  --file`, so one threaded message carries the file plus a caption. `md`/`csv`/`json` are
+  written directly; a `pdf` is rendered from an authored `.md`/`.html` via `scripts/pdf/
+  render.sh` (Mermaid + images, offline). The notify adapter's **outbound gate** refuses any
+  upload that is oversized (`OUTBOUND_MAX_FILE_MB`), carries external PII, or matches a
+  secret/token pattern — so "never leak a secret/PII" is a deterministic wall, not just a
+  prompt line. Needs `files:write`; a missing scope surfaces a fix-it message.
 - **Stale mapping.** If the worktree is gone (`workspaces get` says so) or the mapping
   expired, the next mention transparently starts a fresh worktree and re-maps the thread.
 - **Concurrency.** One agent per thread worktree at a time. A mention that lands while

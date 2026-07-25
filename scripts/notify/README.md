@@ -15,7 +15,7 @@ The message text is the first positional arg, or stdin.
 printf '%s' "$msg" | scripts/notify/send.sh --channel '#reviews'
 ```
 
-Three message modes:
+Four message modes:
 - **raw** — `[text]` arg or stdin (the default).
 - **`--review <KEY>`** — compose + post the "please review" digest of a ticket's open PR/MR
   across every repo (the dev-cycle Notify phase).
@@ -32,6 +32,20 @@ Three message modes:
 
 ```sh
 scripts/notify/send.sh --reply OFB-2098 '✅ OFB-2098 — approved. Standards clean, 0 must-fix.'
+```
+
+- **`--file <path>`** — upload `<path>` as a **file** instead of a text message; the `[text]`
+  argument becomes its caption (`initial_comment`), so the whole reply is **one message**.
+  Combine with `--thread-ts` to attach into a thread. Needs a **bot token + the `files:write`
+  scope** (a webhook can't upload); it can't combine with `--review`/`--reply`. Before any byte
+  leaves the machine an **outbound gate** refuses (exit non-zero) a file that is over
+  `OUTBOUND_MAX_FILE_MB` (default 15), carries **external PII** (via `scripts/lib/pii-scan.sh`),
+  or matches a **secret/token** pattern. `--title` sets the file's title (default: its basename).
+  This is what lets the Slack dispatcher answer "give me a csv/pdf/md/json" with the actual file.
+
+```sh
+scripts/notify/send.sh --channel '#dev-oneforbet' --thread-ts 1723450000.001 \
+  --file .aiworks/out/repos.csv 'นี่ครับ csv รายชื่อ 21 repos ตามที่ขอ'
 ```
 
 ## Where it's used

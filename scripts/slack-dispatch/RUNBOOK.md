@@ -12,8 +12,9 @@ by hand. See `README.md` for architecture; this is the operational drill.
   - `app_mentions:read`, `chat:write` — receive mentions + post replies.
   - `channels:history` (+ `groups:history` for private channels) — read a thread when
     first mentioned inside one. **Add a scope ⇒ reinstall the app.**
-  - `files:read` — download files attached to the mention + its thread. `users:read` —
-    resolve author ids to display names in context lines. **Add a scope ⇒ reinstall.**
+  - `files:read` — download files attached to the mention + its thread. `files:write` —
+    upload the agent's deliverable files (md/pdf/csv/json) back into the thread. `users:read`
+    — resolve author ids to display names in context lines. **Add a scope ⇒ reinstall.**
   - App-level token (`xapp-…`) with `connections:write` — Socket Mode.
 - Import `slack-app-manifest.yaml` to create/align the app.
 
@@ -148,6 +149,24 @@ file's contents. Verify the file landed in `<worktreePath>/.aiworks/attachments/
   one → it proceeds, posts the size/type skip notice for the bad file, and the agent's context
   notes it under "ATTACHMENTS SKIPPED". NB: a slash command with a stray oversized file still
   stops (all-files-unusable rule) — re-mention without the file.
+
+### T7 — reply with a file (outbound deliverable)
+Ask for a downloadable deliverable:
+```
+@<bot> ขอ csv รายชื่อ repo ทั้งหมดในเวิร์กสเปซ
+@<bot> export ADR-0003 เป็น pdf ให้หน่อย
+```
+Expected: the agent writes the file under `<worktree>/.aiworks/out/`, then attaches it via
+`scripts/notify/send.sh --file` — **one** threaded message carrying the file + a caption. The
+file is **not** committed to the branch. Variants:
+- **Format inference**: no format named → the agent picks by content (table→csv, records→json,
+  report→pdf, else md). `pdf` renders through `scripts/pdf/render.sh` (Mermaid + images).
+- **Outbound gate refuses**: the upload is blocked (exit non-zero, nothing sent) when the file is
+  over `OUTBOUND_MAX_FILE_MB` (default 15), carries external PII, or matches a secret/token
+  pattern. Quick offline check:
+  `printf 'x,y\na,alice@example.com\n' > /tmp/p.csv && scripts/notify/send.sh --channel '#dev-oneforbet' --file /tmp/p.csv --dry-run` → refuses.
+- **Missing scope**: without `files:write`, the upload fails with a `missing_scope` fix-it note
+  (add the scope, reinstall, retry).
 
 ## 5. Inspect state (Terminal 2)
 

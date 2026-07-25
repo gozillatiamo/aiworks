@@ -49,6 +49,14 @@ def build_prompt(
         f"( cd {workspace_root}/scripts/slack-dispatch && "
         f"./.venv/bin/python -m aiworks_dispatch.clear_busy --url {redis_url} --key {thread_key} )"
     )
+    postback_file = (
+        f"{workspace_root}/scripts/notify/send.sh "
+        f"--channel {ctx.slack_channel} --thread-ts {ctx.slack_thread_ts} "
+        f"--file .aiworks/out/<file> \"<short caption>\""
+    )
+    render_pdf = (
+        f"{workspace_root}/scripts/pdf/render.sh .aiworks/out/<doc>.md .aiworks/out/<doc>.pdf"
+    )
     intro = (
         "This is a FOLLOW-UP in an ongoing Slack thread. You are in the SAME reused git "
         "worktree as the earlier turns — the branch already holds their work."
@@ -96,6 +104,29 @@ def build_prompt(
             "",
             "Your summary should state: what you did, the branch name, and any PR/MR link —",
             "a few lines, no secrets or tokens.",
+            "",
+            "IF THE USER ASKED FOR A DELIVERABLE AS A FILE they can download (an md / pdf /",
+            "csv / json — e.g. \"give me a csv of…\", \"export … as a pdf\", \"สรุปเป็นไฟล์ md\"),",
+            "attach that file to your reply instead of pasting its contents as text. Then, at",
+            "step 2 above, do this instead of a plain text post-back:",
+            "  - Write the file under .aiworks/out/ (create the dir). NEVER commit it or include",
+            "    it in a PR — it is a Slack deliverable, not repo content.",
+            "  - md / csv / json: write the file directly. For a pdf, author a .md (or .html)",
+            "    and render it — Mermaid diagrams and images are supported, offline:",
+            "",
+            f"       {render_pdf}",
+            "",
+            "  - Attach it by adding --file to the SAME post-back adapter, so ONE Slack message",
+            "    carries the file plus a short caption:",
+            "",
+            f"       {postback_file}",
+            "",
+            "  - Pick the format from the request; if none is named, choose by content (a table",
+            "    → csv, structured records → json, a report/long-form doc → pdf, otherwise md).",
+            "  - NEVER put secrets, tokens, or personal data (emails, phones, wallets, national",
+            "    ids) in the file — the adapter scans every upload and REFUSES one that carries",
+            "    them. Keep file contents (and all code, ids, headings) in English; a pdf may use",
+            "    this thread's prose language. Honour an explicit language request from the user.",
     ]
     if thread_context:
         lines += [
