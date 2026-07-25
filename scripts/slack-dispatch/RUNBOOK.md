@@ -65,7 +65,13 @@ Expect five `✓`: host, project, agent preset `claude`, Redis, `send.sh`.
   ./run.sh
   ```
   It starts Redis, ensures the venv, runs pre-flight, then connects. The last line should
-  read `connecting to Slack (Socket Mode)…`. Logs stream here as JSON.
+  read `connecting to Slack (Socket Mode)…`. Logs stream here in the pretty shape —
+  one aligned line per event:
+  ```
+  2026-07-25 16:30:15.438 INFO  main       │ aiworks-dispatch starting (project=abc123 base=develop agent=claude)
+  2026-07-25 16:30:15.439 INFO  slack_app  │ accepted correlation=7f3a9b channel=C04NZCMAG94 user=U081LPQ4REH continuing=False role=-
+  2026-07-25 16:30:15.512 ERROR dispatcher │ dispatch failed for 7f3a9b | KeyError: 'nope' at dispatcher.py:213
+  ```
 - **Terminal 2** — a second shell for the inspect commands in §5/§6.
 - **Slack** — the real Slack client, where you `@<bot> …` in `#dev-oneforbet`.
 
@@ -76,6 +82,19 @@ nohup ./run.sh > dispatch.log 2>&1 &
 tail -f dispatch.log      # watch logs
 # stop later:  pkill -f aiworks_dispatch
 ```
+
+Redirected like that, the log shape flips to one-line JSON (`LOG_FORMAT=auto`) so the file
+stays greppable — `grep 7f3a9b dispatch.log | jq -r .msg` follows one correlation id, and
+`ERROR` lines carry the full `exc` traceback. A message carrying a payload (superset CLI
+response, Slack API body) also gets it as a nested object, so pull fields straight out:
+```bash
+grep 'workspace created' dispatch.log | jq -r '.data.worktreePath'
+``` Want the pretty shape in the file too:
+```bash
+LOG_FORMAT=pretty nohup ./run.sh > dispatch.log 2>&1 &   # pretty, no colour (not a TTY)
+```
+Pretty lines flatten a traceback to `| ExcType: msg at file:line`; when that is not enough,
+re-run with `LOG_FORMAT=json` for the whole stack.
 
 > After editing any Python code, **restart** the service to load it (Ctrl-C + `./run.sh`,
 > or `pkill -f aiworks_dispatch` then start again).

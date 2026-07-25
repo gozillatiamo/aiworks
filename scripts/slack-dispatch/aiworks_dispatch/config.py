@@ -89,6 +89,11 @@ class Config:
     attachment_total_mb: int = 50
 
     log_level: str = "info"
+    # pretty (human console) | json (machine/grep) | auto = pretty on a TTY, json when
+    # stdout is redirected. Both shapes stay one line per event.
+    log_format: str = "auto"
+    log_name_width: int = 10   # pretty module column; 0 = no padding (ragged `│`)
+    log_tz: str = "Asia/Bangkok"  # timestamp zone; "local" = the host's own
 
     @property
     def attachment_max_file_bytes(self) -> int:
@@ -122,6 +127,9 @@ class Config:
             attachment_max_file_mb=int(_optional("ATTACHMENT_MAX_FILE_MB", "15")),
             attachment_total_mb=int(_optional("ATTACHMENT_TOTAL_MB", "50")),
             log_level=_optional("LOG_LEVEL", "info"),
+            log_format=_optional("LOG_FORMAT", "auto"),
+            log_name_width=int(_optional("LOG_NAME_WIDTH", "10")),
+            log_tz=_optional("LOG_TZ", "Asia/Bangkok"),
         )
         cfg.validate()
         return cfg

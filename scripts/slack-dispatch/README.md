@@ -225,6 +225,67 @@ Controls in place:
 - **No secrets in prompts or workspace names.** Post-back uses the main clone's
   adapter by path; no token is ever interpolated.
 
+## Logs
+
+One line per event, always — in one of two shapes, picked by `LOG_FORMAT`
+(`pretty` | `json` | `auto`, default `auto`):
+
+| `LOG_FORMAT` | Shape | Used when |
+|---|---|---|
+| `auto` (default) | pretty on a TTY, JSON when stdout is redirected | normal runs |
+| `pretty` | `2026-07-25 16:30:15.439 INFO  slack_app │ accepted correlation=7f3a9b channel=C04…` | forcing the human shape through a pipe |
+| `json` | `{"ts":"2026-07-25T16:30:15.439+07:00","level":…,"msg":…,"exc":…}` | shipping to a log tool, or needing a full traceback |
+
+Timestamps are stamped in **`LOG_TZ` (default `Asia/Bangkok`)**, not the host's zone, with
+**full date + milliseconds** — dispatch steps land inside the same second, and a line often
+gets quoted into a ticket or matched against a trace, where the year has to be there.
+Pretty prints `YYYY-MM-DD HH:MM:SS.mmm`; JSON prints ISO 8601 with the offset
+(`2026-07-25T16:30:15.439+07:00`), which sorts lexicographically and parses anywhere.
+`LOG_TZ=local` uses the host's zone; an unknown zone warns once on stderr and falls back
+to local.
+
+Pretty aligns the columns (time · level · module · message), dims the `key=` labels so the
+values stand out, colours by level, and flattens a traceback to a `| ExcType: msg at
+file:line` tail so an error still occupies exactly one line. `NO_COLOR=1` drops the colour.
+For the full stack of an exception, re-run with `LOG_FORMAT=json`.
+
+The module column is `LOG_NAME_WIDTH` wide (default **10**) — our own prefix is stripped
+(`aiworks_dispatch.slack_app` → `slack_app`) and a third-party logger collapses to its
+package (`slack_sdk.socket_mode.builtin.client` → `slack`), so the column stays narrow
+instead of padding dead space before the `│`. `LOG_NAME_WIDTH=11` fits every module name in
+full; `LOG_NAME_WIDTH=0` drops the padding entirely:
+
+```
+LOG_NAME_WIDTH=10                      LOG_NAME_WIDTH=0
+2026-07-25 16:30:15.439 INFO  main       │  2026-07-25 16:30:15.439 INFO  main │
+2026-07-25 16:30:15.439 INFO  slack_app  │  2026-07-25 16:30:15.439 INFO  slack_app │
+2026-07-25 16:30:15.439 INFO  attachmen… │  2026-07-25 16:30:15.439 INFO  attachments │
+```
+
+**Embedded payloads are treated as JSON, not as text.** Many messages carry one (a
+superset CLI response, a Slack API body, the JSON inside a `RuntimeError`). Both shapes
+detect the `{…}` / `[…]` span and re-render it *as JSON* — a pretty-printed or
+newline-laden blob comes out compact and intact on the one line:
+
+```bash
+# raw message:  workspace created {\n  "id": "ws_9f2",\n  "healthy": true\n} reused=False
+2026-07-25 16:30:15.439 INFO  dispatcher │ workspace created {"id": "ws_9f2", "healthy": true} reused=False
+```
+
+- `pretty` — keys and punctuation dimmed, numbers/booleans/`null` coloured, strings bright.
+  A payload over 600 rendered chars is cut with a `…(+N chars, see LOG_FORMAT=json)` marker.
+- `json` — the payload is *also* emitted as a real nested object under `data`, so
+  `jq -r '.data.worktreePath'` works without re-parsing a string. `msg` is left
+  byte-identical, so `grep` keeps behaving as before.
+- Only genuine JSON is touched — a Python repr (`['claude', 'codex']`) or prose with
+  brackets stays exactly as written.
+
+Eyeball every shape without starting the service:
+
+```bash
+./.venv/bin/python -m aiworks_dispatch.logging_setup   # sample lines, pretty/NO_COLOR/json
+```
+
 ## Cost note
 
 Each dispatch creates a fresh worktree, which runs the project's `.superset/setup.sh`
@@ -243,6 +304,7 @@ project's setup or reuse worktrees if this is too heavy for your usage.
 | `aiworks_dispatch/dispatcher.py` | `Dispatcher` interface + `SupersetLocalDispatcher` |
 | `aiworks_dispatch/slack_app.py` | Socket Mode `app_mention` handler |
 | `aiworks_dispatch/__main__.py` | entrypoint / wiring / graceful shutdown |
+| `aiworks_dispatch/logging_setup.py` | one-line log formatters (pretty / JSON) |
 | `aiworks_dispatch/check.py` | `python -m aiworks_dispatch.check` pre-flight |
 | `docker-compose.yml` | dedicated Redis (port 6370) |
 | `slack-app-manifest.yaml` | Slack app definition |
