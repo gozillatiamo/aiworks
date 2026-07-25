@@ -69,6 +69,24 @@ pii_scan_text() {
 # pii_scan_categories → prints the categories hit by the last pii_scan_text (never the values).
 pii_scan_categories() { printf '%s\n' "$_PII_LAST_CATS"; }
 
+# pii_scannable_text FILE → prints the text a shape-based scan should actually see.
+# Plain text passes through. A PDF is a CONTAINER, not text: its xref table is a run of
+# 10-digit zero-padded byte offsets ("0000000015 00000 n") that matches the phone detector in
+# EVERY pdf ever produced — scanning the container bytes therefore blocked 100% of pdf
+# uploads. So a pdf is reduced to its real content (page text + metadata dicts) by
+# scripts/lib/pdf-text.py first; without python3 we fall back to the raw bytes with the xref
+# subsection lines stripped, which removes that one deterministic false positive.
+pii_scannable_text() {
+  local file="$1" helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pdf-text.py" out=""
+  if [[ "$(head -c 4 "$file" 2>/dev/null)" == "%PDF" ]]; then
+    if command -v python3 >/dev/null && [[ -r "$helper" ]] && out="$(python3 "$helper" "$file" 2>/dev/null)"; then
+      printf '%s' "$out"; return 0
+    fi
+    LC_ALL=C sed -E 's/^[0-9]{10} [0-9]{5} [fn][[:space:]]*$/ /' "$file" 2>/dev/null; return 0
+  fi
+  cat "$file"
+}
+
 # --- CLI ---------------------------------------------------------------------------------
 _pii_selftest() {
   local fails=0
@@ -95,6 +113,37 @@ _pii_selftest() {
   _expect "eth wallet"           flag  'credited 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
   _expect "formatted national id" flag 'id 1-2345-67890-12-3 on file'
   _expect "labeled bank account" flag  'bank account no 1234567890'
+
+  # CONTAINER — a pdf must be judged on its content, never on its xref/stream bytes.
+  _expect_file() { # DESC EXPECT(clean|flag) FILE
+    local desc="$1" expect="$2" file="$3" rc=0
+    pii_scan_text "$(pii_scannable_text "$file")" || rc=$?
+    if [[ "$expect" == clean && $rc -eq 0 ]]; then echo "ok   (clean) $desc"
+    elif [[ "$expect" == flag && $rc -eq 2 ]]; then echo "ok   (flag: $_PII_LAST_CATS) $desc"
+    else echo "FAIL (rc=$rc, cats='$_PII_LAST_CATS') $desc"; fails=$((fails+1)); fi
+  }
+  if command -v python3 >/dev/null; then
+    local tmp; tmp="$(mktemp -d)"
+    _mkpdf() { python3 -c '
+import sys, zlib
+body = zlib.compress(sys.argv[2].encode())
+open(sys.argv[1], "wb").write(
+    b"%PDF-1.4\n1 0 obj<</Type/Page>>endobj\n2 0 obj<</Length "
+    + str(len(body)).encode() + b">>stream\n" + body
+    + b"\nendstream\nendobj\nxref\n0 3\n0000000000 65535 f \n0000000015 00000 n \n"
+      b"0000000327 00000 n \ntrailer<</Size 3>>\nstartxref\n999\n%%EOF\n")
+' "$1" "$2"; }
+    _mkpdf "$tmp/clean.pdf" 'BT (ADR-0003 personal runtime config overrides) Tj ET'
+    _expect_file "pdf with no PII (xref offsets ignored)" clean "$tmp/clean.pdf"
+    _mkpdf "$tmp/phone.pdf" 'BT [(call 08) -20 (91234567)] TJ ET'
+    _expect_file "pdf with a phone in its text layer"     flag  "$tmp/phone.pdf"
+    _mkpdf "$tmp/mail.pdf" 'BT (write to somebody@example.com) Tj ET'
+    _expect_file "pdf with an email in its text layer"    flag  "$tmp/mail.pdf"
+    rm -rf "$tmp"
+  else
+    echo "skip (no python3) pdf container fixtures"
+  fi
+
   echo "---"; [[ $fails -eq 0 ]] && echo "selftest PASS" || { echo "selftest FAIL ($fails)"; return 1; }
 }
 
@@ -103,7 +152,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "${1:-}" in
     --selftest) _pii_selftest ;;
     --check)
-      src="${2:--}"; if [[ "$src" == "-" ]]; then body="$(cat)"; else body="$(cat "$src")"; fi
+      src="${2:--}"; if [[ "$src" == "-" ]]; then body="$(cat)"; else body="$(pii_scannable_text "$src")"; fi
       if pii_scan_text "$body"; then echo "clean"; exit 0
       else echo "BLOCKED: external PII detected (categories: $_PII_LAST_CATS)" >&2; exit 2; fi ;;
     *) echo "usage: pii-scan.sh --check FILE|-   |   --selftest" >&2; exit 64 ;;
