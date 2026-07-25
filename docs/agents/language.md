@@ -130,7 +130,9 @@ artifact the next-phase agent reads); the same content posted into a Jira body o
   block. Built-in commands (`/code-review`, `/security-review`) have no editable `SKILL.md`, so they
   rely on the agent-file block only.
 - **`dev-cycle.js` / `prd.js` / `brd.js`** (headless) each run a small dedicated resolver
-  sub-agent (`documentor`, label `resolve-language`) as their FIRST step — its only job is to
+  sub-agent (`documentor`, labelled `resolve-runtime-config` in `dev-cycle.js` — it resolves
+  `planning.to_html` in the same Read — and `resolve-language` in `prd.js` / `brd.js`, which need
+  language only) as their FIRST step — its only job is to
   Read `workspace.config.local.yaml` else `workspace.config.yaml` and return the resolved value.
   This is deterministic where the per-agent pointer above is not: a single-purpose check is far
   more reliable than asking every busy prose-writing agent to remember its own. The result feeds

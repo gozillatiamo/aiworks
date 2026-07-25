@@ -108,6 +108,11 @@ When bugs come back (from the implementer or a run), **handle exactly one bug pe
 
 Then move to the next bug and repeat the same single-bug pass. One bug → one plan → publish → handoff, every time.
 
-## Planning policy — honor `planning.*` in `workspace.config.yaml`
+## Planning policy — resolve `planning.*` before acting (`to_html` is local-first)
+**If your prompt already carries a resolved planning directive (`PLAN-TO-HTML is ON` / `PLAN-TO-HTML is OFF`, an explicit `planning.auto_approve` value), THAT is AUTHORITATIVE — obey it verbatim and do NOT re-resolve from any file.** The dev-cycle resolves this once per run and bakes it into your prompt; a stale self-resolution must never override it. Otherwise resolve from disk, never from memory — and the two flags resolve from **different** files:
+- **`to_html` — local-first.** Read `workspace.config.local.yaml` (the git-ignored personal override) if it exists **and** has a `planning:` block, and take `to_html` from **that block only** — the merge is **shallow per top-level key**, so a local `planning:` block replaces the shared one whole and a `to_html` absent from it means `false`, *not* the shared file's value. No local `planning:` block ⇒ `workspace.config.yaml`'s `planning.to_html` (default `false`). It is a personal OUTPUT preference: which artifacts a human wants to read.
+- **`auto_approve` — `workspace.config.yaml` ONLY, never the local file.** It is control flow (may execution begin without a human?), and a personal override must never loosen a shared run's approval gate.
+
+State the resolved values + sources in one line (e.g. `Planning resolved: to_html=true (workspace.config.local.yaml), auto_approve=false (workspace.config.yaml)`) before acting.
 - **`planning.to_html: true`** → after the plans exist, ALSO render them to a self-contained interactive doc with **`/write-interactive-docs`** (a `<plan>.html`) and report the path.
 - **`planning.auto_approve: false`** → the plan needs **human approval before execution**. The dev-cycle enforces this by halting after Kickoff; on a standalone run, present the plan and request approval before handing off to the implementer.
