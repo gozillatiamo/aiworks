@@ -415,16 +415,35 @@ const SCOPE_SCHEMA = {
     },
   },
 }
+// `unverified_claims` is REQUIRED, and an empty array is a real answer — the point is that a
+// planner must decide, per claim, whether it measured the thing or inferred it. An inferred
+// claim carries the command that would settle it, so the orchestrator (which holds grants the
+// planner does not — starting local services, running suites) can close the gap instead of
+// forwarding a guess as a finding. APP-1944 shipped a "missing index, suspected seq scans"
+// finding that one `aiworks run <repo>` + EXPLAIN would have corrected: the indexes existed.
 const REPO_PLAN_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['repo', 'base_branch', 'work_branch', 'plan_path', 'summary'],
+  required: ['repo', 'base_branch', 'work_branch', 'plan_path', 'summary', 'unverified_claims'],
   properties: {
     repo: { type: 'string' }, title: { type: 'string' },
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
     base_branch: { type: 'string' }, work_branch: { type: 'string' },
     figma_url: { type: ['string', 'null'] }, plan_path: { type: 'string' },
     plan_html: { type: ['string', 'null'] }, // set when RESOLVED_PLAN_TO_HTML rendered the plan to interactive HTML
+    needs_artifact_publish: { type: ['boolean', 'null'] }, // plan_html rendered but Artifact publish is caller-only (no Artifact tool in a subagent)
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
+    unverified_claims: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['claim', 'why_blocked', 'unblock_command'],
+        properties: {
+          claim: { type: 'string' },           // the assertion the plan leans on
+          why_blocked: { type: 'string' },     // what stopped the measurement (missing grant, service down, needs prod scale)
+          unblock_command: { type: 'string' }, // the exact command that settles it
+        },
+      },
+    },
   },
 }
 // Resolves the absolute workspace (org) root ONCE at Kickoff so the workflow can hand every
@@ -1046,6 +1065,13 @@ if (!haveAbs) log(`⚠️ [kickoff] could NOT resolve an absolute workspace root
 // repo). planRel/planHtmlRel are repo-ROOT-relative (the data-plan-md convention + what the
 // build/gate phases read from inside the repo); planPath/planHtmlPath are the ABSOLUTE forms we
 // hand the planner and record on the plan.
+//
+// The naming rule below is the EXECUTABLE expression of docs/agents/plan-artifacts.md — that
+// document is the single source of truth. Change it there first, then here; and do not restate
+// these paths anywhere else (an agent definition once carried a third, stale spelling, and the
+// resulting three-way disagreement is why APP-1944's plan landed where nothing could read it).
+// One plan file PER REPO: a build agent is spawned with its own repo as cwd, so a single file
+// covering several repos is unreadable to all but one of them.
 const planMeta = {}
 for (const r of scoped) {
   const desc = REPOS[r.repo]
@@ -1108,10 +1134,15 @@ const plans = (await parallel(scoped.map((r) => () => {
         ? ` PLAN-TO-HTML is ON but this is an APPROVED RE-RUN: the interactive HTML at ${planHtmlPath} was already rendered on the first run — do NOT re-render it (wasted cost). Run /write-interactive-docs to create it ONLY if ${planHtmlPath} is MISSING. Set plan_html=${planHtmlPath}.`
         : ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (write it to that ${repoRoot ? 'ABSOLUTE ' : ''}path UNDER the repo, NEVER the workspace root; it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`)
     : ' PLAN-TO-HTML is OFF for this run — planning.to_html was already resolved for you (local-first) and this is AUTHORITATIVE: do NOT re-check any config file. Render NO interactive HTML; the plan markdown is the only artifact. Leave plan_html null.'
+  // Grounding contract. A planner has narrow grants (no dev.sh, no docker, no Artifact tool), so
+  // whatever it could not measure has to travel back as a claim + the command that settles it —
+  // the orchestrator holds those grants and can close the gap. Without this, "the local DB was
+  // down" reads as a finished answer and an inferred claim ships as a finding.
+  const groundingClause = ` GROUNDING (mandatory): every claim in the plan is either MEASURED (you ran the query/EXPLAIN/test and quote the real numbers) or returned in unverified_claims — each with why_blocked and the exact unblock_command that would settle it (e.g. \`aiworks run ${r.repo}\` then an EXPLAIN, or \`scripts/dev.sh test\`). unverified_claims is REQUIRED; [] is a valid answer and means you measured everything you assert. Never present an inferred claim as a finding, and never end at "the service was down" — name the command.${RESOLVED_PLAN_TO_HTML ? ' Since you rendered an interactive HTML, set needs_artifact_publish=true: publishing a shareable Artifact needs the Artifact tool, which you do not have — the caller does it.' : ''} Plan paths, naming, and the never-commit rule: docs/agents/plan-artifacts.md — do not commit, stage, push, or open a PR/MR for anything you wrote.`
   const prompt = desc.kind === 'test-suite'
     ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
     : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
-  return agent(prompt + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
+  return agent(prompt + groundingClause + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE, { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
 // Normalize the recorded paths to the ABSOLUTE, repo-anchored forms — consistently for every
 // repo, regardless of what the planner echoed back (a planner that returned a bare-relative or
