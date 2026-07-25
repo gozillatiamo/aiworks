@@ -50,6 +50,9 @@ diagrams:
   theme: default
   max_per_ticket: 2
 
+artifacts:
+  enabled: false
+
 products:
   - id: ofb-platform
     repos:

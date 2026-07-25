@@ -181,6 +181,38 @@ the path and the export buttons (page toolbar top-right; per-section on hover) �
 a plan in approval mode, that approving downloads the markdown to drop over
 `data-plan-md`.
 
+## Publish to a shareable Artifact (gated)
+
+A local `.html` isn't shareable; a Claude **Artifact** is a URL the team opens. Resolve
+`artifacts.enabled` the same way as the language — read `workspace.config.local.yaml` if
+it sets it, else `workspace.config.yaml`; **default OFF**. When OFF, skip this section
+silently. When ON, after the verifier passes:
+
+1. **Make it CSP-safe.** An Artifact runs under a strict CSP — every external host (CDN
+   scripts, webfont links) is blocked, so publishing the doc raw would break its diagrams,
+   charts and fonts. Run the prep, which writes a sibling file:
+   ```
+   node <skill>/scripts/artifact-prep.mjs <topic>.html <topic>.artifact.html
+   ```
+   It leans on the Artifact runtime's **native** Mermaid (it renders `<pre class="mermaid">`
+   with no library — `diagram-interactions.js` still attaches to the rendered SVG, so
+   zoom/pan/click survive), inlines the vendored Chart.js when the doc charts, and drops the
+   webfont links to the CSS's system-font fallback. Publish the `.artifact.html`, not the
+   original.
+2. **Publish** `<topic>.artifact.html` with the **Artifact** tool. The doc is already themed
+   and verified — no design pass, just publish: `title` = the doc's title, `favicon` = one
+   topical emoji. On a Mode-B **update** of a doc already published, pass its recorded URL as
+   `url=` so the link stays stable (step 4).
+3. **Share.** The tool publishes **private** and has no sharing input — org visibility is a
+   one-click step the human takes in the artifact's **share menu**. So in the hand-over, give
+   the URL and tell them to share it with the team (e.g. "Everyone in bluePi") from that menu.
+   (If a workspace admin has defaulted artifacts to org-visible, it's already done.)
+4. **Remember the URL.** Write the returned URL into the SOURCE doc's `<head>` as
+   `<meta name="wid-artifact" content="…">`. A later Mode-B update reads that meta and
+   redeploys to the same URL instead of minting a new one.
+
+The hand-over's closing summary **includes the Artifact URL** whenever one was published.
+
 ## Bundled resources
 - **assets/template.html** — scaffold to copy; documents the DOM contract.
 - **assets/export-engine.js** — inline it; reusable MD/JSON export (page + per-section). Don't reinvent.
@@ -188,6 +220,8 @@ a plan in approval mode, that approving downloads the markdown to drop over
 - **assets/plan-approval.js** — inline it (after export-engine.js) **only for a plan awaiting approval**; adds per-section Decision controls, a live "Human decisions" mirror, and the Approve→markdown download. Self-injects its CSS; inert unless `data-plan-approval` is set. Don't reinvent.
 - **assets/i18n.js** — inline it (after export-engine.js) **only for a bilingual doc**; adds the floating 🌐 EN／ไทย chip and swaps the visible page to Thai while keeping every export English. Self-injects its CSS; inert unless `data-i18n` is set. Don't reinvent.
 - **scripts/verify-doc.mjs** — authoritative runtime check (real Mermaid + the engine, plus a real-mouse-click gate in headless Chrome via puppeteer-core when available). Run before handing over.
+- **scripts/artifact-prep.mjs** — deterministic CSP-safe transform for Artifact publishing (strips CDN scripts + webfont links, inlines vendored Chart.js, keeps native Mermaid + the inline engines). Run only when `artifacts.enabled`, on the verified doc, before publishing.
+- **assets/vendor/chart.umd.min.js** — vendored Chart.js (no CDN); `artifact-prep.mjs` inlines it when a doc charts. Keep the major in sync with the doc's `chart.js@<major>` CDN pin.
 - **references/components.md** — every block, its HTML + export island; comparison + Implementation Plan rules.
 - **references/diagrams.md** — pick the diagram kind; Mermaid recipes; make it interactive; the two gotchas.
 - **references/theming.md** — detect or generate the project's palette.
@@ -197,7 +231,9 @@ a plan in approval mode, that approving downloads the markdown to drop over
 ## Guardrails
 - **Single file, CDN allowed.** Mermaid/Chart.js load from a CDN (needs internet to
   render); the file itself is one shareable `.html`. For full offline, inline static
-  SVG/table fallbacks and say so.
+  SVG/table fallbacks and say so. (Publishing to an **Artifact** is the exception — its
+  strict CSP blocks CDNs, so `artifact-prep.mjs` makes a CSP-safe copy first; see "Publish
+  to a shareable Artifact".)
 - **Accuracy first.** When documenting code, verify against the real source — a pretty
   doc that's wrong is worse than plain notes.
 - **Restraint.** Components and colour must carry meaning; a plain paragraph is right
