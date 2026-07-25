@@ -2,12 +2,12 @@
 
 Pure parsing, no Slack dependency: what exists (`.claude/agents/<name>.md`,
 `.claude/workflows/<name>.js`), a one-line summary for each, and how a leading
-`role:<name>` / `workflow:<name>` is peeled off a request.
+`agent:<name>` / `workflow:<name>` is peeled off a request.
 
-The prefix is `role:` and NOT `@name` on purpose: Slack linkifies an `@handle` that
+The prefix is `agent:` and NOT `@name` on purpose: Slack linkifies an `@handle` that
 collides with a real user or usergroup into `<@U…>` / `<!subteam^…>`, and leading
 mentions are stripped before parsing — routing would silently vanish for exactly the
-names most likely to collide. `role:` / `workflow:` are never linkified.
+names most likely to collide. `agent:` / `workflow:` are never linkified.
 """
 
 from __future__ import annotations
@@ -18,15 +18,15 @@ from pathlib import Path
 
 log = logging.getLogger("aiworks_dispatch.catalog")
 
-ROLE = "role"
+AGENT = "agent"
 WORKFLOW = "workflow"
 
-# `role:` / `roles:` (and the workflow pair) — the plural is a free typo tolerance.
+# `agent:` / `agents:` (and the workflow pair) — the plural is a free typo tolerance.
 _TOKEN = {
     kind: re.compile(rf"^{kind}s?:\s*([a-zA-Z][a-zA-Z0-9-]*)(?:\s+|$)", re.IGNORECASE)
-    for kind in (ROLE, WORKFLOW)
+    for kind in (AGENT, WORKFLOW)
 }
-# `role:list` asks WHO can be routed to, `workflow:list` WHAT can be run. Both are
+# `agent:list` asks WHO can be routed to, `workflow:list` WHAT can be run. Both are
 # answered inline from disk — no worktree, no agent, no busy flag — so they stay instant
 # even while a turn is running. Reserved: no agent or workflow may be named `list`.
 LIST_TOKENS = frozenset({"list", "lists"})
@@ -37,7 +37,7 @@ _SENTENCE_SPLIT = re.compile(
     r"(?<!\be\.g\.)(?<!\bi\.e\.)(?<!\betc\.)(?<!\bvs\.)(?<!\bcf\.)(?<=[.!?])\s+"
 )
 # Seniority padding — "(20 yrs)", "(10+ yrs scaling … to unicorn velocity)". Says nothing
-# about what the role DOES, and it eats the character budget the duty needs. Parentheses
+# about what the agent DOES, and it eats the character budget the duty needs. Parentheses
 # without a yrs/years mention ("(dev/staging/prod)", "(e.g. FM-<n>)") are kept.
 _EXPERIENCE = re.compile(r"\s*\([^()]*\b(?:yrs?|years?)\b[^()]*\)")
 
@@ -56,11 +56,11 @@ _JS_UNESCAPE = re.compile(r"\\(['\"`\\])")
 # -- discovery -------------------------------------------------------------------
 
 def _dir(workspace_root: str, kind: str) -> Path:
-    return Path(workspace_root, ".claude", "agents" if kind == ROLE else "workflows")
+    return Path(workspace_root, ".claude", "agents" if kind == AGENT else "workflows")
 
 
 def _paths(workspace_root: str, kind: str) -> list[Path]:
-    suffix = "*.md" if kind == ROLE else "*.js"
+    suffix = "*.md" if kind == AGENT else "*.js"
     try:
         return sorted(_dir(workspace_root, kind).glob(suffix))
     except OSError as e:  # noqa: BLE001
@@ -68,14 +68,14 @@ def _paths(workspace_root: str, kind: str) -> list[Path]:
         return []
 
 
-def available_roles(workspace_root: str) -> set[str]:
-    """Role names — `.claude/agents/<name>.md` filenames.
+def available_agents(workspace_root: str) -> set[str]:
+    """Agent names — `.claude/agents/<name>.md` filenames.
 
     Read per mention (a handful of files, negligible) so a newly added agent works
     without a service restart. An unreadable directory yields an empty set, which turns
-    every `role:<name>` into an unknown-name reply rather than a silent mis-dispatch.
+    every `agent:<name>` into an unknown-name reply rather than a silent mis-dispatch.
     """
-    return {p.stem.lower() for p in _paths(workspace_root, ROLE)}
+    return {p.stem.lower() for p in _paths(workspace_root, AGENT)}
 
 
 def available_workflows(workspace_root: str) -> set[str]:
@@ -152,12 +152,12 @@ def summaries(workspace_root: str, kind: str) -> list[tuple[str, str]]:
     """`(name, summary)` for every definition of `kind`, sorted by name. The summary may
     be empty (malformed or description-less file) — the name is still listed, since it
     is still invokable."""
-    describe = _agent_description if kind == ROLE else _workflow_description
+    describe = _agent_description if kind == AGENT else _workflow_description
     return [(p.stem.lower(), _summarize(describe(_read(p)))) for p in _paths(workspace_root, kind)]
 
 
-def role_duties(workspace_root: str) -> list[tuple[str, str]]:
-    return summaries(workspace_root, ROLE)
+def agent_duties(workspace_root: str) -> list[tuple[str, str]]:
+    return summaries(workspace_root, AGENT)
 
 
 def workflow_summaries(workspace_root: str) -> list[tuple[str, str]]:
@@ -167,7 +167,7 @@ def workflow_summaries(workspace_root: str) -> list[tuple[str, str]]:
 # -- request parsing -------------------------------------------------------------
 
 def is_list_request(text: str, kind: str) -> bool:
-    """True for `<kind>:list` / `<kind>:lists`. Anything trailing ("role:list agents")
+    """True for `<kind>:list` / `<kind>:lists`. Anything trailing ("agent:list agents")
     still just lists."""
     m = _TOKEN[kind].match((text or "").strip())
     return bool(m and m.group(1).lower() in LIST_TOKENS)
@@ -191,16 +191,16 @@ def split_prefixed(text: str, kind: str, names: set[str]) -> tuple[str, str, str
     return "", text, token
 
 
-def is_role_list(text: str) -> bool:
-    return is_list_request(text, ROLE)
+def is_agent_list(text: str) -> bool:
+    return is_list_request(text, AGENT)
 
 
 def is_workflow_list(text: str) -> bool:
     return is_list_request(text, WORKFLOW)
 
 
-def split_role(text: str, roles: set[str]) -> tuple[str, str, str]:
-    return split_prefixed(text, ROLE, roles)
+def split_agent(text: str, agents: set[str]) -> tuple[str, str, str]:
+    return split_prefixed(text, AGENT, agents)
 
 
 def split_workflow(text: str, workflows: set[str]) -> tuple[str, str, str]:

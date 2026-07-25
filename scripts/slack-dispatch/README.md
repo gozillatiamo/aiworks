@@ -74,30 +74,30 @@ reference: see `.env.example`. The trigger allowlist **defaults to deny** — se
 @aiworks /prd OFB-123
 @aiworks /dev-cycle OFB-45
 @aiworks investigate why payouts are slow in front-end and open a fix PR
-@aiworks role:developer implement OFB-45 following the plan on the ticket
+@aiworks agent:developer implement OFB-45 following the plan on the ticket
 ```
 
 A leading slash command runs the matching skill exactly as if typed in a Claude Code
 session. Plain text is handled as a task. The bot acks immediately, then replies in
 the same thread when the agent finishes (`ref: req-…` ties the messages together).
 
-### Routing to a specific agent — `role:<name>`
+### Routing to a specific agent — `agent:<name>`
 
-A leading `role:<name>` hands the whole request to that **subagent** instead of letting
+A leading `agent:<name>` hands the whole request to that **subagent** instead of letting
 the dispatched session work it directly. Valid names are the workspace's own agent
 definitions — `.claude/agents/<name>.md` (`developer`, `code-reviewer`, `qa-planner`,
 `performance-triage`, …) — read per mention, so adding an agent needs no restart.
 
 ```
-@aiworks role:list                                   # who can I route to?
+@aiworks agent:list                                  # who can I route to?
 @aiworks workflow:list                               # what pipelines can I run?
-@aiworks role:developer implement OFB-45 following the plan on the ticket
-@aiworks role:performance-triage root-cause the slow payout endpoint in staging
-@aiworks role:qa-planner /plan-testcases OFB-45      # role + slash command combine
+@aiworks agent:developer implement OFB-45 following the plan on the ticket
+@aiworks agent:performance-triage root-cause the slow payout endpoint in staging
+@aiworks agent:qa-planner /plan-testcases OFB-45     # agent + slash command combine
 @aiworks workflow:dev-cycle OFB-45                   # same as `/dev-cycle OFB-45`
 ```
 
-**Discovery.** `role:list` and `workflow:list` are answered **inline, in seconds** — each
+**Discovery.** `agent:list` and `workflow:list` are answered **inline, in seconds** — each
 name with a one-line summary, read straight from disk (`description:` frontmatter of
 `.claude/agents/*.md`; `whenToUse` from a workflow's `meta` in `.claude/workflows/*.js`,
 falling back to its `description`). No worktree, no agent session, no busy flag, so they
@@ -108,19 +108,19 @@ no agent or workflow may be called that.
 the session already understands, so `workflow:` and `/` are interchangeable. An unknown
 name in either family replies with what does exist and dispatches nothing.
 
-- **Why `role:` and not `@developer`.** Slack linkifies an `@handle` that matches a real
+- **Why `agent:` and not `@developer`.** Slack linkifies an `@handle` that matches a real
   user or usergroup into `<@U…>` / `<!subteam^…>`, and leading mentions are stripped
   before parsing — the routing would silently vanish for exactly the names most likely
-  to collide. `role:` is never linkified, so the parser sees what was typed.
+  to collide. `agent:` is never linkified, so the parser sees what was typed.
 - The dispatched session becomes a **router**: it calls the Agent tool with that
   `subagent_type`, waits, then does the post-back itself (a subagent's report goes to
   its caller, never to Slack).
-- Unknown name (`role:nobody …`) → the bot replies with the valid list and **dispatches
+- Unknown name (`agent:nobody …`) → the bot replies with the valid list and **dispatches
   nothing** — no worktree is burned on a request routed somewhere that doesn't exist.
-  Nobody types `role:` by accident, so it is always treated as intent to route.
+  Nobody types `agent:` by accident, so it is always treated as intent to route.
 - Prefer a workflow when one covers the job: `/dev-cycle` already runs
   planner → developer → review → QA in waves, with the branch prep a bare
-  `role:developer` skips.
+  `agent:developer` skips.
 
 ## Thread continuity
 

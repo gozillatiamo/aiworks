@@ -69,7 +69,7 @@ Expect five `✓`: host, project, agent preset `claude`, Redis, `send.sh`.
   one aligned line per event:
   ```
   2026-07-25 16:30:15.438 INFO  main       │ aiworks-dispatch starting (project=abc123 base=develop agent=claude)
-  2026-07-25 16:30:15.439 INFO  slack_app  │ accepted correlation=7f3a9b channel=C04NZCMAG94 user=U081LPQ4REH continuing=False role=-
+  2026-07-25 16:30:15.439 INFO  slack_app  │ accepted correlation=7f3a9b channel=C04NZCMAG94 user=U081LPQ4REH continuing=False agent=-
   2026-07-25 16:30:15.512 ERROR dispatcher │ dispatch failed for 7f3a9b | KeyError: 'nope' at dispatcher.py:213
   ```
 - **Terminal 2** — a second shell for the inspect commands in §5/§6.
@@ -187,14 +187,14 @@ file is **not** committed to the branch. Variants:
 - **Missing scope**: without `files:write`, the upload fails with a `missing_scope` fix-it note
   (add the scope, reinstall, retry).
 
-### T8 — route to a subagent / run a workflow (`role:` / `workflow:`)
+### T8 — route to a subagent / run a workflow (`agent:` / `workflow:`)
 ```
-@<bot> role:list
+@<bot> agent:list
 @<bot> workflow:list
-@<bot> role:developer implement OFB-45 following the plan on the ticket
-@<bot> role:qa-planner /plan-testcases OFB-45
+@<bot> agent:developer implement OFB-45 following the plan on the ticket
+@<bot> agent:qa-planner /plan-testcases OFB-45
 @<bot> workflow:dev-cycle OFB-45
-@<bot> role:nobody do stuff
+@<bot> agent:nobody do stuff
 ```
 Both `:list` forms answer **inline within a second or two** — every name + a one-line
 summary from disk — with no worktree, no agent session and no busy flag; run one while
@@ -205,21 +205,22 @@ delegates via the Agent tool (`subagent_type` = that name) instead of doing the 
 itself; the post-back to the thread still comes from the dispatched session. Names are
 whatever `.claude/agents/*.md` defines — no restart needed after adding one. The unknown
 name replies with the valid list and dispatches **nothing** (no worktree, no busy flag —
-`store.mark_ignored` records why). Prefix is `role:` and not `@name` on purpose: Slack
+`store.mark_ignored` records why). Prefix is `agent:` and not `@name` on purpose: Slack
 linkifies an `@handle` that collides with a real user/usergroup, and leading mentions are
 stripped before parsing. Offline check of the parser:
 ```bash
 ./.venv/bin/python - <<'PY'
-from aiworks_dispatch.catalog import (available_roles, available_workflows, is_role_list,
-                                      role_duties, split_role, split_workflow, workflow_summaries)
-roles, flows = available_roles("../.."), available_workflows("../..")
-print(sorted(roles), sorted(flows))
-print(split_role("role:developer implement OFB-45", roles))  # ('developer', 'implement OFB-45', '')
-print(split_role("role:nobody do stuff", roles))             # ('', 'role:nobody do stuff', 'nobody')
-print(split_role("@developer implement OFB-45", roles))      # ('', '@developer implement OFB-45', '')
-print(split_workflow("workflow:dev-cycle OFB-45", flows))    # ('dev-cycle', 'OFB-45', '')
-print(is_role_list("role:list"), is_role_list("list the repos"))   # True False
-print(*role_duties("../.."), *workflow_summaries("../.."), sep="\n")
+from aiworks_dispatch.catalog import (agent_duties, available_agents, available_workflows,
+                                      is_agent_list, split_agent, split_workflow,
+                                      workflow_summaries)
+agents, flows = available_agents("../.."), available_workflows("../..")
+print(sorted(agents), sorted(flows))
+print(split_agent("agent:developer implement OFB-45", agents))  # ('developer', 'implement OFB-45', '')
+print(split_agent("agent:nobody do stuff", agents))             # ('', 'agent:nobody do stuff', 'nobody')
+print(split_agent("@developer implement OFB-45", agents))       # ('', '@developer implement OFB-45', '')
+print(split_workflow("workflow:dev-cycle OFB-45", flows))       # ('dev-cycle', 'OFB-45', '')
+print(is_agent_list("agent:list"), is_agent_list("list the repos"))   # True False
+print(*agent_duties("../.."), *workflow_summaries("../.."), sep="\n")
 PY
 ```
 

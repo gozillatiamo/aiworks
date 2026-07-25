@@ -26,12 +26,12 @@ from .config import Config
 from .correlation import CorrelationContext, new_correlation_id, now_iso
 from .dispatcher import Dispatcher
 from .catalog import (
-    available_roles,
+    agent_duties,
+    available_agents,
     available_workflows,
-    is_role_list,
+    is_agent_list,
     is_workflow_list,
-    role_duties,
-    split_role,
+    split_agent,
     split_workflow,
     workflow_summaries,
 )
@@ -49,9 +49,9 @@ _USAGE = (
     "• `@aiworks /prd OFB-123`\n"
     "• `@aiworks /dev-cycle OFB-45`\n"
     "• `@aiworks investigate why payouts are slow in front-end`\n"
-    "• `@aiworks role:developer implement OFB-45 per the plan on the ticket` "
-    "(a leading `role:<name>` hands the whole request to that subagent)\n"
-    "`role:list` shows every agent, `workflow:list` every workflow.\n"
+    "• `@aiworks agent:developer implement OFB-45 per the plan on the ticket` "
+    "(a leading `agent:<name>` hands the whole request to that subagent)\n"
+    "`agent:list` shows every agent, `workflow:list` every workflow.\n"
     "I'll spin up a worktree, run Claude on it, and reply in this thread when done."
 )
 
@@ -78,19 +78,20 @@ def _render_list(header: str, empty: str, prefix: str, items: list[tuple[str, st
     return chunks
 
 
-def render_role_list(duties: list[tuple[str, str]]) -> list[str]:
-    """The `role:list` answer — who a request can be routed to."""
+def render_agent_list(duties: list[tuple[str, str]]) -> list[str]:
+    """The `agent:list` answer — who a request can be routed to."""
     return _render_list(
         header=(
-            f":claude-code: เรียก subagent ได้ {len(duties)} ตัว — พิมพ์ `role:<name> <คำสั่ง>` "
-            "เช่น `role:developer implement OFB-45`.\n"
-            "งานที่มี workflow ครอบอยู่แล้วใช้ workflow ดีกว่านะ — ดูด้วย `workflow:list`."
+            f":claude-wave: เรามีกีกี้ให้เลือกสรร {len(duties)} ตัว\n"
+            "พิมพ์ `agent:<name> <คำสั่ง>`\n"
+            "เช่น `agent:developer implement OFB-45`.\n"
+            "ถ้าขี้เกียจก็ใช้ workflow ซะ — เช็คด้วย `workflow:list`."
         ),
         empty=(
-            ":confused-numbers: ไม่เจอ agent เลยแฮะ — `.claude/agents/` ว่างหรืออ่านไม่ได้.\n"
-            "เช็ค `WORKSPACE_ROOT` ใน `.env` ว่าชี้ที่ meta-repo main clone รึเปล่า."
+            ":confused_dog: ผู้ใด๋น้อ? — `.claude/agents/` ว่างหรืออ่านไม่ได้.\n"
+            "เช็ค `WORKSPACE_ROOT` ใน `env` ว่าชี้ที่ meta-repo main clone รึเปล่า."
         ),
-        prefix="role",
+        prefix="agent",
         items=duties,
     )
 
@@ -99,13 +100,14 @@ def render_workflow_list(flows: list[tuple[str, str]]) -> list[str]:
     """The `workflow:list` answer — the multi-agent pipelines that can be run."""
     return _render_list(
         header=(
-            f":claude-code: workflow ที่รันได้ {len(flows)} ตัว — พิมพ์ `/dev-cycle OFB-45` "
+            f":claude-wave: แด่ท่านผู้ขี้เกียจทั้งหลาย เรามี workflow ที่รันได้ {len(flows)} ตัว\n"
+            "พิมพ์ `/dev-cycle OFB-45`\n"
             "หรือ `workflow:dev-cycle OFB-45` ก็ได้ (ค่าเดียวกัน).\n"
-            "อยากเรียก agent เดี่ยวแทนดู `role:list`."
+            "ถ้าอยากจิกรายตัว - เช็คด้วย `agent:list`."
         ),
         empty=(
-            ":confused-numbers: ไม่เจอ workflow เลยแฮะ — `.claude/workflows/` ว่างหรืออ่านไม่ได้.\n"
-            "เช็ค `WORKSPACE_ROOT` ใน `.env` ว่าชี้ที่ meta-repo main clone รึเปล่า."
+            ":confused_dog: ไม่เจอ workflow เลยแฮะ — `.claude/workflows/` ว่างหรืออ่านไม่ได้.\n"
+            "เช็ค `WORKSPACE_ROOT` ใน `env` ว่าชี้ที่ meta-repo main clone รึเปล่า."
         ),
         prefix="workflow",
         items=flows,
@@ -351,11 +353,11 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             return
 
         request_text = _strip_mentions(event.get("text", ""))
-        # `role:list` / `workflow:list` — answered inline from disk. No worktree, no
+        # `agent:list` / `workflow:list` — answered inline from disk. No worktree, no
         # agent, no busy flag, and deliberately BEFORE the busy check so they still
         # answer while a turn is running.
         for kind, is_list, load, render in (
-            ("role", is_role_list, role_duties, render_role_list),
+            ("agent", is_agent_list, agent_duties, render_agent_list),
             ("workflow", is_workflow_list, workflow_summaries, render_workflow_list),
         ):
             if is_list(request_text):
@@ -375,29 +377,29 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             store.mark_ignored(event_key, f"unknown workflow workflow:{unknown_flow}")
             _post(
                 client, channel, thread_ts,
-                f":confused-numbers: `workflow:{unknown_flow}` คืออะไรอ่ะ ไม่มีน้า.\n"
-                "ที่รันได้: " + ", ".join(f"`{w}`" for w in sorted(workflows))
-                + "\nรายละเอียดพิมพ์ `workflow:list`. อยากเรียก agent เดี่ยวใช้ `role:list`.",
+                f":272trumpq: `workflow:{unknown_flow}` คืออะไรอ่ะ ไม่มีน้า.\n"
+                ":claude-wave: ที่รันได้: " + ", ".join(f"`{w}`" for w in sorted(workflows))
+                + "\nรายละเอียดพิมพ์ `workflow:list`. อยากจิกรายตัวใช้ `agent:list`.",
             )
             return
         if flow:
             request_text = f"/{flow} {rest}".strip()
 
-        # Optional routing: a leading `role:<name>` hands the request to that subagent.
-        # Resolved BEFORE the empty-request check so `@aiworks role:developer` + a file
+        # Optional routing: a leading `agent:<name>` hands the request to that subagent.
+        # Resolved BEFORE the empty-request check so `@aiworks agent:developer` + a file
         # alone still counts as a files-only request rather than falling through to USAGE.
-        roles = available_roles(cfg.workspace_root)
-        agent_role, request_text, unknown_role = split_role(request_text, roles)
-        if unknown_role:
-            log.info("unknown role %s channel=%s user=%s", unknown_role, channel, user)
-            store.mark_ignored(event_key, f"unknown role role:{unknown_role}")
+        agents = available_agents(cfg.workspace_root)
+        agent_name, request_text, unknown_agent = split_agent(request_text, agents)
+        if unknown_agent:
+            log.info("unknown agent %s channel=%s user=%s", unknown_agent, channel, user)
+            store.mark_ignored(event_key, f"unknown agent agent:{unknown_agent}")
             _post(
                 client, channel, thread_ts,
-                f":confused-numbers: `role:{unknown_role}` เป็นใครอ่ะ ไม่รู้จักกก.\n"
-                "ที่เรียกได้มีแค่นี้: "
-                + ", ".join(f"`role:{r}`" for r in sorted(roles))
-                + "\nอยากรู้ว่าใครทำอะไรพิมพ์ `role:list` ได้นะ. "
-                + "ถ้าไม่ได้ตั้งใจเรียก subagent ก็เอา `role:` ออกแล้ว mention มาใหม่ฮ่ะ.",
+                f":confused_dog: ผู้ใด๋น้อ? `agent:{unknown_agent}` มึงใครเนี่ยยย.\n"
+                ":claude-wave: อ้ายมีกันแค่นี้: "
+                + ", ".join(f"`agent:{a}`" for a in sorted(agents))
+                + "\nสนใจติดต่อ `agent:list` ได้นะ.\n"
+                + "ถ้าไม่รักกัน ก็เอา `agent:` ออกไปได้เลยไม่ต้องแคร์หรอก :milk_sulk:.",
             )
             return
         # A mention can carry its whole request in an attachment (text.md, a screenshot,
@@ -498,7 +500,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             slack_user_id=user,
             request_text=request_text,
             created_at=now_iso(),
-            agent_role=agent_role,
+            agent_name=agent_name,
         )
         try:
             store.save_context(ctx)
@@ -510,13 +512,13 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
 
         continuing = mapping is not None
         log.info(
-            "accepted correlation=%s channel=%s user=%s continuing=%s role=%s",
-            ctx.correlation_id, channel, user, continuing, agent_role or "-",
+            "accepted correlation=%s channel=%s user=%s continuing=%s agent=%s",
+            ctx.correlation_id, channel, user, continuing, agent_name or "-",
         )
-        role_note = f" — ส่งต่อให้ `{agent_role}` จัดการ" if agent_role else ""
+        agent_note = f" :fullsend: ฉันเลือกนาย `{agent_name}` ปั่นงานแสนโวลต์!!! :pikachu-hehe:" if agent_name else ""
         _post(
             client, channel, thread_ts,
-            f":typingcat: จัดไปไอหนู{role_note} — {'พี่ไม่เหนื่อยอยู่แล้ว!!' if continuing else 'ใช้งานมาหนักๆ ไม่ต้องเกรงใจหรอก :glassespepeq:'} "
+            f":typingcat: จัดไปไอหนู{agent_note} — {'พี่ไม่เหนื่อยอยู่แล้ว!!' if continuing else 'ใช้งานมาหนักๆ ไม่ต้องเกรงใจหรอก :glassespepeq:'} "
             f"ตื่นๆ มีเรื่องว่ะ :petclaude:. ใจร่มๆ พักชมสิ่งที่น่าสนใจสักครู่ :bananadance_duo:. (ref: `{ctx.correlation_id}`)",
         )
         # Partially-unusable mention still dispatches (a usable file and/or text remains) —

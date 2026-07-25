@@ -288,7 +288,7 @@ def _demo() -> None:
         logging.getLogger(_OUR_PREFIX).info(
             "aiworks-dispatch starting (project=abc123 base=develop agent=claude)")
         logging.getLogger(f"{_OUR_PREFIX}.slack_app").info(
-            "accepted correlation=7f3a9b channel=C04NZCMAG94 user=U081LPQ4REH continuing=False role=-")
+            "accepted correlation=7f3a9b channel=C04NZCMAG94 user=U081LPQ4REH continuing=False agent=-")
         logging.getLogger(f"{_OUR_PREFIX}.slack_app").warning("denied mention channel=C999 user=U777")
         logging.getLogger(f"{_OUR_PREFIX}.dispatcher").info(
             'workspace created {\n  "id": "ws_9f2",\n  "worktreePath": "/tmp/wt/slack-7f3a9b",\n'
