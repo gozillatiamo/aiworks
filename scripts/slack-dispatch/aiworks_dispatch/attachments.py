@@ -141,24 +141,40 @@ def dedup_refs(refs: list[SlackFileRef]) -> list[SlackFileRef]:
     return out
 
 
-def classify_skips_for_ack(refs: list[SlackFileRef], max_file_bytes: int) -> tuple[list[str], list[str]]:
-    """Split refs into (oversized_names, unsupported_names) from METADATA ALONE — no
-    download — so the two buckets can be surfaced in the Slack ack before dispatch.
+@dataclass
+class AttachmentPartition:
+    """Which of a mention's files are usable, and WHY the rest are not — decided from
+    METADATA ALONE (no download), so the caller can both surface skips in the Slack ack
+    and decide whether there is anything left worth dispatching a worktree for."""
 
-    Mirrors `download_attachments` precedence (type checked before size). Secrets/.env
-    and (unknowable pre-download) transient failures are NOT surfaced here — they stay
-    prompt-only notes. Total-cap overflow also stays prompt-only (it depends on fetch
-    order, so it can't be attributed to a specific file up front)."""
+    usable: list[SlackFileRef]
+    oversized: list[str]     # names > per-file cap
+    unsupported: list[str]   # names Claude's Read tool can't consume (av/binary/…)
+    secret: list[str]        # names that look like a .env / secrets file
+
+    @property
+    def any_skipped(self) -> bool:
+        return bool(self.oversized or self.unsupported or self.secret)
+
+
+def partition_attachments(refs: list[SlackFileRef], max_file_bytes: int) -> AttachmentPartition:
+    """Split refs into usable + skip buckets from metadata. Mirrors
+    `download_attachments` precedence (secret -> type -> size). Total-cap overflow and
+    transient download failures are NOT decidable here — they stay prompt-only notes."""
+    usable: list[SlackFileRef] = []
     oversized: list[str] = []
     unsupported: list[str] = []
+    secret: list[str] = []
     for f in dedup_refs(refs):
         if _is_secretish(f.name):
-            continue
-        if not _is_allowed(f.name, f.mimetype):
+            secret.append(f.name)
+        elif not _is_allowed(f.name, f.mimetype):
             unsupported.append(f.name)
         elif f.size and f.size > max_file_bytes:
             oversized.append(f.name)
-    return oversized, unsupported
+        else:
+            usable.append(f)
+    return AttachmentPartition(usable, oversized, unsupported, secret)
 
 
 # -- download ---------------------------------------------------------------------

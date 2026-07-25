@@ -17,9 +17,9 @@ from slack_bolt import App
 
 from .attachments import (
     SlackFileRef,
-    classify_skips_for_ack,
     dedup_refs,
     fmt_ts,
+    partition_attachments,
     refs_from_message,
 )
 from .config import Config
@@ -139,6 +139,29 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             client.chat_postMessage(channel=channel, thread_ts=thread_ts, text=text, unfurl_links=False)
         except Exception:
             log.exception("failed to post to %s/%s", channel, thread_ts)
+
+    def _post_skip_notices(client, channel: str, thread_ts: str, part) -> None:  # noqa: ANN001
+        """Announce which of the mention's files won't be read — the two buckets the user
+        asked for (size / type), plus a secrets note. Reused by the stop path and the
+        proceed path so the copy stays in one place."""
+        if part.oversized:
+            _post(
+                client, channel, thread_ts,
+                f":6537_scaredreb: เดี๋ยววววว!! เกินไป๊ ไฟล์ {cfg.attachment_max_file_mb}MB จะเอากันให้ตายเลยเรอะ: "
+                + ", ".join(f"`{n}`" for n in part.oversized),
+            )
+        if part.unsupported:
+            _post(
+                client, channel, thread_ts,
+                ":1000053748: ไฟล์ไรอ่ะ!? ดูดเงินป่ะเนี่ย รับแค่ image / PDF / text สดห้ามผ่อน: "
+                + ", ".join(f"`{n}`" for n in part.unsupported),
+            )
+        if part.secret:
+            _post(
+                client, channel, thread_ts,
+                ":refuse: No no ไม่รู้ๆ (.env / secrets) ไม่ยุ่งๆ: "
+                + ", ".join(f"`{n}`" for n in part.secret),
+            )
 
     def _run_dispatch(
         ctx: CorrelationContext,
@@ -260,8 +283,42 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             return
 
         request_text = _strip_mentions(event.get("text", ""))
-        if not request_text:
+        # A mention can carry its whole request in an attachment (text.md, a screenshot,
+        # …) with no message text — only bail to USAGE when there is NEITHER text NOR a
+        # file. (Thread-only context still needs some text on the mention to act on.)
+        if not request_text and not event.get("files"):
             _post(client, channel, thread_ts, _USAGE)
+            return
+
+        # Resolve Slack ids -> display names (cached per event), so multi-user threads
+        # read clearly in the agent's context. Needs users:read; degrades to raw ids.
+        resolve_name = _make_name_resolver(client)
+
+        # Files attached to the mention message itself — present even when the mention is
+        # NOT inside a thread (the bootstrap case: a flat @bot with an image).
+        mention_ts = event.get("ts", "")
+        mention_files = refs_from_message(event, resolve_name(user))
+
+        # If the user attached file(s) to THIS mention and NONE are usable (all too big /
+        # unsupported / secrets), there is nothing to act on — acknowledge with the reason
+        # and STOP, before claiming the thread or spinning up a worktree. Don't burn a heavy
+        # worktree (21-repo clone) on an input we already know we can't read.
+        part = partition_attachments(mention_files, cfg.attachment_max_file_bytes)
+        if mention_files and not part.usable:
+            _post_skip_notices(client, channel, thread_ts, part)
+            _post(
+                client, channel, thread_ts,
+                ":no_entry_sign: ไม่มีไฟล์ที่อ่านได้เลย — ขออนุญาตผ่าน นะฮ่ะ.\n"
+                f"ส่งไฟล์ใหม่ที่เล็กกว่า {cfg.attachment_max_file_mb}MB/ชนิดที่รองรับ แล้ว mention มาใหม่นะ.",
+            )
+            store.mark_ignored(
+                event_key,
+                f"unusable attachments oversized={part.oversized} unsupported={part.unsupported} secret={part.secret}",
+            )
+            log.info(
+                "ignored mention (no usable attachments) channel=%s user=%s over=%s unsup=%s secret=%s",
+                channel, user, part.oversized, part.unsupported, part.secret,
+            )
             return
 
         thread_key = store.thread_key(channel, thread_ts)
@@ -280,15 +337,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         # Reuse this thread's existing worktree if we've seen the thread before
         # (validated in the background before dispatch). None => a fresh worktree.
         mapping = store.get_thread(thread_key)
-
-        # Resolve Slack ids -> display names (cached per event), so multi-user threads
-        # read clearly in the agent's context. Needs users:read; degrades to raw ids.
-        resolve_name = _make_name_resolver(client)
-
-        # Files attached to the mention message itself — present even when the mention is
-        # NOT inside a thread (the bootstrap case: a flat @bot with an image).
-        mention_ts = event.get("ts", "")
-        attachments = refs_from_message(event, resolve_name(user))
+        attachments = list(mention_files)
 
         # When the mention is inside a thread, pull the conversation as text context AND
         # its attachments. On a follow-up (mapping exists) only what is NEW since the last
@@ -317,6 +366,14 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
                 )
                 return
 
+        # Files-only mention: give the agent an explicit instruction instead of a blank
+        # request, so the ATTACHMENTS block below is understood as the task.
+        if not request_text:
+            request_text = (
+                "(No text accompanied this mention — the request is in the attached "
+                "file(s) and/or this thread. Read them and act accordingly.)"
+            )
+
         ctx = CorrelationContext(
             correlation_id=new_correlation_id(),
             slack_channel=channel,
@@ -340,22 +397,11 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             f":typingcat: จัดไปไอหนู — {'พี่ไม่เหนื่อยอยู่แล้ว!!' if continuing else 'ใช้งานมาหนักๆ ไม่ต้องเกรงใจหรอก :glassespepeq:'} "
             f"ตื่นๆ มีเรื่องว่ะ :petclaude:. ใจร่มๆ พักชมสิ่งที่น่าสนใจสักครู่ :bananadance_duo:. (ref: `{ctx.correlation_id}`)",
         )
-        # Tell the user up-front which attachments won't make it in — two buckets, decided
-        # from metadata alone (no download). The prompt's ATTACHMENTS SKIPPED block stays
-        # the full source of truth (it also covers .env / download failures / total-cap).
-        oversized, unsupported = classify_skips_for_ack(attachments, cfg.attachment_max_file_bytes)
-        if oversized:
-            _post(
-                client, channel, thread_ts,
-                f":6537_scaredreb: เดี๋ยววววว!! เกินไป๊ ไฟล์ {cfg.attachment_max_file_mb}MB จะเอากันให้ตายเลยเรอะ: "
-                + ", ".join(f"`{n}`" for n in oversized),
-            )
-        if unsupported:
-            _post(
-                client, channel, thread_ts,
-                ":1000053748: ไฟล์ไรอ่ะ!? ดูดเงินป่ะเนี่ย รับแค่ image / PDF / text สดห้ามผ่อน: "
-                + ", ".join(f"`{n}`" for n in unsupported),
-            )
+        # Partially-unusable mention still dispatches (a usable file and/or text remains) —
+        # just tell the user which attachments were skipped. Same partition decided before
+        # the busy check; the prompt's ATTACHMENTS SKIPPED block stays the full source of
+        # truth (it also covers thread-file skips / download failures / total-cap).
+        _post_skip_notices(client, channel, thread_ts, part)
         # Heavy (fresh worktree setup can take minutes). Do it off the socket thread.
         threading.Thread(
             target=_run_dispatch,

@@ -140,8 +140,14 @@ file's contents. Verify the file landed in `<worktreePath>/.aiworks/attachments/
   already-present file (only messages after `last_read_ts` are re-scanned).
 - **Missing scope**: without `files:read`, the bot hard-fails with
   `:lock: …couldn't download the file(s)…`. Add the scope, reinstall, retry.
-- **Unsupported/oversized**: attach a `.mp4` or a >15MB file — it is skipped and the agent's
-  context notes it under "ATTACHMENTS SKIPPED".
+- **All attachments unusable → STOP (no worktree)**: if the mention's files are ALL too big /
+  unsupported / secrets, the bot posts the skip reason(s) + `:no_entry_sign: ไม่มีไฟล์ที่อ่านได้เลย …`
+  and **does not dispatch** (no busy claim, no worktree, no agent). The event is recorded under
+  Redis `ignored:<event_key>`. e.g. attach a single >15MB image, or a lone `.mp4`.
+- **Partially usable → dispatches + notes**: mention with ≥1 usable file (or real text) plus a bad
+  one → it proceeds, posts the size/type skip notice for the bad file, and the agent's context
+  notes it under "ATTACHMENTS SKIPPED". NB: a slash command with a stray oversized file still
+  stops (all-files-unusable rule) — re-mention without the file.
 
 ## 5. Inspect state (Terminal 2)
 
