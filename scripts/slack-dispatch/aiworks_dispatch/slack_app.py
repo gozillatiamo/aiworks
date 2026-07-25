@@ -25,23 +25,91 @@ from .attachments import (
 from .config import Config
 from .correlation import CorrelationContext, new_correlation_id, now_iso
 from .dispatcher import Dispatcher
+from .catalog import (
+    available_roles,
+    available_workflows,
+    is_role_list,
+    is_workflow_list,
+    role_duties,
+    split_role,
+    split_workflow,
+    workflow_summaries,
+)
 from .store import RedisStore
 
 log = logging.getLogger("aiworks_dispatch.slack")
 
 _LEADING_MENTIONS = re.compile(r"^(?:\s*<@[^>]+>\s*)+")
 
+# Slack refuses a message over 4000 chars; leave room for the header + markdown.
+_MAX_POST_CHARS = 3500
+
 _USAGE = (
     "Mention me with a request or a slash command, e.g.\n"
     "• `@aiworks /prd OFB-123`\n"
     "• `@aiworks /dev-cycle OFB-45`\n"
     "• `@aiworks investigate why payouts are slow in front-end`\n"
+    "• `@aiworks role:developer implement OFB-45 per the plan on the ticket` "
+    "(a leading `role:<name>` hands the whole request to that subagent)\n"
+    "`role:list` shows every agent, `workflow:list` every workflow.\n"
     "I'll spin up a worktree, run Claude on it, and reply in this thread when done."
 )
 
 
 def _strip_mentions(text: str) -> str:
     return _LEADING_MENTIONS.sub("", text or "").strip()
+
+
+def _render_list(header: str, empty: str, prefix: str, items: list[tuple[str, str]]) -> list[str]:
+    """A catalog listing, split into postable chunks (Slack caps a message at 4000
+    chars). Returns one string per message, in order."""
+    if not items:
+        return [empty]
+    lines = [f"• `{prefix}:{name}` — {summary}" if summary else f"• `{prefix}:{name}`"
+             for name, summary in items]
+    chunks, current = [], header
+    for line in lines:
+        if len(current) + len(line) + 1 > _MAX_POST_CHARS:
+            chunks.append(current)
+            current = line
+        else:
+            current = f"{current}\n{line}"
+    chunks.append(current)
+    return chunks
+
+
+def render_role_list(duties: list[tuple[str, str]]) -> list[str]:
+    """The `role:list` answer — who a request can be routed to."""
+    return _render_list(
+        header=(
+            f":claude-code: เรียก subagent ได้ {len(duties)} ตัว — พิมพ์ `role:<name> <คำสั่ง>` "
+            "เช่น `role:developer implement OFB-45`.\n"
+            "งานที่มี workflow ครอบอยู่แล้วใช้ workflow ดีกว่านะ — ดูด้วย `workflow:list`."
+        ),
+        empty=(
+            ":confused-numbers: ไม่เจอ agent เลยแฮะ — `.claude/agents/` ว่างหรืออ่านไม่ได้.\n"
+            "เช็ค `WORKSPACE_ROOT` ใน `.env` ว่าชี้ที่ meta-repo main clone รึเปล่า."
+        ),
+        prefix="role",
+        items=duties,
+    )
+
+
+def render_workflow_list(flows: list[tuple[str, str]]) -> list[str]:
+    """The `workflow:list` answer — the multi-agent pipelines that can be run."""
+    return _render_list(
+        header=(
+            f":claude-code: workflow ที่รันได้ {len(flows)} ตัว — พิมพ์ `/dev-cycle OFB-45` "
+            "หรือ `workflow:dev-cycle OFB-45` ก็ได้ (ค่าเดียวกัน).\n"
+            "อยากเรียก agent เดี่ยวแทนดู `role:list`."
+        ),
+        empty=(
+            ":confused-numbers: ไม่เจอ workflow เลยแฮะ — `.claude/workflows/` ว่างหรืออ่านไม่ได้.\n"
+            "เช็ค `WORKSPACE_ROOT` ใน `.env` ว่าชี้ที่ meta-repo main clone รึเปล่า."
+        ),
+        prefix="workflow",
+        items=flows,
+    )
 
 
 def _is_allowed(cfg: Config, channel: str, user: str) -> bool:
@@ -283,6 +351,55 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             return
 
         request_text = _strip_mentions(event.get("text", ""))
+        # `role:list` / `workflow:list` — answered inline from disk. No worktree, no
+        # agent, no busy flag, and deliberately BEFORE the busy check so they still
+        # answer while a turn is running.
+        for kind, is_list, load, render in (
+            ("role", is_role_list, role_duties, render_role_list),
+            ("workflow", is_workflow_list, workflow_summaries, render_workflow_list),
+        ):
+            if is_list(request_text):
+                items = load(cfg.workspace_root)
+                log.info("%s list channel=%s user=%s count=%d", kind, channel, user, len(items))
+                store.mark_ignored(event_key, f"{kind}:list (answered inline)")
+                for chunk in render(items):
+                    _post(client, channel, thread_ts, chunk)
+                return
+
+        # `workflow:<name> <args>` is sugar for the slash command the session already
+        # understands — rewrite it and let the normal path run the workflow.
+        workflows = available_workflows(cfg.workspace_root)
+        flow, rest, unknown_flow = split_workflow(request_text, workflows)
+        if unknown_flow:
+            log.info("unknown workflow %s channel=%s user=%s", unknown_flow, channel, user)
+            store.mark_ignored(event_key, f"unknown workflow workflow:{unknown_flow}")
+            _post(
+                client, channel, thread_ts,
+                f":confused-numbers: `workflow:{unknown_flow}` คืออะไรอ่ะ ไม่มีน้า.\n"
+                "ที่รันได้: " + ", ".join(f"`{w}`" for w in sorted(workflows))
+                + "\nรายละเอียดพิมพ์ `workflow:list`. อยากเรียก agent เดี่ยวใช้ `role:list`.",
+            )
+            return
+        if flow:
+            request_text = f"/{flow} {rest}".strip()
+
+        # Optional routing: a leading `role:<name>` hands the request to that subagent.
+        # Resolved BEFORE the empty-request check so `@aiworks role:developer` + a file
+        # alone still counts as a files-only request rather than falling through to USAGE.
+        roles = available_roles(cfg.workspace_root)
+        agent_role, request_text, unknown_role = split_role(request_text, roles)
+        if unknown_role:
+            log.info("unknown role %s channel=%s user=%s", unknown_role, channel, user)
+            store.mark_ignored(event_key, f"unknown role role:{unknown_role}")
+            _post(
+                client, channel, thread_ts,
+                f":confused-numbers: `role:{unknown_role}` เป็นใครอ่ะ ไม่รู้จักกก.\n"
+                "ที่เรียกได้มีแค่นี้: "
+                + ", ".join(f"`role:{r}`" for r in sorted(roles))
+                + "\nอยากรู้ว่าใครทำอะไรพิมพ์ `role:list` ได้นะ. "
+                + "ถ้าไม่ได้ตั้งใจเรียก subagent ก็เอา `role:` ออกแล้ว mention มาใหม่ฮ่ะ.",
+            )
+            return
         # A mention can carry its whole request in an attachment (text.md, a screenshot,
         # …) with no message text — only bail to USAGE when there is NEITHER text NOR a
         # file. (Thread-only context still needs some text on the mention to act on.)
@@ -381,6 +498,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             slack_user_id=user,
             request_text=request_text,
             created_at=now_iso(),
+            agent_role=agent_role,
         )
         try:
             store.save_context(ctx)
@@ -391,10 +509,14 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         store.set_busy(thread_key, ctx.correlation_id, cfg.busy_ttl_sec)
 
         continuing = mapping is not None
-        log.info("accepted correlation=%s channel=%s user=%s continuing=%s", ctx.correlation_id, channel, user, continuing)
+        log.info(
+            "accepted correlation=%s channel=%s user=%s continuing=%s role=%s",
+            ctx.correlation_id, channel, user, continuing, agent_role or "-",
+        )
+        role_note = f" — ส่งต่อให้ `{agent_role}` จัดการ" if agent_role else ""
         _post(
             client, channel, thread_ts,
-            f":typingcat: จัดไปไอหนู — {'พี่ไม่เหนื่อยอยู่แล้ว!!' if continuing else 'ใช้งานมาหนักๆ ไม่ต้องเกรงใจหรอก :glassespepeq:'} "
+            f":typingcat: จัดไปไอหนู{role_note} — {'พี่ไม่เหนื่อยอยู่แล้ว!!' if continuing else 'ใช้งานมาหนักๆ ไม่ต้องเกรงใจหรอก :glassespepeq:'} "
             f"ตื่นๆ มีเรื่องว่ะ :petclaude:. ใจร่มๆ พักชมสิ่งที่น่าสนใจสักครู่ :bananadance_duo:. (ref: `{ctx.correlation_id}`)",
         )
         # Partially-unusable mention still dispatches (a usable file and/or text remains) —

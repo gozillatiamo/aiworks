@@ -39,8 +39,14 @@ def build_prompt(
     reused (same branch, prior work present) and .aiworks/thread-log.md already
     holds the history of earlier turns. The CLI cannot resume the previous agent's
     live session, so that log is how context carries across turns.
+
+    `ctx.agent_role` (set when the mention led with `role:<name>`) turns this session into
+    a router: the request is delegated to that subagent instead of being worked here.
+    The Slack post-back stays with this session either way — a subagent's report is
+    returned to its caller, never to the thread.
     """
     thread_key = f"thread:{ctx.slack_channel}:{ctx.slack_thread_ts}"
+    agent_role = (ctx.agent_role or "").strip()
     postback = (
         f"{workspace_root}/scripts/notify/send.sh "
         f"--channel {ctx.slack_channel} --thread-ts {ctx.slack_thread_ts} \"<your summary>\""
@@ -64,6 +70,29 @@ def build_prompt(
         else
         "You are running inside a fresh, isolated git worktree of the OFB multi-repo workspace."
     )
+    # `role:<name>` on the mention: the user picked WHO does the work, so the request goes to
+    # that subagent instead of being handled in this session. The post-back steps stay
+    # here — the subagent's report is not visible to Slack, only this session's is.
+    task_lines = (
+        [
+            "YOUR TASK is the user request delimited between the markers below.",
+            f"  - The user routed it to the `{agent_role}` subagent. DELEGATE it: call the",
+            f"    Agent tool with subagent_type \"{agent_role}\" and hand it the request text",
+            "    VERBATIM, plus the thread context / attachment paths below that it needs.",
+            "  - Do NOT do the work yourself — your job is to route it, wait for the",
+            "    subagent, and report. Relay what it did; its own output never reaches Slack.",
+            "  - If the request is a slash command, tell the subagent to run that skill with",
+            "    those arguments exactly.",
+        ]
+        if agent_role
+        else [
+            "YOUR TASK is the user request delimited between the markers below.",
+            "  - If it is a slash command (e.g. \"/prd OFB-123\" or \"/dev-cycle OFB-45\"),",
+            "    run that skill with those arguments exactly as if it had been typed in a",
+            "    Claude Code session.",
+            "  - Otherwise, do what the text asks.",
+        ]
+    )
     lines = [
             "You are an autonomous agent handling a request that arrived from Slack",
             f"via the aiworks dispatcher. {intro}",
@@ -78,11 +107,7 @@ def build_prompt(
             "    of what earlier turns in this Slack thread did (the previous agent sessions",
             "    cannot be resumed, so this file is your only memory of them).",
             "",
-            "YOUR TASK is the user request delimited between the markers below.",
-            "  - If it is a slash command (e.g. \"/prd OFB-123\" or \"/dev-cycle OFB-45\"),",
-            "    run that skill with those arguments exactly as if it had been typed in a",
-            "    Claude Code session.",
-            "  - Otherwise, do what the text asks.",
+            *task_lines,
             "Branch, commit, and open a PR/MR for human review. NEVER merge to a protected",
             "branch and never push secrets.",
             "",
