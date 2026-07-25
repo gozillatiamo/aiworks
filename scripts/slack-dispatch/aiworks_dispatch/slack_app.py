@@ -515,7 +515,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             "accepted correlation=%s channel=%s user=%s continuing=%s agent=%s",
             ctx.correlation_id, channel, user, continuing, agent_name or "-",
         )
-        agent_note = f" :fullsend: ฉันเลือกนาย `{agent_name}` ปั่นงานแสนโวลต์!!! :pikachu-hehe:" if agent_name else ""
+        agent_note = f" - :fullsend: ฉันเลือกนาย `{agent_name}` ปั่นงานแสนโวลต์!!! :pikachu-hehe:" if agent_name else ""
         _post(
             client, channel, thread_ts,
             f":typingcat: จัดไปไอหนู{agent_note} — {'พี่ไม่เหนื่อยอยู่แล้ว!!' if continuing else 'ใช้งานมาหนักๆ ไม่ต้องเกรงใจหรอก :glassespepeq:'} "
