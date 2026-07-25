@@ -1,0 +1,14 @@
+{
+  "name": "aiworks-pdf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Render an HTML or Markdown doc (with image + Mermaid diagram illustrations) to PDF via headless Chrome. Mermaid is vendored (no CDN); works offline / on locked-egress cloud hosts.",
+  "bin": {
+    "aiworks-pdf": "pdf.mjs"
+  },
+  "dependencies": {
+    "marked": "^16",
+    "puppeteer-core": "^25"
+  }
+}
