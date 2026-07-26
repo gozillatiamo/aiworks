@@ -179,6 +179,31 @@
 
     @media (max-width: 560px) { .wid-toolbar-label { display: none; } body { font-size: 16px; } }
   </style>
+
+  <!-- Print / PDF stylesheet. Canonical home of the print rules so any doc from this
+       skill exports to PDF cleanly (scripts/pdf/render.sh, or a browser's Print). The
+       id="wid-print" marker lets the PDF adapter detect this block and skip injecting
+       its own fallback copy. Hides the interactive chrome (all `wid-` CONTROLS — never
+       .wid-dgm-viewport, which holds the diagram) and fits wide diagrams to the page. -->
+  <style id="wid-print">
+    @media print {
+      .wid-toolbar, .wid-toolbar-label, .wid-section-tools, .wid-btn, .wid-toast,
+      .wid-dgm-tools, .wid-dgm-walk, .wid-dgm-hint, .wid-dgm-scrim, .wid-dgm-panel,
+      .wid-lang, .wid-approve-btn, .wid-plan-approve, .wid-decision,
+      .wid-plan-decisions { display: none !important; }
+      /* Un-clip the diagram viewport: diagram-interactions.js wraps a rendered diagram in
+         `.wid-dgm-viewport { overflow: clip; max-height: 72vh }` and may leave a zoom/pan
+         transform on the inner svg — both would crop the diagram on paper. Reset to fit. */
+      .wid-dgm-viewport { overflow: visible !important; max-height: none !important; height: auto !important; }
+      /* `html ` raises specificity to (0,2,2) so it beats diagram-interactions' own
+         `.wid-dgm-viewport > .mermaid > svg { max-width: none !important }` (0,2,1) — else a
+         wide diagram renders at natural width and overflows the printed page. */
+      html .wid-dgm-viewport > .mermaid > svg { transform: none !important; max-width: 100% !important; height: auto !important; }
+      figure.diagram, .mermaid, .mermaid svg, img { max-width: 100% !important; height: auto !important; }
+      body { background: #fff; }
+      @page { margin: 14mm; }
+    }
+  </style>
 </head>
 
 <!-- data-doc + titles drive the export engine. data-doc-project shows in exports.
