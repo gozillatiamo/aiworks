@@ -17,6 +17,10 @@ tools:
   # Codegraph (per-repo index): trace the blast radius of changed symbols — codegraph
   # impact/callers on what the diff touches, to catch breakage OUTSIDE the diff that a
   # diff-only read misses. The FIRST lookup; Grep/Glob stay the last resort.
+  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. The Bash cwd
+  # persists between calls, so a RELATIVE -p can resolve inside whatever repo you
+  # happen to be in — codegraph then walks up to that index and answers from the
+  # WRONG repo, with exit 0 and no way to tell.
   - Bash(codegraph *)
   # VCS adapter (scripts/vcs/, github|gitlab): PR/MR review line-comments, the squash-merge
   # (scripts/vcs/merge-pr.sh) so the web PR/MR shows Merged, and the PASS approval (pr-approve.sh).

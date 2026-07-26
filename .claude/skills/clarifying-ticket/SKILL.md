@@ -8,7 +8,7 @@ allowed-tools:
   - Grep
   - Glob
   # Codegraph (per-repo index): the FIRST lookup for the Mode-B code skim —
-  # codegraph explore/search before Grep/Glob/Read (which stay the last resort).
+  # codegraph explore/query before Grep/Glob/Read (which stay the last resort).
   - Bash(codegraph *)
   - AskUserQuestion
   - Skill
@@ -113,7 +113,7 @@ for this org's ticket-id format, status names, and any read-only fields.
    partial/ambiguous, prefer linking to the existing ticket (note the overlap in the new
    ticket's **Source** block) over filing a near-duplicate.
 4. **(Mode B only) Clarify — when it isn't clear, ASK; never invent.** Shallow code skim
-   — **codegraph FIRST** (`codegraph explore`/`codegraph search` to find the area the
+   — **codegraph FIRST** (`codegraph explore`/`codegraph query` to find the area the
    request touches), with `Grep`/`Glob`/`Read` slices only as a last resort — →
    `AskUserQuestion` (≤4 related per call; skip anything the request, existing ticket, or
    step-2 classification already answers). Any gap that would change scope, behaviour, or

@@ -55,7 +55,7 @@ that produced each finding:
   a change must honour or explicitly supersede.
 - **Coding standards** — graduated to the bottom line (§2); verify breaches there, as
   must-fixes, not as one weighed instrument among these.
-- **Codegraph + blast radius** — the repo's pre-built index. `codegraph explore`/`search`
+- **Codegraph + blast radius** — the repo's pre-built index. `codegraph explore`/`query`
   to understand a touched area; **`codegraph callers`/`codegraph impact`** to see what
   depends on a changed symbol *outside* the diff. Prefer it over a grep+read sweep;
   `Grep`/`Glob` are the last resort for a detail it didn't cover.
