@@ -986,6 +986,20 @@ cd "$ROOT"
 fi
 step "11. Back at the workspace root ($ROOT)"
 
+# ── 11.1 the Cursor face of everything seeded above ────────────────────────────
+# Steps 5-9 wrote the Claude-side config (CLAUDE.md, .claude/rules, skills, hooks,
+# settings.json). Cursor reads none of those paths, so project them: symlinks for
+# everything whose format already matches, generated files for hooks/permissions.
+# Idempotent and best-effort — a repo that gains rules later just needs a re-run.
+step "11.1. Project the agent config onto Cursor (.cursor/ + AGENTS.md) in $PATH_REL/"
+if [[ ! -x "$ROOT/scripts/aiworks-cursor.sh" ]]; then
+  skip "11.1. scripts/aiworks-cursor.sh not found — run 'aiworks cursor $REPO_NAME' later"
+elif "$ROOT/scripts/aiworks-cursor.sh" "$REPO_NAME" >/dev/null 2>&1; then
+  ok "Cursor layer projected for $REPO_NAME"
+else
+  skip "11.1. 'aiworks cursor $REPO_NAME' reported issues — run it directly to see them"
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────────
 # print_summary is defined near the top and armed as an EXIT trap before step 1, so the
 # summary prints once at normal completion AND on any unexpected abort (e.g. a set -u error,

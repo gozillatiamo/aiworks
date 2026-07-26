@@ -571,6 +571,17 @@ if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle h
   else "$SUPGEN" >/dev/null || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi   # quiet by default
 fi
 
+# ── project the whole workspace onto Cursor ───────────────────────────────────────
+# One pass over the root + every repo, after the per-repo work above has settled the
+# Claude-side config. Symlinks only (plus the generated hooks/permissions pair), so a
+# repo that was already in sync costs nothing. Never runs in dry-run.
+CURGEN="$DIR/aiworks-cursor.sh"
+if [[ -x "$CURGEN" && "$DRY" -ne 1 ]]; then
+  step "Project the agent config onto Cursor (AGENTS.md + .cursor/) for the root and every repo"
+  if [[ "$VERBOSE" -eq 1 ]]; then "$CURGEN" || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"
+  else "$CURGEN" >/dev/null || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"; fi
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────────
 printf '\n%s──────── sync summary ────────%s\n' "$c_step" "$c_off"
 if [[ "$total" -eq 0 ]]; then
