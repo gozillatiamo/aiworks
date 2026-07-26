@@ -31,21 +31,26 @@ therefore carries `paths:` (Claude) **and** `globs:` (Cursor) — `aiworks curso
 so never hand-add one without the other. Why it is built this way:
 [ADR 0004](../adr/0004-cursor-as-a-generated-mirror.md).
 
-## Open Cursor at a repo, not at the meta-repo folder
+## Open Cursor at the repo you are working in
 
 **This is the one thing that will bite you.** Cursor does not pick up configuration from
-subdirectories the way Claude Code does. Opening the workspace root gives you the root's rules,
-skills, and subagents — and **none** of any repo's. Measured, not assumed: from a parent directory
-the agent sees no nested `AGENTS.md`, no nested rules, and no nested skills, even after it has read
-a file inside that subtree.
+subdirectories the way Claude Code does. Working from the workspace root gives you the root's rules,
+skills, and subagents — and **none** of any repo's.
 
-So either:
+Measured, not assumed, in both surfaces:
 
-- `cd backoffice && cursor .` (or run `cursor-agent` from inside the repo), or
-- open **`ai-workspace.code-workspace`**, where `aiworks config` has already registered every repo
-  as its own folder root.
+- `cursor-agent` run from the workspace root sees no nested `AGENTS.md`, no nested rules and no
+  nested skills — even after it has read a file inside that subtree.
+- The **multi-root `ai-workspace.code-workspace` does not fix it either.** Asked in the IDE what
+  `paotung-template`'s `data-cy` convention is without reading files, the agent could not answer:
+  it knew the answer lived in a repo rule and offered to go read it. Registering a repo as its own
+  folder root is not the same as Cursor loading that root's `.cursor/` config.
 
-Opening the meta-repo folder itself is the case that quietly under-configures the agent.
+So: **`cd <repo> && cursor .`**, or run `cursor-agent` from inside the repo. That is the only
+arrangement measured to give an agent the repo's own instruction, rules and skills.
+
+The `.code-workspace` file is still worth opening for the Source Control panels — just do not expect
+it to configure the agent.
 
 ## Set your model to `auto`
 
