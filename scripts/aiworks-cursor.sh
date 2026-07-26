@@ -282,6 +282,32 @@ gen_cli_json() {
   ' "$settings" | jq .
 }
 
+# ── dead hook copies ──────────────────────────────────────────────────────────
+# Four repos were found carrying byte-identical copies of workspace-root hooks that
+# their own settings.json never wired and nothing else referenced — dead weight, and
+# in one case a revision older than the root's. Reported, never deleted: whether a
+# copy is dead or is someone's work in progress is a human call. This lives in the
+# Cursor generator because --check became the workspace's one verify entry point,
+# and because a stale hook is exactly what the generator would otherwise wire into
+# .cursor/hooks.json without comment.
+#
+# TOP LEVEL ONLY (-maxdepth 1). Subdirectories of .claude/hooks/ are bundles that
+# aiworks add installs whole — dev-wrapper/, caveman-statusline/ — where most members
+# are legitimately unwired in a given repo. Flagging each of those would bury the
+# real finding in noise, and a check nobody reads catches nothing.
+check_dead_hook_copies() {
+  local base="$1" name="$2" src="$1/.claude/hooks" settings="$1/.claude/settings.json"
+  [[ -d "$src" && -f "$settings" ]] || return 0
+  local f rel
+  while IFS= read -r f; do
+    rel="${f#"$src"/}"
+    [[ -f "$ROOT/.claude/hooks/$rel" ]] || continue          # not a copy of a root hook
+    cmp -s "$f" "$ROOT/.claude/hooks/$rel" || continue       # diverged — leave it alone
+    grep -qF "$(basename "$rel")" "$settings" 2>/dev/null && continue   # actually wired
+    note "$name: .claude/hooks/$rel duplicates the root hook and no settings.json wires it — dead copy, delete it and let the root keep the only one"
+  done < <(find "$src" -maxdepth 1 -type f -name '*.sh' 2>/dev/null | sort)
+}
+
 # ── one target ────────────────────────────────────────────────────────────────
 do_target() {
   local base="$1" name="$2" is_root="$3"
@@ -329,6 +355,8 @@ do_target() {
   else
     dim "no .claude/settings.json — no hooks or permissions to project"
   fi
+
+  [[ "$is_root" -eq 1 ]] || check_dead_hook_copies "$base" "$name"
 }
 
 # ── user scope: make the enabled Claude plugin skills visible to Cursor ───────
