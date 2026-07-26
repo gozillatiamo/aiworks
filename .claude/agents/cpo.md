@@ -19,8 +19,12 @@ tools:
   - Bash(pnpm *)
   - Bash(node *)
   # Codegraph (per-repo index): the FIRST lookup when /to-prd explores the codebase —
-  # codegraph explore/search before any grep (Grep/Glob last resort). to-prd has no
+  # codegraph explore/query before any grep (Grep/Glob last resort). to-prd has no
   # allowed-tools block, so it inherits this grant.
+  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. The Bash cwd
+  # persists between calls, so a RELATIVE -p can resolve inside whatever repo you
+  # happen to be in — codegraph then walks up to that index and answers from the
+  # WRONG repo, with exit 0 and no way to tell.
   - Bash(codegraph *)
   - WebSearch
   - WebFetch

@@ -24,9 +24,10 @@ the meta-repo root). Open the **file** (`cursor <workspace>.code-workspace`), no
 so each product repo gets its own Source Control panel — opening the folder makes Git skip the
 gitignored clones and only the meta-repo shows. ⚠️ **Cursor**: the `.code-workspace` gives you the
 Source Control panels but does NOT configure the agent — Cursor reads no configuration from
-subdirectories, so from the workspace root (folder *or* `.code-workspace`) an agent gets none of a
-repo's rules, skills, or `AGENTS.md`. Measured both ways. To work a repo with Cursor, open that
-repo: `cd <repo> && cursor .`. See `docs/agents/cursor.md`.
+subdirectories. `aiworks cursor` closes most of that gap by generating, at the workspace root,
+`.cursor/rules/repos/<repo>/` — each repo's `CLAUDE.md` and rules re-globbed under `<repo>/` so they
+fire on that repo's files only. A repo's own **skills** still do not reach a root session, so for
+sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/agents/cursor.md`.
 
 **Cross-repo (`mani`):** `sync` (clone missing) · `list projects` ·
 `exec --all '<cmd>'` · `run <task>`
@@ -131,8 +132,17 @@ The group's repos are declared under `products:` in @workspace.config.yaml
 - Read, print, or trace-dump any `.env` / `.env.*` file (except `.env.example`) — see the
   ⚠️ warning above. Highest priority: a leaked adapter secret (Jira/GitLab/Slack/...)
   is a live credential, not just a file.
-- codegraph is not allowed at the organization (workspace) level — only inside an
-  individual repo.
+- Never run `codegraph` without naming the repo. The index is **per-repo** and the
+  workspace root has none, so every query needs `-p $CLAUDE_PROJECT_DIR/<repo>` — an
+  **absolute** path. A relative `-p` is only right when the cwd happens to be the
+  workspace root, and the Bash cwd persists between calls: from inside another repo,
+  `-p <repo>` resolves to a path that does not exist, codegraph walks up to the
+  nearest index, and answers from the WRONG repo with exit 0. `pretool-codegraph-guard.sh`
+  rewrites a relative `-p` to absolute and blocks a query with none, so this is
+  enforced rather than remembered. The CLI subcommand is `query`, not `search`;
+  `explore` and `node` exist as of CLI 1.5.0 and return source directly, so the CLI
+  covers everything the MCP server does — prefer it. `posttool-codegraph-sync.sh`
+  keeps the touched repo's index current after every Write/Edit.
 - Never edit, add, or commit **inside a git submodule checkout** (e.g.
   `your-app/shared-lib/`, `your-web/packages/ui-kit/`). That
   code belongs to a repo that is *also* cloned as its own primary clone at the workspace

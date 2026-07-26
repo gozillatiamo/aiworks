@@ -561,9 +561,14 @@ else
   if mani sync; then ok "mani sync done"; else skip "3. 'mani sync' failed — check the URL / your SSH access"; fi
 fi
 
-step "3.1. Ignore $PATH_REL/ in the workspace .gitignore"
-if ensure_line "$ROOT/.gitignore" "$PATH_REL/"; then ok "added $PATH_REL/ to the workspace .gitignore"
-else skip "3.1. workspace .gitignore already ignores $PATH_REL/"; fi
+# ANCHORED (`/<repo>/`, not `<repo>/`): a bare directory pattern matches at every
+# depth, so `game/` would also hide `.cursor/rules/repos/game/` — the generated
+# per-repo rules a Cursor session at the workspace root reads — and Cursor will not
+# read a rule file that git ignores. The clone this line exists for is at the root,
+# so anchoring loses nothing.
+step "3.1. Ignore /$PATH_REL/ in the workspace .gitignore"
+if ensure_line "$ROOT/.gitignore" "/$PATH_REL/"; then ok "added /$PATH_REL/ to the workspace .gitignore"
+else skip "3.1. workspace .gitignore already ignores /$PATH_REL/"; fi
 
 # ── 3.1.1. Cursor IDE indexing — re-include $PATH_REL/ so Cursor can search it ─────
 #   The clone is gitignored at the workspace root (step 3.1) so it never dirties the

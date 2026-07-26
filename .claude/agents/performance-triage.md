@@ -17,6 +17,10 @@ tools:
   - Skill
   - Bash(git *)
   # Codegraph (per-repo index): map a bad-data path back to the code.
+  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. The Bash cwd
+  # persists between calls, so a RELATIVE -p can resolve inside whatever repo you
+  # happen to be in — codegraph then walks up to that index and answers from the
+  # WRONG repo, with exit 0 and no way to tell.
   - Bash(codegraph *)
   - Bash(scripts/dev.sh status:*)
   - Bash(scripts/dev.sh why:*)

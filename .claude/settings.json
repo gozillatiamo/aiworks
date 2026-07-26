@@ -77,7 +77,7 @@
       "Read(**/.aws/credentials)",
       "Read(**/secrets/**)",
       "Write(**/.env)",
-    "Edit(**/.env)",
+      "Edit(**/.env)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.claude/**)",
@@ -147,6 +147,10 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-notify-guard.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-codegraph-guard.sh"
           }
         ]
       },
@@ -209,6 +213,15 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-codegraph-sync.sh"
           }
         ]
       }

@@ -64,6 +64,23 @@ out=$(jq -cn --arg c "cat $SECRET" --arg r "$ROOT" \
         '{hook_event_name:"beforeShellExecution",command:$c,cwd:"",session_id:"s1",workspace_roots:[$r]}' | "$SHIM" "$GUARD")
 check "the top-level command is lifted into tool_input" '"permission":"deny"' "$out"
 
+echo "== a rewritten command survives the crossing =="
+# Cursor honours a rewritten tool input as `updated_input`, on preToolUse only. Claude
+# spells the same thing `hookSpecificOutput.updatedInput`; drop the translation and a
+# guard that repairs a command instead of blocking it silently stops repairing it, with
+# no error anywhere. A script file, not an inline string: the shim runs its argument
+# through `bash -c` and a nested-quoted jq one-liner does not survive that.
+REWRITER="$TMP/rewriter.sh"
+cat > "$REWRITER" <<'REW'
+#!/usr/bin/env bash
+cat >/dev/null
+jq -nc '{hookSpecificOutput:{hookEventName:"PreToolUse",updatedInput:{command:"echo fixed"}}}'
+REW
+chmod +x "$REWRITER"
+out=$(shell_call 'echo broken' | "$SHIM" "$REWRITER")
+check "updatedInput becomes updated_input"  '"updated_input"'        "$out"
+check "the rewritten command comes through" '"command":"echo fixed"' "$out"
+
 echo "== a broken hook must not break the agent =="
 out=$(shell_call 'ls' | "$SHIM" 'exit 7')
 check "hook failure fails open"                        '{}' "$out"

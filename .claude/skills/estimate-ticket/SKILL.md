@@ -5,7 +5,7 @@ argument-hint: "<KEY> (e.g. FM-12)"
 allowed-tools:
   - Bash(scripts/tracker/*)
   # Codegraph (per-repo index): optional shallow skim to sharpen the Dev estimate —
-  # codegraph explore/search before Grep/Glob/Read (which stay the last resort).
+  # codegraph explore/query before Grep/Glob/Read (which stay the last resort).
   - Bash(codegraph *)
   - Read
   - Grep
@@ -107,7 +107,7 @@ $CLAUDE_PROJECT_DIR/scripts/tracker/
    comment — an estimate you can't trace to a comparable is a guess).
    - **Dev points** — implementation effort to satisfy the AC: scope of code touched,
      novelty, risk. Optionally sharpen with a shallow code skim (**codegraph first** —
-     `codegraph explore`/`codegraph search` in the repo the ticket targets; `Grep`/
+     `codegraph explore`/`codegraph query` in the repo the ticket targets; `Grep`/
      `Glob`/`Read` only as a last resort). Skim to size, not to design — no file paths
      or schemas leak into the ticket.
    - **QA points** — test effort the AC imply: how many BDD scenarios, platforms

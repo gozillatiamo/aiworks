@@ -7,7 +7,7 @@ effort: high
 allowed-tools:
   - Bash(scripts/tracker/*)
   # Codegraph (per-repo index): skim the touched area to find real seams —
-  # codegraph explore/search before Grep/Glob/Read (which stay the last resort).
+  # codegraph explore/query before Grep/Glob/Read (which stay the last resort).
   - Bash(codegraph *)
   - Read
   - Grep
@@ -133,7 +133,7 @@ Execute: in the output). A big-but-honest ticket beats fake independence.
 ## Advise flow (CTO)
 
 1. **Read** the ticket (`get-ticket-details.sh <KEY>` + comments) and confirm the total > 24.
-2. **Skim the touched area** for real seams — **codegraph first** (`codegraph explore`/`search`
+2. **Skim the touched area** for real seams — **codegraph first** (`codegraph explore`/`query`
    in the repo the ticket targets), Grep/Glob/Read only as a last resort. Skim to find seams,
    not to design.
 3. **Propose the slices** against the independence bar: for each proposed piece give a title, a
