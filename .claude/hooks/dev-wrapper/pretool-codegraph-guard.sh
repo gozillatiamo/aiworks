@@ -48,17 +48,71 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cwd=$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)
 [ -n "$cwd" ] || cwd="$(pwd)"
 
+# ── is this an invocation, or just text that says "codegraph"? ────────────────
+#
+# The command-word test below used to run on the raw command, so a line that only
+# QUOTED the word tripped it. Real case: a probe script whose `for c in "..." "cd x
+# && codegraph query foo"` list was scanned, matched on `&& codegraph query`, and —
+# being multi-line, so unsafe to rewrite — got blocked. The command ran no
+# codegraph at all. A guard that blocks a line for describing what it guards is a
+# guard people route around.
+#
+# So the DECISION runs against a probe copy with the quoted runs removed —
+# the same trick rule 2 of pretool-env-guard.sh uses on `bash -x`. Everything after
+# this point still uses the ORIGINAL $cmd: stripping is only ever allowed to answer
+# "is there an invocation here", never to extract an operand. That distinction is
+# load-bearing — `-p "backoffice"` keeps its operand inside quotes, and the stripped
+# copy no longer holds it.
+#
+# EXCEPT when the command hands that quoted text to a shell — `bash -c '...'`,
+# `sh -c`, `eval`, `xargs`, `rtk run`, `rtk proxy`. There the quotes are not inert:
+# the text IS the command, and stripping it would let an unaddressed query through.
+# Those keep the raw command, exactly as before.
+#
+# Still over-blocked, on purpose: a heredoc body that mentions the word. Stripping
+# heredocs too would be a real FALSE NEGATIVE, because whether the body is inert
+# depends on who reads it — `cat <<EOF > doc.md` is text, `bash <<EOF` is code, and
+# the wrapper test above cannot see the second one (no `-c`). Over-blocking a doc is
+# the cheap direction; use Write/Edit for the file, which is not a Bash call at all.
+probe="$cmd"
+if ! printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(])([a-z]*sh[[:space:]]+-[a-zA-Z]*c[a-zA-Z]*|eval|xargs|rtk[[:space:]]+(run|proxy))([[:space:]]|$)'; then
+  probe=$(printf '%s' "$cmd" | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g')
+fi
+
 # `codegraph` must appear as a command word, not inside a path or a string that
 # merely mentions it (a grep for the word, a comment, a doc edit).
-printf '%s' "$cmd" | grep -qE '(^|[;&|(]|&&|\|\|)[[:space:]]*codegraph[[:space:]]' || exit 0
+#
+# A quote counts as a word boundary here, which matters only on the raw path above:
+# `bash -c "codegraph explore Foo"` opens its command with the word, and with `"`
+# absent from this class the whole wrapper carve-out did nothing for that shape — it
+# passed straight through unaddressed. On the stripped path the quotes are already
+# gone, so this cannot widen anything there.
+CMD_WORD=$'(^|[;&|(\x22\x27]|&&|\\|\\|)[[:space:]]*codegraph[[:space:]]'
+printf '%s' "$probe" | grep -qE "$CMD_WORD" || exit 0
 
 # Subcommands that read the index and therefore need a project. `sync` is left out
 # on purpose: the PostToolUse sync hook passes an absolute path already, and a
 # hand-run `codegraph sync` from inside a repo is a legitimate no-arg use.
 QUERY_SUBS='query|explore|node|callers|callees|impact|affected|files|status'
 
-sub=$(printf '%s' "$cmd" | awk '
-  { for (i = 1; i <= NF; i++) if ($i == "codegraph") { print $(i+1); exit } }')
+# Quotes are trimmed off both tokens before comparing. `bash -c "codegraph explore
+# Foo"` tokenises as `"codegraph`, which is not equal to `codegraph`, so the guard
+# used to give up here and wave the wrapper through with no project — the word test
+# above having matched. Trimming makes the wrapper resolvable-or-blocked like any
+# other invocation (in practice blocked, since its operand carries a quote too and
+# blocking beats guessing).
+# Read from $probe, not $cmd: the FIRST token that reads `codegraph` has to be the
+# real invocation, and in `echo "about codegraph" && codegraph query F -p web` the
+# raw command's first one is the mention — whose next token is `&&`, which is no
+# subcommand, so the guard would exit and leave the real query unaddressed.
+# The -p operand is still read from $cmd below, because that one CAN be quoted.
+sub=$(printf '%s' "$probe" | awk '
+  {
+    for (i = 1; i <= NF; i++) {
+      t = $i; gsub(/^["'"'"']+|["'"'"']+$/, "", t)
+      if (t == "codegraph") { n = $(i+1); gsub(/^["'"'"']+|["'"'"']+$/, "", n); print n; exit }
+    }
+  }')
 [ -n "$sub" ] || exit 0
 
 # `search` is the MCP tool name; the CLI calls it `query` and exits 1 otherwise.
