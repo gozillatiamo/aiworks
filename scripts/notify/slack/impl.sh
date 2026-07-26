@@ -72,6 +72,8 @@ notify_send() {
 
   # Incoming Webhook — channel is bound to the webhook, so an explicit one can't be honoured.
   [[ -z "$channel" ]] || echo "note: SLACK_WEBHOOK_URL ignores the channel ('$channel') — it posts to the webhook's bound channel" >&2
+  # A webhook can post text but CANNOT upload a file (no files.* access), so file mode
+  # must never reach here — notify_send_file dies early when no bot token is present.
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — POST webhook\n%s\n' "$text"; return 0
   fi
@@ -81,6 +83,77 @@ notify_send() {
     || die "slack webhook request failed (network)"
   [[ "$resp" == ok ]] || die "slack webhook rejected the message: ${resp:-<empty>}"
   printf 'ok=1\npermalink=\n'
+}
+
+# notify_send_file CHANNEL FILE [COMMENT] [DRY] [THREAD_TS] [TITLE] -> upload FILE into
+# CHANNEL with an optional initial COMMENT, threaded under THREAD_TS. Prints "ok=1" +
+# "permalink=<url>" on success, else dies. Uses Slack's external-upload flow (the current
+# API; files.upload is retired): reserve a URL, PUT the bytes, then complete — attaching to
+# the channel/thread in one message. Needs a BOT TOKEN + the files:write scope; a webhook
+# can't upload (dies early). The outbound safety gate (size / PII / secrets) lives in
+# send.sh, upstream of this primitive.
+notify_send_file() {
+  local channel="$1" file="$2" comment="${3:-}" dry="${4:-0}" thread_ts="${5:-}" title="${6:-}"
+
+  [[ -n "${SLACK_BOT_TOKEN:-}" ]] || \
+    die "slack file upload needs SLACK_BOT_TOKEN (a webhook can't upload files) — set it in scripts/notify/.env"
+  [[ -n "$channel" ]] || die "slack file upload needs a channel — pass --channel or set NOTIFY_CHANNEL"
+  [[ -f "$file" ]] || die "file not found: $file"
+
+  local fname length
+  fname="$(basename "$file")"
+  [[ -n "$title" ]] || title="$fname"
+  length="$(wc -c < "$file" | tr -d ' ')"   # portable byte size
+
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — files.completeUploadExternal channel=%s file=%s (%s bytes)%s title=%s\ninitial_comment=%s\n' \
+      "$channel" "$fname" "$length" "${thread_ts:+ thread_ts=$thread_ts}" "$title" "$comment"
+    return 0
+  fi
+
+  local cid; cid="$(_slack_channel_id "$channel")"
+  [[ -n "$cid" ]] || die "could not resolve channel to an id: $channel"
+
+  # 1. reserve an upload URL + file id
+  local up upload_url file_id
+  up="$(curl -sS -X POST https://slack.com/api/files.getUploadURLExternal \
+    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+    --data-urlencode "filename=$fname" \
+    --data-urlencode "length=$length")" || die "slack getUploadURLExternal failed (network)"
+  if [[ "$(printf '%s' "$up" | jq -r '.ok')" != true ]]; then
+    local uerr; uerr="$(printf '%s' "$up" | jq -r '.error // "unknown"')"
+    [[ "$uerr" == "missing_scope" || "$uerr" == "not_allowed_token_type" ]] && \
+      die "slack rejected the upload: $uerr — the bot needs the files:write scope; add it to slack-app-manifest.yaml and reinstall the app"
+    die "slack getUploadURLExternal rejected: $uerr"
+  fi
+  upload_url="$(printf '%s' "$up" | jq -r '.upload_url')"
+  file_id="$(printf '%s' "$up" | jq -r '.file_id')"
+  [[ -n "$upload_url" && -n "$file_id" ]] || die "slack getUploadURLExternal returned no upload_url/file_id"
+
+  # 2. POST the raw bytes to the returned URL
+  curl -sS -f -F "file=@${file}" "$upload_url" >/dev/null || die "slack file byte upload failed (PUT to upload_url)"
+
+  # 3. complete — attach to the channel/thread, carrying the caption as initial_comment
+  local files_arg payload complete
+  files_arg="$(jq -n --arg id "$file_id" --arg t "$title" '[{id:$id, title:$t}]')"
+  payload="$(jq -n --arg c "$cid" --argjson f "$files_arg" --arg tt "$thread_ts" --arg ic "$comment" \
+    '{channel_id:$c, files:$f}
+     + (if $tt != "" then {thread_ts:$tt} else {} end)
+     + (if $ic != "" then {initial_comment:$ic} else {} end)')"
+  complete="$(curl -sS -X POST https://slack.com/api/files.completeUploadExternal \
+    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+    -H 'Content-Type: application/json; charset=utf-8' \
+    --data "$payload")" || die "slack completeUploadExternal failed (network)"
+  if [[ "$(printf '%s' "$complete" | jq -r '.ok')" != true ]]; then
+    local err; err="$(printf '%s' "$complete" | jq -r '.error // "unknown"')"
+    [[ "$err" == "missing_scope" || "$err" == "not_allowed_token_type" ]] && \
+      die "slack rejected the upload: $err — the bot needs the files:write scope; add it to slack-app-manifest.yaml and reinstall the app"
+    [[ "$err" == "not_in_channel" ]] && \
+      die "slack rejected the upload: not_in_channel — the bot isn't in $channel; invite it (/invite @<bot>) or grant channels:join + channels:read"
+    die "slack rejected the upload: $err"
+  fi
+  local link; link="$(printf '%s' "$complete" | jq -r '.files[0].permalink // empty')"
+  printf 'ok=1\npermalink=%s\n' "$link"
 }
 
 # Resolve a channel #name (or pass an id through) to a channel id. Empty on failure.

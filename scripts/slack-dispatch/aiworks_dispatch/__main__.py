@@ -28,7 +28,7 @@ def main() -> int:
         print(f"config error: {e}", file=sys.stderr)
         return 2
 
-    setup_logging(cfg.log_level)
+    setup_logging(cfg.log_level, cfg.log_format, cfg.log_name_width, cfg.log_tz)
     log.info("aiworks-dispatch starting (project=%s base=%s agent=%s)",
              cfg.superset_project_id, cfg.superset_base_branch, cfg.superset_agent_preset)
 

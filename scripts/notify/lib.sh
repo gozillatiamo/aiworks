@@ -7,6 +7,7 @@
 #
 #   notify_require_config                   — validate the provider's env (token/webhook), die if missing
 #   notify_send  CHANNEL TEXT [DRY] [THREAD] — post TEXT to CHANNEL; a non-empty THREAD replies in-thread. Prints "ok=1" + "permalink=<url>"
+#   notify_send_file CHANNEL FILE [COMMENT] [DRY] [THREAD] [TITLE] — upload FILE to CHANNEL with an optional COMMENT, threaded under THREAD. Prints "ok=1" + "permalink=<url>". Bot-token only (a webhook can't upload)
 #   notify_find_thread CHANNEL KEY          — print the ts of the newest message containing KEY (the review-request), else nothing (caller SKIPS). Best-effort; a provider that can't search returns empty
 #
 # CHANNEL is provider-neutral: an id, a #name, or empty (fall back to NOTIFY_CHANNEL, then

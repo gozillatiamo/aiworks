@@ -49,6 +49,12 @@ class RedisStore:
             ex=self._context_ttl,
         )
 
+    def mark_ignored(self, event_key: str, reason: str) -> None:
+        """Record that a mention was acknowledged but deliberately NOT dispatched
+        (e.g. its only attachments were unreadable). Traceability, not dedup —
+        `mark_seen` already prevents reprocessing."""
+        self._r.set(f"ignored:{event_key}", reason, ex=self._context_ttl)
+
     def get_context(self, correlation_id: str) -> CorrelationContext | None:
         raw = self._r.get(f"corr:{correlation_id}")
         return CorrelationContext.from_dict(json.loads(raw)) if raw else None

@@ -46,8 +46,9 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
    `SUPERSET_PROJECT_ID`), `superset agents list --local` (confirm the `claude` preset).
 3. **Slack app** with Socket Mode — see `slack-app-manifest.yaml`. You need a bot
    token (`xoxb-…`, scopes `app_mentions:read` + `chat:write`, plus `channels:history` /
-   `groups:history` to read a thread when mentioned inside one) and an app-level token
-   (`xapp-…`, scope `connections:write`). Invite the bot to the trigger channel.
+   `groups:history` to read a thread when mentioned inside one, `files:read` for attachment
+   support, `files:write` to reply with a file, and `users:read` to resolve names) and an
+   app-level token (`xapp-…`, scope `connections:write`). Invite the bot to the trigger channel.
 4. **Docker** for the Redis container.
 
 ## Setup
@@ -73,11 +74,53 @@ reference: see `.env.example`. The trigger allowlist **defaults to deny** — se
 @aiworks /prd APP-123
 @aiworks /dev-cycle APP-45
 @aiworks investigate why payouts are slow in front-end and open a fix PR
+@aiworks agent:developer implement APP-45 following the plan on the ticket
 ```
 
 A leading slash command runs the matching skill exactly as if typed in a Claude Code
 session. Plain text is handled as a task. The bot acks immediately, then replies in
 the same thread when the agent finishes (`ref: req-…` ties the messages together).
+
+### Routing to a specific agent — `agent:<name>`
+
+A leading `agent:<name>` hands the whole request to that **subagent** instead of letting
+the dispatched session work it directly. Valid names are the workspace's own agent
+definitions — `.claude/agents/<name>.md` (`developer`, `code-reviewer`, `qa-planner`,
+`performance-triage`, …) — read per mention, so adding an agent needs no restart.
+
+```
+@aiworks agent:list                                  # who can I route to?
+@aiworks workflow:list                               # what pipelines can I run?
+@aiworks agent:developer implement APP-45 following the plan on the ticket
+@aiworks agent:performance-triage root-cause the slow payout endpoint in staging
+@aiworks agent:qa-planner /plan-testcases APP-45     # agent + slash command combine
+@aiworks workflow:dev-cycle APP-45                   # same as `/dev-cycle APP-45`
+```
+
+**Discovery.** `agent:list` and `workflow:list` are answered **inline, in seconds** — each
+name with a one-line summary, read straight from disk (`description:` frontmatter of
+`.claude/agents/*.md`; `whenToUse` from a workflow's `meta` in `.claude/workflows/*.js`,
+falling back to its `description`). No worktree, no agent session, no busy flag, so they
+also answer while a turn is still running. `list` / `lists` are therefore reserved names —
+no agent or workflow may be called that.
+
+`workflow:<name> <args>` is sugar: it is rewritten to the `/<name> <args>` slash command
+the session already understands, so `workflow:` and `/` are interchangeable. An unknown
+name in either family replies with what does exist and dispatches nothing.
+
+- **Why `agent:` and not `@developer`.** Slack linkifies an `@handle` that matches a real
+  user or usergroup into `<@U…>` / `<!subteam^…>`, and leading mentions are stripped
+  before parsing — the routing would silently vanish for exactly the names most likely
+  to collide. `agent:` is never linkified, so the parser sees what was typed.
+- The dispatched session becomes a **router**: it calls the Agent tool with that
+  `subagent_type`, waits, then does the post-back itself (a subagent's report goes to
+  its caller, never to Slack).
+- Unknown name (`agent:nobody …`) → the bot replies with the valid list and **dispatches
+  nothing** — no worktree is burned on a request routed somewhere that doesn't exist.
+  Nobody types `agent:` by accident, so it is always treated as intent to route.
+- Prefer a workflow when one covers the job: `/dev-cycle` already runs
+  planner → developer → review → QA in waves, with the branch prep a bare
+  `agent:developer` skips.
 
 ## Thread continuity
 
@@ -94,11 +137,32 @@ spam on the host.
   its own summary (the prompt enforces this).
 - **Mentioned inside an existing thread.** If the FIRST mention lands in a thread whose
   root did not address the bot, the whole thread up to that mention is pulled in as
-  context (each line tagged with its Slack author id) and injected into the prompt as
-  untrusted DATA. This needs the `channels:history` / `groups:history` bot scopes — if
-  the thread can't be read, the bot **hard-fails** (posts what scope to add, dispatches
-  nothing). Only on the first request; follow-ups rely on `thread-log.md`. Capped by
-  `THREAD_CONTEXT_MAX_MSGS`.
+  context (each line tagged with its Slack author **name** and **timestamp** — names via
+  `users:read`, ids as fallback) and injected into the prompt as untrusted DATA. This
+  needs the `channels:history` / `groups:history` bot scopes — if the thread can't be
+  read, the bot **hard-fails** (posts what scope to add, dispatches nothing). Capped by
+  `THREAD_CONTEXT_MAX_MSGS`. On follow-ups only messages **after** the last turn's
+  high-water mark (`last_read_ts` on the mapping) are re-scanned — the rest of the
+  history lives in `thread-log.md`.
+- **Attachments.** Files on the mention message AND its thread (an image-only post
+  counts) are downloaded into `<worktree>/.aiworks/attachments/` and listed in the prompt
+  as untrusted DATA with author + timestamp + relative path — the agent Reads them
+  itself (images/PDF natively, text-like as text; Claude has no audio/video modality, so
+  those are skipped). Downloads are **idempotent** by Slack file id (a re-scanned file
+  already on disk is not re-fetched) and **capped** (`ATTACHMENT_MAX_FILES` /
+  `ATTACHMENT_MAX_FILE_MB` / `ATTACHMENT_TOTAL_MB`). Needs `files:read`; a missing scope
+  **hard-fails** with a fix-it message, while a single broken/oversized/unsupported file
+  soft-degrades (noted in the prompt, turn continues). Files download BEFORE the agent
+  launches, so they are on disk when it Reads them.
+- **Reply with a file (outbound).** When the request asks for a **deliverable file** —
+  "give me a csv of…", "export … as a pdf", "write it up as a md file" — the agent writes it under
+  `<worktree>/.aiworks/out/` (never committed) and attaches it with `scripts/notify/send.sh
+  --file`, so one threaded message carries the file plus a caption. `md`/`csv`/`json` are
+  written directly; a `pdf` is rendered from an authored `.md`/`.html` via `scripts/pdf/
+  render.sh` (Mermaid + images, offline). The notify adapter's **outbound gate** refuses any
+  upload that is oversized (`OUTBOUND_MAX_FILE_MB`), carries external PII, or matches a
+  secret/token pattern — so "never leak a secret/PII" is a deterministic wall, not just a
+  prompt line. Needs `files:write`; a missing scope surfaces a fix-it message.
 - **Stale mapping.** If the worktree is gone (`workspaces get` says so) or the mapping
   expired, the next mention transparently starts a fresh worktree and re-maps the thread.
 - **Concurrency.** One agent per thread worktree at a time. A mention that lands while
@@ -161,6 +225,67 @@ Controls in place:
 - **No secrets in prompts or workspace names.** Post-back uses the main clone's
   adapter by path; no token is ever interpolated.
 
+## Logs
+
+One line per event, always — in one of two shapes, picked by `LOG_FORMAT`
+(`pretty` | `json` | `auto`, default `auto`):
+
+| `LOG_FORMAT` | Shape | Used when |
+|---|---|---|
+| `auto` (default) | pretty on a TTY, JSON when stdout is redirected | normal runs |
+| `pretty` | `2026-07-25 16:30:15.439 INFO  slack_app │ accepted correlation=7f3a9b channel=C04…` | forcing the human shape through a pipe |
+| `json` | `{"ts":"2026-07-25T16:30:15.439+07:00","level":…,"msg":…,"exc":…}` | shipping to a log tool, or needing a full traceback |
+
+Timestamps are stamped in **`LOG_TZ` (default `Asia/Bangkok`)**, not the host's zone, with
+**full date + milliseconds** — dispatch steps land inside the same second, and a line often
+gets quoted into a ticket or matched against a trace, where the year has to be there.
+Pretty prints `YYYY-MM-DD HH:MM:SS.mmm`; JSON prints ISO 8601 with the offset
+(`2026-07-25T16:30:15.439+07:00`), which sorts lexicographically and parses anywhere.
+`LOG_TZ=local` uses the host's zone; an unknown zone warns once on stderr and falls back
+to local.
+
+Pretty aligns the columns (time · level · module · message), dims the `key=` labels so the
+values stand out, colours by level, and flattens a traceback to a `| ExcType: msg at
+file:line` tail so an error still occupies exactly one line. `NO_COLOR=1` drops the colour.
+For the full stack of an exception, re-run with `LOG_FORMAT=json`.
+
+The module column is `LOG_NAME_WIDTH` wide (default **10**) — our own prefix is stripped
+(`aiworks_dispatch.slack_app` → `slack_app`) and a third-party logger collapses to its
+package (`slack_sdk.socket_mode.builtin.client` → `slack`), so the column stays narrow
+instead of padding dead space before the `│`. `LOG_NAME_WIDTH=11` fits every module name in
+full; `LOG_NAME_WIDTH=0` drops the padding entirely:
+
+```
+LOG_NAME_WIDTH=10                      LOG_NAME_WIDTH=0
+2026-07-25 16:30:15.439 INFO  main       │  2026-07-25 16:30:15.439 INFO  main │
+2026-07-25 16:30:15.439 INFO  slack_app  │  2026-07-25 16:30:15.439 INFO  slack_app │
+2026-07-25 16:30:15.439 INFO  attachmen… │  2026-07-25 16:30:15.439 INFO  attachments │
+```
+
+**Embedded payloads are treated as JSON, not as text.** Many messages carry one (a
+superset CLI response, a Slack API body, the JSON inside a `RuntimeError`). Both shapes
+detect the `{…}` / `[…]` span and re-render it *as JSON* — a pretty-printed or
+newline-laden blob comes out compact and intact on the one line:
+
+```bash
+# raw message:  workspace created {\n  "id": "ws_9f2",\n  "healthy": true\n} reused=False
+2026-07-25 16:30:15.439 INFO  dispatcher │ workspace created {"id": "ws_9f2", "healthy": true} reused=False
+```
+
+- `pretty` — keys and punctuation dimmed, numbers/booleans/`null` coloured, strings bright.
+  A payload over 600 rendered chars is cut with a `…(+N chars, see LOG_FORMAT=json)` marker.
+- `json` — the payload is *also* emitted as a real nested object under `data`, so
+  `jq -r '.data.worktreePath'` works without re-parsing a string. `msg` is left
+  byte-identical, so `grep` keeps behaving as before.
+- Only genuine JSON is touched — a Python repr (`['claude', 'codex']`) or prose with
+  brackets stays exactly as written.
+
+Eyeball every shape without starting the service:
+
+```bash
+./.venv/bin/python -m aiworks_dispatch.logging_setup   # sample lines, pretty/NO_COLOR/json
+```
+
 ## Cost note
 
 Each dispatch creates a fresh worktree, which runs the project's `.superset/setup.sh`
@@ -179,6 +304,7 @@ project's setup or reuse worktrees if this is too heavy for your usage.
 | `aiworks_dispatch/dispatcher.py` | `Dispatcher` interface + `SupersetLocalDispatcher` |
 | `aiworks_dispatch/slack_app.py` | Socket Mode `app_mention` handler |
 | `aiworks_dispatch/__main__.py` | entrypoint / wiring / graceful shutdown |
+| `aiworks_dispatch/logging_setup.py` | one-line log formatters (pretty / JSON) |
 | `aiworks_dispatch/check.py` | `python -m aiworks_dispatch.check` pre-flight |
 | `docker-compose.yml` | dedicated Redis (port 6370) |
 | `slack-app-manifest.yaml` | Slack app definition |

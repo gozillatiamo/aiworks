@@ -16,6 +16,7 @@ usage() {
   cat <<'EOF'
 Usage: send.sh [--channel <id|#name>] [text] [--dry-run]
        send.sh --channel <ch> --thread-ts <ts> [text] [--dry-run]
+       send.sh --channel <ch> [--thread-ts <ts>] --file <path> [text] [--title <t>] [--dry-run]
        send.sh --review <ticket-key> [--title <text>] [--channel <ch>] [--dry-run]
        send.sh --reply <ticket-key> [text] [--channel <ch>] [--dry-run]
 
@@ -47,7 +48,15 @@ Options:
                   ts you already hold — e.g. the Slack mention a bot is answering. Needs a
                   bot token (webhooks can't thread) and an explicit --channel. Cannot be
                   combined with --review/--reply.
-  --title <text>  Header title for --review (default: looked up from the tracker adapter).
+  --file <path>   Upload <path> as a FILE (Slack file upload) instead of a text message; the
+                  [text] argument becomes its caption (initial_comment) and the whole reply is
+                  ONE message. Needs a bot token + the files:write scope (a webhook can't
+                  upload). Combine with --thread-ts to attach into a thread. Cannot be combined
+                  with --review/--reply. REFUSED (exit non-zero) when the file exceeds
+                  OUTBOUND_MAX_FILE_MB (default 15) or contains external PII / a secret —
+                  scanned via scripts/lib/pii-scan.sh + a secret-pattern check.
+  --title <text>  Header title for --review, OR the file title for --file (default: the ticket
+                  title / the file's basename).
   --channel <ch>  Target channel (id or #name). Default: $NOTIFY_CHANNEL from .env.
                   Ignored by providers whose destination is fixed (e.g. a Slack webhook).
   --dry-run       Print what would be sent instead of sending it.
@@ -58,6 +67,7 @@ Environment (scripts/notify/.env):
   NOTIFY_CHANNEL    default channel when --channel is omitted.
   SLACK_BOT_TOKEN   bot token for chat.postMessage (honours the channel + returns a permalink), OR
   SLACK_WEBHOOK_URL incoming webhook URL (channel fixed by the webhook).
+  OUTBOUND_MAX_FILE_MB  max size (MB) a --file upload may be before it is refused (default 15).
 EOF
 }
 
@@ -110,13 +120,52 @@ compose_review_digest() {  # KEY [TITLE]  -> prints the digest, or nothing if no
   printf '%s' "${rows%$'\n'}"
 }
 
-channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""
+# outbound_gate FILE — the safety backstop before a --file upload leaves the org. Dies
+# (exit non-zero) on any of three refusals; prints nothing and returns 0 when clean:
+#   1. size    — > OUTBOUND_MAX_FILE_MB (default 15).
+#   2. PII      — external-world PII (email/phone/wallet/national-id/…) via the shared
+#                 scanner scripts/lib/pii-scan.sh (the single policy; same one the egress
+#                 gate uses). The scanner covers PII only, NOT credentials — hence step 3.
+#   3. secrets  — token/key shapes the PII list doesn't carry (AWS key, Slack/app token,
+#                 PEM private key, or a KEY=<long-value> credential assignment).
+# A model-authored deliverable should never contain these; this makes "never upload secrets"
+# a deterministic wall, not just a prompt instruction.
+outbound_gate() {
+  local file="$1"
+  [[ -f "$file" ]] || die "file not found: $file"
+
+  local max_mb="${OUTBOUND_MAX_FILE_MB:-15}" bytes
+  bytes="$(wc -c < "$file" | tr -d ' ')"
+  if (( bytes > max_mb * 1024 * 1024 )); then
+    die "refusing to upload $(basename "$file"): $(( bytes / 1024 / 1024 ))MB exceeds the ${max_mb}MB cap (raise OUTBOUND_MAX_FILE_MB to change)"
+  fi
+
+  local scan="$DIR/../lib/pii-scan.sh"
+  if [[ -x "$scan" ]]; then
+    if ! "$scan" --check "$file" >/dev/null 2>&1; then
+      die "refusing to upload $(basename "$file"): external PII detected (scripts/lib/pii-scan.sh). Remove it — do not send personal data to Slack."
+    fi
+  fi
+
+  if LC_ALL=C grep -nEiq \
+      -e 'AKIA[0-9A-Z]{16}' \
+      -e 'xox[baprs]-[A-Za-z0-9-]{8,}' \
+      -e 'xapp-[0-9]+-[A-Za-z0-9-]{8,}' \
+      -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+      -e '(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CLIENT_?SECRET|BEARER)[A-Z0-9_]*[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/+_=.-]{12,}' \
+      "$file"; then
+    die "refusing to upload $(basename "$file"): a secret/token/key pattern was found. Never put credentials in a shared file."
+  fi
+}
+
+channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""; file_path=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --channel)   channel="${2:-}";      shift 2 ;;
     --review)    review_key="${2:-}";   shift 2 ;;
     --reply)     reply_key="${2:-}";    shift 2 ;;
     --thread-ts) thread_ts_arg="${2:-}"; shift 2 ;;
+    --file)      file_path="${2:-}";    shift 2 ;;
     --title)     review_title="${2:-}"; shift 2 ;;
     --dry-run) dry=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -129,6 +178,19 @@ done
 
 if [[ -n "$thread_ts_arg" && ( -n "$review_key" || -n "$reply_key" ) ]]; then
   die "--thread-ts can't combine with --review/--reply (those choose their own thread)"
+fi
+
+# File mode: upload a file instead of posting text. Handled before the text-resolution
+# below because the caption is OPTIONAL here (a file may go with no message), so it must not
+# trip the "no message text" die. The outbound gate runs before any byte leaves the machine.
+if [[ -n "$file_path" ]]; then
+  [[ -z "$review_key" && -z "$reply_key" ]] || die "--file can't combine with --review/--reply (those compose their own message)"
+  [[ -f "$file_path" ]] || die "file not found: $file_path   (see -h)"
+  # Optional caption: the positional text, or piped stdin; empty is fine.
+  if [[ "$have_text" -eq 0 && ! -t 0 ]]; then text="$(cat)"; fi
+  outbound_gate "$file_path"
+  notify_send_file "$channel" "$file_path" "$text" "$dry" "$thread_ts_arg" "$review_title"
+  exit 0
 fi
 
 if [[ -n "$review_key" ]]; then

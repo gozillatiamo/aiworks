@@ -24,8 +24,9 @@ class CorrelationContext:
     slack_channel: str    # event.channel
     slack_thread_ts: str  # event.thread_ts ?? event.ts — reply into the right thread
     slack_user_id: str    # event.user
-    request_text: str     # mention text, @-mention stripped
+    request_text: str     # mention text, @-mention (and any `agent:` prefix) stripped
     created_at: str       # ISO-8601 UTC
+    agent_name: str = ""  # leading `agent:<name>` -> delegate the request to that subagent
 
     def to_dict(self) -> dict:
         return asdict(self)

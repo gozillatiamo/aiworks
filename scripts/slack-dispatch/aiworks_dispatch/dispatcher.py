@@ -23,6 +23,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
+from .attachments import AttachmentScopeError, SlackFileRef, download_attachments
 from .config import Config
 from .correlation import CorrelationContext, git_safe_slug
 from .prompt import build_prompt
@@ -39,6 +40,7 @@ class DispatchResult:
     branch: str | None = None
     reused: bool = False
     error: str | None = None
+    scope_error: bool = False  # error is a missing-scope config problem, not transient
 
     def to_dict(self) -> dict:
         return {
@@ -49,12 +51,19 @@ class DispatchResult:
             "branch": self.branch,
             "reused": self.reused,
             "error": self.error,
+            "scope_error": self.scope_error,
         }
 
 
 class Dispatcher(ABC):
     @abstractmethod
-    def dispatch(self, ctx: CorrelationContext, reuse: dict | None = None, thread_context: str = "") -> DispatchResult:  # pragma: no cover
+    def dispatch(
+        self,
+        ctx: CorrelationContext,
+        reuse: dict | None = None,
+        thread_context: str = "",
+        attachments: list[SlackFileRef] | None = None,
+    ) -> DispatchResult:  # pragma: no cover
         ...
 
     @abstractmethod
@@ -176,6 +185,19 @@ class SupersetLocalDispatcher(Dispatcher):
             return False
         return bool(data.get("worktreeExists")) and bool(_first(data, "id", "workspace.id"))
 
+    def _download(self, refs: list[SlackFileRef] | None, worktree_path: str) -> tuple[list[SlackFileRef], list[str]]:
+        """Fetch the mention/thread files into the worktree. Raises AttachmentScopeError
+        (files:read missing) — everything else soft-degrades into the notes."""
+        if not refs:
+            return [], []
+        return download_attachments(
+            refs, worktree_path,
+            bot_token=self.cfg.slack_bot_token,
+            max_files=self.cfg.attachment_max_files,
+            max_file_bytes=self.cfg.attachment_max_file_bytes,
+            total_bytes=self.cfg.attachment_total_bytes,
+        )
+
     def _create_agent(self, workspace_id: str, prompt: str) -> str | None:
         data = self._run(
             [
@@ -190,25 +212,43 @@ class SupersetLocalDispatcher(Dispatcher):
 
     # -- interface ----------------------------------------------------------
 
-    def dispatch(self, ctx: CorrelationContext, reuse: dict | None = None, thread_context: str = "") -> DispatchResult:
+    def dispatch(
+        self,
+        ctx: CorrelationContext,
+        reuse: dict | None = None,
+        thread_context: str = "",
+        attachments: list[SlackFileRef] | None = None,
+    ) -> DispatchResult:
         """Fresh worktree (reuse is None) or reuse an existing one for a thread follow-up.
 
         Reuse skips `workspaces create` entirely — no re-clone, no setup.sh — and just
         launches a new agent session in the thread's existing worktree/branch. Context
         carries via .aiworks/thread-log.md (the CLI cannot resume the prior session).
+
+        In BOTH cases the worktree is resolved and any mention/thread files are
+        downloaded into it BEFORE the agent is launched, so the agent can Read them on
+        its first turn (the prompt only references files that are already on disk).
         """
         if reuse:
             ws_id = reuse["workspace_id"]
             branch = reuse.get("branch")
             try:
-                prompt = build_prompt(ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url, is_followup=True)
-                session_id = self._create_agent(ws_id, prompt)
                 worktree = self._await_worktree(ws_id, reuse.get("worktree_path"), timeout=120)
+                downloaded, notes = self._download(attachments, worktree)
+                prompt = build_prompt(
+                    ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url,
+                    is_followup=True, thread_context=thread_context,
+                    attachments=downloaded, attachment_notes=notes,
+                )
+                session_id = self._create_agent(ws_id, prompt)
                 self._write_context_file(worktree, ctx)
                 return DispatchResult(
                     ok=True, workspace_id=ws_id, session_id=session_id,
                     worktree_path=worktree or None, branch=branch, reused=True,
                 )
+            except AttachmentScopeError as e:
+                log.warning("reuse dispatch: attachment scope error for %s: %s", ctx.correlation_id, e)
+                return DispatchResult(ok=False, branch=branch, reused=True, error=str(e), scope_error=True)
             except Exception as e:  # noqa: BLE001
                 log.exception("reuse dispatch failed for %s", ctx.correlation_id)
                 return DispatchResult(ok=False, branch=branch, reused=True, error=str(e))
@@ -217,11 +257,16 @@ class SupersetLocalDispatcher(Dispatcher):
         name = branch = f"slack/{slug}"
         try:
             ws_id, worktree = self._create_workspace(name, branch)
-            prompt = build_prompt(ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url, is_followup=False, thread_context=thread_context)
-            session_id = self._create_agent(ws_id, prompt)
-            # ws create returns before the worktree materializes — resolve it now so
-            # the context file (Stop-hook backstop) lands in the real worktree.
+            # ws create returns before the worktree materializes — resolve it first so
+            # attachments land in the real worktree and the agent Reads them at launch.
             worktree = self._await_worktree(ws_id, worktree, timeout=self.cfg.dispatch_timeout_sec)
+            downloaded, notes = self._download(attachments, worktree)
+            prompt = build_prompt(
+                ctx, self.cfg.workspace_root, redis_url=self.cfg.redis_url,
+                is_followup=False, thread_context=thread_context,
+                attachments=downloaded, attachment_notes=notes,
+            )
+            session_id = self._create_agent(ws_id, prompt)
             self._write_context_file(worktree, ctx)
             return DispatchResult(
                 ok=True,
@@ -230,6 +275,9 @@ class SupersetLocalDispatcher(Dispatcher):
                 worktree_path=worktree or None,
                 branch=branch,
             )
+        except AttachmentScopeError as e:
+            log.warning("dispatch: attachment scope error for %s: %s", ctx.correlation_id, e)
+            return DispatchResult(ok=False, branch=branch, error=str(e), scope_error=True)
         except subprocess.TimeoutExpired:
             return DispatchResult(ok=False, branch=branch, error="superset timed out (worktree setup took too long)")
         except Exception as e:  # surfaced to the Slack thread, never swallowed
