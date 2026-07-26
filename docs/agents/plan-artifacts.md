@@ -15,6 +15,8 @@ One plan file **per touched repo**, inside that repo:
 | Plan, test-suite repo | `<repo>/agent_logs/<KEY>-automation-plan.md` |
 | Interactive HTML render | `<repo>/agent_logs/<KEY>-<repo>-plan.html` |
 | Test cases | `<repo>/agent_logs/<KEY>-testcases.md` |
+| Logged bugs (bug round) | `<repo>/agent_logs/<KEY>-bugs.md` |
+| Run report | `<repo>/agent_logs/<KEY>-report.md` |
 
 `<KEY>` is the ticket key (`APP-1944`). `<repo>` is the repo's directory name,
 which is why the same ticket produces `APP-1944-agent-webservice-plan.md` and

@@ -109,6 +109,12 @@ t "brief with flat plan path blocked" 2 pretool-agent-brief-guard.sh "$(ja devel
 t "clean brief allowed"               0 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan APP-1 across every repo it touches; publish per docs/agents/plan-artifacts.md.')"
 t "unknown agent fails open"          0 pretool-agent-brief-guard.sh "$(ja some-unknown-agent 'open a PR/MR please')"
 t "empty prompt ignored"              0 pretool-agent-brief-guard.sh "$(ja development-planner '')"
+# qa-planner is the QA-side planner: same plan-only boundary, so the same brief is a defect.
+t "qa-planner told to open MR blocked" 2 pretool-agent-brief-guard.sh "$(ja qa-planner 'Design the BDD plan, then open a merge request for it.')"
+t "qa-planner told to merge blocked"   2 pretool-agent-brief-guard.sh "$(ja qa-planner 'Once the suite is green, merge the PR yourself.')"
+t "qa-planner clean brief allowed"     0 pretool-agent-brief-guard.sh "$(ja qa-planner 'Plan the tests for APP-1 in the e2e repo; publish onto the ticket and hand off to qa-runner.')"
+# qa-runner DOES own the MR, so the same instruction must pass for it.
+t "qa-runner told to merge allowed"    0 pretool-agent-brief-guard.sh "$(ja qa-runner 'Implement the suite, then open and merge the PR once green.')"
 
 echo
 echo "pass=$pass fail=$fail"
