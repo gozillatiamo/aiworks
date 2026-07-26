@@ -113,6 +113,15 @@ planning:
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
 
+# ── Artifacts (publishing an interactive doc as a shareable Claude Artifact) ────
+artifacts:
+  enabled: false                   # MASTER switch (default OFF). false → an interactive doc
+                                   #   (the write-interactive-docs skill) stays a LOCAL .html file.
+                                   #   true → the verified doc is ALSO published as a Claude
+                                   #   Artifact — a URL the team can open — after a CSP-safe
+                                   #   transform. The artifact is published PRIVATE; sharing it
+                                   #   with the org stays a manual click in its share menu.
+
 # ── Design (governs ALL Figma usage across the workspace) ──────────────────────
 # How the team works with Figma — see docs/agents/figma.md for the full convention.
 design:
