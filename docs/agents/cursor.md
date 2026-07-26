@@ -52,6 +52,26 @@ arrangement measured to give an agent the repo's own instruction, rules and skil
 The `.code-workspace` file is still worth opening for the Source Control panels — just do not expect
 it to configure the agent.
 
+### The injector, and where it currently stops
+
+`.claude/hooks/dev-wrapper/pretool-repo-context.sh` exists to close this by hand: when a tool
+touches a path under `<repo>/` from a workspace-root session, it injects that repo's `CLAUDE.md`
+plus the rules whose globs match the touched file, once per repo per session.
+
+- **Claude Code: works.** Reading `game/src/adapter.rs` from the workspace root pulls in
+  `game/CLAUDE.md` and its `src/**` rules. Worth having on its own — Claude Code picks up a nested
+  `CLAUDE.md` but not a nested `.claude/rules`, so this was a gap there too.
+- **Cursor: emits, but does not land.** Traced live at this workspace root, the hook produces ~3.8 kB
+  of valid `additional_context` on `preToolUse` and the model then reports having received nothing.
+  Every isolated reproduction delivers — shim or no shim, one hook or ten, `Read|Write|Edit` matcher,
+  4 kB markdown payload, alongside `sessionStart` context, with `cli.json` present, reading a file
+  inside a nested gitignored git repo. None of those reproduce the failure, and the root session is
+  otherwise correctly configured (it quotes its own `AGENTS.md`). Unresolved; the cause is something
+  about the real workspace root that the reproductions do not capture.
+
+So for Cursor, **open the repo** remains the working answer. The hook costs nothing while it is
+inert, and it already pays for itself on the Claude Code side.
+
 ## Set your model to `auto`
 
 Subagent files carry `model: opus` / `sonnet` / `haiku` — Claude Code's vocabulary, which Cursor
