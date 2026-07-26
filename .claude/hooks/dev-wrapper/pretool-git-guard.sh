@@ -55,10 +55,19 @@ case "$cmd" in *git*) ;; *) exit 0 ;; esac
 segments=$(printf '%s' "$cmd" | sed -E 's/(\|\||&&|[;|&])/\n/g')
 
 # Honour an explicit `git -C <dir>` inside a segment; else the tool's own cwd.
+# awk, not sed: the obvious `sed -E 's/.*-C[[:space:]]+("?)([^"[:space:]]+)\1.*/\2/'`
+# looks right and is not — `\1` back-references a group that matched the EMPTY string
+# (the optional quote), which BSD sed resolves erratically: it printed nothing for
+# `git -C /tmp/svc …` and a TRUNCATED path for others. Both fall through to `.`, i.e.
+# the guard silently inspects the WRONG repo — and `git -C /abs/path` is the idiom this
+# workspace's own cd-guard tells agents to use, so that is the common case, not a corner.
+# awk splits on whitespace independent of the caller's IFS (which is newline here).
 seg_repo_dir() {
   local d
-  d=$(printf '%s' "$1" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("?)([^"[:space:]]+)\1.*/\2/p' | head -1)
-  [ -n "$d" ] && printf '%s' "$d" || printf '.'
+  d=$(printf '%s\n' "$1" | awk '{for(i=1;i<NF;i++) if($i=="-C") {print $(i+1); exit}}')
+  d=${d%\"}; d=${d#\"}; d=${d%\'}; d=${d#\'}
+  [ -n "$d" ] || d="."
+  printf '%s' "$d"
 }
 
 # Arguments of `git <sub>` within one segment.

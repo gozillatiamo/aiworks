@@ -40,6 +40,10 @@ mk_repo() {
 mk_repo svc      # a code repo
 mk_repo db       # a second code repo
 mk_repo e2e      # a test-suite repo
+# A repo that ignores NOTHING. It exists to pin that `git -C <dir>` is honoured: the
+# same path is ignored in svc and not here, so a guard that quietly fell back to its own
+# cwd (as a broken -C extraction once did) gets the verdict wrong on one of the two.
+mkdir -p "$TMP/plain" && git -C "$TMP/plain" init -q && mkdir -p "$TMP/plain/agent_logs"
 # The meta-repo is identified by its own workspace.config.yaml.
 mkdir -p "$TMP/meta" && git -C "$TMP/meta" init -q && : > "$TMP/meta/workspace.config.yaml"
 
@@ -64,6 +68,10 @@ t "add -f mixed (one ignored) blocked"    2 pretool-git-guard.sh "$(j "git -C $T
 t "add -f . blocked (too broad)"          2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f .")"
 t "add -f glob blocked (unresolvable)"    2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f agent_logs/*.md")"
 t "add -f on a normal path allowed"       0 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f src/main.rs")"
+# -C must decide WHICH repo's ignore rules apply — same path, opposite verdicts.
+t "-C honoured: ignoring repo blocks"     2 pretool-git-guard.sh "$(j "git -C $TMP/svc   add -f agent_logs/x.md")"
+t "-C honoured: plain repo allows"        0 pretool-git-guard.sh "$(j "git -C $TMP/plain add -f agent_logs/x.md")"
+t "-C quoted dir blocked"                 2 pretool-git-guard.sh "$(j "git -C \"$TMP/svc\" add -f agent_logs/x.md")"
 t "git add -A allowed"                    0 pretool-git-guard.sh "$(j 'git add -A')"
 t "git add <path> allowed"                0 pretool-git-guard.sh "$(j 'git add src/main.rs')"
 t "commit with clean index allowed"       0 pretool-git-guard.sh "$(j "git -C $TMP/db commit -m 'chore: nothing staged'")"
