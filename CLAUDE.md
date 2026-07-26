@@ -113,7 +113,11 @@ and was missed twice, since it depended on the model remembering to act; a Sessi
 injection was tried next and was still missed over a long tool-heavy session (the one-time
 injection gets crowded out) — the per-turn reinjection closes that gap. If the hook's
 injected context is ever missing (e.g. a stripped session), fall back to reading the file
-directly before your first output. When the resolved language is **`th`**, write **English spine,
+directly before your first output. **A subagent gets it mechanically too:**
+`.claude/hooks/dev-wrapper/pretool-agent-context.sh` (`PreToolUse(Agent)`) appends the resolved
+`LANGUAGE_DIRECTIVE` to every spawn brief, so a direct `Agent` spawn is now as deterministic as a
+workflow one — the imperative "read the file first" line in each agent file had still let two of
+five probe agents resolve `en` on a `th` workspace. When the resolved language is **`th`**, write **English spine,
 Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, Slack,
 and the `.html` interactive render of a plan) while the English **spine** stays English: titles +
 every section heading + labels/enum values, ALL code + code comments + git commit messages + branch
@@ -128,10 +132,10 @@ plugin skill. It reaches each spawn path by a different mechanism, and all three
 mechanical rather than remembered: the **main session** gets it from the plugin's own
 `SessionStart`/`UserPromptSubmit` hooks; a **named agent** preloads it via
 `skills: - caveman:caveman` in its `.claude/agents/<name>.md` frontmatter (measured, not
-assumed — the skill's text was present in 5/5 probe transcripts); a **`general-purpose`
-agent** has no def to preload from, so the three workflows append a `CAVEMAN_DIRECTIVE`
-constant to those briefs (the only def-less spawn path — `grep agentType` if you add a
-call site).
+assumed — the skill's text was present in 5/5 probe transcripts); a **def-less agent type**
+(`general-purpose`, `Explore`, `Plan`) has no frontmatter to preload from, so it is fed a
+`CAVEMAN_DIRECTIVE` — by `pretool-agent-context.sh` for a direct `Agent` spawn, and by a
+constant in each workflow for a workflow spawn (`grep agentType` if you add a call site).
 
 ⚠️ **Compression is an OUTPUT rule, and the FIRST brief is INPUT.** The brief that *spawns*
 an agent goes in **FULL** — never compressed, summarized, or trimmed to save tokens. That

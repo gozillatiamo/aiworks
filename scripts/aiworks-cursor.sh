@@ -623,8 +623,28 @@ plugin_skill_src_for() { # plugin_skill_src_for <skill-name> -> path, or empty
 # "the directory exists → skip": that test is what left 21 repos holding a stale snapshot
 # of a hook for months (see aiworks-add.sh step 9a), and a stale caveman copy would be the
 # same failure with no symptom.
+# Keep the repo's own formatter off a vendored copy. Two repos run `prettier --write` over
+# `*.md` from lint-staged, which reflowed caveman's SKILL.md tables the moment the copy was
+# committed — so `--check` reported a stale vendored skill forever, and no amount of
+# re-syncing could win against the next commit. This is third-party content the repo does
+# not own, and a byte comparison is the only way to notice a plugin update; excluding it is
+# cheaper and more honest than teaching the comparison to ignore formatting.
+ensure_format_ignore() { # ensure_format_ignore <base> <label> <skill-name>
+  local base="$1" label="$2" nm="$3" gi="$1/.prettierignore" line=".claude/skills/$nm/"
+  [[ -f "$gi" ]] || return 0            # nothing formats it here
+  grep -qxF "$line" "$gi" 2>/dev/null && return 0
+  if [[ "$CHECK" -eq 1 ]]; then drift "$label: .prettierignore does not exclude $line (prettier would reflow the vendored copy)"; return 0; fi
+  {
+    printf '\n# Vendored plugin skill, synced byte-for-byte by `aiworks cursor` — reformatting it\n'
+    printf '# makes every run report drift against the installed plugin.\n'
+    printf '%s\n' "$line"
+  } >> "$gi"
+  CHANGED=$((CHANGED+1)); ok "$label: .prettierignore now excludes $line"
+}
+
 vendor_plugin_skill() { # vendor_plugin_skill <base> <label> <skill-name>
   local base="$1" label="$2" nm="$3"
+  ensure_format_ignore "$base" "$label" "$nm"
   local dest="$base/.claude/skills/$nm" src f rel new=0 upd=0 del=0 had=0
   [[ -d "$dest" && ! -L "$dest" ]] && had=1
   if ! src="$(plugin_skill_src_for "$nm")" || [[ -z "$src" ]]; then

@@ -175,6 +175,14 @@ Two details of that linking, both learned the hard way:
 A workspace skill of the same name always wins and is left alone (`karpathy-guidelines` is the
 live case).
 
+**A prompt rewrite on `Task`.** `pretool-agent-context.sh` bakes the resolved output language
+(and, for a definition-less agent type, the compression rule) into a spawn brief by returning
+`updatedInput`. The shim translates that to `updated_input` correctly — asserted offline against a
+Cursor-shaped `Task` payload — but Cursor ignores it: a subagent spawned through `cursor-agent`
+answered NO when asked whether its instructions contained the injected string. So in Cursor those
+two conventions arrive the way they always did, through `AGENTS.md` and the agent file's own
+`## Output language` block, not mechanically.
+
 **`tool_response` on postToolUse.** Cursor does not send it, so `posttool-output-warden.sh`
 degrades to a no-op there. Nothing to translate — the field does not exist.
 

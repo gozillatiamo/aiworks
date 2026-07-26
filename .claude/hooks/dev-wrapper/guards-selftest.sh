@@ -175,6 +175,63 @@ t "rtk wc of .env allowed"          0 pretool-env-guard.sh "$(j "rtk wc scripts/
 t "bare diff of .env.example ok"    0 pretool-env-guard.sh "$(j "diff a/$E.example b/$E.example")"
 t "unrelated rtk read allowed"      0 pretool-env-guard.sh "$(j 'rtk read src/main.rs')"
 
+echo "== pretool-agent-context: the spawn brief carries the resolved language =="
+# This hook REWRITES rather than blocks, so exit-code cases prove nothing on their own —
+# every case here asserts what came out. A fixture root per language, because the real
+# workspace resolves to whatever this org configured and a suite must not depend on that.
+mkdir -p "$TMP/th/.claude/agents" "$TMP/en/.claude/agents"
+printf 'language: en\n' > "$TMP/th/workspace.config.yaml"
+printf 'language: th\n' > "$TMP/th/workspace.config.local.yaml"   # personal override WINS
+printf 'language: en\n' > "$TMP/en/workspace.config.yaml"
+# A named agent preloads caveman in its own frontmatter; a def-less type cannot.
+for r in th en; do printf 'skills:\n  - caveman:caveman\ntools:\n  - Read\n' > "$TMP/$r/.claude/agents/namedagent.md"; done
+
+ac() { # ac <root> <subagent_type> <prompt> -> the rewritten prompt ('' when no rewrite)
+  jq -cn --arg a "$2" --arg p "$3" \
+    '{tool_name:"Agent",tool_input:{subagent_type:$a,description:"d",prompt:$p}}' \
+  | CLAUDE_PROJECT_DIR="$TMP/$1" "$H/pretool-agent-context.sh" 2>/dev/null \
+  | jq -r '.hookSpecificOutput.updatedInput.prompt // ""' 2>/dev/null
+}
+has() { # has <name> <yes|no> <haystack> <needle>
+  local got=no; case "$3" in *"$4"*) got=yes ;; esac
+  if [ "$got" = "$2" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$1"
+  else fail=$((fail+1)); printf 'FAIL %s (wanted %s)\n' "$1" "$2"; fi
+}
+
+out=$(ac th namedagent 'Do the thing.')
+has "th: named agent gets the language" yes "$out" 'OUTPUT LANGUAGE = th'
+# A definition that already preloads caveman must not be told again — 16 definitions
+# paying for the same paragraph twice is the whole cost of getting this wrong.
+has "th: named agent not re-told caveman" no "$out" 'CAVEMAN_DIRECTIVE'
+has "th: original brief kept intact"  yes "$out" 'Do the thing.'
+
+out=$(ac th general-purpose 'Find X.')
+has "th: def-less gets the language"  yes "$out" 'OUTPUT LANGUAGE = th'
+has "th: def-less gets caveman"       yes "$out" 'CAVEMAN_DIRECTIVE'
+
+# The local override is the case the prose-only fix kept missing: two of five probe agents
+# read the SHARED file and announced en on a workspace resolved to th.
+out=$(ac en general-purpose 'Find X.')
+has "en: no language directive"       no  "$out" 'OUTPUT LANGUAGE'
+has "en: caveman still injected"      yes "$out" 'CAVEMAN_DIRECTIVE'
+
+# Idempotence. A workflow already bakes both in; appending a second copy would double a
+# ~200-word paragraph on every spawn of a 26-agent run.
+out=$(ac th general-purpose 'X LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th … CAVEMAN_DIRECTIVE — …')
+has "already-injected brief untouched" no "$out" 'OUTPUT LANGUAGE = th, already resolved'
+
+# The rewrite must carry the WHOLE tool_input. Emitting only `prompt` would drop
+# subagent_type, and the spawn would silently become some other agent.
+keep=$(jq -cn '{tool_name:"Agent",tool_input:{subagent_type:"general-purpose",description:"d",prompt:"p",model:"haiku"}}' \
+  | CLAUDE_PROJECT_DIR="$TMP/th" "$H/pretool-agent-context.sh" 2>/dev/null \
+  | jq -r '[.hookSpecificOutput.updatedInput.subagent_type, .hookSpecificOutput.updatedInput.model, .hookSpecificOutput.updatedInput.description] | join(",")')
+if [ "$keep" = "general-purpose,haiku,d" ]; then pass=$((pass+1)); printf 'ok   %s\n' "rewrite preserves subagent_type/model/description"
+else fail=$((fail+1)); printf 'FAIL %s (got %s)\n' "rewrite preserves subagent_type/model/description" "$keep"; fi
+
+t "agent-context never blocks"      0 pretool-agent-context.sh "$(ja general-purpose 'anything at all')"
+t "agent-context on empty prompt"   0 pretool-agent-context.sh "$(ja general-purpose '')"
+has "unknown agent type treated as def-less" yes "$(ac th no-such-agent 'Find X.')" 'CAVEMAN_DIRECTIVE'
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
