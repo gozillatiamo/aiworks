@@ -1,14 +1,17 @@
 # Notion → plain-text rendering helpers (jq module).
 # Included by the ticket scripts:  jq -L <dir> 'include "notion"; ...'
 
-# Render a Notion rich_text array to plain text. Annotations are dropped;
-# links are kept as "text (url)" so PR/Figma URLs aren't lost.
+# Render a Notion rich_text array to plain text. Annotations are dropped; a link is
+# kept in Markdown form `[text](url)` so the URL survives AND round-trips: reading a
+# page and writing it back through md_to_blocks rebuilds the same link instead of
+# flattening it to dead text. A link whose label IS its URL renders bare — the
+# autolink in _md_first relinks it on the way back in.
 def rich_to_text:
   ( . // [] )
   | map(
       (.plain_text // .text.content // "") as $t
-      | (.href // null) as $h
-      | (if ($h != null and $h != "" and $h != $t) then "\($t) (\($h))" else $t end)
+      | (.href // .text.link.url // null) as $h
+      | (if ($h != null and $h != "" and $h != $t) then "[\($t)](\($h))" else $t end)
     )
   | join("");
 
@@ -97,9 +100,13 @@ def _rt_chunks($n):
 
 # Leftmost inline-markup match in $s, or null. One alternation so the *first*
 # token wins regardless of kind; capture index identifies which kind matched:
-#   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_
+#   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_  6 bare url
+# Index 6 (autolink) is last on purpose: the leftmost START position wins and only a
+# tie is broken by alternative order, so a URL inside `code` or inside a [label](url)
+# is still claimed by the earlier-starting token. The URL body excludes
+# brackets/parens/quotes and may not END on sentence punctuation (a trailing "." is prose).
 def _md_first($s):
-  [ $s | match("(`[^`]+`)|(\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|(__[^_]+__)|(\\*[^*]+\\*)|(_[^_]+_)") ] | .[0];
+  [ $s | match("(`[^`]+`)|(\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|(__[^_]+__)|(\\*[^*]+\\*)|(_[^_]+_)|(https?://[^\\s<>()\\[\\]\"'`]*[^\\s<>()\\[\\]\"'`.,;:!?])") ] | .[0];
 
 # Plain (un-annotated) text → rich_text objects, chunked to Notion's 2000 cap.
 def _plain_rt($s):
@@ -119,6 +126,7 @@ def _inline_rt:
           elif $g[1] != null then ($tok | match("\\[([^\\]]+)\\]\\(([^)]+)\\)") | .captures) as $c
                                   | {type: "text", text: {content: ($c[0].string), link: {url: ($c[1].string)}}}
           elif ($g[2] != null or $g[3] != null) then {type: "text", text: {content: ($tok[2:-2])}, annotations: {bold: true}}
+          elif $g[6] != null then {type: "text", text: {content: $tok, link: {url: $tok}}}
           else {type: "text", text: {content: ($tok[1:-1])}, annotations: {italic: true}}
           end ) as $styled
       | _plain_rt($pre) + [$styled] + ($post | _inline_rt)

@@ -226,7 +226,13 @@ silently. When ON, after the verifier passes:
    Say what the reader can DO there, not just that a page exists — for a plan in approval
    mode, that the page carries per-section Decision controls and an **Approve & download
    plan** button whose output replaces the `data-plan-md` file before the re-run. Comment
-   prose follows the workspace `language` policy (English spine); the URL is a bare link.
+   prose follows the workspace `language` policy (English spine).
+
+   **Write the URL as a Markdown link — `[OFB-1944 plan (interactive)](https://…)` — not a
+   naked URL.** The adapter renders comment *and* description bodies as Markdown, so a
+   labelled link becomes a real clickable link with a name that says where it goes; a raw
+   URL is clickable too (the adapter autolinks it) but reads as machine output in the middle
+   of a sentence. Same rule for any URL a ticket body carries — MR, Figma, dashboard.
    Updating an already-published doc (Mode B) reuses the same URL, so an earlier comment
    stays valid — add a new comment only when the content changed enough to matter.
 4. **Share.** The tool publishes **private** and has no sharing input — org visibility is a
