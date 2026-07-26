@@ -8,7 +8,7 @@ The Cursor layer is *generated*, never hand-edited. Author on the Claude side; r
 
 ```bash
 aiworks cursor                 # root + every repo (add / sync already do this)
-aiworks cursor backoffice      # one repo
+aiworks cursor <repo>          # one repo
 aiworks cursor --check         # verify only; exit 1 on drift — use it in CI
 aiworks cursor --user          # link the Claude plugin skills into ~/.agents/skills
 ```
@@ -41,10 +41,10 @@ Measured, not assumed, in both surfaces:
 
 - `cursor-agent` run from the workspace root sees no nested `AGENTS.md`, no nested rules and no
   nested skills — even after it has read a file inside that subtree.
-- The **multi-root `ai-workspace.code-workspace` does not fix it either.** Asked in the IDE what
-  `paotung-template`'s `data-cy` convention is without reading files, the agent could not answer:
-  it knew the answer lived in a repo rule and offered to go read it. Registering a repo as its own
-  folder root is not the same as Cursor loading that root's `.cursor/` config.
+- The **multi-root `<workspace>.code-workspace` does not fix it either.** Asked in the IDE for a
+  convention that lives only in one repo's rule, without reading files, the agent could not answer:
+  it knew where the answer lived and offered to go read it. Registering a repo as its own folder
+  root is not the same as Cursor loading that root's `.cursor/` config.
 
 So: **`cd <repo> && cursor .`**, or run `cursor-agent` from inside the repo. That is the only
 arrangement measured to give an agent the repo's own instruction, rules and skills.
@@ -58,8 +58,8 @@ it to configure the agent.
 touches a path under `<repo>/` from a workspace-root session, it injects that repo's `CLAUDE.md`
 plus the rules whose globs match the touched file, once per repo per session.
 
-- **Claude Code: works.** Reading `game/src/adapter.rs` from the workspace root pulls in
-  `game/CLAUDE.md` and its `src/**` rules. Worth having on its own — Claude Code picks up a nested
+- **Claude Code: works.** Reading `<repo>/src/…` from the workspace root pulls in that repo's
+  `CLAUDE.md` and the rules whose globs cover the file. Worth having on its own — Claude Code picks up a nested
   `CLAUDE.md` but not a nested `.claude/rules`, so this was a gap there too.
 - **Cursor: emits, but does not land.** Traced live at this workspace root, the hook produces ~3.8 kB
   of valid `additional_context` on `preToolUse` and the model then reports having received nothing.
@@ -139,7 +139,7 @@ Change a hook by editing it under `.claude/hooks/`. Change the *translation* by 
 1. `aiworks sync` — clones the repos and projects the Cursor layer as part of the run.
 2. `aiworks cursor --user` — makes the Claude plugin skills visible to Cursor.
 3. Set the Cursor model to `auto`.
-4. Open `ai-workspace.code-workspace`, or open one repo at a time. Not the meta-repo folder.
+4. Open one repo at a time — not the meta-repo folder, and not the `.code-workspace`.
 
 MCP servers need a one-time per-server approval in Cursor (`cursor-agent mcp list` shows them as
 `not loaded (needs approval)` until then).
@@ -159,7 +159,7 @@ because the refusal happens before ignore handling. Commit that one change with 
 
 It bites exactly once per repo. A symlink is only staged when it is created; afterwards an edit to
 the project instruction stages `CLAUDE.md`, which is a regular file, and the hook is happy.
-`front-end` hit this; `backoffice` did not, because its `lint-staged` glob is narrower.
+Whether a repo hits it depends on how wide its `lint-staged` glob is.
 
 ## If something looks unconfigured
 

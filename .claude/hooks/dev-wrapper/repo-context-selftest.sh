@@ -1,24 +1,55 @@
 #!/usr/bin/env bash
-# repo-context-selftest.sh — exercise pretool-repo-context.sh, the hook that hands a
+#
+# Regression suite for pretool-repo-context.sh — the hook that hands a
 # workspace-root session the configuration of whichever repo it reaches into.
 #
-# Run from anywhere: .claude/hooks/dev-wrapper/repo-context-selftest.sh
+# Run:  .claude/hooks/dev-wrapper/repo-context-selftest.sh
+# Exit: 0 = all green, 1 = at least one case regressed.
+#
+# Everything runs against a THROWAWAY workspace in a temp dir — its own
+# workspace.config.yaml, its own product repos, its own rules — so the suite is
+# portable and its result does not depend on which repos this workspace has
+# cloned or on what their rules happen to say. Same doctrine as guards-selftest.sh.
+
 set -uo pipefail
-H="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$H/../../.." && pwd)"
+
+H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK="$H/pretool-repo-context.sh"
-export CLAUDE_PROJECT_DIR="$ROOT"
+command -v jq >/dev/null 2>&1 || { echo "jq is required"; exit 1; }
+
+TMP="$(mktemp -d)"
+STATE="${TMPDIR:-/tmp}/aiworks-repo-context"
+trap 'rm -rf "$TMP" "$STATE"/t? 2>/dev/null' EXIT
+export CLAUDE_PROJECT_DIR="$TMP"
+
+# A workspace root is identified by its workspace.config.yaml — that is what tells
+# the hook this session has the nested-config problem at all.
+: > "$TMP/workspace.config.yaml"
+mkdir -p "$TMP/tools"; : > "$TMP/tools/helper.sh"
+
+mk_repo() { # mk_repo <name> <marker>
+  local d="$TMP/$1" m="$2"
+  mkdir -p "$d/.claude/rules/nested" "$d/src"
+  printf '# %s\n\nThe %s marker is %s.\n' "$1" "$1" "$m" > "$d/CLAUDE.md"
+  # scoped to one extension
+  printf -- '---\ndescription: Scoped rule\npaths:\n  - "src/**/*.ts"\nglobs:\n  - "src/**/*.ts"\n---\n\nSCOPED-%s\n' "$m" > "$d/.claude/rules/scoped.md"
+  # scoped to a suffix, to prove matching is per rule rather than all-or-nothing
+  printf -- '---\ndescription: Story rule\nglobs:\n  - "**/*.stories.ts"\n---\n\nSTORIES-%s\n' "$m" > "$d/.claude/rules/stories.md"
+  # no globs at all — description-only, must never be pulled in by a path match
+  printf -- '---\ndescription: Broad rule\n---\n\nBROAD-%s\n' "$m" > "$d/.claude/rules/broad.md"
+  # a nested rules directory, to prove the tree is walked
+  printf -- '---\ndescription: Nested rule\nglobs:\n  - "src/**"\n---\n\nNESTED-%s\n' "$m" > "$d/.claude/rules/nested/deep.md"
+  : > "$d/src/app.ts"
+}
+mk_repo svc SVC
+mk_repo web WEB
 
 pass=0; fail=0
-run() { # run <session> <path> [event] — fresh session state
-  rm -rf "${TMPDIR:-/tmp}/aiworks-repo-context/$1" 2>/dev/null
-  jq -cn --arg p "$2" --arg e "${3:-PreToolUse}" --arg s "$1" --arg c "call-$1-1" \
+call() { # call <session> <call-id> <path> [event]
+  jq -cn --arg p "$3" --arg e "${4:-PreToolUse}" --arg s "$1" --arg c "$2" \
     '{hook_event_name:$e, session_id:$s, tool_use_id:$c, tool_input:{file_path:$p}}' | "$HOOK"
 }
-again() { # again <session> <path> <call-id> — same session, state kept
-  jq -cn --arg p "$2" --arg s "$1" --arg c "$3" \
-    '{hook_event_name:"PreToolUse", session_id:$s, tool_use_id:$c, tool_input:{file_path:$p}}' | "$HOOK"
-}
+fresh() { rm -rf "$STATE/$1" 2>/dev/null; }
 has()  { if printf '%s' "$3" | grep -qF "$2"; then echo "  PASS  $1"; pass=$((pass+1));
          else echo "  FAIL  $1 (missing: $2)"; fail=$((fail+1)); fi }
 lacks(){ if printf '%s' "$3" | grep -qF "$2"; then echo "  FAIL  $1 (unexpected: $2)"; fail=$((fail+1));
@@ -26,55 +57,50 @@ lacks(){ if printf '%s' "$3" | grep -qF "$2"; then echo "  FAIL  $1 (unexpected:
 empty(){ if [ -z "$2" ]; then echo "  PASS  $1"; pass=$((pass+1));
          else echo "  FAIL  $1 (expected no output)"; fail=$((fail+1)); fi }
 
-echo "== injects the repo's own instruction =="
-# Assert on the injected SECTION HEADER, not the bare filename: a repo's CLAUDE.md
-# lists its own rule files by name, so a loose match reads that prose as an injection.
-out=$(run s1 "$ROOT/paotung-template/src/features/wallet/WalletCard.tsx")
-has   "CLAUDE.md of the touched repo" "===== paotung-template/CLAUDE.md" "$out"
-has   "a rule scoped to src/**/*.tsx" "===== paotung-template/.claude/rules/data-cy-i18n.md" "$out"
-lacks "a rule scoped to *.stories.tsx" "===== paotung-template/.claude/rules/storybook.md" "$out"
+echo "== the touched repo's instruction and the rules that match =="
+fresh t1; out=$(call t1 c1 "$TMP/svc/src/app.ts")
+has   "the repo's own CLAUDE.md"          "The svc marker is SVC." "$out"
+has   "a rule whose glob matches"         "SCOPED-SVC"             "$out"
+has   "a rule in a nested rules dir"      "NESTED-SVC"             "$out"
+lacks "a rule whose glob does not match"  "STORIES-SVC"            "$out"
+lacks "a description-only rule"           "BROAD-SVC"              "$out"
+lacks "another repo's rules"              "SCOPED-WEB"             "$out"
 
-echo "== glob matching is per-rule, not all-or-nothing =="
-out=$(run s2 "$ROOT/paotung-template/src/components/Button.stories.tsx")
-has   "story file pulls the storybook rule" "===== paotung-template/.claude/rules/storybook.md" "$out"
-# ...and also the src/**/*.tsx rule, because a story under src/ genuinely satisfies
-# both globs. Every matching rule is injected, not just the most specific one.
-has   "and every other rule it also matches" "===== paotung-template/.claude/rules/data-cy-i18n.md" "$out"
+echo "== matching is per rule, not all-or-nothing =="
+fresh t2; out=$(call t2 c1 "$TMP/svc/src/button.stories.ts")
+has   "the suffix rule fires"                    "STORIES-SVC" "$out"
+has   "and so does every other rule it matches"  "SCOPED-SVC"  "$out"
 
 echo "== once per session per repo, keyed on the tool call =="
-out=$(again s2 "$ROOT/paotung-template/src/components/Card.tsx" "call-s2-2")
-empty "a later, different tool call is silent" "$out"
-# Both tools invoke a hook more than once for a SINGLE tool call. Suppressing the
-# repeat would let the first invocation emit and the second return nothing, and the
-# empty second result wins — which is exactly how this hook first failed in Cursor.
-out=$(again s2 "$ROOT/paotung-template/src/components/Card.tsx" "call-s2-1")
-has   "a repeat of the same tool call re-emits" "===== paotung-template/CLAUDE.md" "$out"
-out=$(again s2 "$ROOT/backoffice/src/app/page.tsx" "call-s2-3")
-has   "a different repo in the same session still injects" "===== backoffice/CLAUDE.md" "$out"
-# The hook is wired on Pre AND Post so that whichever event a given tool honours
-# wins. The pair must not inject the same text twice for one call.
-out=$(run s9 "$ROOT/game/src/lib.rs")
-has   "PreToolUse of a fresh call injects" "===== game/CLAUDE.md" "$out"
-out=$(jq -cn --arg p "$ROOT/game/src/lib.rs" --arg c "call-s9-1" \
-        '{hook_event_name:"PostToolUse", session_id:"s9", tool_use_id:$c, tool_input:{file_path:$p}}' | "$HOOK")
-empty "the PostToolUse half of the same call is silent" "$out"
+fresh t3; out=$(call t3 c1 "$TMP/svc/src/app.ts")
+has   "first touch injects"                  "SCOPED-SVC" "$out"
+out=$(call t3 c2 "$TMP/svc/src/other.ts")
+empty "a later, different call is silent"    "$out"
+# Both tools invoke a hook more than once for one tool call. Suppressing the repeat
+# would let the first invocation emit and the second return nothing, and the empty
+# result wins — which is exactly how this hook first failed under Cursor.
+out=$(call t3 c1 "$TMP/svc/src/app.ts")
+has   "a repeat of the SAME call re-emits"   "SCOPED-SVC" "$out"
+# ...but the Pre/Post pair of one call must not inject the same text twice.
+out=$(call t3 c1 "$TMP/svc/src/app.ts" PostToolUse)
+empty "the Post half of that call is silent" "$out"
+out=$(call t3 c3 "$TMP/web/src/app.ts")
+has   "a different repo still injects"       "The web marker is WEB." "$out"
 
 echo "== stays out of the way =="
-out=$(run s3 "$ROOT/scripts/aiworks-cursor.sh")
-empty "a path outside any product repo" "$out"
-out=$(run s4 "/etc/hosts")
-empty "an absolute path outside the workspace" "$out"
-out=$(CLAUDE_PROJECT_DIR="$ROOT/paotung-template" run s5 "$ROOT/paotung-template/src/x.tsx")
+fresh t4; out=$(call t4 c1 "$TMP/tools/helper.sh"); empty "a path outside any product repo" "$out"
+fresh t5; out=$(call t5 c1 "/etc/hosts");           empty "a path outside the workspace"    "$out"
+fresh t6; out=$(CLAUDE_PROJECT_DIR="$TMP/svc" call t6 c1 "$TMP/svc/src/app.ts")
 empty "a session already rooted at the repo" "$out"
-out=$(printf '{"hook_event_name":"PreToolUse","session_id":"s6","tool_input":{}}' | "$HOOK")
+fresh t7; out=$(printf '{"hook_event_name":"PreToolUse","session_id":"t7","tool_input":{}}' | "$HOOK")
 empty "a tool call with no file_path" "$out"
 
-echo "== output shape the shim can translate =="
-out=$(run s7 "$ROOT/agent-webservice/src/routes/external_game_route.rs")
-has   "hookSpecificOutput envelope" '"hookEventName"' "$out"
-has   "echoes the event it was called for" 'PreToolUse' "$out"
-out=$(run s8 "$ROOT/agent-webservice/src/routes/external_game_route.rs" PostToolUse)
-has   "works on PostToolUse too" 'PostToolUse' "$out"
+echo "== the envelope the Cursor shim knows how to translate =="
+fresh t8; out=$(call t8 c1 "$TMP/svc/src/app.ts")
+has "hookSpecificOutput envelope"        '"hookEventName"' "$out"
+has "echoes the event it was called for" 'PreToolUse'      "$out"
+fresh t9; out=$(call t9 c1 "$TMP/svc/src/app.ts" PostToolUse)
+has "works on PostToolUse too"           'PostToolUse'     "$out"
 
 echo
 echo "pass=$pass fail=$fail"

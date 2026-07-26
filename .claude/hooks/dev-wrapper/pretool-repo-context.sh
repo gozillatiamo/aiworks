@@ -8,12 +8,12 @@
 # at the meta-repo.
 #   • Cursor loads nothing from a subdirectory — measured: no nested AGENTS.md, no
 #     nested .cursor/rules, no nested .cursor/skills, even after the agent has read
-#     a file inside that subtree. The multi-root ai-workspace.code-workspace does not
+#     a file inside that subtree. The multi-root <workspace>.code-workspace does not
 #     change it either.
 #   • Claude Code does pick up a nested CLAUDE.md, but .claude/rules/ is
 #     project-scoped, so a repo's rules are missed the same way.
-# The result in both is an agent editing, say, backoffice/src while holding none of
-# backoffice's conventions. This hook closes that by hand, deterministically —
+# The result in both is an agent editing a repo's src/ while holding none of that
+# repo's conventions. This hook closes that by hand, deterministically —
 # a prose reminder to "go read the repo's rules" was the approach that already
 # failed twice in this workspace (see docs/agents/language.md).
 #
