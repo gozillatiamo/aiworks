@@ -43,6 +43,10 @@
       "Bash(sonar *)",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py:*)",
       "Bash(python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py:*)",
+      "Bash(uv run *prod_repro_seed.py*)",
+      "Bash(docker compose up*)",
+      "Bash(*scripts/vcs/pr-approve.sh*)",
+      "Bash(*git remote get-url*)",
       "mcp__codegraph",
       "mcp__sonarqube",
       "mcp__postgres_secondary",
@@ -73,7 +77,15 @@
       "Read(**/.aws/credentials)",
       "Read(**/secrets/**)",
       "Write(**/.env)",
-      "Edit(**/.env)"
+    "Edit(**/.env)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.claude/**)",
+      "Read(//etc/**)",
+      "Edit(~/.ssh/**)",
+      "Write(~/.ssh/**)",
+      "Edit(~/.aws/**)",
+      "Write(~/.aws/**)"
     ]
   },
   "hooks": {
