@@ -133,14 +133,21 @@ agent** has no def to preload from, so the three workflows append a `CAVEMAN_DIR
 constant to those briefs (the only def-less spawn path — `grep agentType` if you add a
 call site).
 
-⚠️ **Compression is an OUTPUT rule. A brief is INPUT.** When you spawn an agent, the brief
-you write it goes in **FULL** — never compressed, summarized, or trimmed to save tokens,
-and the same for any brief handed onward. The agent cannot recover context you dropped,
-and it has no way to know something is missing; the failure looks like a bad agent rather
-than a starved one. The same boundary applies inside an agent: caveman governs how it
-**writes**, never what it **does** — it must never skip a tool call, skip a
-tool-availability check, or claim a tool/shell is unavailable without actually running it
-first.
+⚠️ **Compression is an OUTPUT rule, and the FIRST brief is INPUT.** The brief that *spawns*
+an agent goes in **FULL** — never compressed, summarized, or trimmed to save tokens. That
+one message is the agent's whole world: it cannot recover context you dropped and has no
+way to know something is missing, so a starved brief reads as a bad agent rather than a
+starved one.
+
+**Every message after that is caveman** — a follow-up, re-review ping, next-slice nudge, or
+`SendMessage` to a live agent goes out compressed, because the context already landed and
+the follow-up is a pointer, not a context transfer. Compression there is style, never
+content: any NEW fact a follow-up carries (a QA bug report, a failing line, a changed
+requirement) still goes in complete — drop the filler, never the facts.
+
+The same boundary applies inside an agent: caveman governs how it **writes**, never what it
+**does** — it must never skip a tool call, skip a tool-availability check, or claim a
+tool/shell is unavailable without actually running it first.
 
 A **repo-only session** (`cd <repo> && claude`) is covered too: each repo's
 `.claude/settings.json` enables the plugin, and `.superset/setup.sh` installs it once at

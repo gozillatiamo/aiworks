@@ -513,6 +513,13 @@ do_target() {
   link "$base/.cursor/skills" "../.claude/skills" "skills/"
   link "$base/.cursor/agents" "../.claude/agents" "agents/"
 
+  # 2b. The plugin skills this target depends on, vendored as committed copies — a symlink
+  #     would dangle for anyone who clones without the plugin. Reaches Cursor through the
+  #     .cursor/skills link above, and a repo-only session through its own .claude/skills.
+  local vs v
+  if [[ "$is_root" -eq 1 ]]; then vs="$VENDOR_ROOT"; else vs="$VENDOR_REPO"; fi
+  for v in $vs; do vendor_plugin_skill "$base" "$name" "$v"; done
+
   # 3. Rules: per-file, because the extension has to change.
   sync_rules "$base"
 
@@ -584,6 +591,85 @@ GI_PLUGIN_END='# <<< aiworks cursor: plugin-skill links'
 # so `<plugin>@<marketplace>` has to address the plugin, not just its marketplace.
 # Deduplicated by skill NAME because a marketplace can carry both layouts at once (the
 # caveman clone does), and the link is named after the skill.
+# ── vendored plugin skills (COMMITTED, content-synced) ────────────────────────
+# A plugin skill this workspace's own config DEPENDS ON is vendored: copied in as real
+# files and committed, not symlinked. A symlink cannot be committed — its target is an
+# absolute path under $HOME — so a teammate cloning this repo would get a dangling skill
+# directory and, for caveman, 16 agent definitions preloading nothing. Same call as the
+# per-repo hooks and the Cursor hook-shim: copy where a link cannot survive.
+#
+# Two lists, because the dependency differs by target. The ROOT holds the agent
+# definitions, so it vendors everything they reference. A REPO clone has no agent
+# definitions of its own — only the mandated output-compression baseline has to hold in a
+# repo-only session, and `debugging-code` there is a human's on-demand call, served by the
+# plugin itself in Claude Code.
+#
+# Derived by hand on purpose: `grep -rl` over the definitions would be cleverer, but
+# anyone auditing a committed third-party copy needs to see WHY it is committed. Add a name
+# here when a definition starts depending on it (references today: caveman 18 files,
+# debugging-code 3).
+VENDOR_ROOT="caveman debugging-code"
+VENDOR_REPO="caveman"
+
+plugin_skill_src_for() { # plugin_skill_src_for <skill-name> -> path, or empty
+  local want="$1" p
+  while IFS= read -r p; do
+    [[ "$(basename "$p")" == "$want" ]] && { printf '%s\n' "$p"; return 0; }
+  done < <(plugin_skill_srcs)
+  return 1
+}
+
+# Content-sync, file by file, so a plugin UPDATE propagates on the next run. Not
+# "the directory exists → skip": that test is what left 21 repos holding a stale snapshot
+# of a hook for months (see aiworks-add.sh step 9a), and a stale caveman copy would be the
+# same failure with no symptom.
+vendor_plugin_skill() { # vendor_plugin_skill <base> <label> <skill-name>
+  local base="$1" label="$2" nm="$3"
+  local dest="$base/.claude/skills/$nm" src f rel new=0 upd=0 del=0 had=0
+  [[ -d "$dest" && ! -L "$dest" ]] && had=1
+  if ! src="$(plugin_skill_src_for "$nm")" || [[ -z "$src" ]]; then
+    # The committed copy is the source of truth for anyone without the plugin installed —
+    # never delete it or report drift just because this machine lacks the plugin.
+    [[ -d "$dest" ]] && dim "$label: plugin skill $nm not installed here — keeping the committed copy" \
+                     || dim "$label: plugin skill $nm not installed and not vendored yet"
+    return 0
+  fi
+  # An earlier version of this script linked these. A symlink where a real directory
+  # belongs would make every copy below write THROUGH it into the plugin's own files.
+  if [[ -L "$dest" ]]; then
+    if [[ "$CHECK" -eq 1 ]]; then drift "$label: skills/$nm is still a symlink, not a vendored copy"; return 0; fi
+    rm -f "$dest"
+  fi
+  while IFS= read -r f; do
+    rel="${f#$src/}"
+    if [[ ! -f "$dest/$rel" ]]; then new=$((new+1))
+    elif cmp -s "$f" "$dest/$rel"; then continue
+    else upd=$((upd+1)); fi
+    if [[ "$CHECK" -eq 1 ]]; then continue; fi
+    mkdir -p "$(dirname "$dest/$rel")" && cp "$f" "$dest/$rel"
+  done < <(find "$src" -type f 2>/dev/null | sort)
+  # A file dropped upstream has to go, or the copy keeps answering with content the plugin
+  # no longer ships.
+  if [[ -d "$dest" ]]; then
+    while IFS= read -r f; do
+      rel="${f#$dest/}"
+      [[ -f "$src/$rel" ]] && continue
+      del=$((del+1))
+      [[ "$CHECK" -eq 1 ]] || rm -f "$f"
+    done < <(find "$dest" -type f 2>/dev/null | sort)
+  fi
+  if [[ $((new+upd+del)) -eq 0 ]]; then ok "$label: skills/$nm current"; return 0; fi
+  if [[ "$CHECK" -eq 1 ]]; then
+    if [[ "$had" -eq 0 ]]; then
+      drift "$label: skills/$nm is not vendored yet ($new file(s) to copy)"
+    else
+      drift "$label: vendored skills/$nm is stale vs the installed plugin (new=$new updated=$upd removed=$del) — run \`aiworks cursor\` after \`claude plugin update\`"
+    fi
+  else
+    CHANGED=$((CHANGED+1)); ok "$label: skills/$nm synced (new=$new updated=$upd removed=$del)"
+  fi
+}
+
 plugin_skill_srcs() {
   local keys="" k plug mp d
   # `command -v`, not the `have` helper: that one lives in aiworks-add.sh, and calling it
@@ -649,7 +735,7 @@ do_plugin_skills() {
     # A workspace skill of the same name WINS and is left completely alone: it is
     # committed, shared, and possibly deliberately divergent from the plugin's version.
     if [[ -e "$dest/$nm" && ! -L "$dest/$nm" ]]; then
-      dim "$nm: the workspace has its own .claude/skills/$nm — leaving it"; continue
+      dim "$nm: a real .claude/skills/$nm already exists (vendored copy, or the workspace's own) — leaving it"; continue
     fi
     names="${names:+$names }$nm"
     if [[ -L "$dest/$nm" && "$(readlink "$dest/$nm")" == "$src" ]]; then ok "$nm"; continue; fi

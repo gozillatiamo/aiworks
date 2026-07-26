@@ -54,10 +54,12 @@ const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
 // workspace's output-compression rule has to travel in the prompt itself. Appended to
 // those briefs ONLY — a def-backed agent would just pay for the same instruction twice.
 //
-// The last sentence is the part that is easy to get wrong: compression is an OUTPUT
-// rule. A brief that arrives compressed has lost context the agent cannot get back, so
-// the directive says so explicitly rather than leaving it to be inferred.
-const CAVEMAN_DIRECTIVE = ' CAVEMAN_DIRECTIVE — invoke `/caveman:caveman` and write every report, comment, and reply ultra-compressed: drop articles/filler/pleasantries/hedging, fragments are fine, technical accuracy stays FULL, and code + identifiers + error strings stay verbatim. It governs how you WRITE, never what you DO: never skip a tool call, never skip a tool-availability check, and never claim a tool or shell is unavailable without first actually running it. It never applies to INPUT either — the brief you were given stands in FULL (do not compress, summarize, or drop parts of it), and any brief you hand onward goes onward complete.'
+// The INPUT half is the part that is easy to get wrong, and it has two sides. A brief
+// that ARRIVES compressed has lost context the agent cannot get back — so the FIRST
+// brief, the one that spawns an agent, is never compressed. Every message after that
+// spawn is, because the context already landed and a follow-up is a pointer rather than
+// a context transfer. Style only, though: a follow-up carrying a new fact carries it whole.
+const CAVEMAN_DIRECTIVE = ' CAVEMAN_DIRECTIVE — invoke `/caveman:caveman` and write every report, comment, and reply ultra-compressed: drop articles/filler/pleasantries/hedging, fragments are fine, technical accuracy stays FULL, and code + identifiers + error strings stay verbatim. It governs how you WRITE, never what you DO: never skip a tool call, never skip a tool-availability check, and never claim a tool or shell is unavailable without first actually running it. It never applies to your INPUT either: the brief that spawned you stands in FULL — do not compress or summarize it away. If you spawn or message another agent, its FIRST brief goes out in FULL for the same reason, while every follow-up after that spawn IS compressed (the context already landed; a follow-up is a pointer, not a context transfer) — style only, so any NEW fact in a follow-up still goes in complete.'
 
 // Round cap — hard ceiling of 3 for any review↔revise loop (mirrors dev-cycle's
 // MAX_GATE_ROUNDS). This linear pipeline has no loop wired yet; the constant
