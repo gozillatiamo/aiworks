@@ -188,6 +188,17 @@ A local `.html` isn't shareable; a Claude **Artifact** is a URL the team opens. 
 it sets it, else `workspace.config.yaml`; **default OFF**. When OFF, skip this section
 silently. When ON, after the verifier passes:
 
+> 🛑 **If you are a SUBAGENT, you cannot finish this section — and must not pretend to.**
+> The `Artifact` tool is available to the main agent only; a subagent has no way to publish.
+> So when `artifacts.enabled` is ON and you are running as a subagent: do step 1 (the
+> CSP-safe prep — it is a plain `node` script), then **stop and hand the publish back**.
+> Return the `.artifact.html` path with an explicit *needs publishing by the caller* flag,
+> and say the same thing in your closing summary. Your caller has the tool and finishes it.
+> Silently skipping the publish is the failure this note exists to prevent: it leaves a doc
+> whose entire purpose was being shareable sitting at a path only your machine can open, and
+> the human is told the work is done. (For the same reason, `pretool-notify-guard.sh` blocks
+> a chat message that cites a local `.html` with no URL.)
+
 1. **Make it CSP-safe.** An Artifact runs under a strict CSP — every external host (CDN
    scripts, webfont links) is blocked, so publishing the doc raw would break its diagrams,
    charts and fonts. Run the prep, which writes a sibling file:
