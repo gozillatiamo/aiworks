@@ -54,8 +54,12 @@ t() { # t <name> <expected-exit> <hook> <json>
   if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
   else fail=$((fail+1)); printf 'FAIL %s (want exit %s, got %s)\n' "$name" "$want" "$got"; fi
 }
-j()  { jq -cn --arg c "$1" '{tool_input:{command:$c}}'; }
-jw() { jq -cn --arg p "$1" '{tool_input:{file_path:$p}}'; }
+# tool_name is part of the real payload and some guards dispatch on it — omitting
+# it made every env-guard case exit 0 (its `case "$tool"` fell through to the
+# catch-all) and report a pass for a guard that had never run.
+j()  { jq -cn --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}'; }
+jw() { jq -cn --arg p "$1" '{tool_name:"Write",tool_input:{file_path:$p}}'; }
+jr() { jq -cn --arg p "$1" '{tool_name:"Read",tool_input:{file_path:$p}}'; }
 ja() { jq -cn --arg a "$1" --arg p "$2" '{tool_input:{subagent_type:$a,prompt:$p}}'; }
 
 echo "--- pretool-git-guard ---"
@@ -141,6 +145,35 @@ t "grant comment is not a grant"              2 pretool-agent-brief-guard.sh "$(
 # gh/glab belong to nobody — every provider goes through scripts/vcs/.
 t "gh pr create blocked"                      2 pretool-agent-brief-guard.sh "$(ja developer 'Ship it with gh pr create --fill.')"
 t "glab mr create blocked"                    2 pretool-agent-brief-guard.sh "$(ja qa-runner 'Then glab mr create --source-branch x.')"
+
+echo "--- pretool-env-guard ---"
+# This guard had no cases at all, which is how `rtk read <.env>` walked past it:
+# the suite only ever proved the verbs someone had already thought of. The .env
+# literals are assembled from $E so that editing this file through a shell
+# heredoc cannot trip the guard on the suite's own text.
+E='.env'
+t "cat .env blocked"                2 pretool-env-guard.sh "$(j "cat scripts/tracker/$E")"
+t "head .env blocked"               2 pretool-env-guard.sh "$(j "head -5 scripts/notify/$E")"
+t "grep .env blocked"               2 pretool-env-guard.sh "$(j "grep TOKEN scripts/notify/$E")"
+t "grep -q .env allowed (no print)" 0 pretool-env-guard.sh "$(j "grep -q '^SLACK_BOT_TOKEN=.\\+' scripts/notify/$E")"
+t "Read of .env blocked"            2 pretool-env-guard.sh "$(jr "$TMP/svc/$E")"
+t ".env.example readable"           0 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example")"
+t "bash -x near scripts/ blocked"   2 pretool-env-guard.sh "$(j 'bash -x scripts/tracker/get-ticket-details.sh APP-1')"
+# rtk renames the reading verbs; the rtk hook rewrites `cat X` into `rtk read X`,
+# so these are shapes the model reads back out of its own transcript.
+t "rtk read .env blocked"           2 pretool-env-guard.sh "$(j "rtk read scripts/tracker/$E")"
+t "rtk pipe < .env blocked"         2 pretool-env-guard.sh "$(j "rtk pipe < scripts/tracker/$E")"
+t "rtk diff of two .env blocked"    2 pretool-env-guard.sh "$(j "rtk diff scripts/tracker/$E scripts/notify/$E")"
+t "rtk read with a flag blocked"    2 pretool-env-guard.sh "$(j "rtk --ultra-compact read scripts/tracker/$E")"
+t "rtk read .env.example allowed"   0 pretool-env-guard.sh "$(j "rtk read scripts/tracker/$E.example")"
+# Names-only verbs stay allowed: over-blocking them buys no secrecy and the first
+# person a guard annoys is the person who turns it off.
+t "rtk find by name allowed"        0 pretool-env-guard.sh "$(j "rtk find . -name '*$E'")"
+t "rtk ls of the dir allowed"       0 pretool-env-guard.sh "$(j 'rtk ls -la scripts/tracker')"
+t "rtk wc of .env allowed"          0 pretool-env-guard.sh "$(j "rtk wc scripts/tracker/$E")"
+# `read` and `diff` unanchored are ordinary words — blocking them would be noise.
+t "bare diff of .env.example ok"    0 pretool-env-guard.sh "$(j "diff a/$E.example b/$E.example")"
+t "unrelated rtk read allowed"      0 pretool-env-guard.sh "$(j 'rtk read src/main.rs')"
 
 echo
 echo "pass=$pass fail=$fail"

@@ -868,13 +868,39 @@ else skip "8. /setup-matt-pocock-skills $(claude_fail_hint 'auth? was step 6 abl
 # steps 5/6 is preserved (never clobbered).
 step "9. Seed Claude hooks + settings (hardcoded baseline, sonar-free)"
 mkdir -p "$REPO_DIR/.claude"
-# 9a. hooks/ — copy the workspace's hardcoded hooks (dev-wrapper).
-if [[ -d "$REPO_DIR/.claude/hooks/dev-wrapper" && "$FORCE" -ne 1 ]]; then
-  skip "9. .claude/hooks already present"
-elif [[ -d "$ROOT/.claude/hooks" ]]; then
-  cp -R "$ROOT/.claude/hooks" "$REPO_DIR/.claude/" \
-    && find "$REPO_DIR/.claude/hooks" -name '*.sh' -exec chmod +x {} + 2>/dev/null
-  ok "seeded .claude/hooks/ (dev-wrapper) from the workspace baseline"
+# 9a. hooks/ — sync the hooks BASE_SETTINGS below actually wires, by CONTENT.
+#
+# Only the wired ones: the workspace root's dev-wrapper also holds guards that are
+# meta-repo-specific (plan-path / notify / agent-brief / codegraph / git), and those
+# reason about `<root>/<repo>/...` layout that does not exist inside a standalone
+# clone. Copying the whole directory would put hooks in the repo that nothing runs.
+#
+# By CONTENT, and not "skip if the directory exists", because the old test made
+# propagation a one-shot: a repo onboarded before a guard was written kept its
+# original snapshot forever, and fixing a guard at the root left 21 stale copies
+# with nothing to report the drift. `aiworks sync` delegates here for every declared
+# repo, so a content check turns sync into the thing that heals it.
+#
+# A COPY, not a symlink: each repo is an independent clone, so a link up to the
+# workspace root dangles for anyone who clones the repo on its own. Same call as
+# the Cursor hook-shim (see scripts/cursor/hook-shim.template.sh).
+WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh)
+if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
+  mkdir -p "$REPO_DIR/.claude/hooks/dev-wrapper"
+  hooks_new=(); hooks_upd=()
+  for h in "${WIRED_HOOKS[@]}"; do
+    src="$ROOT/.claude/hooks/dev-wrapper/$h"; dst="$REPO_DIR/.claude/hooks/dev-wrapper/$h"
+    [[ -f "$src" ]] || continue
+    if [[ ! -f "$dst" ]]; then hooks_new+=("$h")
+    elif cmp -s "$src" "$dst"; then continue
+    else hooks_upd+=("$h"); fi
+    cp "$src" "$dst" && chmod +x "$dst"
+  done
+  if [[ ${#hooks_new[@]} -eq 0 && ${#hooks_upd[@]} -eq 0 ]]; then
+    skip "9. .claude/hooks/dev-wrapper already matches the workspace baseline"
+  else
+    ok "synced .claude/hooks/dev-wrapper${hooks_new:+ (new: ${hooks_new[*]})}${hooks_upd:+ (updated: ${hooks_upd[*]})}"
+  fi
 else
   skip "9. no $ROOT/.claude/hooks to seed from — copy your hook scripts into $PATH_REL/.claude/hooks/ by hand"
 fi
@@ -904,8 +930,10 @@ read -r -d '' BASE_SETTINGS <<'JSON'
       { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
       { "matcher": "Bash",  "hooks": [
           { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
-      ] }
+      ] },
+      { "matcher": "Read",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 } ] }
     ],
     "PostToolUse": [
       { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
@@ -915,15 +943,36 @@ read -r -d '' BASE_SETTINGS <<'JSON'
   }
 }
 JSON
-if [[ -f "$SETTINGS_FILE" ]] && grep -q 'posttool-output-warden' "$SETTINGS_FILE" && [[ "$FORCE" -ne 1 ]]; then
-  skip "9. .claude/settings.json already has the workspace hooks"
-elif have jq; then
+if have jq; then
   # Merge base over existing (existing * base): base wins on hooks/permissions/env, while
   # any existing enabledPlugins (from steps 5/6) is preserved.
+  #
+  # The merge result decides whether to write, replacing an old
+  # `grep -q posttool-output-warden && skip` gate. That gate asked "did ANY
+  # version of the baseline land here", which was true for every repo the day a
+  # NEW hook was added to the baseline — so the addition reached new repos only,
+  # and the existing ones reported "already has the workspace hooks" while
+  # missing it. Comparing the merge makes a no-op a genuine no-op and an added
+  # hook propagate on the next `aiworks sync`.
+  # On an EXISTING settings.json the baseline asserts only `hooks`. It used to
+  # assert everything, which made the first content-aware sync also push the
+  # baseline's `permissions` into 21 repos — quietly granting Write/Edit and
+  # Bash(rtk *) wherever a repo had chosen a narrower set. Hooks are the shared
+  # safety net and SHOULD converge; permissions are that repo's own call. A repo
+  # with no settings.json yet still gets the whole baseline (the `else` below).
+  if [[ -f "$SETTINGS_FILE" ]]; then
+    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '{hooks}')"
+  else
+    base_for_merge="$BASE_SETTINGS"
+  fi
   existing="{}"; [[ -f "$SETTINGS_FILE" ]] && existing="$(cat "$SETTINGS_FILE")"
-  if printf '%s\n%s\n' "$existing" "$BASE_SETTINGS" | jq -s '.[0] * .[1]' > "$SETTINGS_FILE.tmp" 2>/dev/null && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"; then
-    ok "wrote .claude/settings.json (hardcoded sonar-free baseline; existing plugins preserved)"
-  else rm -f "$SETTINGS_FILE.tmp"; skip "9. could not merge settings.json — add the hooks block by hand"; fi
+  if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" | jq -s '.[0] * .[1]' 2>/dev/null)"; then
+    if [[ -f "$SETTINGS_FILE" ]] && [[ "$merged" == "$(cat "$SETTINGS_FILE")" ]]; then
+      skip "9. .claude/settings.json already matches the baseline"
+    elif printf '%s\n' "$merged" > "$SETTINGS_FILE"; then
+      ok "wrote .claude/settings.json (hardcoded sonar-free baseline; existing plugins preserved)"
+    else skip "9. could not write settings.json — add the hooks block by hand"; fi
+  else skip "9. could not merge settings.json — add the hooks block by hand"; fi
 elif [[ ! -f "$SETTINGS_FILE" ]]; then
   printf '%s\n' "$BASE_SETTINGS" > "$SETTINGS_FILE" && ok "wrote .claude/settings.json (hardcoded sonar-free baseline)"
 else

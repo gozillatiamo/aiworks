@@ -9,10 +9,13 @@ repo.
 ⚠️ **Never read `.env` / `.env.*` files** (any adapter's `scripts/{vcs,tracker,notify}/.env`,
 or any other secrets file matched by the workspace's blanket `.env`/`.env.*` gitignore rule) —
 **except `.env.example`** templates, which are safe (no real values). This means no `Read`, no
-`cat`/`grep`/`sed`/`head`/`tail` on them, and no `bash -x`/`set -x` around code that sources one
+`cat`/`grep`/`sed`/`head`/`tail` on them, no `rtk read`/`rtk pipe`/`rtk diff` (rtk renames the
+reading verbs — the rtk hook rewrites your own `cat X` into `rtk read X`, so the renamed form is
+*not* a way past this rule), and no `bash -x`/`set -x` around code that sources one
 (tracing prints the sourced values into the transcript/logs verbatim). To check a var is set
 without exposing it, use `grep -q '^VAR=.\+' .env` (prints only a boolean via exit code), never
-a form that echoes the value.
+a form that echoes the value. Enforced by `pretool-env-guard.sh`, wired on `Bash` + `Read` at the
+workspace root **and in every repo** (a repo-level session guards its own `.env` too).
 
 **Discover repos:** declared under `products[].repos[]` in `workspace.config.yaml`
 (the source of truth); `mani.yaml` imports the per-product `mani.d/<product>.yaml`
