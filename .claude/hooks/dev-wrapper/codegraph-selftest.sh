@@ -89,6 +89,40 @@ untouched "a command without codegraph" "$(cmdof "$(run 'grep -rn codegraph docs
 untouched "codegraph named inside a string, not run" \
           "$(cmdof "$(run "echo 'run codegraph explore later'")")"
 
+# Text that merely SAYS codegraph. The first of these used to be blocked: the word
+# test matched `&& codegraph query` inside the quotes, a rewrite was then wanted,
+# and a multi-line command is refused rather than mangled — so a probe script that
+# only described a query got stopped from running. The decision now reads a copy
+# with the quoted runs removed.
+is "a quoted mention with && is not an invocation" 0 \
+   "$(rc 'echo "cd web && codegraph query Foo"')"
+is "a commit message naming it is not an invocation" 0 \
+   "$(rc 'git commit -m "docs: codegraph query needs -p"')"
+is "a multi-line script quoting it is not an invocation" 0 \
+   "$(rc "$(printf 'for c in "codegraph query x"; do echo $c; done\necho done')")"
+# ...but a mention next to a REAL call must not shield the real one. Reading the
+# stripped copy is what makes this work: in the raw text the mention comes first and
+# its next token is `&&`, which is no subcommand, so the query went unaddressed.
+is "a mention beside a real call still rewrites" \
+   "echo \"about codegraph\" && codegraph query F -p $TMP/web" \
+   "$(cmdof "$(run 'echo "about codegraph" && codegraph query F -p web')")"
+# A quoted -p operand is why stripping is confined to the DECISION: the operand
+# lives inside the quotes, so an extraction that read the stripped copy would see
+# no -p at all and block a perfectly addressed query.
+is "a quoted -p operand still resolves" \
+   "codegraph query Foo -p $TMP/web" \
+   "$(cmdof "$(run 'codegraph query Foo -p "web"')")"
+
+echo "== a shell wrapper's quotes are code, not inert text =="
+# `bash -c '...'` / `eval` / `xargs` / `rtk run|proxy` execute what they quote, so
+# stripping there would wave an unaddressed query straight through.
+is "bash -c hiding an unaddressed query"  2 "$(rc 'bash -c "cd svc && codegraph query Foo"')"
+is "eval hiding an unaddressed query"     2 "$(rc "eval 'cd svc && codegraph query Foo'")"
+# The word opening the quoted string: `"codegraph` is not the token `codegraph`, so
+# this shape slipped through even with the carve-out until both tokens were trimmed.
+is "bash -c with the word right after the quote" 2 "$(rc 'bash -c "codegraph explore Foo"')"
+is "rtk run hiding an unaddressed query"  2 "$(rc "rtk run 'codegraph explore Foo'")"
+
 echo "== blocked, because resolving it would mean guessing =="
 is "no -p, cwd outside any repo"      2 "$(rc 'codegraph explore Foo')"
 is "no -p, cwd in an unindexed repo"  2 "$(rc 'codegraph explore Foo' "$TMP/noindex")"
