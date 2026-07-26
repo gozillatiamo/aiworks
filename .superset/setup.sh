@@ -183,6 +183,11 @@ ensure_ngrok || true
 ensure_glab || true
 ensure_pnpm || true
 ensure_dap || true
+# Claude plugins declared in .claude/settings.json, installed at USER scope so they hold in a
+# repo-only session too. Declaring is not installing — measured: a repo whose settings.json
+# carried enabledPlugins still answered NOT-FOUND for caveman:caveman until the install ran.
+# After ensure_jq, since it reads the settings with jq.
+ensure_claude_plugins || true
 
 # ── 4. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
 # full `aiworks add` toolchain per repo (codegraph index, skill packs, adapter symlinks into

@@ -82,3 +82,20 @@ workspace.config.local.yaml
 # skip the whole tree and silently lose every rule in it; excluding only the .mdc files
 # leaves the directories traversable, and Cursor still reads them. Measured both ways.
 .cursor/rules/repos/**/*.mdc
+
+
+
+# >>> aiworks cursor: plugin-skill links (generated — do not edit by hand)
+# Symlinks into ~/.claude/plugins — absolute, per-machine paths, so committing one
+# gives every teammate a dangling skill dir. Cursor still READS an ignored skill
+# directory (measured), so ignoring these costs nothing but the git noise.
+/.claude/skills/cavecrew
+/.claude/skills/caveman
+/.claude/skills/caveman-compress
+/.claude/skills/caveman-stats
+/.claude/skills/caveman-commit
+/.claude/skills/caveman-help
+/.claude/skills/caveman-review
+/.claude/skills/frontend-design
+/.claude/skills/debugging-code
+# <<< aiworks cursor: plugin-skill links

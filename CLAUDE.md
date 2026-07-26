@@ -122,6 +122,35 @@ names, and technical/transliterated/domain terms + proper nouns (Arabic numerals
 `agent_logs/`, and every checked-in repo doc — `docs/`, `README`, ADRs, committed PRD/BRD files):
 the `th` prose rule never touches `.md`. Default **`en`** ⇒ everything English, no change.
 
+## Output compression (caveman)
+Every session and **every agent** writes ultra-compressed prose — the `caveman:caveman`
+plugin skill. It reaches each spawn path by a different mechanism, and all three are
+mechanical rather than remembered: the **main session** gets it from the plugin's own
+`SessionStart`/`UserPromptSubmit` hooks; a **named agent** preloads it via
+`skills: - caveman:caveman` in its `.claude/agents/<name>.md` frontmatter (measured, not
+assumed — the skill's text was present in 5/5 probe transcripts); a **`general-purpose`
+agent** has no def to preload from, so the three workflows append a `CAVEMAN_DIRECTIVE`
+constant to those briefs (the only def-less spawn path — `grep agentType` if you add a
+call site).
+
+⚠️ **Compression is an OUTPUT rule. A brief is INPUT.** When you spawn an agent, the brief
+you write it goes in **FULL** — never compressed, summarized, or trimmed to save tokens,
+and the same for any brief handed onward. The agent cannot recover context you dropped,
+and it has no way to know something is missing; the failure looks like a bad agent rather
+than a starved one. The same boundary applies inside an agent: caveman governs how it
+**writes**, never what it **does** — it must never skip a tool call, skip a
+tool-availability check, or claim a tool/shell is unavailable without actually running it
+first.
+
+A **repo-only session** (`cd <repo> && claude`) is covered too: each repo's
+`.claude/settings.json` enables the plugin, and `.superset/setup.sh` installs it once at
+**user** scope — declaring alone is not installing, which was measured, not assumed.
+
+**In Cursor the skill is `/caveman`, not `caveman:caveman`** — Cursor cannot resolve the
+`plugin:skill` form at all. `aiworks cursor` links each enabled plugin's skills to
+`.claude/skills/<name>` (git-ignored), which Cursor reads through `.cursor/skills`, so both
+names are the same file. Every agent file names both forms; see `docs/agents/cursor.md`.
+
 ## Product Overview
 {{PRODUCT_DESCRIPTION}}
 

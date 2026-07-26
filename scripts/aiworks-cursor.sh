@@ -41,8 +41,9 @@
 #                  under products[].repos[] in workspace.config.yaml.
 #   --check        Verify only: write nothing, report every drift/missing/broken
 #                  link, exit 1 if anything is off. Use it in CI.
-#   --user         Also link the enabled Claude plugin skills into ~/.agents/skills
-#                  so Cursor can see them (personal machine state; never committed).
+#   --user         Deprecated no-op. The Claude plugin skills are now linked at PROJECT
+#                  scope (.claude/skills/<name>) on every root run, so Cursor sees them
+#                  through the .cursor/skills link with no per-machine setup step.
 #   -v, --verbose  Show every link, not just the per-target summary.
 #   -h, --help     Show this help.
 #
@@ -72,6 +73,9 @@ TARGETS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)        CHECK=1 ;;
+    # Kept accepted, deliberately inert: plugin skills moved to project scope and now
+    # happen on every root run. Erroring on a flag that used to be the documented way to
+    # get them would punish the muscle memory of the person who did the right thing.
     --user)         USER_SCOPE=1 ;;
     -v|--verbose)   VERBOSE=1 ;;
     -h|--help)      usage; exit 0 ;;
@@ -539,26 +543,134 @@ do_target() {
   [[ "$is_root" -eq 1 ]] || check_dead_hook_copies "$base" "$name"
 }
 
-# ── user scope: make the enabled Claude plugin skills visible to Cursor ───────
-# Plugin skills live under ~/.claude/plugins/marketplaces/<mp>/skills/<name>/, which
-# is NOT one of the paths Cursor scans (it reads ~/.claude/skills and ~/.agents/skills).
-# Link them into ~/.agents/skills so both tools see one copy. Personal machine
-# state — nothing here is committed.
-do_user_scope() {
-  step "user scope (~/.agents/skills)"
-  local dest="$HOME/.agents/skills" src
-  [[ "$CHECK" -eq 1 ]] || mkdir -p "$dest"
-  local found=0
+# ── plugin skills → PROJECT scope (.claude/skills) ────────────────────────────
+# Plugin skills live under ~/.claude/plugins/marketplaces/<mp>/skills/<name>/, which is
+# NOT a path Cursor scans (it reads .cursor/skills and ~/.agents/skills). This workspace
+# expects every agent to write through one of them — `caveman` — so an unlinked plugin
+# skill is not a missing nicety: it is 16 agent definitions pointing at a skill that
+# cannot resolve.
+#
+# PROJECT scope, not ~/.agents/skills (what `--user` used to do). .claude/skills already
+# reaches Cursor through the .cursor/skills directory link, so ONE symlink per plugin skill
+# serves both tools with no second copy and no separate opt-in step to forget. It also
+# repairs the NAME: Cursor cannot resolve the `plugin:skill` form at all, while a skill
+# linked as .claude/skills/caveman is invocable there as `/caveman` — and Claude Code still
+# has `/caveman:caveman` through the plugin. Same SKILL.md behind both names, so the two
+# can never drift.
+#
+# The link target is an ABSOLUTE path under $HOME, so these links are machine state:
+# generated, git-ignored (see ensure_plugin_gitignore), never committed. Committing one
+# would hand every teammate a dangling skill directory.
+#
+# Ignoring the DIRECTORY is safe here, which is worth stating because the rules mirror
+# proved the opposite for itself (a directory pattern made Cursor skip the whole tree —
+# see IGNORE_LINE). MEASURED for skills, not assumed by symmetry: with a skill dir listed
+# in .gitignore, `cursor-agent -p` still invoked it and printed its token, in both the
+# ignored and control fixtures. If Cursor ever changes that, this is the line to re-test.
+PLUGIN_MARKETPLACES="$HOME/.claude/plugins/marketplaces"
+GI_PLUGIN_BEGIN='# >>> aiworks cursor: plugin-skill links (generated — do not edit by hand)'
+GI_PLUGIN_END='# <<< aiworks cursor: plugin-skill links'
+
+# ENABLED plugins only, resolved PER PLUGIN. An unfiltered sweep is not cosmetically
+# wrong, it is wrong: at project scope Claude Code picks up .claude/skills immediately, so
+# a sweep silently widens the workspace's own skill surface (the first run linked two
+# firebase skills from a plugin nobody enabled).
+#
+# Filtering per MARKETPLACE is not enough either. Two layouts exist on disk, measured:
+#   <mp>/skills/<name>/                     — a single-plugin marketplace (caveman, debug-skill)
+#   <mp>/plugins/<plugin>/skills/<name>/    — a multi-plugin one (claude-plugins-official
+#                                             alone ships discord, imessage, telegram,
+#                                             security, hookify, … )
+# so `<plugin>@<marketplace>` has to address the plugin, not just its marketplace.
+# Deduplicated by skill NAME because a marketplace can carry both layouts at once (the
+# caveman clone does), and the link is named after the skill.
+plugin_skill_srcs() {
+  local keys="" k plug mp d
+  # `command -v`, not the `have` helper: that one lives in aiworks-add.sh, and calling it
+  # here failed silently into the fallback below — every marketplace linked, filter inert.
+  if command -v jq >/dev/null 2>&1 && [[ -f "$ROOT/.claude/settings.json" ]]; then
+    while IFS= read -r k; do
+      [[ -n "$k" ]] && keys="${keys:+$keys }$k"
+    done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' \
+               "$ROOT/.claude/settings.json" 2>/dev/null)
+  fi
+  # No jq, or nothing enabled: fall back to the flat layout across every marketplace rather
+  # than linking nothing — a missing skill is the failure this function exists to fix, and
+  # the flat layout is the one a single-plugin marketplace (caveman) uses.
+  if [[ -z "$keys" ]]; then
+    find "$PLUGIN_MARKETPLACES" -mindepth 3 -maxdepth 3 -type d -path '*/skills/*' \
+      -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null | sort
+    return 0
+  fi
+  for k in $keys; do
+    plug="${k%@*}"; mp="${k#*@}"
+    for d in "$PLUGIN_MARKETPLACES/$mp/plugins/$plug/skills" "$PLUGIN_MARKETPLACES/$mp/skills"; do
+      [[ -d "$d" ]] || continue
+      find "$d" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null
+    done
+  done | awk -F/ '!seen[$NF]++' | sort
+}
+
+# Rewrites the generated block in place (removed, then re-appended) so uninstalling a
+# plugin drops its line instead of leaving a stale ignore behind.
+ensure_plugin_gitignore() { # ensure_plugin_gitignore <skill-name>…
+  local gi="$ROOT/.gitignore" want have tmp nm
+  want="$(
+    printf '%s\n' "$GI_PLUGIN_BEGIN"
+    printf '# Symlinks into ~/.claude/plugins — absolute, per-machine paths, so committing one\n'
+    printf '# gives every teammate a dangling skill dir. Cursor still READS an ignored skill\n'
+    printf '# directory (measured), so ignoring these costs nothing but the git noise.\n'
+    for nm in "$@"; do printf '/.claude/skills/%s\n' "$nm"; done
+    printf '%s\n' "$GI_PLUGIN_END"
+  )"
+  have="$(awk -v b="$GI_PLUGIN_BEGIN" -v e="$GI_PLUGIN_END" \
+    'index($0,b){f=1} f{print} index($0,e){f=0}' "$gi" 2>/dev/null)"
+  [[ "$have" == "$want" ]] && { ok ".gitignore plugin-skill block current"; return 0; }
+  if [[ "$CHECK" -eq 1 ]]; then
+    [[ -n "$have" ]] && drift ".gitignore plugin-skill block is stale" \
+                     || drift ".gitignore does not exclude the generated plugin-skill links"
+    return 0
+  fi
+  tmp="$(mktemp)"
+  awk -v b="$GI_PLUGIN_BEGIN" -v e="$GI_PLUGIN_END" \
+    'index($0,b){f=1} !f{print} index($0,e){f=0}' "$gi" > "$tmp" 2>/dev/null
+  { printf '\n'; printf '%s\n' "$want"; } >> "$tmp"
+  mv "$tmp" "$gi" && { CHANGED=$((CHANGED+1)); ok ".gitignore plugin-skill block written"; }
+}
+
+do_plugin_skills() {
+  step "plugin skills (.claude/skills — project scope)"
+  local dest="$ROOT/.claude/skills" src nm l found=0
+  # bash 3.2: a space-joined string rather than an array, same reason as TARGETS.
+  local names=""
   while IFS= read -r src; do
-    found=1
-    local nm; nm="$(basename "$src")"
-    if [[ -e "$dest/$nm" && ! -L "$dest/$nm" ]]; then note "~/.agents/skills/$nm exists as a real dir — leaving it"; continue; fi
+    [[ -n "$src" ]] || continue
+    found=1; nm="$(basename "$src")"
+    # A workspace skill of the same name WINS and is left completely alone: it is
+    # committed, shared, and possibly deliberately divergent from the plugin's version.
+    if [[ -e "$dest/$nm" && ! -L "$dest/$nm" ]]; then
+      dim "$nm: the workspace has its own .claude/skills/$nm — leaving it"; continue
+    fi
+    names="${names:+$names }$nm"
     if [[ -L "$dest/$nm" && "$(readlink "$dest/$nm")" == "$src" ]]; then ok "$nm"; continue; fi
-    if [[ "$CHECK" -eq 1 ]]; then drift "plugin skill $nm not linked"; continue; fi
-    rm -f "$dest/$nm"; ln -s "$src" "$dest/$nm" && { CHANGED=$((CHANGED+1)); ok "$nm -> $src"; }
-  done < <(find "$HOME/.claude/plugins/marketplaces" -mindepth 3 -maxdepth 4 -type d -path '*/skills/*' \
-             -exec test -f '{}/SKILL.md' ';' -print 2>/dev/null | sort)
-  [[ "$found" -eq 1 ]] || dim "no plugin skills found under ~/.claude/plugins/marketplaces"
+    if [[ "$CHECK" -eq 1 ]]; then drift "plugin skill $nm not linked into .claude/skills"; continue; fi
+    rm -f "$dest/$nm"
+    mkdir -p "$dest" && ln -s "$src" "$dest/$nm" && { CHANGED=$((CHANGED+1)); ok "$nm -> $src"; }
+  done < <(plugin_skill_srcs)
+  if [[ "$found" -eq 0 ]]; then dim "no plugin skills found under $PLUGIN_MARKETPLACES"; return 0; fi
+
+  # Prune a link whose plugin is gone — only ones pointing INTO the marketplaces tree, so
+  # a symlinked skill someone added by hand is never touched.
+  for l in "$dest"/*; do
+    [[ -L "$l" ]] || continue
+    case "$(readlink "$l")" in "$PLUGIN_MARKETPLACES"/*) ;; *) continue ;; esac
+    nm="$(basename "$l")"
+    case " $names " in *" $nm "*) continue ;; esac
+    if [[ "$CHECK" -eq 1 ]]; then drift "$nm links to a plugin skill that no longer exists"
+    else rm -f "$l"; CHANGED=$((CHANGED+1)); ok "removed stale plugin-skill link $nm"; fi
+  done
+
+  ensure_plugin_gitignore $names
 }
 
 # ── run ───────────────────────────────────────────────────────────────────────
@@ -568,18 +680,21 @@ while IFS= read -r r; do [[ -n "$r" ]] && ALL_REPOS="${ALL_REPOS:+$ALL_REPOS }$r
 SLICES=""   # repos whose root slice this run is responsible for
 FULL=0      # a run that saw every declared repo, so it may prune
 
+ROOT_DONE=0 # the plugin-skill links belong to the root's .claude/skills, so they are
+            # only this run's business when the root itself was a target.
+
 if [[ -n "$TARGETS" ]]; then
   for t in $TARGETS; do
     if [[ "$t" == "root" || "$t" == "." ]]; then
       # Asking for the root means asking for the root's whole rule tree, and that
       # tree is made of every repo's slice.
-      do_target "$ROOT" "root" 1; SLICES="$ALL_REPOS"; FULL=1
+      do_target "$ROOT" "root" 1; SLICES="$ALL_REPOS"; FULL=1; ROOT_DONE=1
     else
       do_target "$ROOT/$t" "$t" 0; SLICES="${SLICES:+$SLICES }$t"
     fi
   done
 else
-  do_target "$ROOT" "root" 1
+  do_target "$ROOT" "root" 1; ROOT_DONE=1
   for r in $ALL_REPOS; do do_target "$ROOT/$r" "$r" 0; done
   SLICES="$ALL_REPOS"; FULL=1
 fi
@@ -591,7 +706,8 @@ if [[ -n "$SLICES" ]]; then
   [[ "$FULL" -eq 1 ]] && prune_root_slices $ALL_REPOS
 fi
 
-[[ "$USER_SCOPE" -eq 1 ]] && do_user_scope
+[[ "$ROOT_DONE" -eq 1 ]] && do_plugin_skills
+[[ "$USER_SCOPE" -eq 1 ]] && warn "--user is a no-op now: the plugin skills are linked at project scope (.claude/skills) on every root run"
 
 echo
 if [[ "$CHECK" -eq 1 ]]; then

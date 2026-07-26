@@ -456,6 +456,60 @@ ensure_dap() {
   return 0
 }
 
+# Ensure every plugin this workspace declares in .claude/settings.json `enabledPlugins` is
+# actually INSTALLED, at USER scope. Best-effort + idempotent. macOS bash 3.2 safe.
+#
+# Why this exists: declaring a plugin in a committed settings.json is NOT installing it —
+# measured, and it is the kind of thing that reads as working. With `enabledPlugins` +
+# `extraKnownMarketplaces` present in a repo's settings.json, a session opened in that repo
+# still answered NOT-FOUND for `caveman:caveman`, while the workspace root (where the plugin
+# was genuinely installed) answered AVAILABLE. Same probe, so the difference is the install.
+#
+# USER scope, not project: one install then covers the workspace root AND all 21 repo clones
+# AND any other project — a repo-only session is a first-class way to work here (see
+# docs/agents/submodules.md and the Cursor doc's "open one repo at a time"), and caveman is
+# supposed to hold no matter where a session starts. Project scope would mean 22 installs
+# that drift apart.
+#
+# This matters most for caveman: it is the workspace's output-compression baseline, preloaded
+# by all 16 agent definitions. Without the install those 16 preloads resolve to nothing.
+ensure_claude_plugins() {
+  command -v claude >/dev/null 2>&1 || { log "claude CLI not found — skipping plugin install."; return 0; }
+  command -v jq >/dev/null 2>&1     || { warn "jq unavailable — cannot read enabledPlugins; install workspace plugins by hand (claude plugin install <plugin>@<marketplace> -s user)."; return 0; }
+  # setup.sh cd's to the workspace root before anything runs (`cd "$(dirname "$0")/.."`), and
+  # the rest of lib.sh anchors on $PWD for the same reason. Not SUPERSET_ROOT_PATH — that is a
+  # DIFFERENT thing (the source worktree a fresh one copies its local state from).
+  local settings="$PWD/.claude/settings.json"
+  [[ -f "$settings" ]] || { log "no .claude/settings.json — no plugins declared."; return 0; }
+
+  local reg="$HOME/.claude/plugins/installed_plugins.json" key mp src
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    # The registry's schema has already changed once under us (a flat map became
+    # {version, plugins:{…}}), so read both shapes rather than the current one.
+    if [[ -f "$reg" ]] && jq -e --arg k "$key" \
+         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
+      log "plugin $key already installed (user scope)."
+      continue
+    fi
+    mp="${key#*@}"
+    # A marketplace the workspace declares may be unknown to this machine. Add it from
+    # extraKnownMarketplaces before installing, or the install has nowhere to resolve from.
+    if ! claude plugin marketplace list 2>/dev/null | grep -q "$mp"; then
+      src="$(jq -r --arg m "$mp" '(.extraKnownMarketplaces[$m].source.repo) // empty' "$settings" 2>/dev/null)"
+      if [[ -n "$src" ]]; then
+        run_glance "plugin: marketplace add $mp" claude plugin marketplace add "$src" \
+          || warn "could not add marketplace $mp ($src) — $key will not install."
+      else
+        warn "marketplace $mp is unknown and .claude/settings.json declares no source for it — $key will not install."
+      fi
+    fi
+    run_glance "plugin: install $key" claude plugin install "$key" -s user \
+      || warn "claude plugin install $key -s user failed — install it by hand, or agents that preload it get nothing."
+  done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' "$settings" 2>/dev/null)
+  return 0
+}
+
 # Install dap via the official cross-platform (macOS + Linux) install script — the no-Homebrew
 # and brew-install-failed fallback. The script self-detects os/arch and drops the binary onto
 # PATH (we surface the common user-local bin dirs afterward so ensure_dap's check sees it in
