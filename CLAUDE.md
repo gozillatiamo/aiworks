@@ -23,10 +23,11 @@ files generated from it by `scripts/aiworks`. `mani list projects` for the full 
 `<workspace-basename>.code-workspace` from `products[].repos[]` (one folder root per repo +
 the meta-repo root). Open the **file** (`cursor <workspace>.code-workspace`), not the folder,
 so each product repo gets its own Source Control panel — opening the folder makes Git skip the
-gitignored clones and only the meta-repo shows. ⚠️ In **Cursor** this matters twice over: Cursor
-does not read configuration from subdirectories, so opening the meta-repo *folder* gives an agent
-none of a repo's rules, skills, or `AGENTS.md`. Open the `.code-workspace` file, or one repo —
-see `docs/agents/cursor.md`.
+gitignored clones and only the meta-repo shows. ⚠️ **Cursor**: the `.code-workspace` gives you the
+Source Control panels but does NOT configure the agent — Cursor reads no configuration from
+subdirectories, so from the workspace root (folder *or* `.code-workspace`) an agent gets none of a
+repo's rules, skills, or `AGENTS.md`. Measured both ways. To work a repo with Cursor, open that
+repo: `cd <repo> && cursor .`. See `docs/agents/cursor.md`.
 
 **Cross-repo (`mani`):** `sync` (clone missing) · `list projects` ·
 `exec --all '<cmd>'` · `run <task>`
