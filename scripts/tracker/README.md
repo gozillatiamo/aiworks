@@ -57,6 +57,16 @@ one prettified rich-text run instead: **bold** headings, `•`/numbered/`☑` li
 inline marks and real links kept as annotations, and tables laid out as aligned monospace.
 Native heading/list/table blocks in Notion only exist in the page **body** (`--body`).
 
+**A URL is always a real link:** in a description or a comment, `[label](url)` renders as a
+named clickable link, and a **bare** `https://…` is autolinked — so an Artifact / MR / Figma
+URL is never dead text a reader has to select and copy. A URL inside `` `code` `` or a fenced
+block stays literal, and a trailing `.`/`,` or a wrapping `)` is left as prose, not swallowed
+into the href. Reading a ticket back renders a link as `[label](url)`, so the round-trip
+`get-ticket-details.sh` → edit → `--body` rewrite keeps the href instead of flattening it
+(the same shape of loss as the images above). **Prefer the labelled form** — a link that says
+*where it goes* beats a naked URL mid-sentence. Regression suite: `./links-selftest.sh`
+(pure `jq`, no network, no credentials, touches no ticket).
+
 **Dedup before filing:** `find-tickets.sh --query "<distinctive token>" --open` searches
 the board so a caller never files a duplicate. Notion matches a case-insensitive title
 **substring**; Jira's `summary ~` is a **word/text** match — pick a distinctive whole

@@ -7,7 +7,14 @@ def adf_to_text:
   def node:
     . as $n
     | ($n.type // "") as $t
-    | if   $t == "text"        then ($n.text // "")
+    # A link is rendered in Markdown form `[text](href)` so the URL survives a read AND
+    # round-trips: a description read out and written back through md_to_adf rebuilds the
+    # same link instead of flattening it to dead text (the read-then-rewrite path is how
+    # APP-1952 lost pasted media — same shape of loss). A label that IS its URL renders
+    # bare; the autolink in _md_first relinks it on the way back in.
+    | if   $t == "text"        then ( ($n.text // "") as $x
+                                      | ([ $n.marks[]? | select(.type == "link") | .attrs.href ][0] // "") as $h
+                                      | if ($h != "" and $h != $x) then "[\($x)](\($h))" else $x end )
       elif $t == "hardBreak"   then "\n"
       elif $t == "paragraph"   then ( (($n.content // []) | map(node) | join("")) + "\n" )
       elif $t == "heading"     then ( (("#" * (($n.attrs.level // 1))) + " ") + (($n.content // []) | map(node) | join("")) + "\n" )
@@ -48,14 +55,9 @@ def adf_append_media($media):
                        content:[{type:"text", text:"Attachments (carried over)"}]} ] + $media)
   end;
 
-# Build a minimal ADF doc from a plain-text string (for comment writes / one-line
-# descriptions). Each non-empty line becomes a paragraph; ADF rejects empty text nodes.
-def text_to_adf:
-  . as $t
-  | ($t | split("\n") | map(select(length > 0))) as $lines
-  | { type: "doc", version: 1,
-      content: ( (if ($lines | length) == 0 then [$t] else $lines end)
-                 | map({ type: "paragraph", content: [{ type: "text", text: . }] }) ) };
+# `text_to_adf` (a minimal doc from a one-line/plain string) is defined further down,
+# after `_adf_para`, because it shares the same inline parser — a URL must come out
+# clickable there too, not only in a full Markdown body.
 
 # --- Markdown → ADF doc (write side; the Jira analogue of notion.jq md_to_blocks) -
 # Turn a Markdown spec into an ADF document so a full ticket spec lands in the issue
@@ -65,9 +67,14 @@ def text_to_adf:
 # node (ADF requires bullet/orderedList wrappers, unlike Notion's flat blocks).
 
 # Leftmost inline-markup match, or null. Capture index identifies the kind:
-#   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_
+#   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_  6 bare url
+# Index 6 (autolink) is last on purpose: `match` picks the leftmost START position
+# and only breaks a tie by alternative order, so a URL inside `code` or inside a
+# [label](url) is still claimed by the earlier-starting token, not by the autolink.
+# The URL body excludes brackets/parens/quotes (so a wrapped "(see https://x)" stops
+# at the paren) and may not END on sentence punctuation (so a trailing "." is prose).
 def _md_first($s):
-  [ $s | match("(`[^`]+`)|(\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|(__[^_]+__)|(\\*[^*]+\\*)|(_[^_]+_)") ] | .[0];
+  [ $s | match("(`[^`]+`)|(\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|(__[^_]+__)|(\\*[^*]+\\*)|(_[^_]+_)|(https?://[^\\s<>()\\[\\]\"'`]*[^\\s<>()\\[\\]\"'`.,;:!?])") ] | .[0];
 def _adf_plain($s): if (($s // "") | length) == 0 then [] else [{ type: "text", text: $s }] end;
 
 # Parse inline Markdown into ADF text nodes with marks (strong/em/code/link).
@@ -84,6 +91,7 @@ def _inline_adf:
           elif $g[1] != null then ($tok | match("\\[([^\\]]+)\\]\\(([^)]+)\\)") | .captures) as $c
                                   | { type:"text", text:($c[0].string), marks:[{type:"link", attrs:{href:($c[1].string)}}] }
           elif ($g[2] != null or $g[3] != null) then { type:"text", text:($tok[2:-2]), marks:[{type:"strong"}] }
+          elif $g[6] != null then { type:"text", text:$tok, marks:[{type:"link", attrs:{href:$tok}}] }
           else { type:"text", text:($tok[1:-1]), marks:[{type:"em"}] }
           end ) as $styled
       | _adf_plain($pre) + [$styled] + ($post | _inline_adf)
@@ -95,6 +103,15 @@ def _adf_text_plain($s): if (($s // "") | length) == 0 then [] else [{ type:"tex
 def _adf_para($s):
   (($s // "") | _inline_adf) as $c
   | if ($c | length) == 0 then { type:"paragraph" } else { type:"paragraph", content:$c } end;
+# Build a minimal ADF doc from a plain-ish string (for comment writes / one-line
+# descriptions). Each non-empty line becomes a paragraph, parsed with the same inline
+# rules as a body — so a URL is a real link mark, not dead text a reader must copy.
+def text_to_adf:
+  . as $t
+  | ($t | split("\n") | map(select(length > 0))) as $lines
+  | { type: "doc", version: 1,
+      content: ( (if ($lines | length) == 0 then [$t] else $lines end) | map(_adf_para(.)) ) };
+
 def _adf_li($s):   { type: "listItem",  content: [_adf_para($s)] };
 def _adf_list($kind; $items):
   { type: (if $kind == "ordered" then "orderedList" else "bulletList" end), content: $items };
