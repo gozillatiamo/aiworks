@@ -163,8 +163,11 @@ offboard_one() {
   fi
 
   # 3. workspace .gitignore ─────────────────────────────────────────────────────
-  step "3. Un-ignore $DIR_REL/ in the workspace .gitignore"
-  if remove_line "$ROOT/.gitignore" "$DIR_REL/"; then ok "[$REPO] removed $DIR_REL/ from the workspace .gitignore"
+  # Both spellings: `aiworks add` writes the anchored `/<repo>/` form, but a workspace
+  # onboarded before that change carries the bare one.
+  step "3. Un-ignore /$DIR_REL/ in the workspace .gitignore"
+  if remove_line "$ROOT/.gitignore" "/$DIR_REL/" || remove_line "$ROOT/.gitignore" "$DIR_REL/"
+  then ok "[$REPO] removed $DIR_REL/ from the workspace .gitignore"
   else skip "[$REPO] 3. $DIR_REL/ not in the workspace .gitignore"; fi
 
   # 3.1. workspace .cursorindexingignore (inverse of `aiworks add` step 3.1.1) ───

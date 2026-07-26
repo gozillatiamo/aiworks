@@ -25,52 +25,108 @@ aiworks cursor --user          # link the Claude plugin skills into ~/.agents/sk
 | Hooks | `hooks` in `.claude/settings.json` | `.cursor/hooks.json` — **generated** |
 | Permissions | `permissions` in `.claude/settings.json` | `.cursor/cli.json` — **generated** |
 | — | `scripts/cursor/hook-shim.template.sh` | `.cursor/hooks/hook-shim.sh` — **copied** |
+| Each repo's instruction + rules, for a **root** session | `<repo>/CLAUDE.md`, `<repo>/.claude/rules/` | `.cursor/rules/repos/<repo>/*.mdc` — **generated** |
 
-Only those last three are not symlinks; the rest is one file read by both tools. Rule frontmatter
+Only those last four are not symlinks; the rest is one file read by both tools. Rule frontmatter
 therefore carries `paths:` (Claude) **and** `globs:` (Cursor) — `aiworks cursor` keeps them in step,
 so never hand-add one without the other. Why it is built this way:
 [ADR 0004](../adr/0004-cursor-as-a-generated-mirror.md).
 
-## Open Cursor at the repo you are working in
+## Working from the workspace root
 
-**This is the one thing that will bite you.** Cursor does not pick up configuration from
-subdirectories the way Claude Code does. Working from the workspace root gives you the root's rules,
-skills, and subagents — and **none** of any repo's.
+Cursor does not read configuration from subdirectories the way Claude Code does. A root session
+gets the root's own config and, natively, **nothing** from any repo — measured, not assumed:
 
-Measured, not assumed, in both surfaces:
+- `cursor-agent` at the workspace root sees no nested `AGENTS.md`, no nested rules and no nested
+  skills, even after reading a file inside that subtree.
+- The **multi-root `ai-workspace.code-workspace` does not fix it.** Asked in the IDE what
+  `paotung-template`'s `data-cy` convention is without reading files, the agent could not answer.
+  Registering a repo as a folder root is not the same as Cursor loading that root's `.cursor/`.
 
-- `cursor-agent` run from the workspace root sees no nested `AGENTS.md`, no nested rules and no
-  nested skills — even after it has read a file inside that subtree.
-- The **multi-root `ai-workspace.code-workspace` does not fix it either.** Asked in the IDE what
-  `paotung-template`'s `data-cy` convention is without reading files, the agent could not answer:
-  it knew the answer lived in a repo rule and offered to go read it. Registering a repo as its own
-  folder root is not the same as Cursor loading that root's `.cursor/` config.
+What Cursor *does* honour from the root is a rule whose glob is **path-prefixed**. A root rule
+globbed `game/src/**` fires on `game/src/adapter.rs` and stays silent everywhere else. So
+`aiworks cursor` generates one slice per repo under `.cursor/rules/repos/<repo>/`: the repo's
+`CLAUDE.md` as an always-in-repo rule (`<repo>/**`), plus every one of its rules with each glob
+re-scoped — `src/**` becomes `<repo>/src/**`. A rule with no glob at all is repo-wide on the Claude
+side, so its root form is `<repo>/**`.
 
-So: **`cd <repo> && cursor .`**, or run `cursor-agent` from inside the repo. That is the only
-arrangement measured to give an agent the repo's own instruction, rules and skills.
+Verified end to end from the root: reading `game/src/adapter.rs` pulls in `game/CLAUDE.md` and the
+four `game` rules whose globs match — and reading `backoffice/src/svg-icons/index.tsx` pulls in
+`backoffice`'s and nothing of `game`'s. Prefixing is what makes that true: `src/**` is the identical
+glob in 20 of 20 repos here, so plain copies would put twenty contradictory coding standards on every
+file.
 
-The `.code-workspace` file is still worth opening for the Source Control panels — just do not expect
-it to configure the agent.
+### Two kinds of slice, because Cursor has two triggers
 
-### The injector, and where it currently stops
+Cursor picks a rule's type from its frontmatter, and the type decides when the body reaches the model:
 
-`.claude/hooks/dev-wrapper/pretool-repo-context.sh` exists to close this by hand: when a tool
-touches a path under `<repo>/` from a workspace-root session, it injects that repo's `CLAUDE.md`
-plus the rules whose globs match the touched file, once per repo per session.
+| Type | Frontmatter | Body enters context |
+|---|---|---|
+| Always | `alwaysApply: true` | every turn |
+| Auto Attached | `globs:` | when a matching file is in context |
+| Agent Requested | `description:`, **no** `globs:` | the agent sees the description and fetches the body |
 
-- **Claude Code: works.** Reading `game/src/adapter.rs` from the workspace root pulls in
-  `game/CLAUDE.md` and its `src/**` rules. Worth having on its own — Claude Code picks up a nested
-  `CLAUDE.md` but not a nested `.claude/rules`, so this was a gap there too.
-- **Cursor: emits, but does not land.** Traced live at this workspace root, the hook produces ~3.8 kB
-  of valid `additional_context` on `preToolUse` and the model then reports having received nothing.
-  Every isolated reproduction delivers — shim or no shim, one hook or ten, `Read|Write|Edit` matcher,
-  4 kB markdown payload, alongside `sessionStart` context, with `cli.json` present, reading a file
-  inside a nested gitignored git repo. None of those reproduce the failure, and the root session is
-  otherwise correctly configured (it quotes its own `AGENTS.md`). Unresolved; the cause is something
-  about the real workspace root that the reproductions do not capture.
+The per-rule slices are **Auto Attached** — right for the case that matters while working, and inert
+otherwise. Ask at the workspace root *"what is the data-cy convention in paotung-template?"* with no
+file open and they correctly do nothing; that is the definition, not a fault.
 
-So for Cursor, **open the repo** remains the working answer. The hook costs nothing while it is
-inert, and it already pays for itself on the Claude Code side.
+So each repo also gets `about.mdc`, description-only and deliberately **without** globs, which makes
+it **Agent Requested**: Cursor lists it, and the agent pulls it in when the question is about that
+repo. Measured — the question above then answers from the real rule with no file of the repo opened.
+
+The card carries the repo's `CLAUDE.md` inline (a few kB; it answers most repo-level questions in one
+hop) plus an **index** of the repo's rules — name, description, path — rather than their text.
+Concatenating them would drop 54 kB of `agent-webservice` into context on any mention of the name.
+
+**One limit worth knowing.** An Agent Requested body is *fetched*, which is a read. Under a literal
+"answer without reading anything" constraint no repo's conventions can reach a root session, and the
+only configuration that would is `alwaysApply: true` on all 21 — 262 kB every turn. Not a trade worth
+making; open the repo instead when you want it all resident.
+
+**Still missing from a root session: a repo's own skills** (each repo carries 6–7). If you need
+those, or you are doing sustained work in one repo, **`cd <repo> && cursor .`** remains the better
+arrangement. The `.code-workspace` file is worth opening for the Source Control panels either way.
+
+### Ignore the files, never the directory
+
+The slices are gitignored — they are derived from twenty-one other repositories and `aiworks sync`
+rebuilds them. **How** they are ignored decides whether the feature works at all:
+
+| `.gitignore` entry | Effect |
+|---|---|
+| `.cursor/rules/repos/**/*.mdc` | ignores the **files** — Cursor still reads them ✅ |
+| `.cursor/rules/repos/` | ignores the **directory** — Cursor reads nothing ❌ |
+
+Cursor prunes an ignored directory rather than descending into it, so rules inside one are never
+discovered. Measured in a single run with four rules and a tracked control: every file-level-ignored
+rule fired — including one with no negation anywhere — and the directory-level ones stayed silent.
+Nothing recovers a pruned directory afterwards: negating in `.cursorindexingignore` or
+`.cursorignore` does not bring it back (also measured, and Cursor's docs note that a negation cannot
+re-include through an excluded parent). Cursor's rules documentation says nothing about ignore files
+in either direction, so this is measurement, not spec.
+
+**The same trap arrives from the other direction: repo-clone patterns must be anchored.** A bare
+`game/` matches at every depth, so it excludes `.cursor/rules/repos/game/` as well and silently
+deletes that repo's whole slice. `aiworks add` writes `/game/`; `aiworks cursor` reports any bare
+pattern it finds, naming it. Applies to `.git/info/exclude` too.
+
+Drift is caught separately: `aiworks cursor --check` diffs every slice against what it would write,
+so a stale one fails CI rather than quietly serving an out-of-date convention.
+
+### The injector — the Claude Code half of the same problem
+
+`.claude/hooks/dev-wrapper/pretool-repo-context.sh` solves this for Claude Code, which has the
+mirror-image gap: it picks up a nested `CLAUDE.md` but not a nested `.claude/rules`. When a tool
+touches a path under `<repo>/`, the hook injects that repo's instruction plus the rules whose globs
+match, once per repo per session. Verified: reading `game/src/adapter.rs` from the root pulls in
+`game/CLAUDE.md` and its `src/**` rules.
+
+Under Cursor the same hook **emits but does not land** — traced live, it produces ~3.8 kB of valid
+`additional_context` on `preToolUse` and the model reports receiving nothing. Every isolated
+reproduction delivers (shim or no shim, one hook or ten, 4 kB payload, alongside `sessionStart`
+context, inside a nested gitignored repo), so the cause is something about the real root that the
+reproductions do not capture. It is not worth chasing: the generated slices cover Cursor by a
+different mechanism, and the hook still earns its place on the Claude Code side.
 
 ## Set your model to `auto`
 
