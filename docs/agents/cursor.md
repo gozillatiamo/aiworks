@@ -10,8 +10,10 @@ The Cursor layer is *generated*, never hand-edited. Author on the Claude side; r
 aiworks cursor                 # root + every repo (add / sync already do this)
 aiworks cursor <repo>          # one repo
 aiworks cursor --check         # verify only; exit 1 on drift — use it in CI
-aiworks cursor --user          # link the Claude plugin skills into ~/.agents/skills
 ```
+
+(`--user` is still accepted and does nothing: the plugin skills moved to project scope and
+are linked on every root run.)
 
 ## What lives where
 
@@ -20,6 +22,7 @@ aiworks cursor --user          # link the Claude plugin skills into ~/.agents/sk
 | Project instruction | `CLAUDE.md` | `AGENTS.md` → symlink |
 | Rules | `.claude/rules/*.md` | `.cursor/rules/*.mdc` → symlink per file |
 | Skills | `.claude/skills/` | `.cursor/skills` → symlink (dir) |
+| Plugin skills (`caveman`, …) | `~/.claude/plugins/…` | `.claude/skills/<name>` → symlink — **generated, git-ignored** |
 | Subagents | `.claude/agents/` | `.cursor/agents` → symlink (dir) |
 | MCP | `.mcp.json` (root) | `.cursor/mcp.json` → symlink (root only) |
 | Hooks | `hooks` in `.claude/settings.json` | `.cursor/hooks.json` — **generated** |
@@ -149,11 +152,35 @@ MCP writes as well as file writes, which would break every one of our read-only 
 all act through the tracker/vcs/notify adapters or through MCP rather than through file edits. The
 guard hooks are the enforcement layer that does carry over.
 
-**Plugin skills**, unless you run `aiworks cursor --user`. Claude plugin skills live under
-`~/.claude/plugins/marketplaces/…`, which Cursor does not scan; `--user` links them into
-`~/.agents/skills`, which it does. Personal machine state — nothing committed. The `plugin:skill`
-form (`caveman:caveman`) does not resolve in Cursor either way; a skill referenced that way is
-simply not found.
+**The `plugin:skill` NAME.** `caveman:caveman` does not resolve in Cursor — a skill referenced
+that way is simply not found. The skill itself now does reach Cursor: `aiworks cursor` links every
+**enabled** plugin's skills to `.claude/skills/<name>`, which Cursor reads through the
+`.cursor/skills` link, so `caveman:caveman` in Claude Code and `/caveman` in Cursor are the same
+`SKILL.md` and cannot drift. That is why every agent file names both forms.
+
+Two details of that linking, both learned the hard way:
+
+- The links are **git-ignored** (absolute per-machine paths under `$HOME`; committing one hands a
+  teammate a dangling skill directory) — and unlike the rules mirror, ignoring the *directory* is
+  safe here. **Measured, not assumed by symmetry:** with a skill dir listed in `.gitignore`,
+  `cursor-agent -p` still invoked it and printed its token. For rules, the same shape made Cursor
+  skip the whole tree.
+- Only **enabled** plugins are linked, resolved per plugin rather than per marketplace. A
+  marketplace clone carries every plugin it offers (`claude-plugins-official` alone ships discord,
+  imessage, telegram, security, hookify, …), and at project scope Claude Code picks
+  `.claude/skills` up immediately — so an unfiltered sweep silently widens the workspace's own
+  skill surface, which it did on the first run.
+
+A workspace skill of the same name always wins and is left alone (`karpathy-guidelines` is the
+live case).
+
+**A prompt rewrite on `Task`.** `pretool-agent-context.sh` bakes the resolved output language
+(and, for a definition-less agent type, the compression rule) into a spawn brief by returning
+`updatedInput`. The shim translates that to `updated_input` correctly — asserted offline against a
+Cursor-shaped `Task` payload — but Cursor ignores it: a subagent spawned through `cursor-agent`
+answered NO when asked whether its instructions contained the injected string. So in Cursor those
+two conventions arrive the way they always did, through `AGENTS.md` and the agent file's own
+`## Output language` block, not mechanically.
 
 **`tool_response` on postToolUse.** Cursor does not send it, so `posttool-output-warden.sh`
 degrades to a no-op there. Nothing to translate — the field does not exist.
@@ -191,10 +218,10 @@ Change a hook by editing it under `.claude/hooks/`. Change the *translation* by 
 
 ## Onboarding a teammate
 
-1. `aiworks sync` — clones the repos and projects the Cursor layer as part of the run.
-2. `aiworks cursor --user` — makes the Claude plugin skills visible to Cursor.
-3. Set the Cursor model to `auto`.
-4. Open `<workspace>.code-workspace`, or open one repo at a time. Not the meta-repo folder.
+1. `aiworks sync` — clones the repos and projects the Cursor layer as part of the run. That
+   includes the plugin skills, so nothing extra is needed to get `caveman` in Cursor.
+2. Set the Cursor model to `auto`.
+3. Open `<workspace>.code-workspace`, or open one repo at a time. Not the meta-repo folder.
 
 MCP servers need a one-time per-server approval in Cursor (`cursor-agent mcp list` shows them as
 `not loaded (needs approval)` until then).

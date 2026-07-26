@@ -157,6 +157,22 @@ const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
   ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write ALL prose — chat, ticket description & comments, PR/MR description & review discussion, and the .html render of a plan — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). Code, checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files), AND ANY file you author with a .md extension (plans, testcases, PRD/summary Markdown in agent_logs/) are NEVER Thai — the th prose rule applies to chat, tickets, PR/MR discussion, Slack, and .html docs only.'
   : ''
 
+// Every agent spawned with a NAMED agentType inherits caveman from its .claude/agents/
+// def, where `skills: - caveman:caveman` is preloaded at spawn — measured, not assumed:
+// the skill's own text was present in 5/5 probe transcripts. A `general-purpose` agent
+// has no def, so it inherits nothing, and that is the one spawn path where this
+// workspace's output-compression rule has to travel in the prompt itself. Appended to
+// those briefs ONLY (guard-backstop, ws-root, plan-guard) — a def-backed agent would
+// just pay for the same instruction twice.
+//
+// The INPUT half is the part that is easy to get wrong, and it has two sides. A brief
+// that ARRIVES compressed has lost context the agent cannot get back — so the FIRST
+// brief, the one that spawns an agent, is never compressed. Every message after that
+// spawn is, because the context already landed and a follow-up is a pointer rather than
+// a context transfer. Style only, though: a follow-up carrying a new fact carries it whole.
+// It matters most for guard-backstop, whose findings become PR comments a human reads.
+const CAVEMAN_DIRECTIVE = ' CAVEMAN_DIRECTIVE — invoke `/caveman:caveman` and write every report, comment, and reply ultra-compressed: drop articles/filler/pleasantries/hedging, fragments are fine, technical accuracy stays FULL, and code + identifiers + error strings stay verbatim. It governs how you WRITE, never what you DO: never skip a tool call, never skip a tool-availability check, and never claim a tool or shell is unavailable without first actually running it. It never applies to your INPUT either: the brief that spawned you stands in FULL — do not compress or summarize it away. If you spawn or message another agent, its FIRST brief goes out in FULL for the same reason, while every follow-up after that spawn IS compressed (the context already landed; a follow-up is a pointer, not a context transfer) — style only, so any NEW fact in a follow-up still goes in complete.'
+
 // ──────────────────────────────────────────────────────────────────────────
 // Inputs
 // ──────────────────────────────────────────────────────────────────────────
@@ -738,7 +754,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       log(`⚠️  [${R}] guardian subagent could not complete (${msg}) — running checklist inline via neutral agent (backstop).`)
       try {
         const bk = await agent(
-          `${tag(R, 'general-purpose', 'guard-backstop', reviewRound)} Static code-quality pass over the diff of ${prRef}. ${inRepo} Read the diff (\`git diff ${rp.base_branch}...${rp.work_branch}\`) and check the CHANGED lines for: ${desc.guardianFocus}. Post each concrete file:line issue via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<issue + fix>"\` and list under "blocking" (no generic advice). Return passed:true when clean, else passed:false with the blocking list.` + LANGUAGE_DIRECTIVE,
+          `${tag(R, 'general-purpose', 'guard-backstop', reviewRound)} Static code-quality pass over the diff of ${prRef}. ${inRepo} Read the diff (\`git diff ${rp.base_branch}...${rp.work_branch}\`) and check the CHANGED lines for: ${desc.guardianFocus}. Post each concrete file:line issue via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<issue + fix>"\` and list under "blocking" (no generic advice). Return passed:true when clean, else passed:false with the blocking list.` + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
           { agentType: 'general-purpose', phase: 'Review', label: `guard-backstop:${ticket}:${R}#${reviewRound}`, schema: GATE_SCHEMA },
         )
         if (bk) return { ...bk, via_backstop: true }
@@ -883,7 +899,7 @@ const wsRootRes = await safeAgent(
   `${tag('all', 'workspace', 'kickoff')} One-shot setup for the ${ticket} planning phase — touch NO git, NO tracker, write NO plan files. Your cwd IS the workspace (org) root (the dir that holds .claude/ and workspace.config.yaml).
 1. Print its ABSOLUTE path with \`pwd -P\` (resolve symlinks).
 2. Pre-create the plan-artifact dirs so later writes have a target UNDER each repo (paths are relative to your cwd — do NOT cd): \`mkdir -p ${repoDirs.map((d) => `"${d}/agent_logs" "${d}/agent_logs/development-planner"`).join(' ')}\`.
-Return workspace_root = the absolute path from step 1.`,
+Return workspace_root = the absolute path from step 1.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `ws-root:${ticket}`, schema: WS_ROOT_SCHEMA },
 )
 const WORKSPACE_ROOT = (wsRootRes?.workspace_root || '').trim().replace(/\/+$/, '')
@@ -1000,7 +1016,7 @@ For each file <f> of clone dir <dir>:
   1. If "<dir>/<f>" already exists → correctly placed; add to that repo's "ok".
   2. Else if the bare workspace-root "<f>" exists (a misfile) → \`mkdir -p\` the target's parent under "<dir>", \`mv "<f>" "<dir>/<f>"\`, and add to "relocated".
   3. Else → missing everywhere; add to "missing".
-Use plain shell only (test -f, mkdir -p, mv). Touch NO git, NO tracker, and NO file other than the relocations above. Do NOT move or alter the workspace-root run summaries (e.g. ${ticket}-DEV-CYCLE-SUMMARY.md) or anything not listed. Return the per-repo { repo, ok, relocated, missing } report.`,
+Use plain shell only (test -f, mkdir -p, mv). Touch NO git, NO tracker, and NO file other than the relocations above. Do NOT move or alter the workspace-root run summaries (e.g. ${ticket}-DEV-CYCLE-SUMMARY.md) or anything not listed. Return the per-repo { repo, ok, relocated, missing } report.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `plan-guard:${ticket}`, schema: PLAN_GUARD_SCHEMA },
 )
 const relocatedAll = (guard?.repos || []).flatMap((g) => (g.relocated || []).map((f) => `${g.repo}:${f}`))

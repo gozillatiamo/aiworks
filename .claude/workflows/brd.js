@@ -47,6 +47,20 @@ const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
   ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write your chat/Slack prose in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). ANY file you author with a .md extension — including the run-summary Markdown in agent_logs/ and the BRD file (docs/brd/<key>.md) — is NEVER Thai; the th prose rule applies to chat, tickets, PR/MR discussion, Slack, and .html docs only.'
   : ''
 
+// Every agent spawned with a NAMED agentType inherits caveman from its .claude/agents/
+// def, where `skills: - caveman:caveman` is preloaded at spawn — measured, not assumed:
+// the skill's own text was present in 5/5 probe transcripts. A `general-purpose` agent
+// has no def, so it inherits nothing, and that is the one spawn path where this
+// workspace's output-compression rule has to travel in the prompt itself. Appended to
+// those briefs ONLY — a def-backed agent would just pay for the same instruction twice.
+//
+// The INPUT half is the part that is easy to get wrong, and it has two sides. A brief
+// that ARRIVES compressed has lost context the agent cannot get back — so the FIRST
+// brief, the one that spawns an agent, is never compressed. Every message after that
+// spawn is, because the context already landed and a follow-up is a pointer rather than
+// a context transfer. Style only, though: a follow-up carrying a new fact carries it whole.
+const CAVEMAN_DIRECTIVE = ' CAVEMAN_DIRECTIVE — invoke `/caveman:caveman` and write every report, comment, and reply ultra-compressed: drop articles/filler/pleasantries/hedging, fragments are fine, technical accuracy stays FULL, and code + identifiers + error strings stay verbatim. It governs how you WRITE, never what you DO: never skip a tool call, never skip a tool-availability check, and never claim a tool or shell is unavailable without first actually running it. It never applies to your INPUT either: the brief that spawned you stands in FULL — do not compress or summarize it away. If you spawn or message another agent, its FIRST brief goes out in FULL for the same reason, while every follow-up after that spawn IS compressed (the context already landed; a follow-up is a pointer, not a context transfer) — style only, so any NEW fact in a follow-up still goes in complete.'
+
 // Round cap — hard ceiling of 3 for any review↔revise loop (mirrors dev-cycle's
 // MAX_GATE_ROUNDS). This linear pipeline has no loop wired yet; the constant
 // bounds a future one to ≤3 (override LOWER via args.maxRounds — never higher).
@@ -146,7 +160,7 @@ async function writeSummary(runResult) {
 // ──────────────────────────────────────────────────────────────────────────
 phase('Research')
 const research = await agent(
-  `${tag('research', 'research')} You are the discovery pass for a Business Requirements Document on ${scope}. The product is described in workspace.config.yaml (org.product) and the workspace CLAUDE.md — ground your research in that product. Research with the web: market size/trend, direct & indirect competitors (their offering + pricing/monetization), user pain points, and the concrete opportunity for this scope. Be specific and cite sources. Return structured findings — keep it tight and decision-useful.`,
+  `${tag('research', 'research')} You are the discovery pass for a Business Requirements Document on ${scope}. The product is described in workspace.config.yaml (org.product) and the workspace CLAUDE.md — ground your research in that product. Research with the web: market size/trend, direct & indirect competitors (their offering + pricing/monetization), user pain points, and the concrete opportunity for this scope. Be specific and cite sources. Return structured findings — keep it tight and decision-useful.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', phase: 'Research', label: `research:${workKey}`, schema: RESEARCH_SCHEMA },
 )
 log(`Research: ${research.competitors?.length ?? 0} competitors, ${research.opportunities?.length ?? 0} opportunities`)

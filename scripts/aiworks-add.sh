@@ -924,6 +924,14 @@ read -r -d '' BASE_SETTINGS <<'JSON'
       "Bash(sudo *)", "Bash(curl * | sh)", "Bash(curl * | bash)"
     ]
   },
+  "enabledPlugins": {
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
+    }
+  },
   "hooks": {
     "PreToolUse": [
       { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
@@ -944,8 +952,9 @@ read -r -d '' BASE_SETTINGS <<'JSON'
 }
 JSON
 if have jq; then
-  # Merge base over existing (existing * base): base wins on hooks/permissions/env, while
-  # any existing enabledPlugins (from steps 5/6) is preserved.
+  # Merge base over existing (existing * base): base wins on the keys it carries, and
+  # since `*` is a DEEP merge on objects, a plugin the repo enabled itself (steps 5/6)
+  # survives alongside the baseline's.
   #
   # The merge result decides whether to write, replacing an old
   # `grep -q posttool-output-warden && skip` gate. That gate asked "did ANY
@@ -954,14 +963,25 @@ if have jq; then
   # and the existing ones reported "already has the workspace hooks" while
   # missing it. Comparing the merge makes a no-op a genuine no-op and an added
   # hook propagate on the next `aiworks sync`.
-  # On an EXISTING settings.json the baseline asserts only `hooks`. It used to
-  # assert everything, which made the first content-aware sync also push the
-  # baseline's `permissions` into 21 repos — quietly granting Write/Edit and
-  # Bash(rtk *) wherever a repo had chosen a narrower set. Hooks are the shared
-  # safety net and SHOULD converge; permissions are that repo's own call. A repo
-  # with no settings.json yet still gets the whole baseline (the `else` below).
+  # On an EXISTING settings.json the baseline asserts only the keys that are meant to
+  # CONVERGE workspace-wide. It used to assert everything, which made the first
+  # content-aware sync also push the baseline's `permissions` into every onboarded repo — quietly
+  # granting Write/Edit and Bash(rtk *) wherever a repo had chosen a narrower set. Hooks
+  # are the shared safety net and SHOULD converge; permissions are that repo's own call.
+  #
+  # `enabledPlugins` + `extraKnownMarketplaces` converge for the same reason as hooks: a
+  # repo-only session is a first-class way to work here, and caveman (output compression) is
+  # supposed to hold in one. These two keys DECLARE and enable the plugin; they do NOT
+  # install it — measured, because the opposite reads as working: a repo carrying both keys
+  # still answered NOT-FOUND for `caveman:caveman` while the workspace root answered
+  # AVAILABLE under the same probe. The install is a machine-local step, done once at USER
+  # scope by `ensure_claude_plugins` in .superset/lib.sh (setup step 3), which covers the
+  # root and every clone at once. Both are OBJECTS, so `*` deep-merges them:
+  # a repo that enables its own plugins keeps them and gains caveman. (Arrays, by
+  # contrast, are replaced wholesale — which is precisely why `permissions` stays out.)
+  # A repo with no settings.json yet still gets the whole baseline (the `else` below).
   if [[ -f "$SETTINGS_FILE" ]]; then
-    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '{hooks}')"
+    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '{hooks, enabledPlugins, extraKnownMarketplaces}')"
   else
     base_for_merge="$BASE_SETTINGS"
   fi

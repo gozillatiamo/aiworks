@@ -111,7 +111,11 @@ and was missed twice, since it depended on the model remembering to act; a Sessi
 injection was tried next and was still missed over a long tool-heavy session (the one-time
 injection gets crowded out) — the per-turn reinjection closes that gap. If the hook's
 injected context is ever missing (e.g. a stripped session), fall back to reading the file
-directly before your first output. When the resolved language is **`th`**, write **English spine,
+directly before your first output. **A subagent gets it mechanically too:**
+`.claude/hooks/dev-wrapper/pretool-agent-context.sh` (`PreToolUse(Agent)`) appends the resolved
+`LANGUAGE_DIRECTIVE` to every spawn brief, so a direct `Agent` spawn is now as deterministic as a
+workflow one — the imperative "read the file first" line in each agent file had still let two of
+five probe agents resolve `en` on a `th` workspace. When the resolved language is **`th`**, write **English spine,
 Thai prose** — prose in Thai (this CLI chat, tickets, PR/MR discussion, code review, Slack,
 and the `.html` interactive render of a plan) while the English **spine** stays English: titles +
 every section heading + labels/enum values, ALL code + code comments + git commit messages + branch
@@ -119,6 +123,42 @@ names, and technical/transliterated/domain terms + proper nouns (Arabic numerals
 `.md` file you author is English — always** (plans, testcases, PRD/BRD/summary Markdown in
 `agent_logs/`, and every checked-in repo doc — `docs/`, `README`, ADRs, committed PRD/BRD files):
 the `th` prose rule never touches `.md`. Default **`en`** ⇒ everything English, no change.
+
+## Output compression (caveman)
+Every session and **every agent** writes ultra-compressed prose — the `caveman:caveman`
+plugin skill. It reaches each spawn path by a different mechanism, and all three are
+mechanical rather than remembered: the **main session** gets it from the plugin's own
+`SessionStart`/`UserPromptSubmit` hooks; a **named agent** preloads it via
+`skills: - caveman:caveman` in its `.claude/agents/<name>.md` frontmatter (measured, not
+assumed — the skill's text was present in 5/5 probe transcripts); a **def-less agent type**
+(`general-purpose`, `Explore`, `Plan`) has no frontmatter to preload from, so it is fed a
+`CAVEMAN_DIRECTIVE` — by `pretool-agent-context.sh` for a direct `Agent` spawn, and by a
+constant in each workflow for a workflow spawn (`grep agentType` if you add a call site).
+
+⚠️ **Compression is an OUTPUT rule, and the FIRST brief is INPUT.** The brief that *spawns*
+an agent goes in **FULL** — never compressed, summarized, or trimmed to save tokens. That
+one message is the agent's whole world: it cannot recover context you dropped and has no
+way to know something is missing, so a starved brief reads as a bad agent rather than a
+starved one.
+
+**Every message after that is caveman** — a follow-up, re-review ping, next-slice nudge, or
+`SendMessage` to a live agent goes out compressed, because the context already landed and
+the follow-up is a pointer, not a context transfer. Compression there is style, never
+content: any NEW fact a follow-up carries (a QA bug report, a failing line, a changed
+requirement) still goes in complete — drop the filler, never the facts.
+
+The same boundary applies inside an agent: caveman governs how it **writes**, never what it
+**does** — it must never skip a tool call, skip a tool-availability check, or claim a
+tool/shell is unavailable without actually running it first.
+
+A **repo-only session** (`cd <repo> && claude`) is covered too: each repo's
+`.claude/settings.json` enables the plugin, and `.superset/setup.sh` installs it once at
+**user** scope — declaring alone is not installing, which was measured, not assumed.
+
+**In Cursor the skill is `/caveman`, not `caveman:caveman`** — Cursor cannot resolve the
+`plugin:skill` form at all. `aiworks cursor` links each enabled plugin's skills to
+`.claude/skills/<name>` (git-ignored), which Cursor reads through `.cursor/skills`, so both
+names are the same file. Every agent file names both forms; see `docs/agents/cursor.md`.
 
 ## Product Overview
 {{PRODUCT_DESCRIPTION}}

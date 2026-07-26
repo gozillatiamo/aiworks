@@ -61,8 +61,9 @@ Commands:
   cursor     Project the workspace's agent config onto Cursor, for the root and every repo:
              AGENTS.md, .cursor/{skills,agents,rules/*.mdc,mcp.json} as SYMLINKS back to the
              Claude-side files (one copy on disk, no drift), plus a generated
-             .cursor/{hooks.json,cli.json,hooks/hook-shim.sh}. add / sync run this
-             automatically. Use --check in CI, --user to expose the Claude plugin skills.
+             .cursor/{hooks.json,cli.json,hooks/hook-shim.sh}, and the enabled plugins'
+             skills linked into .claude/skills (git-ignored) so Cursor can see them too.
+             add / sync run this automatically. Use --check in CI.
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
              adapter .env, link adapters into each repo + git-exclude the links so they never
              dirty the product repo). Pass-through — forwards any extra args.
@@ -85,9 +86,8 @@ Examples:
   aiworks remove --all --purge --force  # …and delete every clone too (force past dirty/unpushed)
   # Cursor face of the same config (add / sync already do this for you):
   aiworks cursor                        # root + every repo
-  aiworks cursor backoffice             # just one repo
+  aiworks cursor <repo>                 # just one repo
   aiworks cursor --check                # verify only; exit 1 on drift (CI)
-  aiworks cursor --user                 # link the Claude plugin skills into ~/.agents/skills
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
   aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
