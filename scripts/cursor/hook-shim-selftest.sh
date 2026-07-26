@@ -46,6 +46,25 @@ out=$(printf '{"hook_event_name":"beforeShellExecution","command":"cat %s","cwd"
       | $S '.claude/hooks/dev-wrapper/pretool-env-guard.sh')
 check "top-level command is lifted into tool_input" '"permission":"deny"' "$out"
 
+echo "== a rewritten command survives the crossing =="
+# Cursor honours a rewrite as `updated_input`, on preToolUse only. Claude spells the
+# same thing `hookSpecificOutput.updatedInput`; drop the translation and a guard that
+# fixes a command (codegraph's, say) silently stops fixing it, with no error anywhere.
+# A file, not an inline string: the shim runs its argument through `bash -c`, and a
+# nested-quoted jq one-liner does not survive that intact.
+RTMP="$(mktemp -d)"; trap 'rm -rf "$RTMP"' EXIT
+REWRITER="$RTMP/rewriter.sh"
+cat > "$REWRITER" <<'REW'
+#!/usr/bin/env bash
+cat >/dev/null
+jq -nc '{hookSpecificOutput:{hookEventName:"PreToolUse",updatedInput:{command:"echo fixed"}}}'
+REW
+chmod +x "$REWRITER"
+out=$(printf '{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"echo broken","cwd":""},"session_id":"s1"}' \
+      | $S "$REWRITER")
+check "updatedInput becomes updated_input"  '"updated_input"'        "$out"
+check "the rewritten command comes through" '"command":"echo fixed"' "$out"
+
 echo "== resilience =="
 out=$(printf '{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"ls"},"session_id":"s1"}' \
       | $S 'exit 7')

@@ -30,6 +30,8 @@
 #                             -> {additional_context}
 #                           {decision:"block",reason} / permissionDecision
 #                             -> {permission:"deny",agent_message}
+#                           {hookSpecificOutput:{updatedInput}} -> {updated_input}
+#                             (preToolUse only — beforeShellExecution has no such field)
 #                           exit 2 + stderr -> {permission:"deny",agent_message}
 #                           plain stdout on UserPromptSubmit -> additional_context
 #
@@ -136,9 +138,15 @@ if printf '%s' "$stdout_raw" | jq -e . >/dev/null 2>&1; then
     | (.hookSpecificOutput.permissionDecision // .permissionDecision // null) as $perm
     | (.hookSpecificOutput.permissionDecisionReason // .permissionDecisionReason
        // .reason // null) as $why
+    | (.hookSpecificOutput.updatedInput // .updatedInput // null) as $upd
     | (if .decision == "block" then "deny" else null end) as $blocked
     | {}
     | (if $ctx  != null then .additional_context = $ctx else . end)
+    # A rewritten tool input. Cursor spells it `updated_input` and honours it on
+    # preToolUse only — beforeShellExecution has no such field, so a hook that
+    # rewrites a command must be wired through preToolUse (which is what
+    # `aiworks cursor` generates) or the rewrite is silently dropped.
+    | (if $upd != null then .updated_input = $upd else . end)
     | (if $blocked != null then .permission = "deny"
        elif $perm == "allow" then .permission = "allow"
        elif $perm == "deny"  then .permission = "deny"
