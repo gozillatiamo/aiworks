@@ -17,8 +17,12 @@
 #   PERSONAL OVERRIDES: a git-ignored workspace.config.local.yaml overrides the shared config at
 #   RUNTIME (chat / agents / interactive skills), but is deliberately NOT read here — this
 #   committed mirror always reflects workspace.config.yaml (shared) ONLY, so no personal pref
-#   ever leaks into a tracked file. (`language` still reaches headless-workflow agents via their
-#   per-agent pointer, which reads the local file at runtime — see docs/agents/language.md.)
+#   ever leaks into a tracked file. (The personal OUTPUT preferences still reach a headless run at
+#   RUNTIME, not through this mirror: dev-cycle.js's resolve-runtime-config sub-agent reads the local
+#   file local-first and resolves `language` + `planning.to_html` into RESOLVED_LANGUAGE /
+#   RESOLVED_PLAN_TO_HTML, making the consts it generates here the FALLBACK DEFAULTS for those two —
+#   see docs/agents/language.md + docs/adr/0003. Control-flow consts (auto_merge, auto_approve,
+#   statuses, REPOS) are shared-only, with no runtime override at all.)
 #
 # WHAT IT DERIVES (workspace.config.yaml → dev-cycle.js CONFIG)
 #   tracker.ticket_prefix            → const TICKET_PREFIX

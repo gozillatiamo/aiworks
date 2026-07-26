@@ -95,7 +95,12 @@ This is a **multi-repo workspace** (Next.js web apps, the Rust backend, Postgres
    - **Definition of done** — what Noah must satisfy before handing to QA.
 7. **No commit needed.** The plan lives under git-ignored `agent_logs/George_development-planner/` — a local artifact, never committed.
 
-## Planning policy — honor `planning.*` in `workspace.config.yaml`
+## Planning policy — resolve `planning.*` before acting (`to_html` is local-first)
+**If your prompt already carries a resolved planning directive (`PLAN-TO-HTML is ON` / `PLAN-TO-HTML is OFF`, an explicit `planning.auto_approve` value), THAT is AUTHORITATIVE — obey it verbatim and do NOT re-resolve from any file.** The dev-cycle resolves this once per run and bakes it into your prompt; a stale self-resolution must never override it. Otherwise resolve from disk, never from memory — and the two flags resolve from **different** files:
+- **`to_html` — local-first.** Read `workspace.config.local.yaml` (the git-ignored personal override) if it exists **and** has a `planning:` block, and take `to_html` from **that block only** — the merge is **shallow per top-level key**, so a local `planning:` block replaces the shared one whole and a `to_html` absent from it means `false`, *not* the shared file's value. No local `planning:` block ⇒ `workspace.config.yaml`'s `planning.to_html` (default `false`). It is a personal OUTPUT preference: which artifacts a human wants to read.
+- **`auto_approve` — `workspace.config.yaml` ONLY, never the local file.** It is control flow (may execution begin without a human?), and a personal override must never loosen a shared run's approval gate.
+
+State the resolved values + sources in one line (e.g. `Planning resolved: to_html=true (workspace.config.local.yaml), auto_approve=false (workspace.config.yaml)`) before acting.
 - **`planning.to_html: true`** → after the plan markdown exists, ALSO render it to a self-contained interactive doc with **`/write-interactive-docs`** (a `<plan>.html` next to the markdown) and report that path. (The dev-cycle passes this through; honor it on a standalone run too.)
 - **`planning.auto_approve: false`** → the plan needs **human approval before execution**. In the dev-cycle the workflow enforces this by halting after Kickoff; on a standalone run, present the plan and explicitly request approval — do **not** let coding begin until a human approves.
 

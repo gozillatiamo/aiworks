@@ -47,7 +47,11 @@ export const meta = {
 //   merged or distributed).
 // AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
 //   approval before build; re-run with --approve-plan to proceed.
-// PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML.
+// PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML. This
+//   const is only the FALLBACK DEFAULT: like LANGUAGE it is RE-RESOLVED at runtime (local-first) into
+//   RESOLVED_PLAN_TO_HTML below — the value the run actually uses — so a personal
+//   workspace.config.local.yaml `planning: to_html:` reaches a headless run too. It is an output
+//   preference, not control flow; AUTO_APPROVE_PLAN and AUTO_MERGE stay shared-only.
 // NOTIFY / NOTIFY_PROVIDER / NOTIFY_CHANNEL — notify.{enabled,provider,channel}. When NOTIFY is
 //   true AND AUTO_MERGE is false, the final Notify phase posts a "please review" digest (the open
 //   PR/MR per repo) to NOTIFY_CHANNEL via the scripts/notify/ adapter. With auto-merge ON the run
@@ -129,16 +133,25 @@ const FIGMA_DIRECTIVE = (typeof DESIGN_ENABLED !== 'undefined' ? DESIGN_ENABLED 
 // reliably skip the check when absorbed in their actual task). A single dedicated resolver agent,
 // whose ENTIRE job is that one Read, is far more reliable — do it once, here, and bake the result
 // into every downstream prompt instead of hoping each one remembers.
-const LANG_SCHEMA = { type: 'object', additionalProperties: false, required: ['language'], properties: {
-  language: { type: 'string', enum: ['en', 'th'] }, source: { type: 'string' } } }
+//
+// THE SAME RESOLVER ALSO CARRIES planning.to_html (see PLAN_TO_HTML above). Both keys are personal
+// OUTPUT preferences rather than control flow — which artifacts a human wants to read, not what the
+// run does — so both honor the local override; auto_approve / auto_merge / statuses / REPOS stay
+// SHARED-only (a personal pref must never change the pipeline's control flow). One resolver Read
+// covers both keys, so this costs nothing extra over the language check it replaces.
+const RUNTIME_SCHEMA = { type: 'object', additionalProperties: false, required: ['language'], properties: {
+  language: { type: 'string', enum: ['en', 'th'] }, plan_to_html: { type: 'boolean' }, source: { type: 'string' } } }
 let RESOLVED_LANGUAGE = (typeof LANGUAGE !== 'undefined' ? LANGUAGE : 'en')
+let RESOLVED_PLAN_TO_HTML = (typeof PLAN_TO_HTML !== 'undefined' ? PLAN_TO_HTML : false)
 try {
-  const langCheck = await agent(
-    'Read `workspace.config.local.yaml` in the repo root if it exists AND has a `language:` line — that value wins, source="workspace.config.local.yaml". Otherwise read `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". Return ONLY the resolved language ("en" or "th") and the source file — nothing else, no other files, no other analysis.',
-    { agentType: 'documentor', label: 'resolve-language', schema: LANG_SCHEMA },
+  const cfgCheck = await agent(
+    'Resolve two workspace config values, local-first. Read `workspace.config.local.yaml` in the repo root if it exists; else read `workspace.config.yaml`. (1) language: if the local file exists AND has a `language:` line, that value wins, source="workspace.config.local.yaml"; otherwise use `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". (2) plan_to_html: if the local file exists AND has a `planning:` block, read `to_html` from THAT block ONLY — the merge is shallow per top-level key, so a local `planning:` block replaces the shared one whole and a `to_html` absent from it means false, NOT the shared file\'s value; otherwise use `workspace.config.yaml`\'s `planning.to_html` (default false if absent). Return ONLY the resolved language ("en" or "th"), plan_to_html (boolean), and the source file — nothing else, no other files, no other analysis.',
+    { agentType: 'documentor', label: 'resolve-runtime-config', schema: RUNTIME_SCHEMA },
   )
-  if (langCheck?.language === 'en' || langCheck?.language === 'th') RESOLVED_LANGUAGE = langCheck.language
-} catch { /* any failure here keeps the committed-default fallback above */ }
+  if (cfgCheck?.language === 'en' || cfgCheck?.language === 'th') RESOLVED_LANGUAGE = cfgCheck.language
+  if (typeof cfgCheck?.plan_to_html === 'boolean') RESOLVED_PLAN_TO_HTML = cfgCheck.plan_to_html
+} catch { /* any failure here keeps the committed-default fallbacks above */ }
+if (RESOLVED_PLAN_TO_HTML !== PLAN_TO_HTML) log(`planning.to_html resolved to ${RESOLVED_PLAN_TO_HTML} at runtime (committed mirror says ${PLAN_TO_HTML}) — personal workspace.config.local.yaml override.`)
 
 const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
   ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write ALL prose — chat, ticket description & comments, PR/MR description & review discussion, and the .html render of a plan — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). Code, checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files), AND ANY file you author with a .md extension (plans, testcases, PRD/summary Markdown in agent_logs/) are NEVER Thai — the th prose rule applies to chat, tickets, PR/MR discussion, Slack, and .html docs only.'
@@ -239,7 +252,7 @@ const REPO_PLAN_SCHEMA = {
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
     base_branch: { type: 'string' }, work_branch: { type: 'string' },
     figma_url: { type: ['string', 'null'] }, plan_path: { type: 'string' },
-    plan_html: { type: ['string', 'null'] }, // set when PLAN_TO_HTML rendered the plan to interactive HTML
+    plan_html: { type: ['string', 'null'] }, // set when RESOLVED_PLAN_TO_HTML rendered the plan to interactive HTML
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
   },
 }
@@ -908,18 +921,22 @@ const plans = (await parallel(scoped.map((r) => () => {
   const preserveTest = approvePlan
     ? ` APPROVED RE-RUN (--approve-plan) — PRESERVE THE PLAN: FIRST, try to Read ${planPath} (the automation plan) and ${testcasesRel}. If the automation plan EXISTS and is non-empty, the human may have edited it — do NOT re-run /plan-testcases or /plan-automate and do NOT re-publish to the ticket. Read both files as-is and return the structured repo plan FROM them, with plan_path=${planPath} byte-unchanged. ONLY if the automation plan does NOT exist do you run the full planning chain described below.`
     : ''
-  // PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
+  // RESOLVED_PLAN_TO_HTML: after the plan markdown exists, render it to a shareable interactive HTML.
   // The markdown at planPath stays the SOURCE OF TRUTH this workflow reads at build — the HTML
   // is human-only. data-plan-md stays REPO-ROOT-RELATIVE (planRel) per the in-HTML convention;
   // the on-disk file is the absolute planPath. When auto_approve is OFF, turn on plan-approval mode.
   const approvalClause = !AUTO_APPROVE_PLAN
     ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planRel}" (the repo-root-relative path to the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over the on-disk plan at ${planPath} before the re-run.`
     : ''
-  const htmlClause = PLAN_TO_HTML
+  // Both branches state the resolved value EXPLICITLY so the planner never re-resolves it from
+  // disk (its agent file tells it to self-resolve local-first only when no directive is present —
+  // without the OFF clause a personal local override could make it render HTML this run never asked
+  // for, or skip one it did, whenever the resolver above fell back to the committed default).
+  const htmlClause = RESOLVED_PLAN_TO_HTML
     ? (approvePlan
         ? ` PLAN-TO-HTML is ON but this is an APPROVED RE-RUN: the interactive HTML at ${planHtmlPath} was already rendered on the first run — do NOT re-render it (wasted cost). Run /write-interactive-docs to create it ONLY if ${planHtmlPath} is MISSING. Set plan_html=${planHtmlPath}.`
         : ` PLAN-TO-HTML is ON: before returning, ALSO run /write-interactive-docs to render the plan at ${planPath} into a self-contained interactive HTML at ${planHtmlPath} (write it to that ${repoRoot ? 'ABSOLUTE ' : ''}path UNDER the repo, NEVER the workspace root; it must read as a human-facing plan write-up; the markdown at ${planPath} stays the source of truth a later phase executes), and set plan_html to that path in your structured result.${approvalClause}`)
-    : ''
+    : ' PLAN-TO-HTML is OFF for this run — planning.to_html was already resolved for you (local-first) and this is AUTHORITATIVE: do NOT re-check any config file. Render NO interactive HTML; the plan markdown is the only artifact. Leave plan_html null.'
   const prompt = desc.kind === 'test-suite'
     ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
     : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO (base: ${desc.base.feature} for features, ${desc.base.fix} for fixes) — the workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
@@ -930,7 +947,7 @@ const plans = (await parallel(scoped.map((r) => () => {
 // workspace-rooted path is overwritten with the canonical one) — and carry the dependency edges.
 plans.forEach((p) => {
   const m = planMeta[p.repo]
-  if (m) { p.plan_path = m.planPath; if (PLAN_TO_HTML) p.plan_html = m.planHtmlPath }
+  if (m) { p.plan_path = m.planPath; if (RESOLVED_PLAN_TO_HTML) p.plan_html = m.planHtmlPath }
   p.depends_on = (scoped.find((s) => s.repo === p.repo)?.depends_on) || []
 })
 
@@ -941,7 +958,7 @@ plans.forEach((p) => {
 const guardRepos = plans.map((p) => {
   const m = planMeta[p.repo]
   const files = [m.planRel]
-  if (PLAN_TO_HTML) files.push(m.planHtmlRel)
+  if (RESOLVED_PLAN_TO_HTML) files.push(m.planHtmlRel)
   if (m.kind === 'test-suite') files.push(m.testcasesRel) // /plan-testcases output, read by build + the gate
   return { repo: p.repo, repoDir: m.repoDir, files }
 })
@@ -974,7 +991,7 @@ if (missingPlans.length) {
 const waveList = toWaves(plans)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
 log(`Plan artifacts: ${plans.map((p) => `${p.repo}=${p.plan_path}`).join(', ')}`)
-if (PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
+if (RESOLVED_PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)
 log(`Build: all ${plans.length} repo(s) in parallel · merge order: ${waveList.map((w) => `[${w.join(', ')}]`).join(' → ')}`)
 tick('kickoff')
 

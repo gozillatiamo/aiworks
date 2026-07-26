@@ -15,10 +15,26 @@ only, and merely warns when a local file is present. A personal `language` still
 headless workflow run, because the spawned agents read `language` at runtime through their
 per-agent pointer, not the baked `const LANGUAGE`.
 
+The line we draw for *which* keys may be overridden this way is **output preference vs control
+flow**. An output preference decides what a human ends up reading — `language`, and
+`planning.to_html` (does a plan also get an interactive HTML render beside its markdown?). Control
+flow decides what the pipeline *does* — `planning.auto_approve`, `vcs.auto_merge`, the status
+lifecycle, `REPOS`. Only the first group is runtime-resolved: a shared run's approval gate or merge
+policy must never change because of one teammate's git-ignored file. So `dev-cycle.js` resolves
+`language` **and** `planning.to_html` local-first in one `resolve-runtime-config` sub-agent Read,
+and treats the baked `const LANGUAGE` / `const PLAN_TO_HTML` as fallback defaults; it then states
+the resolved `to_html` **explicitly** in each planner prompt (ON *and* OFF), so a planner that would
+otherwise self-resolve from disk can never diverge from the run.
+
 ## Consequences
 
 - Precedence, everywhere read at runtime: `workspace.config.local.yaml` → else
   `workspace.config.yaml`.
+- The merge is **shallow per top-level key**: a local `planning:` block replaces the shared one
+  whole, so a key omitted from it falls to its own default rather than inheriting the shared value.
+  Every reader (agent files included) must resolve it that way, and `planning.auto_approve` is read
+  from the shared file *only* — never from the local one — so a local `planning:` block that sets
+  just `to_html` cannot silently loosen the approval gate.
 - Your personal preference can **never** land in git via the generator — the committed mirror
   stays shared-only by construction.
 - `.superset/setup.sh` symlinks `workspace.config.local.yaml` (and `.claude/settings.local.json`)
