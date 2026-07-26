@@ -193,7 +193,9 @@ silently. When ON, after the verifier passes:
 > So when `artifacts.enabled` is ON and you are running as a subagent: do step 1 (the
 > CSP-safe prep — it is a plain `node` script), then **stop and hand the publish back**.
 > Return the `.artifact.html` path with an explicit *needs publishing by the caller* flag,
-> and say the same thing in your closing summary. Your caller has the tool and finishes it.
+> and say the same thing in your closing summary. Your caller has the tool and finishes
+> steps 2–5 — the publish, the **ticket comment carrying the URL**, and the `<meta>`
+> write-back. Name the ticket `<KEY>` in your hand-back so the caller can post it.
 > Silently skipping the publish is the failure this note exists to prevent: it leaves a doc
 > whose entire purpose was being shareable sitting at a path only your machine can open, and
 > the human is told the work is done. (For the same reason, `pretool-notify-guard.sh` blocks
@@ -214,15 +216,33 @@ silently. When ON, after the verifier passes:
    and verified — no design pass, just publish: `title` = the doc's title, `favicon` = one
    topical emoji. On a Mode-B **update** of a doc already published, pass its recorded URL as
    `url=` so the link stays stable (step 4).
-3. **Share.** The tool publishes **private** and has no sharing input — org visibility is a
+3. **Put the URL on the ticket** (whenever the doc belongs to one — a plan, a spec, a
+   write-up produced for `<KEY>`). A URL that lives only in a chat reply is lost by the next
+   day; the ticket is where the next person looks, and where a later phase re-reads the plan.
+   Post it through the tracker adapter, never the tracker's own API/MCP:
+   ```
+   scripts/tracker/add-ticket-comment.sh <KEY> "…the URL + one line on what the page is…"
+   ```
+   Say what the reader can DO there, not just that a page exists — for a plan in approval
+   mode, that the page carries per-section Decision controls and an **Approve & download
+   plan** button whose output replaces the `data-plan-md` file before the re-run. Comment
+   prose follows the workspace `language` policy (English spine); the URL is a bare link.
+   Updating an already-published doc (Mode B) reuses the same URL, so an earlier comment
+   stays valid — add a new comment only when the content changed enough to matter.
+4. **Share.** The tool publishes **private** and has no sharing input — org visibility is a
    one-click step the human takes in the artifact's **share menu**. So in the hand-over, give
-   the URL and tell them to share it with the team (e.g. "Everyone in bluePi") from that menu.
-   (If a workspace admin has defaulted artifacts to org-visible, it's already done.)
-4. **Remember the URL.** Write the returned URL into the SOURCE doc's `<head>` as
+   the URL and tell them to share it with the team from that menu. (If a workspace admin has
+   defaulted artifacts to org-visible, it's already done.)
+5. **Remember the URL.** Write the returned URL into the SOURCE doc's `<head>` as
    `<meta name="wid-artifact" content="…">`. A later Mode-B update reads that meta and
    redeploys to the same URL instead of minting a new one.
 
 The hand-over's closing summary **includes the Artifact URL** whenever one was published.
+
+⚠️ A published Artifact whose URL reached nobody is the same failure as not publishing it.
+The URL must land in **two** places: the ticket (step 3) and the closing summary. And never
+hand over the local `.html` path as if it were the deliverable — `pretool-notify-guard.sh`
+blocks a chat message that cites one with no URL beside it.
 
 ## Bundled resources
 - **assets/template.html** — scaffold to copy; documents the DOM contract.

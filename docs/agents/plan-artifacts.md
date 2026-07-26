@@ -20,6 +20,17 @@ One plan file **per touched repo**, inside that repo:
 which is why the same ticket produces `APP-1944-agent-webservice-plan.md` and
 `APP-1944-agent-db-plan.md`, not one file mentioning both.
 
+**Who authors which.** A repo's `kind` decides the planning agent, and `dev-cycle`
+already encodes it: a code repo is planned by **development-planner** and built by
+**developer**; a `kind: test-suite` repo is planned by **qa-planner** and built by
+**qa-runner** (no code review phase). So the automation plan in the table above is a
+QA artifact, produced by qa-planner's own chain — `/plan-testcases` writes
+`<KEY>-testcases.md` first, then `/plan-automate` turns it into the automation plan
+against that repo's Page Object Model. A development-planner writing into a
+test-suite repo is a routing mistake: the file may sit at the right path, but it will
+be a developer-shaped slice list where qa-runner expects Page Objects, specs, and
+selectors.
+
 ## Why per repo, not one file
 
 This is a multi-repo workspace. `dev-cycle` runs plan → build → review **per
