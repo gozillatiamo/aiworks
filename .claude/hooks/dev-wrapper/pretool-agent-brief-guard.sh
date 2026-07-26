@@ -17,12 +17,23 @@
 # Checks:
 #   1. brief orders PR/MR creation or a merge, but the target agent has no
 #      Bash(*scripts/vcs/*) grant                       → block
+#   1b. brief names a concrete adapter path or a writing git command that the
+#      target agent's tools: list does not grant        → block
 #   2. brief orders a force-add (`git add -f`)           → block, always
 #   3. brief dictates a non-canonical plan path          → block, always
 #      (docs/agents/plan-artifacts.md is the source of truth)
 #
 # Fails OPEN whenever the agent definition cannot be read: an unknown or built-in
 # subagent type is not a reason to block a delegation.
+#
+# Under CURSOR this is the ONLY layer that enforces a tool grant at all: Cursor
+# ignores an agent file's tools: list entirely, and its `readonly: true` is no
+# substitute (it blocks shell and MCP writes too, which every one of our so-called
+# read-only agents needs). Cursor's subagent tool is `Task`, and its tool_input
+# carries the same subagent_type/prompt, so this hook fires there unchanged.
+# Per-CALL enforcement is not reachable in Cursor: a subagent's tool calls arrive
+# under a fresh conversation_id with nothing naming the agent, so spawn time is
+# the last point where the agent's identity is still known.
 #
 # Exit 0 = allow. Exit 2 = block, stderr goes back to the model as feedback.
 
@@ -34,6 +45,34 @@ agent=$(printf '%s' "$input" | jq -r '.tool_input.subagent_type // ""' 2>/dev/nu
 [ -z "$prompt" ] && exit 0
 
 root="${CLAUDE_PROJECT_DIR:-.}"
+agent_file="$root/.claude/agents/$agent.md"
+
+# The agent's ACTUAL grant list: the `tools:` block of the frontmatter, nothing
+# else. Reading the whole file would be wrong — development-planner and qa-planner
+# both discuss `Bash(git *)` in a frontmatter comment explaining why it was taken
+# away from them, and a naive grep would credit them with the grant it warns about.
+TOOLS=""
+if [ -n "$agent" ] && [ -f "$agent_file" ]; then
+  TOOLS=$(awk '
+    /^---[ \t]*$/ { fm++; if (fm >= 2) exit; next }
+    fm != 1 { next }
+    /^tools:/ { intools = 1
+                rest = $0; sub(/^tools:[ \t]*/, "", rest)
+                if (rest != "") print rest          # inline form: tools: [A, B]
+                next }
+    intools && /^[ \t]*#/ { next }                  # comments explaining the grant
+    intools && /^[ \t]+-[ \t]/ { sub(/^[ \t]+-[ \t]*/, ""); print; next }
+    intools && /^[A-Za-z_]/ { intools = 0 }         # next frontmatter key
+  ' "$agent_file")
+fi
+
+# granted <extended-regex> — is anything in the tools: list matching it?
+# A `*` entry (the catch-all agent) grants everything.
+granted() {
+  [ -z "$TOOLS" ] && return 0                       # no parsable list → fail open
+  printf '%s' "$TOOLS" | grep -qE '^\*$|^\*,|, *\*' && return 0
+  printf '%s' "$TOOLS" | grep -qE "$1"
+}
 
 # --------------------------------------------- 1. PR/MR work without the grant
 if [ -n "$agent" ] && [ -f "$root/.claude/agents/$agent.md" ]; then
@@ -57,6 +96,53 @@ if [ -n "$agent" ] && [ -f "$root/.claude/agents/$agent.md" ]; then
       exit 2
     fi
   fi
+fi
+
+# ------------------------- 1b. brief names a tool the agent is not granted
+# Check 1 reads intent from prose, which only works for phrasings we anticipated.
+# This one triggers on the LITERAL command the brief puts in the agent's hands —
+# an adapter path or a writing git verb — so it generalises to every capability
+# without guessing, and the block can name the exact token that is out of bounds.
+if [ -n "$TOOLS" ]; then
+  # Fields are separated by ~, not | — a token regex needs its own alternation.
+  # brief-token regex ~ required grant regex ~ what it is ~ who to hand it to
+  while IFS='~' read -r token grant what who; do
+    [ -z "$token" ] && continue
+    printf '%s' "$prompt" | grep -qE "$token" || continue
+    granted "$grant" && continue
+    hit=$(printf '%s' "$prompt" | grep -oE "$token" | head -1)
+    {
+      echo "⛔ Blocked: this brief hands '$agent' $what, which it is not granted."
+      echo "   the brief says: $hit"
+      echo
+      echo ".claude/agents/$agent.md does not list a matching tool. An agent told"
+      echo "to do something outside its grant does not refuse — it improvises a way"
+      echo "round the missing door (APP-1944: a planner asked to publish reached for"
+      echo "\`git push -o merge_request.create\`)."
+      echo
+      echo "Either drop that step from the brief and do it yourself afterwards, or"
+      echo "delegate it to $who."
+    } >&2
+    exit 2
+  done <<'RULES'
+scripts/vcs/[a-z-]+\.sh~Bash\(\*?scripts/vcs~the VCS adapter~developer or code-reviewer
+scripts/notify/[a-z-]+\.sh~Bash\(\*?scripts/notify~the notify adapter~code-reviewer, or run the /notify skill yourself
+scripts/tracker/[a-z-]+\.sh~Bash\(\*?scripts/tracker~the tracker adapter~product-owner, or run /update-ticket yourself
+scripts/observability/[a-z-]+\.sh~Bash\(\*?scripts/observability~the observability adapter~performance-engineer or performance-triage
+git (commit|push|merge|rebase|cherry-pick|reset --hard)~Bash\(git \*\)~write access to git~an agent that owns the branch (developer, qa-runner)
+RULES
+fi
+
+# gh / glab are never anyone's grant — every repo is reached through scripts/vcs/.
+if printf '%s' "$prompt" | grep -qE '\b(gh|glab) (pr|mr|issue|api|repo|release|merge-request) '; then
+  {
+    echo "⛔ Blocked: this brief tells '$agent' to call gh/glab directly."
+    echo
+    echo "No agent is granted those. Both providers are reached through the VCS"
+    echo "adapter (scripts/vcs/), which is what makes the workflow provider-agnostic"
+    echo "— see CLAUDE.md. Name the adapter script instead."
+  } >&2
+  exit 2
 fi
 
 # ------------------------------------------------------ 2. force-add, always no

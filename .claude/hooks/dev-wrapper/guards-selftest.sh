@@ -124,6 +124,24 @@ t "qa-planner clean brief allowed"     0 pretool-agent-brief-guard.sh "$(ja qa-p
 # qa-runner DOES own the MR, so the same instruction must pass for it.
 t "qa-runner told to merge allowed"    0 pretool-agent-brief-guard.sh "$(ja qa-runner 'Implement the suite, then open and merge the PR once green.')"
 
+# --- 1b: the brief names a literal tool the agent's tools: list does not grant.
+# Prose intent (above) only catches phrasings we thought of; these fire on the actual
+# command handed to the agent, so they generalise past PR/MR to every adapter.
+t "planner handed the notify adapter blocked" 2 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan APP-1, then announce it with scripts/notify/send.sh.')"
+t "code-reviewer may use notify"              0 pretool-agent-brief-guard.sh "$(ja code-reviewer 'Review the diff, then post the verdict with scripts/notify/send.sh.')"
+t "product-owner handed the vcs adapter blocked" 2 pretool-agent-brief-guard.sh "$(ja product-owner 'Write the tickets, then run scripts/vcs/open-pr.sh for each.')"
+t "product-owner may use the tracker"         0 pretool-agent-brief-guard.sh "$(ja product-owner 'Create the tickets with scripts/tracker/upsert-ticket-details.sh.')"
+t "planner told to git commit blocked"        2 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan it, then git commit the result on the ticket branch.')"
+t "developer told to git commit allowed"      0 pretool-agent-brief-guard.sh "$(ja developer 'Implement it and git commit as you go.')"
+# A grant the agent DOES hold must never trip 1b just because the path is named.
+t "planner reading git status allowed"        0 pretool-agent-brief-guard.sh "$(ja development-planner 'Start from git status and git log to see what changed.')"
+# The comment in development-planner/qa-planner frontmatter EXPLAINS that Bash(git *)
+# was removed. Reading the file rather than the tools: list would credit them with it.
+t "grant comment is not a grant"              2 pretool-agent-brief-guard.sh "$(ja qa-planner 'Plan the tests, then git push the branch.')"
+# gh/glab belong to nobody — every provider goes through scripts/vcs/.
+t "gh pr create blocked"                      2 pretool-agent-brief-guard.sh "$(ja developer 'Ship it with gh pr create --fill.')"
+t "glab mr create blocked"                    2 pretool-agent-brief-guard.sh "$(ja qa-runner 'Then glab mr create --source-branch x.')"
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]

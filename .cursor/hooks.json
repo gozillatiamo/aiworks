@@ -47,6 +47,11 @@
         "matcher": "Write|Edit"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh'",
+        "timeout": 10,
+        "matcher": "Read|Write|Edit"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-agent-brief-guard.sh'",
         "timeout": 10,
         "matcher": "Task"
@@ -57,6 +62,11 @@
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-output-warden.sh'",
         "timeout": 30,
         "matcher": "Shell"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh'",
+        "timeout": 10,
+        "matcher": "Read|Write|Edit"
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh 'jq -r '\\''.tool_response.filePath // .tool_input.file_path'\\'' | { read -r f; [ -n \"$f\" ] || exit 0; git -C \"$(dirname \"$f\")\" check-ignore -q \"$(basename \"$f\")\" && exit 0; command -v prettier >/dev/null 2>&1 || exit 0; prettier --write \"$f\"; } 2>/dev/null || true'",
