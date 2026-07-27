@@ -96,8 +96,11 @@ Enforced invariants (in code, not memory):
 
 1. **Read-only prod** — same read-only role + read-only transaction as the MCP; never writes prod.
 2. **Hard mask on persist** — every external-PII value (`scripts/lib/pii-patterns.txt`, the same
-   list the tracker egress gate uses) and PII-named column is masked before the local write.
+   list every engine reads) and PII-named column is masked before the local write.
    Inner-system identity (`player_code`/`site_code`/`*_code`, UUID), money integers and status survive.
+   The same values are also fingerprinted into the **provenance vault**, so if one later surfaces
+   in a ticket or a Slack post the adapters redact it there too — and only it, never the
+   identical-looking local/staging data (`docs/agents/pii-provenance.md`).
 3. **Throwaway, isolated DBs** — data lands in `ofb_repro_<ticket>_<seed>` (created from a
    `template_db` that has the schema); `--teardown` DROPs every one for the ticket, across
    instances. Never the shared local DB.

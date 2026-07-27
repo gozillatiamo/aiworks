@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
-# scripts/lib/pii-scan.sh — shared external-PII egress scanner.
+# scripts/lib/pii-scan.sh — SHAPE-only external-PII scanner.
 #
-# ONE deterministic gate, reused by every path that lets production-derived data leave the
-# prod boundary:
-#   - scripts/tracker/*  (egress → a ticket / Slack)         via tracker_assert_no_pii
-#   - scripts/db/prod_repro_seed.py (persist → local sandbox) via its own --scan hook
+# ⚠️ NOT the egress gate any more. Shape alone cannot tell a real player's address from a
+# seeded `player1@test.com`, and this workspace runs prod / staging / local investigations in
+# PARALLEL all day — so judging by shape blocked local and staging work as hard as prod. The
+# egress decision now belongs to scripts/lib/pii_provenance.py, which redacts a value only
+# when a sanctioned prod-read path actually saw it (docs/agents/pii-provenance.md).
+#
+# What still uses this file:
+#   - `pii_scannable_text` — pulling the real text out of a PDF container, reused by the
+#     notify adapter's binary-file check.
+#   - shape detection as a library / CLI for ad-hoc checks and for `PII_GATE=on` semantics.
+#   - the detector list itself (scripts/lib/pii-patterns.txt), shared with the provenance
+#     engine so the policy still lives in ONE place.
 #
 # Policy (decided in the prod-pg-triage allocation consult):
 #   ALLOW  — inner-system identity: player_code, site_code, any *_code, internal UUID;

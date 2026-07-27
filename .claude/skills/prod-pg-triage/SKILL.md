@@ -62,10 +62,14 @@ would answer a prod question with dev data and mislead the whole investigation.
   into a ticket / Slack: **inner-system identity** (`player_code` / `site_code` / any `*_code`,
   internal UUID), an **aggregate** (`COUNT(*)` / `GROUP BY` — prefer this), the **reproduce
   SQL**, and money integers. What may **not**: **external-world PII in value form** — phone,
-  email, crypto wallet, IBAN / bank account, national-id / passport. The tracker adapter's
-  egress gate (`tracker_assert_no_pii`, backed by `scripts/lib/pii-patterns.txt`) **hard-blocks**
-  a ticket body carrying that PII; treat a block as a signal to re-state as an aggregate, not
-  something to override. Prefer a single targeted row over `SELECT *` on a wide table.
+  email, crypto wallet, IBAN / bank account, national-id / passport, and a person's name.
+  Every row this MCP returns is fingerprinted into the provenance vault, so the tracker /
+  notify adapters **redact exactly those values** (to `<prod-pii:…>`) if they surface in a
+  ticket or a Slack post — the write still lands, minus the personal value. Do not lean on
+  that: a redacted body reads worse than one you wrote as an aggregate in the first place.
+  It also only covers what the MCP actually returned, so anything you retype from memory is
+  on you. Prefer a single targeted row over `SELECT *` on a wide table.
+  See `docs/agents/pii-provenance.md`.
 - **Confirm the target before a heavy query.** A cross-shard scan is 16 queries against
   prod; be deliberate about whether you need MAD, one shard, or a fan-out.
 

@@ -86,6 +86,12 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   diagram and attaches it to a ticket (image + a mermaid.live edit link), gated by
   `diagrams.enabled` (default OFF); skipped quietly (not a fail-loud gate) when off,
   since a diagram is an enhancement to a ticket's spec, not a required deliverable.
+- `docs/agents/pii-provenance.md` — how personal data is kept inside the prod boundary
+  **without** getting in the way of local/staging work. A value is redacted at egress (ticket
+  / Slack) if and only if a sanctioned PRODUCTION read actually returned it — tracked by keyed
+  hash, never by shape — so test/mock data flows untouched even when prod, staging and local
+  work run in parallel. Egress **masks** (`<prod-pii:…>`) instead of blocking; `PII_GATE=off`
+  is the escape hatch, `PII_GATE=on` the paranoid one.
 - `docs/agents/submodules.md` — never develop inside a git **submodule** checkout: it's a
   read-only pointer to a repo that is *also* cloned as its own primary clone at the
   workspace root — branch/commit/PR in that primary clone (the coding-lifecycle skills

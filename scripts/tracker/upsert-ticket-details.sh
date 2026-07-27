@@ -177,11 +177,13 @@ fi
 [[ "$have_body" -eq 1 ]] && tracker_assert_body_language "$body_md"
 [[ "$have_estimate_reason" -eq 1 ]] && tracker_assert_body_language "$estimate_reason"
 
-# Same choke point, second gate: external-world PII (phone/email/wallet/bank/national-id)
-# must not leave the prod boundary into a ticket. Inner-system identity, aggregates, money
-# integers and reproduce SQL pass (see tracker_assert_no_pii in lib.sh).
-[[ "$have_body" -eq 1 ]] && tracker_assert_no_pii "$body_md"
-[[ "$have_estimate_reason" -eq 1 ]] && tracker_assert_no_pii "$estimate_reason"
+# Same choke point, second gate: PRODUCTION-derived personal values (phone/email/wallet/bank/
+# national-id, and shapeless ones like a name) are redacted to <prod-pii:…> before the body
+# leaves the prod boundary. Local/staging test data is untouched — provenance decides, not
+# shape. Inner-system identity, aggregates, money integers and reproduce SQL always pass
+# (see tracker_redact_prod_pii in lib.sh).
+[[ "$have_body" -eq 1 ]] && body_md="$(tracker_redact_prod_pii "$body_md")"
+[[ "$have_estimate_reason" -eq 1 ]] && estimate_reason="$(tracker_redact_prod_pii "$estimate_reason")"
 
 # Post the reason FIRST, then commit the numbers: if the reason can't be posted we abort
 # before writing any point field, so the recoverable failure mode is "reason without number"

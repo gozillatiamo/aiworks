@@ -110,4 +110,17 @@ filters="$(jq -n \
 # shellcheck source=lib.sh
 . "$DIR/lib.sh"
 
-obs_query_logs "$filters" "$from_ms" "$to_ms" "$limit" "$raw"
+# PRODUCTION logs carry real player data (an email in an error body, a client ip on a span).
+# Record the personal values in keyed-hash form so the tracker / notify adapters can redact
+# exactly those values later — and only those, leaving identical-looking local/staging data
+# alone. Nothing is recorded for any other --env. See docs/agents/pii-provenance.md.
+case "$(printf '%s' "$env" | tr '[:upper:]' '[:lower:]')" in
+  prod|production)
+    out="$(obs_query_logs "$filters" "$from_ms" "$to_ms" "$limit" "$raw")"
+    printf '%s\n' "$out"
+    printf '%s' "$out" | python3 "$DIR/../lib/pii_provenance.py" record - >/dev/null 2>&1 || true
+    ;;
+  *)
+    obs_query_logs "$filters" "$from_ms" "$to_ms" "$limit" "$raw"
+    ;;
+esac

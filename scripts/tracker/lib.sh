@@ -119,24 +119,47 @@ tracker_assert_body_language() {
   fi
 }
 
-# Write-time PII egress gate. Production-derived data must not leave the prod boundary into a
-# ticket (which fans out to Jira/Slack). Blocks external-world PII in value form — phone,
-# email, crypto wallet, IBAN/bank account, formatted national-id/passport — via the shared
-# scanner (scripts/lib/pii-scan.sh). Inner-system identity (player_code/site_code/*_code,
-# internal UUID), reproduce SQL, aggregate stats, and money integers all PASS: those are the
-# ground truth a triage summary legitimately needs and identify no real-world person. Dies
-# loud on a hit (adapter convention), naming only the matched CATEGORY, never the value (that
-# would itself leak PII into the transcript). Break-glass: TRACKER_SKIP_PII_CHECK=1 — human
-# only, for a genuine false positive; an agent must instead rewrite as an aggregate. Args: TEXT.
-tracker_assert_no_pii() {
+# Write-time PII egress redaction. PRODUCTION-derived personal data must not leave the prod
+# boundary into a ticket (which fans out to Jira/Slack) — but data from local or staging is
+# test/mock data and is explicitly fine, and those flows run in PARALLEL with prod work all
+# day, so a shape-only gate blocks the wrong things.
+#
+# So provenance decides, not shape: scripts/lib/pii_provenance.py masks a value if and only if
+# a sanctioned prod-read path (the prod-pg-triage MCP, `--env prod` observability, the repro
+# seed) actually saw that value and vaulted its keyed hash. A seeded local `player1@test.com`
+# is untouched; the real player's address is redacted to `<prod-pii:email>` wherever it turns
+# up, in any session or ticket.
+#
+# It MASKS rather than dies: the write still lands, minus the personal value, and the caller
+# is told on stderr what was redacted (category + count — never the value, which would itself
+# leak into the transcript). Inner-system identity (player_code/site_code/*_code, internal
+# UUID), reproduce SQL, aggregates and money integers are never touched — that ground truth is
+# the whole point of a triage summary.
+#
+# Prints the (possibly redacted) text on stdout, so callers use it as:
+#     text="$(tracker_redact_prod_pii "$text")"
+# Env: PII_GATE=off disables it entirely; PII_GATE=on additionally masks every shape match
+# even with no prod provenance (for a hand-written prod incident report).
+# TRACKER_SKIP_PII_CHECK=1 stays as the legacy break-glass. Args: TEXT.
+tracker_redact_prod_pii() {
   local text="$1"
-  [[ -n "$text" ]] || return 0
-  [[ "${TRACKER_SKIP_PII_CHECK:-0}" == "1" ]] && return 0
-  local scanner="$TRACKER_DIR/../lib/pii-scan.sh"
-  [[ -f "$scanner" ]] || return 0   # scanner absent → degrade open, never false-block
-  # shellcheck disable=SC1090
-  . "$scanner"
-  if ! pii_scan_text "$text"; then
-    die "PII egress gate: this ticket text carries external-world PII ($(pii_scan_categories)) leaving the prod boundary. De-identify first — quote the inner-system identity (player_code/site_code/UUID), an aggregate (counts / GROUP BY), or the reproduce SQL instead of the raw phone/email/wallet/bank value. Break-glass (human only, genuine false positive): TRACKER_SKIP_PII_CHECK=1."
+  [[ -n "$text" ]] || { printf '%s' "$text"; return 0; }
+  if [[ "${TRACKER_SKIP_PII_CHECK:-0}" == "1" || "${PII_GATE:-auto}" == "off" ]]; then
+    printf '%s' "$text"; return 0
   fi
+  local engine="$TRACKER_DIR/../lib/pii_provenance.py"
+  if [[ ! -f "$engine" ]] || ! command -v python3 >/dev/null; then
+    printf '%s' "$text"; return 0   # engine absent → pass through; the SOFT prompt layer still applies
+  fi
+
+  local masked rc=0
+  masked="$(printf '%s' "$text" | python3 "$engine" mask -)" || rc=$?
+  if [[ $rc -eq 10 ]]; then
+    echo "note: production PII was redacted from this ticket text before writing (see the line above). Prefer quoting player_code / an aggregate / the reproduce SQL instead." >&2
+    printf '%s' "$masked"; return 0
+  fi
+  if [[ $rc -ne 0 ]]; then
+    printf '%s' "$text"; return 0   # engine error → never block a legitimate write
+  fi
+  printf '%s' "$masked"
 }

@@ -93,44 +93,18 @@ CONN_OPTIONS_RO = (
 ADMIN_ENVS = ["PGLOCAL_ADMIN", "PGLOCAL_MAD_ADMIN", "PGLOCAL_ASS_ADMIN"]
 
 ENV_PATH = Path(__file__).parent / ".env"
-PATTERNS_FILE = Path(__file__).parent.parent / "lib" / "pii-patterns.txt"
 
-PII_COLUMN_RE = re.compile(
-    r"(phone|tel|mobile|msisdn|e?mail|passport|national_?id|citizen|id_?card|"
-    r"bank_?acc|account_?no|iban|crypto_?wallet|addr(ess)?|token|secret|passw(or)?d|"
-    # `crypto_?wallet` not bare `wallet`, so wallet_type/player_wallet_id (inner-system enum/uuid)
-    # aren't hit; a real wallet_address is still caught by addr(ess)?.
-    r"(^|_)ip(_|$)|"  # ip / player_ip / ip_addr — external PII the value scanner can't shape-match
-    r"(first|last|full|holder|real|customer)_?name)",
-    re.IGNORECASE,
-)
+# The PII policy lives in ONE module — scripts/lib/pii_provenance.py — which reads the shared
+# detector list scripts/lib/pii-patterns.txt. This tool borrows two things from it: the
+# shape/column rules used to MASK a value on the way to the local sandbox, and the provenance
+# vault it records into (keyed hashes of the prod values seen, never the values), so those same
+# values are redacted later if they surface in a ticket or a Slack post.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import pii_provenance  # noqa: E402  (path must be set first)
+
+PII_COLUMN_RE = pii_provenance.PII_COLUMN_RE
+value_has_pii = pii_provenance.value_has_pii
 MASK = "***MASKED***"
-
-
-# --- shared pattern list (same file the bash egress gate reads) --------------------------
-def load_pii_patterns() -> list[tuple[str, "re.Pattern[str]"]]:
-    out: list[tuple[str, re.Pattern[str]]] = []
-    if not PATTERNS_FILE.is_file():
-        return out
-    for line in PATTERNS_FILE.read_text(encoding="utf-8").splitlines():
-        if not line or line.lstrip().startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) != 3:
-            continue
-        cat, mode, pat = parts
-        try:
-            out.append((cat, re.compile(pat, re.IGNORECASE if mode == "ci" else 0)))
-        except re.error:
-            continue
-    return out
-
-
-_PATTERNS = load_pii_patterns()
-
-
-def value_has_pii(text: str) -> bool:
-    return any(rx.search(text) for _, rx in _PATTERNS)
 
 
 def mask_row(columns: list[str], row: dict, extra_mask: set[str]) -> tuple[dict, int]:
@@ -289,6 +263,9 @@ def do_seed(args) -> int:
                     cur.execute(sql)
                     cols = [d.name for d in cur.description]
                     rows = cur.fetchall()
+                # Vault the prod values BEFORE masking: what is masked out of the local sandbox
+                # is exactly what must also be redacted if it ever reaches a ticket or Slack.
+                pii_provenance.record_rows(cols, rows)
                 mrows = []
                 for r in rows:
                     mr, n = mask_row(cols, r, extra)
@@ -437,9 +414,12 @@ def do_list(_args) -> int:
 
 
 def do_selftest(_args) -> int:
+    patterns_file = pii_provenance.PATTERNS_FILE
+    detectors = pii_provenance.load_patterns()
     print(f"env file:      {ENV_PATH} ({'present' if ENV_PATH.exists() else 'MISSING'})")
-    print(f"patterns file: {PATTERNS_FILE} ({'present' if PATTERNS_FILE.is_file() else 'MISSING'})")
-    print(f"loaded {len(_PATTERNS)} PII detectors: {sorted({c for c, _ in _PATTERNS})}")
+    print(f"patterns file: {patterns_file} ({'present' if patterns_file.is_file() else 'MISSING'})")
+    print(f"loaded {len(detectors)} PII detectors: {sorted({c for c, _ in detectors})}")
+    print(f"provenance vault: {pii_provenance.vault_dir()}")
     for var in ADMIN_ENVS + ["PGPROD_MAD"]:
         print(f"  {var:<18} {'set' if os.environ.get(var) else 'unset'}")
     import uuid as _uuid

@@ -53,8 +53,10 @@ Options:
                   ONE message. Needs a bot token + the files:write scope (a webhook can't
                   upload). Combine with --thread-ts to attach into a thread. Cannot be combined
                   with --review/--reply. REFUSED (exit non-zero) when the file exceeds
-                  OUTBOUND_MAX_FILE_MB (default 15) or contains external PII / a secret —
-                  scanned via scripts/lib/pii-scan.sh + a secret-pattern check.
+                  OUTBOUND_MAX_FILE_MB (default 15) or carries a secret/token. PRODUCTION
+                  personal values are REDACTED instead (a text file uploads as a redacted
+                  copy; a binary one is refused) — local/staging data is never touched.
+                  See docs/agents/pii-provenance.md.
   --title <text>  Header title for --review, OR the file title for --file (default: the ticket
                   title / the file's basename).
   --channel <ch>  Target channel (id or #name). Default: $NOTIFY_CHANNEL from .env.
@@ -120,14 +122,56 @@ compose_review_digest() {  # KEY [TITLE]  -> prints the digest, or nothing if no
   printf '%s' "${rows%$'\n'}"
 }
 
-# outbound_gate FILE — the safety backstop before a --file upload leaves the org. Dies
-# (exit non-zero) on any of three refusals; prints nothing and returns 0 when clean:
-#   1. size    — > OUTBOUND_MAX_FILE_MB (default 15).
-#   2. PII      — external-world PII (email/phone/wallet/national-id/…) via the shared
-#                 scanner scripts/lib/pii-scan.sh (the single policy; same one the egress
-#                 gate uses). The scanner covers PII only, NOT credentials — hence step 3.
+# redact_prod_pii TEXT → prints TEXT with every PRODUCTION-derived personal value replaced by
+# a <prod-pii:…> placeholder. Provenance decides, not shape: a value is redacted only if a
+# sanctioned prod-read path (prod-pg-triage MCP, `--env prod` observability, the repro seed)
+# actually saw it and vaulted its keyed hash — so local/staging test data posted to Slack is
+# left exactly as written. Masks rather than refuses; the redaction is reported on stderr
+# (category + count, never the value). PII_GATE=off disables; =on also masks unvaulted shapes.
+# See docs/agents/pii-provenance.md.
+redact_prod_pii() {
+  local text="$1" engine="$DIR/../lib/pii_provenance.py" masked rc=0
+  [[ -n "$text" ]] || { printf '%s' "$text"; return 0; }
+  [[ "${PII_GATE:-auto}" == "off" ]] && { printf '%s' "$text"; return 0; }
+  { [[ -f "$engine" ]] && command -v python3 >/dev/null; } || { printf '%s' "$text"; return 0; }
+
+  masked="$(printf '%s' "$text" | python3 "$engine" mask -)" || rc=$?
+  case "$rc" in
+    10) echo "note: production PII was redacted from this message before posting." >&2
+        printf '%s' "$masked" ;;
+    0)  printf '%s' "$masked" ;;
+    *)  printf '%s' "$text" ;;   # engine error → never block a legitimate post
+  esac
+}
+
+# _is_binary_file FILE → 0 when the file must NOT be rewritten as text. Two independent
+# signals, because a wrong "it's text" verdict corrupts the upload: a known-binary extension
+# (a small png/pdf can be almost entirely printable bytes, so content sniffing alone says
+# "text"), or a NUL byte in the first 8 KiB.
+_is_binary_file() {
+  local f="$1" ext
+  ext="$(printf '%s' "${f##*.}" | tr '[:upper:]' '[:lower:]')"
+  case "$ext" in
+    png|jpg|jpeg|gif|webp|bmp|ico|tiff|pdf|zip|gz|tgz|bz2|xz|7z|rar|mp4|mov|avi|mkv|mp3|wav|\
+    ogg|woff|woff2|ttf|otf|eot|xls|xlsx|doc|docx|ppt|pptx|bin|so|dylib|dll|exe|class|jar|pyc|\
+    db|sqlite|sqlite3) return 0 ;;
+  esac
+  local raw stripped
+  raw="$(head -c 8192 "$f" | wc -c | tr -d ' ')"
+  stripped="$(head -c 8192 "$f" | LC_ALL=C tr -d '\000' | wc -c | tr -d ' ')"
+  [[ "$raw" != "$stripped" ]]
+}
+
+# outbound_gate FILE — the safety backstop before a --file upload leaves the org. Prints the
+# path to actually upload (the original, or a redacted temp copy) and dies on a refusal:
+#   1. size     — > OUTBOUND_MAX_FILE_MB (default 15). Dies.
+#   2. prod PII — production-derived personal values, via the provenance engine
+#                 scripts/lib/pii_provenance.py (the single policy). A TEXT file is uploaded
+#                 as a redacted copy; a BINARY one (pdf/png/…) can't be rewritten safely, so
+#                 that case still dies. Local/staging data is never touched.
 #   3. secrets  — token/key shapes the PII list doesn't carry (AWS key, Slack/app token,
-#                 PEM private key, or a KEY=<long-value> credential assignment).
+#                 PEM private key, or a KEY=<long-value> credential assignment). Dies —
+#                 a credential is never "redact and carry on", regardless of environment.
 # A model-authored deliverable should never contain these; this makes "never upload secrets"
 # a deterministic wall, not just a prompt instruction.
 outbound_gate() {
@@ -140,13 +184,6 @@ outbound_gate() {
     die "refusing to upload $(basename "$file"): $(( bytes / 1024 / 1024 ))MB exceeds the ${max_mb}MB cap (raise OUTBOUND_MAX_FILE_MB to change)"
   fi
 
-  local scan="$DIR/../lib/pii-scan.sh"
-  if [[ -x "$scan" ]]; then
-    if ! "$scan" --check "$file" >/dev/null 2>&1; then
-      die "refusing to upload $(basename "$file"): external PII detected (scripts/lib/pii-scan.sh). Remove it — do not send personal data to Slack."
-    fi
-  fi
-
   if LC_ALL=C grep -nEiq \
       -e 'AKIA[0-9A-Z]{16}' \
       -e 'xox[baprs]-[A-Za-z0-9-]{8,}' \
@@ -156,6 +193,41 @@ outbound_gate() {
       "$file"; then
     die "refusing to upload $(basename "$file"): a secret/token/key pattern was found. Never put credentials in a shared file."
   fi
+
+  local engine="$DIR/../lib/pii_provenance.py"
+  if [[ "${PII_GATE:-auto}" == "off" || ! -f "$engine" ]] || ! command -v python3 >/dev/null; then
+    printf '%s' "$file"; return 0
+  fi
+
+  # A binary container (pdf/png/…) can't be rewritten without corrupting it, so it is judged
+  # on its extracted text and REFUSED on a hit — the one case that still dies rather than
+  # redacts. pii-scan.sh knows how to pull the real text out of a pdf (its xref table is a run
+  # of 10-digit offsets that trips the phone detector in every pdf ever produced).
+  #
+  # Getting this classification wrong in the text direction CORRUPTS the upload, so it is
+  # deliberately conservative: a known-binary extension is binary even if the bytes happen to
+  # look textual (a small png is mostly ASCII and passes a naive `grep -I` check).
+  local scan="$DIR/../lib/pii-scan.sh" rc=0
+  if _is_binary_file "$file"; then
+    [[ -f "$scan" ]] || { printf '%s' "$file"; return 0; }
+    # Streamed, never captured: a binary's NUL bytes make bash warn on every command
+    # substitution, and the extracted text is only ever fed to the scanner anyway.
+    # shellcheck disable=SC1090
+    ( . "$scan"; pii_scannable_text "$file" ) | python3 "$engine" scan - >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 10 ]] && die "refusing to upload $(basename "$file"): it carries PRODUCTION personal data and a binary file can't be redacted in place. Re-export it without the personal values (player_code / an aggregate instead), or send a text version."
+    printf '%s' "$file"; return 0
+  fi
+
+  local masked
+  masked="$(python3 "$engine" mask "$file")" || rc=$?
+  if [[ $rc -eq 10 ]]; then
+    # Upload a redacted copy under the SAME basename, so Slack still shows the real filename.
+    local tmpdir; tmpdir="$(mktemp -d)"
+    printf '%s' "$masked" > "$tmpdir/$(basename "$file")"
+    echo "note: production PII was redacted from $(basename "$file"); uploading the redacted copy." >&2
+    printf '%s' "$tmpdir/$(basename "$file")"; return 0
+  fi
+  printf '%s' "$file"
 }
 
 channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""; file_path=""
@@ -188,8 +260,9 @@ if [[ -n "$file_path" ]]; then
   [[ -f "$file_path" ]] || die "file not found: $file_path   (see -h)"
   # Optional caption: the positional text, or piped stdin; empty is fine.
   if [[ "$have_text" -eq 0 && ! -t 0 ]]; then text="$(cat)"; fi
-  outbound_gate "$file_path"
-  notify_send_file "$channel" "$file_path" "$text" "$dry" "$thread_ts_arg" "$review_title"
+  upload_path="$(outbound_gate "$file_path")"
+  text="$(redact_prod_pii "$text")"
+  notify_send_file "$channel" "$upload_path" "$text" "$dry" "$thread_ts_arg" "$review_title"
   exit 0
 fi
 
@@ -203,6 +276,10 @@ else
   if [[ "$have_text" -eq 0 && ! -t 0 ]]; then text="$(cat)"; fi
   [[ -n "$text" ]] || die "no message text — pass it as an argument, pipe it via stdin, or use --review <KEY>"
 fi
+
+# Redact any PRODUCTION-derived personal value before the message leaves the org. Local and
+# staging data is untouched (provenance decides, not shape) — see redact_prod_pii above.
+text="$(redact_prod_pii "$text")"
 
 if [[ -n "$reply_key" ]]; then
   # Thread the message under the review-request for this ticket. No request thread found ⇒

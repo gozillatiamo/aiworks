@@ -20,6 +20,10 @@ Arguments:
 
 Options:
   --span <span_id>    Mark this span in the output (from ?spanId=<span_id>).
+  --env <name>        Which environment this trace belongs to (local | dev | staging | prod).
+                      A trace id does not say where it came from, so this is the only way the
+                      PII provenance vault can know a span payload is production-derived.
+                      Pass --env prod when triaging prod; nothing is recorded otherwise.
   --raw               Print the raw JSON response instead of the parsed waterfall.
   -h, --help          Show this help and exit.
 
@@ -28,10 +32,11 @@ Environment:
 EOF
 }
 
-trace_id="" span_id="" raw=0
+trace_id="" span_id="" env="" raw=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --span) span_id="${2:-}"; shift 2 ;;
+    --env) env="${2:-}"; shift 2 ;;
     --raw) raw=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "unknown option: $1" >&2; usage; exit 1 ;;
@@ -45,7 +50,16 @@ done
 . "$DIR/lib.sh"
 
 if [[ "$raw" -eq 1 ]]; then
-  curl -sS -H "${SIGNOZ_AUTH_HEADER}: ${SIGNOZ_API_KEY}" "${SIGNOZ_BASE_URL}/api/v1/traces/${trace_id}" | jq '.'
+  out="$(curl -sS -H "${SIGNOZ_AUTH_HEADER}: ${SIGNOZ_API_KEY}" "${SIGNOZ_BASE_URL}/api/v1/traces/${trace_id}" | jq '.')"
 else
-  obs_get_trace "$trace_id" "$span_id"
+  out="$(obs_get_trace "$trace_id" "$span_id")"
 fi
+printf '%s\n' "$out"
+
+# Only a caller-declared prod trace feeds the PII provenance vault (a trace id itself says
+# nothing about its environment). Keyed hashes only — see docs/agents/pii-provenance.md.
+case "$(printf '%s' "$env" | tr '[:upper:]' '[:lower:]')" in
+  prod|production)
+    printf '%s' "$out" | python3 "$DIR/../lib/pii_provenance.py" record - >/dev/null 2>&1 || true
+    ;;
+esac
