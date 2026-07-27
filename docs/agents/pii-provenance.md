@@ -14,8 +14,8 @@ So provenance is tracked at the level of the **value itself**.
 
 ```
               INGRESS (production only)                    EGRESS (anywhere)
-  prod-pg-triage MCP     ─┐                              tracker: comment / body
-  prod-redis-triage MCP   ├─> HMAC of each personal ───> notify:  message / file
+  pg-triage MCP     ─┐                              tracker: comment / body
+  redis-triage MCP   ├─> HMAC of each personal ───> notify:  message / file
   prod_repro_seed.py     ─┘   value → the vault              │
                                                              ├─ value in the vault? → <prod-pii:…>
                                                              └─ not in the vault?   → written as-is
@@ -52,9 +52,9 @@ summary exists to carry, and none of them identify a real-world person.
 | `scripts/lib/pii_provenance.py` | The engine: detectors, vault, record + mask. `--selftest` covers 16 cases. |
 | `scripts/lib/pii-patterns.txt` | The detector list — what counts as a personal value, plus live credentials (JWT by shape; `access_token` / `Bearer` / `api_key` / `password` by label). A bare hex or base64 run is deliberately **not** a detector: a 40-char hex is a commit SHA, and redacting those would maul ordinary PR prose. One policy, read by every engine. |
 | `scripts/lib/pii-scan.sh` | Shape-only scanning + PDF text extraction. No longer the egress gate. |
-| `scripts/db/prod_pg_mcp.py` | Ingress: every returned row is fingerprinted in `_query()`. |
-| `scripts/redis/prod_redis_mcp.py` | Ingress on a `prod=true` target only, in `_emit()`. Also the one place that goes **further** than redaction: a value that is a *credential* (JWT / opaque token / a value under a `*token*`-ish key) is replaced with `<redis-secret:sha8>` **at the source**, so a live session token never reaches the transcript in the first place — a leaked credential is an account takeover, not a privacy incident, and egress redaction would be too late. A `prod=false` target is neither masked nor vaulted. |
-| `scripts/db/prod_repro_seed.py` | Ingress (pre-mask) + the local-sandbox mask it already did. |
+| `scripts/db/pg_triage_mcp.py` | Ingress on `env="prod"` only, in `_query()`: every returned row is fingerprinted. `env="staging"` is never vaulted, and every result says which happened (`pii_vaulted`). |
+| `scripts/redis/redis_triage_mcp.py` | Ingress on a `prod=true` target only, in `_emit()`. Also the one place that goes **further** than redaction: a value that is a *credential* (JWT / opaque token / a value under a `*token*`-ish key) is replaced with `<redis-secret:sha8>` **at the source**, so a live session token never reaches the transcript in the first place — a leaked credential is an account takeover, not a privacy incident, and egress redaction would be too late. A `prod=false` target is neither masked nor vaulted. |
+| `scripts/db/prod_repro_seed.py` | Ingress (pre-mask) + the local-sandbox mask it already did — for a `"env": "prod"` source. A `"env": "staging"` source is loaded verbatim and never vaulted. |
 | `scripts/tracker/lib.sh` → `tracker_redact_prod_pii` | Egress: ticket comment + body + estimate reason. |
 | `scripts/notify/send.sh` → `redact_prod_pii`, `outbound_gate` | Egress: Slack text, caption, and file uploads. |
 

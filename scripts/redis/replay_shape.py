@@ -6,7 +6,7 @@
 # ///
 """replay_shape — rebuild a Redis SHAPE locally from a `capture_shape` descriptor.
 
-The companion to the `capture_shape` tool in prod_redis_mcp.py, and the only sanctioned way
+The companion to the `capture_shape` tool in redis_triage_mcp.py, and the only sanctioned way
 production Redis state reaches a local machine: what crosses the boundary is a schema — key
 type, TTL, cardinality, field names, value KINDS — and every value written here is
 synthesized locally from that schema. No production value is ever in the descriptor, so

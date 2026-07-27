@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SessionEnd — close any prod-redis-triage SSH tunnel left behind by this session.
+# SessionEnd — close any redis-triage SSH tunnel left behind by this session.
 #
 # The MCP server already reaps its own tunnels (idle watchdog + `disconnect` + atexit). This
 # hook is the backstop for the case those cannot cover: a hard-killed session, where atexit
@@ -27,7 +27,7 @@ reap() {
         kill "$pid" 2>/dev/null || continue
         sleep 1
         kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
-        echo "prod-redis-triage: reaped orphan tunnel to $vm (port $port, pid $pid)" >&2
+        echo "redis-triage: reaped orphan tunnel to $vm (port $port, pid $pid)" >&2
         ;;
     esac
   done

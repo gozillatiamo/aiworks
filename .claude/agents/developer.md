@@ -20,12 +20,12 @@ skills:
   # confirm the offending prod row, then persist it masked into a throwaway local DB via
   # prod_repro_seed to reproduce against local source). NOT for feature build — never touch prod
   # outside a bug repro. See "Prod data for a repro".
-  - prod-pg-triage
+  - pg-triage
   # Read-only PRODUCTION/staging Redis ground truth — SAME /diagnosing-bugs SCOPE as
-  # prod-pg-triage. For a stale-cache / missing-session / stream-not-consumed bug. Prod values
+  # pg-triage. For a stale-cache / missing-session / stream-not-consumed bug. Prod values
   # NEVER get persisted locally: fix forward with a test, or `capture_shape` -> replay_shape.py,
   # which writes SYNTHETIC keys (schema only) into local Redis under a `repro:<label>:` prefix.
-  - prod-redis-triage
+  - redis-triage
 tools:
   - Read
   - Grep
@@ -65,52 +65,52 @@ tools:
   - mcp__postgres_main
   - mcp__postgres_secondary
   - mcp__redis
-  # PRODUCTION Postgres, READ-ONLY, on-demand — for a bug repro under /diagnosing-bugs only.
+  # Deployed Postgres (staging + prod, `env` per call), READ-ONLY, on-demand — prod needs the machine's triage.prod opt-in — for a bug repro under /diagnosing-bugs only.
   # The server forces a read-only role + read-only transaction, so no write can slip through.
   # ALWAYS disconnect at the end.
-  - mcp__prod_pg_triage__list_targets
-  - mcp__prod_pg_triage__list_schemas
-  - mcp__prod_pg_triage__list_objects
-  - mcp__prod_pg_triage__get_object_details
-  - mcp__prod_pg_triage__explain_query
-  - mcp__prod_pg_triage__execute_sql
-  - mcp__prod_pg_triage__disconnect
+  - mcp__pg_triage__list_targets
+  - mcp__pg_triage__list_schemas
+  - mcp__pg_triage__list_objects
+  - mcp__pg_triage__get_object_details
+  - mcp__pg_triage__explain_query
+  - mcp__pg_triage__execute_sql
+  - mcp__pg_triage__disconnect
   # The ONE sanctioned path to persist prod-derived data locally — masks external PII, entity-
   # scoped, into a throwaway repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
   # PRODUCTION/staging Redis, READ-ONLY, on-demand — same /diagnosing-bugs scope. Typed read
   # tools only, no command passthrough, no KEYS. `target` is required; prod is never implied.
   # disconnect when done (a 120s idle watchdog also reaps the tunnel).
-  - mcp__prod_redis_triage__list_targets
-  - mcp__prod_redis_triage__tunnel_status
-  - mcp__prod_redis_triage__cluster_topology
-  - mcp__prod_redis_triage__keyslot_of
-  - mcp__prod_redis_triage__server_info
-  - mcp__prod_redis_triage__dbsize
-  - mcp__prod_redis_triage__scan_keys
-  - mcp__prod_redis_triage__inspect_key
-  - mcp__prod_redis_triage__get_value
-  - mcp__prod_redis_triage__hget_field
-  - mcp__prod_redis_triage__hgetall_fields
-  - mcp__prod_redis_triage__hscan_fields
-  - mcp__prod_redis_triage__list_length
-  - mcp__prod_redis_triage__list_range
-  - mcp__prod_redis_triage__set_card
-  - mcp__prod_redis_triage__set_is_member
-  - mcp__prod_redis_triage__set_members
-  - mcp__prod_redis_triage__set_scan
-  - mcp__prod_redis_triage__zset_card
-  - mcp__prod_redis_triage__zset_score
-  - mcp__prod_redis_triage__zset_range
-  - mcp__prod_redis_triage__stream_length
-  - mcp__prod_redis_triage__stream_range
-  - mcp__prod_redis_triage__stream_info
-  - mcp__prod_redis_triage__stream_groups
-  - mcp__prod_redis_triage__stream_consumers
-  - mcp__prod_redis_triage__stream_pending
+  - mcp__redis_triage__list_targets
+  - mcp__redis_triage__tunnel_status
+  - mcp__redis_triage__cluster_topology
+  - mcp__redis_triage__keyslot_of
+  - mcp__redis_triage__server_info
+  - mcp__redis_triage__dbsize
+  - mcp__redis_triage__scan_keys
+  - mcp__redis_triage__inspect_key
+  - mcp__redis_triage__get_value
+  - mcp__redis_triage__hget_field
+  - mcp__redis_triage__hgetall_fields
+  - mcp__redis_triage__hscan_fields
+  - mcp__redis_triage__list_length
+  - mcp__redis_triage__list_range
+  - mcp__redis_triage__set_card
+  - mcp__redis_triage__set_is_member
+  - mcp__redis_triage__set_members
+  - mcp__redis_triage__set_scan
+  - mcp__redis_triage__zset_card
+  - mcp__redis_triage__zset_score
+  - mcp__redis_triage__zset_range
+  - mcp__redis_triage__stream_length
+  - mcp__redis_triage__stream_range
+  - mcp__redis_triage__stream_info
+  - mcp__redis_triage__stream_groups
+  - mcp__redis_triage__stream_consumers
+  - mcp__redis_triage__stream_pending
   # Shape-only capture for a local Redis repro: types/TTLs/field names with every value
   # SYNTHESIZED in the server. No production value crosses to local — that is the point.
-  - mcp__prod_redis_triage__capture_shape
-  - mcp__prod_redis_triage__disconnect
+  - mcp__redis_triage__capture_shape
+  - mcp__redis_triage__disconnect
   - Bash(uv run *prod_repro_seed.py*)
   # The Redis counterpart: replays a capture_shape descriptor as SYNTHETIC keys into LOCAL Redis
   # under a `repro:<label>:` prefix, torn down by that prefix. Refuses a non-loopback URL.
@@ -169,7 +169,7 @@ The `prd` workflow calls you to triage a bug/issue brief *before* its ticket exi
 ## Prod data for a repro — the ONE sanctioned path (`/diagnosing-bugs` only)
 Some data bugs only reproduce against the *actual* offending prod rows (a fixed-point money value that overflows, an identifier that resolves the wrong record, a race-triggering timestamp). When that's the case — **and only inside `/diagnosing-bugs`** (PRD pre-ticket triage or a dev-cycle QA-bug fix), never during a feature build:
 
-1. **Read prod (transient), read-only.** Use `/prod-pg-triage` to find the offending row(s) and pick the target. Reading prod into your context is fine; **`disconnect` when done.**
+1. **Read prod (transient), read-only.** Use `/pg-triage` to find the offending row(s) and pick the target. Reading prod into your context is fine; **`disconnect` when done.**
 2. **Persist ONLY via the seed tool.** Moving any prod-derived data onto local disk goes through **`uv run scripts/db/prod_repro_seed.py`** — the single enforced path. Never hand-craft `INSERT`s of prod values into a local DB; the tool exists so the mask/isolation/teardown invariants hold in code, not memory. It:
    - **masks external PII** (phone/email/wallet/bank/national-id — the shared `scripts/lib/pii-patterns.txt`) and PII-named columns before any local write, and fingerprints those prod values into the provenance vault so the tracker/notify adapters redact the same values if they later surface in a ticket or chat (`docs/agents/pii-provenance.md`). Inner-system identity (any `*_code`, UUID), money integers and status survive — those are what the bug needs.
    - lands data in **throwaway `repro_<KEY>_<seed>` DBs** (from a `template_db` that has the schema), **isolated** from the shared local DB — so normal `execute_sql` dev work is untouched.

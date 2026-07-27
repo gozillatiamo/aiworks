@@ -140,28 +140,37 @@ Flip these in `workspace.config.yaml` (`planning.auto_approve`, `vcs.auto_merge`
 ## 🔍 Production triage (optional)
 
 Two read-only MCP servers let an agent read **production ground truth** instead of guessing:
-`prod_pg_triage` for Postgres rows ([`scripts/db/`](scripts/db/README.md)) and
-`prod_redis_triage` for Redis keys and Streams ([`scripts/redis/`](scripts/redis/README.md)).
+`pg_triage` for Postgres rows ([`scripts/db/`](scripts/db/README.md)) and
+`redis_triage` for Redis keys and Streams ([`scripts/redis/`](scripts/redis/README.md)).
 Both are read-only by construction and disconnect when done.
 
 They live in **local scope**, not the shared `.mcp.json`: Claude Code spawns every enabled server
 in every session, and prod triage is occasional work, so the machines that do it are the ones that
 carry it. Opt in with one line in your git-ignored `workspace.config.local.yaml`:
 
-```yaml
-prod_triage:
-  enabled: true
+```sh
+cp scripts/db/.env.example    scripts/db/.env      # read-only DSNs, per target and per env
+cp scripts/redis/.env.example scripts/redis/.env   # Redis targets (+ tunnel, if you need one)
+./aiworks setup                                    # or: scripts/triage-mcp.sh sync
+scripts/triage-mcp.sh status                       # policy + what is registered
 ```
+
+`aiworks sync` registers both servers on every machine — **staging triage needs no opt-in**.
+**Production** does, and the servers enforce it themselves, so it is one line in your git-ignored
+`workspace.config.local.yaml` and takes effect immediately (no re-register, no restart):
+
+```yaml
+triage:
+  prod: true          # PRODUCTION targets; staging works without it
+# enabled: false      # the other direction — keep both servers out of this machine's sessions
+```
+
+Restart the session for the tools to appear. Then verify (read-only):
 
 ```sh
-cp scripts/db/.env.example    scripts/db/.env      # read-only DSNs, per target
-cp scripts/redis/.env.example scripts/redis/.env   # Redis targets (+ tunnel, if you need one)
-./aiworks setup                                    # or: scripts/prod-triage-mcp.sh sync
-scripts/prod-triage-mcp.sh status                  # policy + what is registered
+uv run scripts/db/pg_triage_mcp.py --verify staging --target main   # + asserts prod is refused when off
+uv run scripts/redis/redis_triage_mcp.py --selftest
 ```
-
-`aiworks sync` reconciles both servers against that flag in both directions, so flipping it off
-and re-running deregisters them again. Restart the session for the tools to appear.
 
 <details>
 <summary><strong>Under auto mode, add the authorization context (per machine)</strong></summary>
@@ -171,9 +180,11 @@ told that reading production through these prefixes is sanctioned, and where the
 context is prose in your personal `~/.claude/settings.json` under `autoMode.environment` — adapt
 the names to your setup:
 
-> Production DB access is ONLY through the prod-pg-triage MCP, tool prefix
-> `mcp__prod_pg_triage__*`. Treat EVERY call to that prefix as a sensitive, read-only production
-> read, regardless of the target name. The server enforces a read-only role; if any call under
+> Deployed DB access is ONLY through the pg-triage MCP, tool prefix `mcp__pg_triage__*`. Every
+> call names its environment explicitly (`env="staging"` | `env="prod"`; there is no default).
+> Treat EVERY `env="prod"` call as a sensitive, read-only production read, regardless of the
+> target name; `env="staging"` is ordinary non-production work. The server enforces a read-only
+> role and refuses prod entirely unless `triage.prod` is on for this machine; if any call under
 > this prefix ever mutates prod, treat it as a production write, not a read.
 
 > The local dev databases are ordinary LOCAL dev resources — routine local reads, scratch tables
@@ -181,8 +192,8 @@ the names to your setup:
 > the MASKED output of `scripts/db/prod_repro_seed.py`; a prod read written to a local database
 > WITHOUT going through that tool is an unmasked prod-data flow and is NOT authorized.
 
-> Production Redis access is ONLY through the prod-redis-triage MCP, tool prefix
-> `mcp__prod_redis_triage__*` — typed READ tools only, with no command passthrough. That server
+> Production Redis access is ONLY through the redis-triage MCP, tool prefix
+> `mcp__redis_triage__*` — typed READ tools only, with no command passthrough. That server
 > owns its own port-forward and forwards the Redis port ONLY; it is never a remote shell, and the
 > agent holds no `gcloud` grant. Treat every call against a `prod=true` target as a sensitive
 > read-only production read; if any call under this prefix ever mutates Redis, treat it as a

@@ -6,7 +6,7 @@
 #   "python-dotenv>=1.0",
 # ]
 # ///
-"""prod-redis-triage — on-demand, READ-ONLY MCP over your PRODUCTION (and staging) Redis.
+"""redis-triage — on-demand, READ-ONLY MCP over your PRODUCTION (and staging) Redis.
 
 One MCP process, as many targets as you configure. Which Redis a tool touches is chosen *per
 call* by a `target` argument — never baked into the process, and never defaulted, so a
@@ -28,7 +28,7 @@ host is already reachable (a bastion you run yourself, a VPN, a local port-forwa
 
 Safety, and why it is shaped this way. Redis has no read-only role and no read-only
 transaction, and a managed Redis commonly exposes neither an ACL user you can scope to
-`+@read` nor a read-only replica — so unlike prod_pg_mcp.py, whose guarantee is a read-only DB
+`+@read` nor a read-only replica — so unlike pg_triage_mcp.py, whose guarantee is a read-only DB
 role, EVERY layer here is client-side. (If your Redis DOES offer an ACL user or a replica, point
 the target at it: that is a real server-side guarantee and strictly better than these.)
 That means the layers are the guarantee, not a convenience:
@@ -81,6 +81,8 @@ from mcp.server.fastmcp import FastMCP
 # adapters redact exactly those values from a ticket or Slack post while leaving
 # identical-looking staging/local data alone.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import triage_policy  # noqa: E402  — the production gate; load-bearing, so never optional
+
 try:
     import pii_provenance
 except Exception:  # provenance is a safety net; a missing module must not break triage
@@ -153,7 +155,7 @@ def _load_targets() -> dict[str, Target]:
         try:
             t = _parse_target(name, spec)
         except ValueError as exc:  # a broken line must name itself, not disappear
-            print(f"prod-redis-triage: ignoring {var} — {exc}", file=sys.stderr)
+            print(f"redis-triage: ignoring {var} — {exc}", file=sys.stderr)
             continue
         out[t.key] = t
     return out
@@ -170,7 +172,7 @@ BULK_CARDINALITY_LIMIT = 1000  # above this, a bulk read is refused in favour of
 SCAN_MAX_ITERATIONS = 10
 SCAN_DEFAULT_COUNT = 500
 
-mcp = FastMCP("prod-redis-triage")
+mcp = FastMCP("redis-triage")
 
 
 def _resolve(target: str | None) -> Target:
@@ -262,7 +264,7 @@ class _ReadOnly:
     def __getattr__(self, name: str):
         if name not in ALLOWED_METHODS:
             raise PermissionError(
-                f"command {name!r} is not in the read-only allow-list of prod-redis-triage"
+                f"command {name!r} is not in the read-only allow-list of redis-triage"
             )
         attr = getattr(self._client, name)
         if not callable(attr):
@@ -422,6 +424,11 @@ def _reap_idle() -> None:
 
 def _connect(t: Target, db: int) -> _ReadOnly:
     global _watchdog
+    # Being able to reach the box (cloud IAM, a VPN, your own forward) is not permission:
+    # a target declared `prod=true` requires the per-machine opt-in, checked before a tunnel
+    # is spawned. A `prod=false` target (staging/test) is ungated. See docs/adr/0005.
+    if t.is_prod:
+        triage_policy.assert_prod_allowed("PRODUCTION Redis triage")
     with _lock:
         if _watchdog is None:
             _watchdog = threading.Thread(target=_reap_idle, name="redis-tunnel-watchdog", daemon=True)
@@ -489,7 +496,7 @@ _OPAQUE = re.compile(r"^[A-Za-z0-9+/=_-]{40,}$")
 def _force_mask() -> bool:
     """Verification hook: exercise the prod masking path against staging without reading a
     real production credential."""
-    return os.environ.get("PROD_REDIS_FORCE_MASK") == "1"
+    return os.environ.get("REDIS_TRIAGE_FORCE_MASK") == "1"
 
 
 def _digest(value: str) -> str:
@@ -1329,8 +1336,16 @@ def _selftest() -> int:
         if not cond:
             failures.append(desc)
 
-    print("prod-redis-triage selftest (no network access)")
+    print("redis-triage selftest (no network access)")
     check("redis + mcp imported", redis is not None and mcp is not None)
+    check("triage policy wired", hasattr(triage_policy, "assert_prod_allowed"))
+    for _k in ("enabled", "prod"):
+        _v, _src = triage_policy.resolve(_k)
+        print(f"  ..   triage.{_k} = {str(_v).lower()} ({_src})")
+    _dead = triage_policy.dead_key_present()
+    if _dead:
+        print(f"  ..   ! {_dead} still sets the REMOVED key `prod_triage.enabled` — ignored")
+    check("a prod target is gated unless triage.prod is on", _prod_gated())
     check("pii provenance wired", pii_provenance is not None)
     ports = [t.local_port for t in TARGETS.values()]
     check("target local ports unique", len(ports) == len(set(ports)))
@@ -1392,6 +1407,23 @@ def _no_default_target() -> bool:
         return True
 
 
+def _prod_gated() -> bool:
+    """With the opt-in off, connecting to a `prod=true` target must be refused BEFORE a tunnel is
+    spawned. With it on — or with no prod target declared — there is nothing to assert offline."""
+    if triage_policy.prod_allowed():
+        return True
+    prod_targets = [t for t in TARGETS.values() if t.is_prod]
+    if not prod_targets:
+        return True
+    try:
+        _connect(prod_targets[0], 0)
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False  # anything else means it got past the gate and tried to connect
+
+
 def _proxy_blocks(method: str) -> bool:
     proxy = _ReadOnly.__new__(_ReadOnly)
     try:
@@ -1419,7 +1451,18 @@ def _verify(target_name: str, wait_for_idle: bool = False) -> int:
             failures.append(desc)
 
     t = _resolve(target_name)
-    print(f"prod-redis-triage verify: {t.key} ({t.vm} -> {t.remote_host}:{t.remote_port})")
+    print(f"redis-triage verify: {t.key} ({t.vm} -> {t.remote_host}:{t.remote_port})")
+    prod_allowed, policy_source = triage_policy.resolve("prod")
+    print(f"  ..   triage.prod = {str(prod_allowed).lower()} ({policy_source})")
+    if not prod_allowed and not t.is_prod:
+        _prod = [x for x in TARGETS.values() if x.is_prod]
+        if _prod:
+            try:
+                _connect(_prod[0], 0)
+                check("a prod target is refused while triage.prod is off", False, "the connect SUCCEEDED")
+            except PermissionError as exc:
+                check("a prod target is refused while triage.prod is off", "triage.prod" in str(exc))
+
     try:
         info = server_info("server", t.key)
         check("tunnel up + INFO server", "redis_version" in info["info"], info["info"].get("redis_version", ""))
@@ -1475,7 +1518,7 @@ def _verify(target_name: str, wait_for_idle: bool = False) -> int:
             if probe:
                 got = get_value(probe[0], t.key) if _key_type(_connect(t, 0), probe[0]) == "string" else None
                 masked = got is None or str(got.get("value", "")).startswith("<redis-secret:")
-                check("masking path active (PROD_REDIS_FORCE_MASK=1)", masked, probe[0])
+                check("masking path active (REDIS_TRIAGE_FORCE_MASK=1)", masked, probe[0])
             else:
                 print("  skip  masking on a live key — no credential-shaped key in this sample")
         if wait_for_idle:
@@ -1499,7 +1542,7 @@ def _smoke(target_name: str) -> int:
     the cluster coverage are real, without running an investigation nobody asked for."""
     t = _resolve(target_name)
     leaked = False
-    print(f"prod-redis-triage smoke: {t.key} ({t.vm} -> {t.remote_host}:{t.remote_port})")
+    print(f"redis-triage smoke: {t.key} ({t.vm} -> {t.remote_host}:{t.remote_port})")
     try:
         info = server_info("server", t.key)
         print(f"  ok   INFO server — redis {info['info'].get('redis_version')}, uptime "

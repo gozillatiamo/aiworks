@@ -1,5 +1,5 @@
 ---
-name: prod-redis-triage
+name: redis-triage
 description: >-
   Use this to get ground truth from the real PRODUCTION (or staging) Redis — read-only — instead
   of guessing from code, memory, or a local copy. Trigger for: a cache/session symptom only the
@@ -10,7 +10,7 @@ description: >-
   key, TTL, stream entry, or sorted-set score in prod or staging; or grounding another skill's
   plan/fix with a real Redis fact. One on-demand MCP owns its own SSH tunnel and always
   disconnects when done — it never writes, expires, or trims. Do NOT use for a local dev Redis
-  (`mcp__redis`), for Postgres rows (prod-pg-triage), or for logs/traces.
+  (`mcp__redis`), for Postgres rows (pg-triage), or for logs/traces.
 argument-hint: "[symptom / key or pattern / stream name / ticket-key]"
 ---
 
@@ -26,19 +26,28 @@ Redis holds the state that is *true right now* — caches, sessions and tokens, 
 the Stream backbone your services read. When a symptom is "the number is stale", "the event
 never arrived", or "the session vanished", the live keyspace is the **ground truth**; the code
 only says what should have been written. This skill reads that truth through a read-only MCP and
-lands on a finding. It is the cache/stream sibling of `prod-pg-triage` (rows).
+lands on a finding. It is the cache/stream sibling of `pg-triage` (rows).
 
 ## Preflight
 
-Check the tools are present (`list_targets`). If `mcp__prod_redis_triage__*` is **missing**,
+Check the tools are present (`list_targets`). If `mcp__redis_triage__*` is **missing**,
 stop and tell the user to set it up — do not improvise another route to a deployed Redis (no
 `gcloud`, no `redis-cli`, and never a local `mcp__redis`, which points at `localhost:6379` and
 would answer a production question with dev data):
 
-> The prod-redis-triage MCP isn't registered in this session. One-time setup (see
-> `scripts/redis/README.md`): declare your targets in `scripts/redis/.env`, set
-> `prod_triage.enabled: true` in `workspace.config.local.yaml`, run
-> `scripts/prod-triage-mcp.sh sync`, and restart the session.
+> The redis-triage MCP isn't registered in this session. Setup (see
+> `scripts/redis/README.md`): declare your targets in `scripts/redis/.env`, run
+> `scripts/triage-mcp.sh sync`, and restart the session.
+
+A `prod=false` target (staging/test) needs nothing further. **A `prod=true` target is gated per
+machine** — if a prod call returns a `triage.prod` PermissionError, that machine has not opted in.
+Don't reroute, and don't quietly answer from staging as if it were prod; say which target you can
+reach and ask:
+
+> Production Redis is off on this machine (`triage.prod`). Add `triage: {prod: true}` to
+> `workspace.config.local.yaml` (takes effect immediately, no restart) — or tell me to answer from
+> **staging**, which is reachable now but is NOT the same keyspace.
+
 
 If `list_targets` returns **no targets**, the `.env` is missing or empty — same fix, and say so
 rather than guessing a target name.

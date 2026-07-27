@@ -377,15 +377,16 @@ NODE
   esac
 }
 
-# ── production-triage MCPs (prod_pg_triage + prod_redis_triage), local scope ──────
-# Gated by `prod_triage.enabled` (default OFF), read LOCAL-FIRST so opting in is a personal
-# decision: Claude Code spawns every enabled MCP server in every session, and prod triage is
-# occasional work, so only the machines that do it carry the servers. The reconcile logic lives
-# in scripts/prod-triage-mcp.sh (also runnable by hand: `scripts/prod-triage-mcp.sh status`).
-seed_prod_triage_mcps() {
-  local sh="$DIR/prod-triage-mcp.sh"
-  step "Reconcile the read-only prod-triage MCPs with prod_triage.enabled"
-  [[ -x "$sh" ]] || { warn "scripts/prod-triage-mcp.sh missing or not executable — skipping"; return 0; }
+# ── deployed-env triage MCPs (pg_triage + redis_triage), local scope ──────────────
+# Registration follows `triage.enabled` (default ON — staging triage needs no authorization);
+# PRODUCTION access follows `triage.prod` (default OFF), which the servers read in-process, so it is
+# NOT a registration concern. Both are read LOCAL-FIRST. This step also migrates the pre-0005
+# `prod_pg_triage` / `prod_redis_triage` registrations away. The reconcile logic lives in
+# scripts/triage-mcp.sh (also runnable by hand: `scripts/triage-mcp.sh status`).
+seed_triage_mcps() {
+  local sh="$DIR/triage-mcp.sh"
+  step "Reconcile the read-only triage MCPs (staging+prod) with the triage policy"
+  [[ -x "$sh" ]] || { warn "scripts/triage-mcp.sh missing or not executable — skipping"; return 0; }
   local args=(sync); [[ "$DRY" -eq 1 ]] && args+=(-n)
   local out; out="$("$sh" "${args[@]}" 2>&1)"
   if [[ "$VERBOSE" -eq 1 ]]; then
@@ -393,7 +394,7 @@ seed_prod_triage_mcps() {
   else
     # Quiet mode still surfaces a state CHANGE (and any warning) — "registered, restart the
     # session for its tools to appear" is the one line a teammate must not miss.
-    printf '%s\n' "$out" | grep -Ev 'already registered|Prod triage MCPs DISABLED' | grep -E '.' || true
+    printf '%s\n' "$out" | grep -Ev 'already registered|Triage MCPs DISABLED|staging only —|production targets are ENABLED' | grep -E '.' || true
   fi
 }
 
@@ -426,10 +427,10 @@ prepare_adapter_env
 # once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
 seed_image_gen_settings
 
-# Register (or deregister) the read-only prod-triage MCPs per prod_triage.enabled, so opting in
-# is one line in workspace.config.local.yaml plus a re-run of setup — and nobody else's session
-# spawns a server they never use.
-seed_prod_triage_mcps
+# Register (or deregister) the read-only triage MCPs per triage.enabled, and migrate the pre-0005
+# names away. Reaching PRODUCTION stays a separate, per-machine opt-in (triage.prod) that the
+# servers enforce themselves, so staging triage works out of the box.
+seed_triage_mcps
 
 # ── SonarQube onboarding scaffold (quality_gate.provider: sonarqube) ─────────────
 # Read the provider once, then seed a minimal sonar-project.properties into each CODE repo so the

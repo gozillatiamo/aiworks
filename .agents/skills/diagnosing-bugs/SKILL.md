@@ -39,7 +39,7 @@ Build the right feedback loop, and the bug is 90% fixed.
 ### When the loop needs the *actual* production data
 Some data bugs only reproduce against the real offending rows — a fixed-point money value that
 overflows, an identifier that resolves the wrong record, a race-triggering timestamp — that
-synthetic fixtures don't recreate. Get the ground truth with **`/prod-pg-triage`** (read-only),
+synthetic fixtures don't recreate. Get the ground truth with **`/pg-triage`** (read-only),
 then persist an entity-scoped, PII-masked slice into a **throwaway local DB** via the one
 sanctioned path, **`scripts/db/prod_repro_seed.py`**, and point the local service at it:
 
@@ -50,7 +50,7 @@ uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown         # DROP it
 ```
 
 When the stale thing is a **cache, a session, or a stream** rather than a row, the ground truth
-is **`/prod-redis-triage`** (read-only, `target` from `scripts/redis/.env`): a cached value that
+is **`/redis-triage`** (read-only, `target` from `scripts/redis/.env`): a cached value that
 disagrees with the DB, a session or token that should exist, or a consumer group behind on a
 stream. Redis has **no seed tool** — prod values never land locally. Reproduce by taking the
 observed *shape* into a test (the default), or, when the repro truly needs keys,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# tunnel.sh — inspect / clear the prod-redis-triage SSH tunnels.
+# tunnel.sh — inspect / clear the redis-triage SSH tunnels.
 #
-# The MCP server (prod_redis_mcp.py) owns its own tunnels: it opens them lazily, reaps any
+# The MCP server (redis_triage_mcp.py) owns its own tunnels: it opens them lazily, reaps any
 # tunnel idle past its timeout, and closes everything on `disconnect` and on exit. This script
 # is the HUMAN's view of that — for confirming nothing is left open, and for clearing an orphan
 # left by a hard-killed session.

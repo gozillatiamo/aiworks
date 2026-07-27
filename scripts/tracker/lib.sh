@@ -49,7 +49,7 @@ command -v curl >/dev/null || die "curl is required"
 # work all day, so a shape-only gate blocks the wrong things.
 #
 # So provenance decides, not shape: scripts/lib/pii_provenance.py masks a value if and only if
-# a sanctioned prod-read path (the prod-pg-triage MCP, the repro seed) actually saw that value
+# a sanctioned prod-read path (the pg-triage MCP, the repro seed) actually saw that value
 # and vaulted its keyed hash. A seeded local fixture address is untouched; a real personal
 # address is redacted to `<prod-pii:email>` wherever it turns up, in any session or ticket.
 #

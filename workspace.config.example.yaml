@@ -113,18 +113,26 @@ planning:
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
 
-# ── Production triage (read-only prod MCPs, registered per machine) ─────────────
-prod_triage:
-  enabled: false                   # MASTER switch (default OFF). Whether THIS machine carries
-                                   #   the read-only production-triage MCP servers
-                                   #   (prod_pg_triage → scripts/db, prod_redis_triage →
-                                   #   scripts/redis) in LOCAL scope. `aiworks sync` reconciles
-                                   #   registration against this flag, in both directions.
-                                   #   Read LOCAL-FIRST: put `prod_triage.enabled: true` in your
-                                   #   git-ignored workspace.config.local.yaml so opting in is a
-                                   #   per-person decision — every enabled MCP server spawns in
-                                   #   every session, and prod triage is occasional work.
-                                   #   See scripts/prod-triage-mcp.sh.
+# ── Deployed-env triage (read-only staging + prod MCPs) ────────────────────────
+triage:
+  enabled: true                    # REGISTRATION (default ON). Whether THIS machine carries the
+                                   #   read-only triage MCP servers (pg_triage → scripts/db,
+                                   #   redis_triage → scripts/redis) in LOCAL scope. `aiworks sync`
+                                   #   reconciles registration against this flag, both directions.
+                                   #   ON by default because STAGING triage needs no authorization
+                                   #   — making everyone flip a flag before they can look at
+                                   #   staging is friction with no payer. Set false to keep both
+                                   #   servers out of every session on this machine.
+  prod: false                      # PRODUCTION access (default OFF), per PERSON. Enforced INSIDE
+                                   #   the servers (scripts/lib/triage_policy.py): an `env="prod"`
+                                   #   / `prod=true` target call is refused until this is true,
+                                   #   even on a machine that holds the prod credentials. Read
+                                   #   LOCAL-FIRST, so put `triage: {prod: true}` in your
+                                   #   git-ignored workspace.config.local.yaml — it takes effect
+                                   #   immediately, with no re-register and no session restart.
+                                   #   See scripts/triage-mcp.sh and docs/adr/0005.
+                                   #   The pre-0005 key `prod_triage.enabled` is REMOVED and never
+                                   #   honoured; `scripts/triage-mcp.sh status` reports a leftover.
 
 # ── Artifacts (publishing an interactive doc as a shareable Claude Artifact) ────
 artifacts:

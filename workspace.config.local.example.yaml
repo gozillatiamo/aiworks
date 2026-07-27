@@ -39,11 +39,11 @@
 # diagrams:
 #   enabled: true
 
-# Carry the read-only PRODUCTION-triage MCPs (prod_pg_triage + prod_redis_triage) on THIS
-# machine. `aiworks sync` / `aiworks setup` reads this key local-first and registers or
-# deregisters both servers in local scope accordingly — so opting in is this one line plus a
-# re-run of setup, and everyone else's sessions spawn nothing. Postgres needs read-only DSNs in
-# scripts/db/.env; Redis needs its targets in scripts/redis/.env.
-# See scripts/db/README.md · scripts/redis/README.md
-# prod_triage:
-#   enabled: true
+# Reach PRODUCTION with the read-only triage MCPs (pg_triage + redis_triage) from THIS machine.
+# The servers themselves are registered for everyone (staging needs no opt-in); this key is the
+# production half, read live by the servers — flipping it takes effect immediately, no re-register.
+# `enabled: false` is the other direction: keep both servers out of this machine's sessions.
+# See scripts/db/README.md · scripts/redis/README.md · docs/adr/0005
+# triage:
+#   prod: true
+#   enabled: false

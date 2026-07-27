@@ -1,21 +1,32 @@
-# scripts/db — production Postgres, read-only
+# scripts/db — deployed Postgres (staging + production), read-only
 
-`prod_pg_mcp.py` is an **on-demand, read-only MCP server** over your **production** Postgres.
-One MCP process serves as many databases as you configure; the database a tool touches is
-chosen **per call** by a `target` argument, so there is no per-database server to spin up.
+`pg_triage_mcp.py` is an **on-demand, read-only MCP server** over your **deployed** Postgres —
+**staging and production**. One MCP process serves both; which environment and which database a
+tool touches is chosen **per call** by `env` + `target`, so there is no per-env or per-database
+server to spin up.
 
-It is ground-truth production data for root-causing a live issue — read-only, with a clean
-teardown. The driving skill is `prod-pg-triage` (`.claude/skills/prod-pg-triage/`).
+It is ground truth for root-causing a live issue — read-only, with a clean teardown. The driving
+skill is `pg-triage` (`.claude/skills/pg-triage/`).
 
-This is **opt-in and personal** — it is deliberately *not* in the shared `.mcp.json`, so it
-never spawns for teammates who aren't doing prod triage and never carries prod credentials
-into the shared repo. You register it in local scope on the machine that has the read-only
-DSNs.
+It lives in **local scope**, deliberately *not* in the shared `.mcp.json`, so prod credentials
+never enter the shared repo. `aiworks sync` registers it on every machine (`triage.enabled`,
+default on) because **staging needs no authorization**; **production** needs the per-machine
+`triage.prod` opt-in, enforced inside the server. See `docs/adr/0005`.
 
-## Targets
+## Environments and targets
 
-A target is a name you configure with a `PGPROD_<NAME>` DSN in `scripts/db/.env`, addressed
-as `target="<name>"` at call time:
+`env` is **required** on every data tool — there is no default, so production is never implied.
+
+| Env       | DSNs                              | Shape                                                     |
+|-----------|-----------------------------------|-----------------------------------------------------------|
+| `staging` | `PGSTG_<NAME>`, or `PGSTG_DSN`    | Per target like prod, OR one instance with a database per target (default: the target name; override with `PGSTG_DB_<NAME>`). |
+| `prod`    | `PGPROD_<NAME>`                   | One DSN per database. Requires `triage.prod: true`.        |
+
+Staging resolution lives in `scripts/lib/pg_staging.py`, shared with the repro seeder so the two
+cannot disagree about which database a target means.
+
+A target is a name you configure with a `PGPROD_<NAME>` / `PGSTG_<NAME>` DSN in `scripts/db/.env`,
+addressed as `target="<name>"` at call time:
 
 | Env var             | Address as           | Notes                                             |
 |---------------------|----------------------|---------------------------------------------------|
@@ -40,53 +51,72 @@ explicitly; a fleet-wide check is just a query per target.
 2. **Pre-warm deps + validate config** (prints only which targets are set — never a DSN):
 
    ```bash
-   uv run scripts/db/prod_pg_mcp.py --selftest
+   uv run scripts/db/pg_triage_mcp.py --selftest
    ```
 
-3. **Opt in, and let `aiworks` register it** in local scope (personal, this project only).
-   One line in your git-ignored `workspace.config.local.yaml` — the flag is read local-first,
-   so the shared default stays off and nobody else's session spawns this server:
-
-   ```yaml
-   prod_triage:
-     enabled: true
-   ```
+3. **Register it** — `aiworks` does this for you in local scope (personal, this project only):
 
    ```bash
-   ./aiworks setup                     # or, on its own: scripts/prod-triage-mcp.sh sync
-   scripts/prod-triage-mcp.sh status   # policy + what is registered
+   ./aiworks setup                  # or, on its own: scripts/triage-mcp.sh sync
+   scripts/triage-mcp.sh status     # policy + what is registered
    ```
 
-   Restart the session so it connects. The `mcp__prod_pg_triage__*` tools then appear. Flipping
+   Staging is usable from here on. **To reach production**, add the opt-in to your git-ignored
+   `workspace.config.local.yaml` — the server reads it live, so this needs no re-register and no
+   restart:
+
+   ```yaml
+   triage:
+     prod: true
+   ```
+
+   Restart the session so it connects. The `mcp__pg_triage__*` tools then appear. Flipping
    the flag back to `false` and re-running deregisters it. By hand, if you prefer (an absolute
    path, so it resolves regardless of the session's cwd):
 
    ```bash
-   claude mcp add prod_pg_triage --scope local -- \
-     uv run --quiet "$(pwd)/scripts/db/prod_pg_mcp.py"
-   claude mcp remove prod_pg_triage --scope local
+   claude mcp add pg_triage --scope local -- \
+     uv run --quiet "$(pwd)/scripts/db/pg_triage_mcp.py"
+   claude mcp remove pg_triage --scope local
    ```
 
 ## Tools
 
 | Tool                 | Purpose                                                             |
 |----------------------|---------------------------------------------------------------------|
-| `list_targets`       | Which targets are configured / have an open pool. No prod access.   |
+| `list_targets`       | Both envs: which targets are configured, which pools are open, and whether prod is allowed. No DB access. |
 | `list_schemas`       | User schemas on a target.                                           |
 | `list_objects`       | Tables/views in a schema (optional `object_type` filter).           |
 | `get_object_details` | Columns + indexes of a table/view.                                  |
 | `explain_query`      | Query plan. `analyze=True` runs the query (off by default).         |
 | `execute_sql`        | Read-only query, paginated at 200 rows/page.                        |
-| `disconnect`         | Close all prod pools — the teardown. Leaves zero open connections.  |
+| `disconnect`         | Close pools — both envs by default, or one via `env`. Leaves zero open connections. |
+
+Every data tool takes `env` **and** `target`. Every result carries `env` + `pii_vaulted`, so a
+mixed-env investigation can't mislabel where a row came from.
 
 Every data tool takes a `target`.
+
+## Verifying it
+
+```bash
+uv run scripts/db/pg_triage_mcp.py --selftest                      # config + policy, no DB access
+uv run scripts/db/pg_triage_mcp.py --verify staging --target main  # live read-only acceptance run
+uv run scripts/db/pg_triage_mcp.py --verify prod --target main     # needs triage.prod: true
+```
+
+The staging run also asserts that a prod call is refused while the opt-in is off, and both runs
+point the provenance vault at a throwaway directory so a verify never writes fingerprints into the
+real one.
 
 ## Safety model (layered)
 
 A production DB behind an AI tool is a real risk, so protection does not rely on any single
 mechanism:
 
-1. **Read-only DB role** in every DSN — the actual guarantee. Nothing else is trusted to
+1. **Production opt-in** — `triage.prod` (local-first, `scripts/lib/triage_policy.py`) is checked
+   before the DSN is looked up: having the credentials is not permission. Staging is ungated.
+2. **Read-only DB role** in every DSN — staging included — the actual guarantee. Nothing else is trusted to
    substitute for it.
 2. **Read-only transaction + timeouts** forced on every connection
    (`default_transaction_read_only=on`, `statement_timeout=15s`,
