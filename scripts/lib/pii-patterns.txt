@@ -1,6 +1,6 @@
 # scripts/lib/pii-patterns.txt — canonical external-PII detector list (the single policy).
 #
-# Loaded by every engine so the policy lives in one place (decided in the prod-pg-triage
+# Loaded by every engine so the policy lives in one place (decided in the pg-triage
 # allocation consult):
 #   - scripts/lib/pii_provenance.py    — the egress decision: fingerprints these values at a
 #                                        prod read, redacts exactly those at a ticket/Slack
@@ -39,7 +39,7 @@ national_id	ci	(national[ _-]?id|citizen[ _-]?id|บัตรประชาช�
 passport	ci	passport[^A-Za-z0-9]{0,20}[A-Z]{1,2}[0-9]{6,8}
 bank_account	ci	(bank[ _-]?acc(ount)?|acct[ _-]?no|เลขบัญชี)[^0-9]{0,20}[0-9]{6,17}
 
-# Live credentials — added with prod-redis-triage, because production Redis stores session and
+# Live credentials — added with redis-triage, because production Redis stores session and
 # agent tokens (`token:{agent:<id>}:*`, `agent_tokens:*`, `sso:*`) and a leaked one is an
 # account takeover, not a privacy incident. The MCP already masks these at the source; these
 # detectors are the last layer, for a credential that reaches a ticket/Slack by another path.

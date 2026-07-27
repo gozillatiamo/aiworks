@@ -36,25 +36,28 @@ Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give
 
 Build the right feedback loop, and the bug is 90% fixed.
 
-### When the loop needs the *actual* production data (OFB)
+### When the loop needs the *actual* deployed data (OFB)
 Some data bugs only reproduce against the real offending rows — a `×1e6` money value that
 overflows, a `player_code` that resolves the wrong shard, a race-triggering timestamp — that
-synthetic fixtures don't recreate. Get the ground truth with **`/prod-pg-triage`** (read-only),
-then persist an entity-scoped, PII-masked slice into a **throwaway local DB** via the one
-sanctioned path, **`scripts/db/prod_repro_seed.py`**, and point the local service at it:
+synthetic fixtures don't recreate. Get the ground truth with **`/pg-triage`** (read-only,
+`env="staging"|"prod"` — required, and prod needs the machine's `triage.prod` opt-in), then persist
+an entity-scoped slice into a **throwaway local DB** via the one sanctioned path,
+**`scripts/db/prod_repro_seed.py`**, and point the local service at it:
 
 ```bash
-uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json   # → ofb_repro_<KEY> (masked)
+uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json   # → ofb_repro_<KEY>
 # ... reproduce against local source ...
 uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown         # DROP it wholesale (Phase 6 cleanup)
 ```
 
-Never hand-craft local `INSERT`s from prod values — the tool enforces mask + isolation +
-teardown in code. This is a developer step and lives entirely within this skill's sandbox;
+Each seed in the spec names its source `env`. A **prod** source is PII-masked + vaulted before the
+local write; a **staging** source loads verbatim (staging is not the prod boundary), so prefer
+staging when it reproduces the bug. Never hand-craft local `INSERT`s from deployed values — the
+tool enforces the gate + mask + isolation + teardown in code. This is a developer step and lives entirely within this skill's sandbox;
 the `--teardown` DROP is part of Phase 6 cleanup. (Full contract: developer.md "Prod data for a repro".)
 
 When the stale thing is a **cache, a session, or a stream** rather than a row, the ground truth
-is **`/prod-redis-triage`** (read-only, `target="staging"|"prod"`): a cached `user_balance:*` /
+is **`/redis-triage`** (read-only, `target="staging"|"prod"`): a cached `user_balance:*` /
 `game:*` disagreeing with the DB, a session or agent token that should exist, or a consumer
 group behind on `bet_stream` / `daily_checkin_stream`. Redis has **no seed tool** — prod values
 never land locally. Reproduce by taking the observed *shape* into a test (the default), or,

@@ -14,7 +14,7 @@
 #   - the detector list itself (scripts/lib/pii-patterns.txt), shared with the provenance
 #     engine so the policy still lives in ONE place.
 #
-# Policy (decided in the prod-pg-triage allocation consult):
+# Policy (decided in the pg-triage allocation consult):
 #   ALLOW  — inner-system identity: player_code, site_code, any *_code, internal UUID;
 #            reproduce SQL query text; aggregate stats (counts/GROUP BY); money integers
 #            (the ×1,000,000-scaled amounts). These are the ground-truth a triage summary or

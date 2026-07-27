@@ -47,9 +47,11 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   (`image_generation.enabled` — default OFF — `image_generation.quality` /
   `image_generation.max_per_request`), diagram-generation policy (`diagrams.enabled` —
   default OFF — `diagrams.provider` / `diagrams.theme` / `diagrams.max_per_ticket`),
-  prod-triage policy (`prod_triage.enabled` — default OFF — whether THIS machine carries the
-  read-only production-triage MCPs `prod_pg_triage` + `prod_redis_triage`; read local-first and
-  reconciled by `aiworks sync` via `scripts/prod-triage-mcp.sh`), and
+  deployed-env triage policy (`triage.enabled` — default **ON** — whether THIS machine carries the
+  read-only triage MCPs `pg_triage` + `redis_triage`, reconciled by `aiworks sync` via
+  `scripts/triage-mcp.sh`; and `triage.prod` — default OFF — whether it may reach **PRODUCTION**,
+  enforced in-process by the servers so staging needs no opt-in; both read local-first —
+  `docs/adr/0005`), and
   the `products[].repos[]` registry
   (repo URLs). The source of truth for this workspace; `scripts/aiworks sync` sets
   everything up from it. Personal, non-shared overrides go in the git-ignored
@@ -60,7 +62,7 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   language, config). One place to look up a term; each entry links to its fuller home.
 - `docs/adr/` — architecture decision records: why the workspace is shaped as it is
   (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides,
-  `0004` the Cursor mirror).
+  `0004` the Cursor mirror, `0005` deployed-env triage + the production gate).
 - `docs/agents/cursor.md` — how this workspace runs under **Cursor**. Everything (project
   instruction, rules, skills, subagents, hooks, permissions, MCP, adapters) works there via a
   GENERATED mirror — `aiworks cursor` — built from symlinks back to the `.claude/` files, so

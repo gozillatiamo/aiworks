@@ -53,13 +53,22 @@ diagrams:
 artifacts:
   enabled: false
 
-# Read-only PRODUCTION-triage MCP servers (prod_pg_triage, prod_redis_triage), registered in
-# LOCAL scope by `aiworks sync` / `aiworks setup`. OFF by default: Claude Code spawns every
-# enabled server in every session, and prod triage is occasional work — so only the machines
-# that do it carry the servers. Opt in per PERSON via workspace.config.local.yaml (which wins
-# over this file for this key), then re-run setup. See scripts/prod-triage-mcp.sh.
-prod_triage:
-  enabled: false
+# Read-only deployed-env triage MCP servers (pg_triage, redis_triage — STAGING + PRODUCTION),
+# registered in LOCAL scope by `aiworks sync` / `aiworks setup`.
+#
+#   enabled  registration. ON by default: staging triage needs no authorization, so making
+#            everyone flip a flag before they can look at staging is friction with no payer.
+#            Set false to keep both servers out of every session on this machine.
+#   prod     the PRODUCTION opt-in, per PERSON. OFF by default and enforced INSIDE the servers
+#            (scripts/lib/triage_policy.py) — a `env="prod"` / `target="prod"` call is refused
+#            until it is true, even on a machine that has the prod DSNs. Set it in
+#            workspace.config.local.yaml (git-ignored), which wins over this file.
+#
+# See scripts/triage-mcp.sh and docs/adr/0005. The pre-0005 key `prod_triage.enabled` is REMOVED
+# and never honoured — a leftover copy of it is reported by `scripts/triage-mcp.sh status`.
+triage:
+  enabled: true
+  prod: false
 
 products:
   - id: ofb-platform

@@ -114,6 +114,12 @@
         "timeout": 15
       }
     ],
+    "sessionEnd": [
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/redis-triage-tunnel-reap.sh'",
+        "timeout": 15
+      }
+    ],
     "stop": [
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/slack-postback.sh'",
