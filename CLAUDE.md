@@ -171,6 +171,22 @@ A **repo-only session** (`cd <repo> && claude`) is covered too: each repo's
 `.claude/skills/<name>` (git-ignored), which Cursor reads through `.cursor/skills`, so both
 names are the same file. Every agent file names both forms; see `docs/agents/cursor.md`.
 
+## Notifications
+**Ticket work — auto-post, never ask.** When a workflow's code review or ship step completes for
+a ticket (the PR/MR carries the tracker key — `tracker.ticket_prefix`, e.g. `APP-123` — in its
+title or branch), post the chat notification as part of that step. Do not treat it as optional, a
+follow-up, or something to ask permission for.
+
+**Workspace/framework work — ASK first.** A change to THIS workspace repo itself (agents, skills,
+hooks, adapters, docs, config) has no ticket and is not the team's sprint traffic. Opening a PR/MR
+for it is not a review-request broadcast: report it in chat and ask before posting. The same holds
+for any PR/MR with no ticket key. Announcing infra work to a product channel spends the team's
+attention on something they were not waiting for.
+
+Retracting one, if it goes out anyway: `scripts/notify/send.sh --delete <permalink>` (bot-token
+only, and only a message this bot posted). A deleted message is gone for new readers but the ones
+already looking saw it — say so in the channel if it mattered.
+
 ## Product Overview
 {{PRODUCT_DESCRIPTION}}
 

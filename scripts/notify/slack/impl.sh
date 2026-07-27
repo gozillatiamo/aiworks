@@ -85,6 +85,49 @@ notify_send() {
   printf 'ok=1\npermalink=\n'
 }
 
+# notify_parse_permalink URL -> prints "<channel_id> <ts>" for a Slack message permalink
+# (https://<team>.slack.com/archives/<C…>/p1785155192563299 -> "C… 1785155192.563299"), else
+# nothing. The `p…` form is the ts with the dot removed, always 6 digits after it.
+notify_parse_permalink() {
+  local url="$1" ch ts
+  ch="$(printf '%s' "$url" | sed -n 's#.*/archives/\([A-Z0-9]\{1,\}\)/p\([0-9]\{7,\}\).*#\1#p')"
+  ts="$(printf '%s' "$url" | sed -n 's#.*/archives/[A-Z0-9]\{1,\}/p\([0-9]\{7,\}\).*#\1#p')"
+  [[ -n "$ch" && -n "$ts" ]] || return 0
+  printf '%s %s.%s\n' "$ch" "${ts%??????}" "${ts: -6}"
+}
+
+# notify_delete CHANNEL TS [DRY] -> delete a message this bot posted (chat.delete). Prints
+# "ok=1 deleted=<ts>". Bot-token only: a webhook has no way to delete what it sent.
+#
+# This exists for the retraction case — a notification that went out to the wrong audience, or
+# that shouldn't have gone out at all. It cannot delete anyone else's message (Slack rejects it),
+# so the blast radius is exactly what this bot posted.
+notify_delete() {
+  local channel="$1" ts="$2" dry="${3:-0}"
+  [[ -n "${SLACK_BOT_TOKEN:-}" ]] || \
+    die "deleting needs SLACK_BOT_TOKEN (a webhook can't delete what it posted)"
+  [[ -n "$channel" ]] || die "slack chat.delete needs a channel — pass --channel or a permalink"
+  [[ -n "$ts" ]] || die "slack chat.delete needs a message ts"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — POST chat.delete channel=%s ts=%s\n' "$channel" "$ts"; return 0
+  fi
+  local resp
+  resp="$(curl -sS -X POST https://slack.com/api/chat.delete \
+    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+    -H 'Content-Type: application/json; charset=utf-8' \
+    --data "$(jq -n --arg c "$channel" --arg t "$ts" '{channel:$c, ts:$t}')")" \
+    || die "slack request failed (network)"
+  if [[ "$(printf '%s' "$resp" | jq -r '.ok')" != true ]]; then
+    local err; err="$(printf '%s' "$resp" | jq -r '.error // "unknown"')"
+    case "$err" in
+      message_not_found) die "slack: message_not_found — wrong channel/ts, or it is already gone" ;;
+      cant_delete_message) die "slack: cant_delete_message — this token did not post that message" ;;
+      *) die "slack rejected the delete: $err" ;;
+    esac
+  fi
+  printf 'ok=1\ndeleted=%s\n' "$ts"
+}
+
 # notify_send_file CHANNEL FILE [COMMENT] [DRY] [THREAD_TS] [TITLE] -> upload FILE into
 # CHANNEL with an optional initial COMMENT, threaded under THREAD_TS. Prints "ok=1" +
 # "permalink=<url>" on success, else dies. Uses Slack's external-upload flow (the current

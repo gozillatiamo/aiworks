@@ -15,7 +15,7 @@ The message text is the first positional arg, or stdin.
 printf '%s' "$msg" | scripts/notify/send.sh --channel '#reviews'
 ```
 
-Four message modes:
+Five modes — four that send, one that retracts:
 - **raw** — `[text]` arg or stdin (the default).
 - **`--review <KEY>`** — compose + post the "please review" digest of a ticket's open PR/MR
   across every repo (the dev-cycle Notify phase).
@@ -87,3 +87,18 @@ Set **one** of these in `scripts/notify/.env`:
 
 `aiworks sync` seeds `NOTIFY_PROVIDER` + `NOTIFY_CHANNEL` from `workspace.config.yaml`;
 the secret is added by hand.
+
+- **`--delete <permalink|ts>`** — **retract** a message this bot posted (`chat.delete` on Slack).
+  Pass the permalink a send printed (channel + ts are parsed out of it) or a bare ts with
+  `--channel`. Bot-token only, and the provider refuses anyone else's message, so the blast radius
+  is exactly what this bot sent. It is its own mode: it can't combine with
+  text/`--review`/`--reply`/`--file`/`--thread-ts`. Deleting removes it for new readers, not for
+  whoever already read it — if the message mattered, follow up in the channel rather than assuming
+  it was never seen. **When to reach for it:** a notification that went to the wrong audience or
+  shouldn't have gone out at all (see `CLAUDE.md` §Notifications — workspace/framework PRs are
+  ask-first, ticket work is auto-post).
+
+```sh
+scripts/notify/send.sh --delete 'https://<team>.slack.com/archives/<CHANNEL>/p1700000000000000'
+scripts/notify/send.sh --delete 1700000000.000000 --channel <CHANNEL> --dry-run
+```
