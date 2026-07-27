@@ -185,9 +185,22 @@ The group's repos are declared under `products:` in @workspace.config.yaml
 (and cloned via the generated `mani.d/<product>.yaml` files).
 
 ## Notifications
-When a workflow includes a code review or ship step, always post the Slack
-notification as part of completing that step — do not treat it as optional
-or a follow-up.
+**Product work — auto-post, never ask.** When a workflow's code review or ship step
+completes for a ticket (the PR/MR carries the tracker key — `tracker.ticket_prefix`,
+e.g. `OFB-123` — in its title or branch), always post the Slack notification as part
+of that step. Do not treat it as optional, a follow-up, or something to ask permission
+for.
+
+**Workspace/framework work — ASK first.** A change to THIS meta-repo (`ai-workspace`
+itself: agents, skills, hooks, adapters, docs, config) has no ticket and is not the
+team's sprint traffic. Opening an MR for it is not a review-request broadcast: report
+it in chat and ask before posting to Slack. The same holds for any MR with no ticket
+key. Announcing infra work to a product channel spends the team's attention on
+something they were not waiting for.
+
+Retracting one, if it goes out anyway: `scripts/notify/send.sh --delete <permalink>`
+(bot-token only, and only a message this bot posted). A deleted message is gone for
+new readers but the ones already looking saw it — say so in the channel if it mattered.
 
 ## Submodules & Worktrees
 Never edit files inside submodule checkouts. Before diagnosing test failures

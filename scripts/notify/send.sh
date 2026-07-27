@@ -19,6 +19,7 @@ Usage: send.sh [--channel <id|#name>] [text] [--dry-run]
        send.sh --channel <ch> [--thread-ts <ts>] --file <path> [text] [--title <t>] [--dry-run]
        send.sh --review <ticket-key> [--title <text>] [--channel <ch>] [--dry-run]
        send.sh --reply <ticket-key> [text] [--channel <ch>] [--dry-run]
+       send.sh --delete <permalink|ts> [--channel <ch>] [--dry-run]
 
 Post a message to the configured chat provider (NOTIFY_PROVIDER: slack).
 
@@ -59,6 +60,13 @@ Options:
                   See docs/agents/pii-provenance.md.
   --title <text>  Header title for --review, OR the file title for --file (default: the ticket
                   title / the file's basename).
+  --delete <ref>  RETRACT a message this bot posted: pass the permalink `send.sh` printed
+                  (channel + ts are read from it) or a bare message ts with --channel. Deletes
+                  only what this token posted — the provider rejects anyone else's message.
+                  Use it when a notification went to the wrong audience or shouldn't have been
+                  sent; a deleted message is gone for readers but they may have seen it, so say
+                  so in the thread if it mattered. Needs a bot token; cannot combine with any
+                  other mode.
   --channel <ch>  Target channel (id or #name). Default: $NOTIFY_CHANNEL from .env.
                   Ignored by providers whose destination is fixed (e.g. a Slack webhook).
   --dry-run       Print what would be sent instead of sending it.
@@ -230,7 +238,7 @@ outbound_gate() {
   printf '%s' "$file"
 }
 
-channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""; file_path=""
+channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""; file_path=""; delete_ref=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --channel)   channel="${2:-}";      shift 2 ;;
@@ -238,6 +246,7 @@ while [[ $# -gt 0 ]]; do
     --reply)     reply_key="${2:-}";    shift 2 ;;
     --thread-ts) thread_ts_arg="${2:-}"; shift 2 ;;
     --file)      file_path="${2:-}";    shift 2 ;;
+    --delete)    delete_ref="${2:-}";   shift 2 ;;
     --title)     review_title="${2:-}"; shift 2 ;;
     --dry-run) dry=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -250,6 +259,21 @@ done
 
 if [[ -n "$thread_ts_arg" && ( -n "$review_key" || -n "$reply_key" ) ]]; then
   die "--thread-ts can't combine with --review/--reply (those choose their own thread)"
+fi
+
+# Delete mode: a retraction, not a send. Handled before any message-composition path — there is
+# no text to resolve, and combining it with a send mode is always a mistake, never a shorthand.
+if [[ -n "$delete_ref" ]]; then
+  [[ -z "$review_key$reply_key$file_path$thread_ts_arg" && "$have_text" -eq 0 ]] || \
+    die "--delete is its own mode — don't combine it with text/--review/--reply/--file/--thread-ts"
+  del_channel="$channel"; del_ts="$delete_ref"
+  if [[ "$delete_ref" == http*://* ]]; then
+    read -r parsed_channel parsed_ts <<<"$(notify_parse_permalink "$delete_ref")"
+    [[ -n "${parsed_ts:-}" ]] || die "could not read a channel + message ts out of that permalink: $delete_ref"
+    del_channel="$parsed_channel"; del_ts="$parsed_ts"
+  fi
+  notify_delete "$del_channel" "$del_ts" "$dry"
+  exit 0
 fi
 
 # File mode: upload a file instead of posting text. Handled before the text-resolution

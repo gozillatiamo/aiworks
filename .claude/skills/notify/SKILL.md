@@ -47,3 +47,18 @@ open PR/MR, so it never changes the caller's outcome.
 
 - The dev-cycle's **Notify** phase (auto-merge off → the validated PR/MR await a human).
 - A user asks to ping the team to review a ticket's open PR(s)/MR(s).
+
+**Post it without asking** for either of those — a ticket's review request is part of finishing
+the step, not a favour to check on (`CLAUDE.md` §Notifications).
+
+## When NOT to use
+
+- **An MR with no ticket key**, and in particular **a change to the `ai-workspace` meta-repo
+  itself** (agents, skills, hooks, adapters, docs, config). That is not sprint traffic the channel
+  is waiting on: report it in chat and **ask** before posting. `--review <KEY>` cannot even compose
+  a digest without a ticket, so a hand-written raw message is the tell that you are outside this
+  skill's job.
+- Retracting one that went out anyway:
+  `scripts/notify/send.sh --delete <permalink>` (bot-token only; deletes only what this bot
+  posted). It disappears for new readers, not for whoever already saw it — if it mattered, say so
+  in the channel instead of pretending it never happened.
