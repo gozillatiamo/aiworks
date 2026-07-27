@@ -100,18 +100,37 @@ so they run concurrently and don't pollute each other's context. Into **each** b
   reason about whether Bash/tools are available — you HAVE a scoped Bash grant (the code-reviewer
   uses the identical mechanism). Never self-report 'no Bash / no shell' without an actual failed
   attempt; a real denial comes with a real error you must quote."`
+- **Code gate ONLY — the green run is a MUST DO, and it gates the approval:**
+  `"Before you render a verdict, RUN THE SUITE on the MR/PR head yourself — workflow step 5
+  ('Verify green'). Use the repo harness (`scripts/dev.sh test`, plus `analyze`/`gen` when
+  that repo's `green:` in workspace.config.yaml names them), never the raw toolchain, and
+  run the WHOLE suite, not just the ticket's tests. Return the invocation + result as a
+  receipt: I cannot post the ticket-wide approval without one. A red suite is a must-fix —
+  post it inline, after ruling out a known false-red (stale/shared test DB, submodule
+  branch drift, a suite already red on the target branch). If it genuinely cannot run,
+  say so with what you tried and the exact unblocking command — the verdict is then
+  UNVERIFIED, never a pass. ⚠️ The performance gate is reading this SAME clone in
+  parallel: do NOT leave the checkout moved. Either restore the original ref, or run in a
+  throwaway `git worktree add`."`
+  The performance gate gets the mirror-image line: `"Do NOT check out a different ref in
+  the shared clone — read the branch with `git show <sha>:<path>`; the code gate is running
+  the suite there."`
 - **Re-visit mode only** (§0.5): replace the generic review instruction above with — paste the
   prior must-fix thread list (file/line/body/resolved-state) and the fix commit SHA, then:
   `"This is a RE-VISIT, not a fresh review. Check ONLY your own prior must-fix findings above
   against commit <SHA> — mark each resolved or still-open, with evidence. Do NOT review other
   code, do NOT raise nice-to-have/style findings you skipped last round, do NOT re-sweep the
   whole diff. One exception: if <SHA> introduces a new bug in the lines it touches, report that
-  as a new must-fix — nothing further afield."`
+  as a new must-fix — nothing further afield. The green run is NOT scoped down by a re-visit,
+  though: <SHA> changed code, so run the suite again on it and return a fresh receipt — a
+  green from the previous round proves nothing about this commit."`
 
 Each gate then runs its own instrument (Daniel: `/review` + codegraph blast radius; Liam:
 profiling) per its own definition — no extra tool grant needed. **Completion:** both gates
 have returned a verdict — fresh: every must-fix found; re-visit: resolved/still-open per prior
-finding, plus any new must-fix strictly confined to the fix commit's touched lines.
+finding, plus any new must-fix strictly confined to the fix commit's touched lines. **The code
+gate has additionally returned a test receipt** (the invocation + result, or an explicit
+could-not-run with what it tried) — §3.5 will not post an approval without it.
 
 ### 3. Aggregate
 
@@ -194,15 +213,28 @@ caps the verdict at "partially met" even when the code-quality gate is clean.
 
 The combined verdict answers one **ticket-wide** question: are the ticket's requirements
 *genuinely met* across **every** repo's MR/PR? Post the PASS signal **only** on a clean **met**
-— zero unresolved must-fix at *every* gate on *every* repo, and no open `Human:` directive. When
+— zero unresolved must-fix at *every* gate on *every* repo, no open `Human:` directive, **and a
+green test receipt from the code gate on every repo**. When
 met, the orchestrator itself posts it on **each** repo's MR/PR: one host-level approval + one
 loud verdict line, via
 
 ```
-scripts/vcs/pr-approve.sh <num> --body "✅ APPROVED — <KEY>: requirements met, standards clean, 0 must-fix."
+scripts/vcs/pr-approve.sh <num> --body "✅ APPROVED — <KEY>: requirements met, standards clean, 0 must-fix, tests green (<the code gate's invocation + result>)."
 ```
 
-body in the resolved OUTPUT LANGUAGE. Like notify (§4) this is **orchestrator-owned and
+body in the resolved OUTPUT LANGUAGE, and name the green run in it — an approval that cannot
+point at a suite result is the failure this gate exists to prevent.
+
+**No test receipt ⇒ no approval, even with zero must-fixes.** A code gate that could not run
+the suite (missing toolchain, a dependency stack that would not come up) has produced an
+**unverified** verdict, not a met one: treat it exactly like an open must-fix — post no
+approval on any MR/PR, do not advance the ticket (§3.6), and give the blocker its own line in
+the §4 notify with the exact command that would settle it. "It reads correct and nobody
+objected" is not a pass; a review that never ran the tests cannot say the MR/PR doesn't break
+them. **Never run the suite yourself to paper over a gate that didn't** — re-spawn the code
+gate (or hand the blocker to a human) so the receipt comes from the gate that owns the verdict.
+
+Like notify (§4) this is **orchestrator-owned and
 deterministic, never left to the gates** — a gate that lost its shell (perf "no Bash") can't
 approve, so a gate-owned approval would silently drop; and the §2 brief tells each gate NOT to
 approve on its own, so the one PASS signal is single-sourced here.
@@ -277,6 +309,8 @@ copy. Write it ultra-compressed (`/caveman:caveman`) and cap it at **~8 lines**:
 - the combined verdict + review level, one line;
 - per gate, one line: its verdict and its **must-fix COUNT** — plus the ONE worst item, named
   in a clause, only when the gate is not clean;
+- the test result, one line: what the code gate ran and whether it was green (or, if it could
+  not run, that the approval is held for exactly that reason);
 - the MR/PR URL(s) — that link IS the finding list;
 - on a clean met that advanced the ticket in §3.6, the status move (`CODE REVIEW → READY TO
   MERGE`); on anything less, one line saying no approval was posted and the ticket did not move;
