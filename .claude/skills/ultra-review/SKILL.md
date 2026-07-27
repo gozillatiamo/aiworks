@@ -264,9 +264,27 @@ ticket's review-request:
 scripts/notify/send.sh --reply <KEY>   # threads under the "please review" msg; top-level fallback if none
 ```
 
-Pipe the combined verdict (met / partially met / not met + review level + the worst finding per
-gate — and, on a clean met that advanced the ticket in §3.6, the status move e.g. `CODE REVIEW →
-READY TO MERGE`) on stdin, in the resolved OUTPUT LANGUAGE. This is per `workspace.config.yaml`
-`notify.enabled` + channel and is **not optional — never ask first**. This orchestrator post is
-the guaranteed one; gates MAY still thread their own per-gate verdict per their definition, but
-the run's notify does not depend on them. Report the returned `permalink`.
+Pipe the combined verdict on stdin, in the resolved OUTPUT LANGUAGE. This is per
+`workspace.config.yaml` `notify.enabled` + channel and is **not optional — never ask first**.
+This orchestrator post is the guaranteed one; gates MAY still thread their own per-gate verdict
+per their definition, but the run's notify does not depend on them. Report the returned
+`permalink`.
+
+**Keep it SHORT — the MR is the report, this message is the pointer.** Every must-fix is
+already an inline thread on the MR/PR (§3 guarantees it), so Slack must not carry a second
+copy. Write it ultra-compressed (`/caveman:caveman`) and cap it at **~8 lines**:
+
+- the combined verdict + review level, one line;
+- per gate, one line: its verdict and its **must-fix COUNT** — plus the ONE worst item, named
+  in a clause, only when the gate is not clean;
+- the MR/PR URL(s) — that link IS the finding list;
+- on a clean met that advanced the ticket in §3.6, the status move (`CODE REVIEW → READY TO
+  MERGE`); on anything less, one line saying no approval was posted and the ticket did not move;
+- any unverified claim, one line each — brevity trims words, never bad news.
+
+**Never** paste a finding's body, its code snippet, its fix, or a per-check pass table into
+Slack — those belong on the MR thread and in what you present in-session (§3). The full §3
+presentation is for the human reading THIS session; the notify is for the human reading Slack,
+and they are not the same message. If this run is driven by the Slack dispatcher (its post-back
+step targets the same thread), this notify already satisfies it — the dispatcher post-back then
+shrinks to a one-line pointer rather than repeating any of it.
