@@ -38,3 +38,12 @@
 # docs/agents/diagram-generation.md.
 # diagrams:
 #   enabled: true
+
+# Carry the read-only PRODUCTION-triage MCPs (prod_pg_triage + prod_redis_triage) on THIS
+# machine. `aiworks sync` / `aiworks setup` reads this key local-first and registers or
+# deregisters both servers in local scope accordingly — so opting in is this one line plus a
+# re-run of setup, and everyone else's sessions spawn nothing. Postgres also needs read-only
+# DSNs in scripts/db/.env; Redis needs only `gcloud auth login`.
+# See scripts/db/README.md · scripts/redis/README.md
+# prod_triage:
+#   enabled: true

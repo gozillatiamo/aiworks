@@ -44,9 +44,8 @@ one-time setup — do not improvise another route to prod:
 
 > The prod-pg-triage MCP isn't registered in this session. One-time setup (see
 > `scripts/db/README.md`): copy `scripts/db/.env.example` → `scripts/db/.env`, fill in the
-> **read-only** DSNs, then
-> `claude mcp add prod_pg_triage --scope local -- uv run --quiet "$(pwd)/scripts/db/prod_pg_mcp.py"`
-> and restart the session.
+> **read-only** DSNs, then set `prod_triage.enabled: true` in `workspace.config.local.yaml`
+> and run `scripts/prod-triage-mcp.sh sync`, and restart the session.
 
 This is a fail-loud gate on purpose: silently falling back to the local `postgres_*` MCPs
 would answer a prod question with dev data and mislead the whole investigation.

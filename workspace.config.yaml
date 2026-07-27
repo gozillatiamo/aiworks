@@ -53,6 +53,14 @@ diagrams:
 artifacts:
   enabled: false
 
+# Read-only PRODUCTION-triage MCP servers (prod_pg_triage, prod_redis_triage), registered in
+# LOCAL scope by `aiworks sync` / `aiworks setup`. OFF by default: Claude Code spawns every
+# enabled server in every session, and prod triage is occasional work — so only the machines
+# that do it carry the servers. Opt in per PERSON via workspace.config.local.yaml (which wins
+# over this file for this key), then re-run setup. See scripts/prod-triage-mcp.sh.
+prod_triage:
+  enabled: false
+
 products:
   - id: ofb-platform
     repos:

@@ -28,22 +28,35 @@ gcloud auth login                                       # user credential (compu
 uv run scripts/redis/prod_redis_mcp.py --selftest       # deps + guards, no network
 ```
 
-Then register it **in local scope** — personal, this project only, exactly like
-`prod_pg_triage`:
+Then opt in with one line in your personal, git-ignored `workspace.config.local.yaml` and let
+`aiworks` register the server for you (it does the same for `prod_pg_triage`):
 
-```bash
-claude mcp add prod_redis_triage --scope local -- uv run --quiet "$(pwd)/scripts/redis/prod_redis_mcp.py"
+```yaml
+prod_triage:
+  enabled: true
 ```
 
-Restart the session so it connects; the `mcp__prod_redis_triage__*` tools then appear. Remove it
-with `claude mcp remove prod_redis_triage --scope local`.
+```bash
+./aiworks setup                          # or, on its own: scripts/prod-triage-mcp.sh sync
+scripts/prod-triage-mcp.sh status        # policy + what is registered
+```
+
+Restart the session so it connects; the `mcp__prod_redis_triage__*` tools then appear. Flipping
+the flag back to `false` and re-running deregisters it again.
 
 It is deliberately **not** in the shared `.mcp.json`. Claude Code spawns every enabled stdio
 server at session start, so a shared entry would run this process (~13 MB, idle) and put 29 tool
 names in front of every teammate in every session, for a tool a given person uses a handful of
 times a month. Nothing about that spawn is dangerous — the tunnel is lazy, so an idle server
-holds zero connections and never invokes `gcloud` — it is simply cost with no payer. Local-scope
-registration makes the people doing prod triage the ones who carry it.
+holds zero connections and never invokes `gcloud` — it is simply cost with no payer. The flag is
+read **local-first**, so opting in is per person and the shared default stays off.
+
+By hand, if you prefer (what the script runs):
+
+```bash
+claude mcp add prod_redis_triage --scope local -- uv run --quiet "$(pwd)/scripts/redis/prod_redis_mcp.py"
+claude mcp remove prod_redis_triage --scope local
+```
 
 Auto mode also needs the authorization paragraph in your personal settings — see **Prod triage
 authorization** in the root [`README.md`](../../README.md).

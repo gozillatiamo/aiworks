@@ -40,9 +40,9 @@ stop and tell the user to register it — do not improvise another route to a de
 `localhost:6379` and would answer a prod question with dev data):
 
 > The prod-redis-triage MCP isn't registered in this session. One-time setup (see
-> `scripts/redis/README.md`): `gcloud auth login`, then
-> `claude mcp add prod_redis_triage --scope local -- uv run --quiet "$(pwd)/scripts/redis/prod_redis_mcp.py"`
-> and restart the session.
+> `scripts/redis/README.md`): `gcloud auth login`, then set `prod_triage.enabled: true` in
+> `workspace.config.local.yaml` and run `scripts/prod-triage-mcp.sh sync`, and restart the
+> session.
 
 ## Safety — non-negotiable
 

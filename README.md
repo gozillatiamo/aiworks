@@ -139,14 +139,23 @@ if it isn't there). They are prose, not config — Claude reads them as standing
 > Redis VALUES are never persisted locally: the only sanctioned local repro path is
 > `capture_shape` → `scripts/redis/replay_shape.py`, which writes SYNTHETIC values from a schema.
 
-Both servers are registered in **local scope**, not the shared `.mcp.json` — prod triage is
-occasional work, and Claude Code spawns every enabled server in every session, so the people
-doing it are the ones who carry it:
+Both servers live in **local scope**, not the shared `.mcp.json` — prod triage is occasional
+work, and Claude Code spawns every enabled server in every session, so the people doing it are
+the ones who carry it. Opt in with **one line** in your personal, git-ignored
+`workspace.config.local.yaml`, then re-run setup:
+
+```yaml
+prod_triage:
+  enabled: true
+```
 
 ```sh
-claude mcp add prod_pg_triage    --scope local -- uv run --quiet "$(pwd)/scripts/db/prod_pg_mcp.py"
-claude mcp add prod_redis_triage --scope local -- uv run --quiet "$(pwd)/scripts/redis/prod_redis_mcp.py"
+./aiworks setup                     # or: scripts/prod-triage-mcp.sh sync
+scripts/prod-triage-mcp.sh status   # what the policy says + what is registered
 ```
+
+`aiworks sync` reconciles both servers against that flag — registering them when it is on,
+deregistering them when it is off — so your session spawns exactly what you opted into.
 
 Then verify the tunnels work on your machine (read-only; the second command touches prod with
 three cheap reads and disconnects):
