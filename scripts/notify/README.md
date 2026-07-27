@@ -15,7 +15,7 @@ The message text is the first positional arg, or stdin.
 printf '%s' "$msg" | scripts/notify/send.sh --channel '#reviews'
 ```
 
-Four message modes:
+Five modes — four that send, one that retracts:
 - **raw** — `[text]` arg or stdin (the default).
 - **`--review <KEY>`** — compose + post the "please review" digest of a ticket's open PR/MR
   across every repo (the dev-cycle Notify phase).
@@ -50,6 +50,21 @@ scripts/notify/send.sh --reply OFB-2098 '✅ OFB-2098 — approved. Standards cl
 ```sh
 scripts/notify/send.sh --channel '#dev-oneforbet' --thread-ts 1723450000.001 \
   --file .aiworks/out/repos.csv 'นี่ครับ csv รายชื่อ 21 repos ตามที่ขอ'
+```
+
+- **`--delete <permalink|ts>`** — **retract** a message this bot posted (`chat.delete`). Pass the
+  permalink a send printed (channel + ts are parsed out of it) or a bare ts with `--channel`.
+  Bot-token only, and the provider refuses anyone else's message, so the blast radius is exactly
+  what this bot sent. It is its own mode: it can't combine with text/`--review`/`--reply`/`--file`/
+  `--thread-ts`. Deleting removes it for new readers, not for whoever already read it — if the
+  message mattered, follow up in the channel rather than assuming it was never seen. **When to
+  reach for it:** a notification that went to the wrong audience or shouldn't have gone out at all
+  (see `CLAUDE.md` §Notifications — workspace/framework MRs are ask-first, product tickets are
+  auto-post).
+
+```sh
+scripts/notify/send.sh --delete 'https://<team>.slack.com/archives/C04NZCMAG94/p1785155192563299'
+scripts/notify/send.sh --delete 1785155192.563299 --channel C04NZCMAG94 --dry-run
 ```
 
 ## Where it's used
