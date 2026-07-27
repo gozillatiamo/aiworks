@@ -7,7 +7,7 @@ export const meta = {
     { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
     { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
-    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet' },
+    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec, AND runs the repo suite — approval is gated on a green receipt; a suite that cannot run halts the repo rather than failing open) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet' },
     { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet' },
     { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
@@ -391,6 +391,14 @@ const REVIEW_SCHEMA = {
   required: ['approved'],
   properties: {
     approved: { type: 'boolean' }, conclusion: { type: 'string' },
+    // The green gate: the reviewer RUNS the repo's suite on the PR/MR head itself (it holds the
+    // scripts/dev.sh grant — the other two gates deliberately do not) and reports the receipt.
+    // approved:true REQUIRES tests_green:true; a suite that could not run is gate_unavailable,
+    // never a pass — same contract the guardian and performance gates already use.
+    tests_green: { type: 'boolean' },
+    tests_receipt: { type: 'string' }, // the invocation + result, e.g. "scripts/dev.sh test → 214 passed / 0 failed"
+    gate_unavailable: { type: 'boolean' },
+    unavailable_reason: { type: 'string' }, // what was tried, why each attempt failed, the unblocking command
     comments: {
       type: 'array', items: {
         type: 'object', additionalProperties: false,
@@ -604,7 +612,7 @@ On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY i
 // PER-REPO PIPELINE  —  build ↔ gates ↔ PR ↔ review for ONE repo, up to
 // "approved, ready to merge". This is the OLD single-repo flow, parameterized by
 // the repo descriptor. Does NOT merge (merge is the ordered, cross-repo phase).
-// Returns { repo, status:'ready'|'build-unresolved'|'pr-unresolved'|'review-unresolved', ... }.
+// Returns { repo, status:'ready'|'build-unresolved'|'pr-unresolved'|'review-unresolved'|'review-tests-unverified', ... }.
 // NOTE: never calls phase() — multiple of these run in parallel within a wave, so
 // every agent() sets opts.phase explicitly to avoid racing the global phase state.
 // ──────────────────────────────────────────────────────────────────────────
@@ -693,7 +701,10 @@ async function runRepoPipeline(rp, desc) {
   // SonarQube nor risks tripping a usage-policy safeguard.
   if (desc.guard && QUALITY_GATE === 'none') log(`[${R}] quality_gate.provider=none — guardian gate skipped (auto-pass, no SonarQube attempt).`)
   const reviewers = [
-    desc.review && { key: 'review', role: desc.review, schema: REVIEW_SCHEMA, passed: (r) => r?.approved === true, open: (r) => r?.comments?.length || 0 },
+    // tests_green is part of the pass predicate, not just the brief: an approval that cannot point
+    // at a suite the reviewer actually ran is the exact failure the green gate exists to prevent,
+    // so the workflow enforces it deterministically rather than trusting the return text.
+    desc.review && { key: 'review', role: desc.review, schema: REVIEW_SCHEMA, passed: (r) => r?.approved === true && r?.tests_green === true, open: (r) => r?.comments?.length || 0 },
     desc.guard && QUALITY_GATE !== 'none' && { key: 'guard', role: 'guardian-engineer', schema: GATE_SCHEMA, passed: (r) => r?.passed === true, open: (r) => (r?.blocking?.length || 0) + (STRICT ? 0 : (r?.fold_in?.length || 0)) },
     desc.perf && { key: 'perf', role: 'performance-engineer', schema: GATE_SCHEMA, passed: (r) => r?.passed === true, open: (r) => (r?.blocking?.length || 0) + (STRICT ? 0 : (r?.fold_in?.length || 0)) },
   ].filter(Boolean)
@@ -718,13 +729,19 @@ async function runRepoPipeline(rp, desc) {
     reviewers.forEach((rv) => { modeThisRound[rv.key] = didFirstReview[rv.key] ? 'revisit' : 'first' })
     const changed = lastFixed.length ? ` The developer's last fix touched: ${lastFixed.join('; ')} — look there to confirm your threads are resolved and to judge whether the fix itself caused a regression.` : ''
     const prRef = `the OPEN PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}; ${rp.work_branch} → ${rp.base_branch})`
+    // GREEN GATE (code reviewer only — it is the one gate holding the scripts/dev.sh grant).
+    // A review that never ran the suite cannot say the PR/MR doesn't break the tests, so
+    // approved:true is gated on a receipt from a run the reviewer ACTUALLY performed. Mirrors
+    // the gate_unavailable contract the guardian + performance gates already use: a suite that
+    // could not run is UNVERIFIED, never a silent pass.
+    const greenGate = `🛑 MUST DO before you approve — RUN THE SUITE yourself on ${rp.work_branch} (workflow step 5, "Verify green"): \`scripts/dev.sh test\` from inside ${R}, plus \`scripts/dev.sh analyze\`/\`gen\` when this repo's definition of green names them — green here means "${desc.green ?? 'the repo suite passes'}". Run the WHOLE suite, never the raw toolchain (cargo/npm/pnpm), and drill a failure with \`scripts/dev.sh why test\` rather than dumping the log. The developer built on this same clone, so HEAD should already be ${rp.work_branch} — confirm with \`git rev-parse HEAD\` before trusting the run. Return tests_green + tests_receipt (the invocation and its result). A RED suite is a must-fix: comment it inline (failing test + shortest decisive output line + the change you believe caused it) and return approved:false — but first rule out a known false-red (stale/shared test DB, submodule branch drift, a suite already red on ${rp.base_branch}) by re-running it in isolation. If the suite needs a local stack, bring it up via that repo's own harness (\`<dep-repo>/scripts/dev.sh run\`) and re-run — "the environment was down" is not an answer. If it STILL genuinely cannot run, set tests_green:false + gate_unavailable:true + unavailable_reason (what you tried, why each attempt failed, the exact unblocking command), post ONE loud PR/MR comment that the test gate could not run, and do NOT approve — never fabricate a green.`
     // RE-VISIT — uniform across all three reviewers, with a per-role "what to re-check" line. The
     // first review is the COMPLETE, CLOSED finding set: confirm your OWN prior findings are addressed,
     // add nothing new. The ONE exception is a fix-CAUSED regression → fix_regression + a loud comment;
     // the workflow halts the repo for human action rather than looping the dev.
     const revisitTask = (rv) => {
       const recheck = rv.key === 'review'
-        ? `Do NOT run /review again — that re-derives a full review from scratch and surfaces new findings, exactly what re-visit forbids. Instead list the review threads YOU opened (\`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`) and, for each must-fix you raised in your first review, confirm the developer's fix + reply genuinely resolve it. Return approved:true ONLY when EVERY one of your first-review must-fixes is resolved; else approved:false listing which of YOUR threads remain open.`
+        ? `Do NOT run /review again — that re-derives a full review from scratch and surfaces new findings, exactly what re-visit forbids. Instead list the review threads YOU opened (\`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`) and, for each must-fix you raised in your first review, confirm the developer's fix + reply genuinely resolve it. The green gate is NOT scoped down by a re-visit: the developer changed code, so RE-RUN the suite (\`scripts/dev.sh test\` from inside ${R}, plus analyze/gen where this repo's green needs them) and return a FRESH tests_green + tests_receipt — last round's green proves nothing about this commit, and a fix that resolves your thread while breaking a test is exactly what this catches. Return approved:true ONLY when EVERY one of your first-review must-fixes is resolved AND tests_green is true; else approved:false listing which of YOUR threads remain open (a newly-red suite counts as one).`
         : `Do NOT re-scan or re-profile broadly. Re-check ONLY the blocking + fold_in items YOU raised in your first review (\`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\` / \`pr-threads.sh\`): confirm each is resolved on the PR/MR. Return passed:true ONLY when EVERY one of your first-review items is resolved; else passed:false listing which of YOUR items remain. File NO new Improvement tickets and add NO new blocking/fold_in items.`
       return `RE-VISIT (round ${reviewRound}) of ${prRef}. ${inRepo} Your first review is the COMPLETE, CLOSED finding set — you are ONLY confirming your OWN prior findings are addressed, NOT reviewing afresh. Raise, comment on, or file NOTHING new.${changed} ${recheck}
 THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY caused a NEW blocking problem (a regression the fix introduced — NOT a pre-existing issue your first review missed), do NOT fold it into the loop. Post ONE loud PR/MR comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "⚠️ REGRESSION: <what the fix broke + evidence it was this fix>"\`, then return ${rv.key === 'review' ? 'approved:false' : 'passed:false'} with fix_regression:true and regression_detail (what broke, file:line, why it is the fix). The workflow then HALTS this repo loudly for human action — it is not yours to fix in-loop.`
@@ -733,7 +750,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     const onPr = `the OPEN PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}; ${rp.work_branch} → ${rp.base_branch}). ${inRepo} ${scopeNote} Post each must-fix as a comment ON THE PR/MR at the specific file:line via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<comment>"\` — NEVER on the tracker.`
     const firstReviewPrompt = (rv) =>
       rv.key === 'review'
-        ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Review ${onPr} Run /review (standards + spec) against the target. Return approved:true ONLY when the diff meets the bar and every ${STRICT ? 'must-fix' : 'must-fix AND nice-to-have'} comment is resolved; otherwise approved:false with the open comments.`
+        ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Review ${onPr} Run /review (standards + spec) against the target. ${greenGate} Return approved:true ONLY when the diff meets the bar, tests_green is true, and every ${STRICT ? 'must-fix' : 'must-fix AND nice-to-have'} comment is resolved; otherwise approved:false with the open comments.`
         : rv.key === 'guard'
           ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Quality-gate (static-analysis) review of ${ticket} in ${R} on ${onPr} The workspace's configured quality-gate provider is quality_gate.provider="${QUALITY_GATE}" (mirrored from workspace.config.yaml — do NOT re-read the file). If it is 'none', skip the scan and pass cleanly. Otherwise (SonarQube) run the gate by whichever channel is LIVE in THIS run-context: FIRST try the SonarQube MCP — if the mcp__sonarqube tools are not already in your toolset, load them with ToolSearch (e.g. \`select:mcp__sonarqube__get_project_quality_gate_status,mcp__sonarqube__search_sonar_issues_in_projects,mcp__sonarqube__search_security_hotspots\`) and read the quality-gate status + issues + security hotspots for the PR SHA; if the MCP is NOT reachable, FALL BACK to the installed \`sonar\` CLI over Bash (\`sonar analyze\` / \`sonar verify --file <changed-file>\`). GATE-UNAVAILABLE: if NEITHER channel can actually run the scan (no MCP AND no working CLI/auth), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason naming both channels you tried and why each failed, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the configured SonarQube gate could NOT run in this run-context; never fabricate a green status. You summarize the scanner's output, not author a security review. For each BLOCKING issue/hotspot post a PR/MR comment (rule + file:line + remediation) and list it under "blocking"; as a light secondary pass sanity-check this repo's sensitive spots against the scanner output: ${desc.guardianFocus}. Triage every NON-blocking finding into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR fix (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the exact remediation and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have hardening (needs its own design, touches multiple layers, changes a contract/permission model, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. Return passed:false while ANY blocking OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY obtained a green quality-gate result (or the provider is 'none') AND no fold_in item is left unresolved — NEVER passed:true for a scan you could not run (use gate_unavailable for that). Return the structured gate result.`
           : `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Performance review of ${ticket} in ${R} on ${onPr} Profile the changed flows with this repo's profiling tooling (e.g. for a Flutter app every profiling command goes through scripts/perf.sh, never raw flutter/dart: perf.sh build --profile, perf.sh run --profile + perf.sh devtools); measure jank, startup, memory, rebuild storms, unbounded lists, costly/unindexed queries; mandatory animations stay 60fps. For each CRITICAL regression post a PR/MR comment WITH the measurement as evidence and list it under "blocking". Triage every NON-blocking optimization into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR optimization (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope; e.g. MediaQuery.of(context).size → MediaQuery.sizeOf(context), or an O(n²) lookup → a Set) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the measurement/mechanism + exact fix direction and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have optimization (needs its own design, touches multiple layers, changes a query/index/schema, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have; e.g. a composite (status, createdAt) index) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. GATE-UNAVAILABLE: if your profiling tooling cannot actually run in this run-context (e.g. scripts/perf.sh / the profiler is unavailable so you could measure nothing), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason explaining what you tried and why it couldn't run, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the performance gate could NOT run; never fabricate a clean profile. Return passed:false while ANY blocking regression OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY profiled the changed flows AND found zero blocking regressions AND no fold_in item is left unresolved — NEVER passed:true for a profile you could not run (use gate_unavailable for that). Return the structured gate result.`
@@ -748,8 +765,10 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // A guard/perf gate that DIES — e.g. an Anthropic usage-policy safeguard tripping on the
     // security-review phrasing, or a transient API error — must NOT read as a hard run failure.
     // Guard: Layer 2 backstop (neutral general-purpose checklist over the diff). Perf: map to
-    // gate_unavailable so the run continues (fail-open). The code reviewer has no gate_unavailable
-    // concept → stays null (inconclusive, re-run next round).
+    // gate_unavailable so the run continues (fail-open). A code reviewer that DIES stays null
+    // (inconclusive, re-run next round) — distinct from the code reviewer REPORTING
+    // gate_unavailable, which means its test gate could not run and HALTS the repo (never
+    // fail-open: an unverified suite must not reach a merge).
     const guardBackstop = async (msg) => {
       log(`⚠️  [${R}] guardian subagent could not complete (${msg}) — running checklist inline via neutral agent (backstop).`)
       try {
@@ -779,14 +798,29 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     }
     const results = await parallel(openReviewers.map((rv) => () => runReviewer(rv)))
     results.forEach((r, i) => { verdict[openReviewers[i].key] = r })
-    // A gate that reports gate_unavailable is frozen as UNAVAILABLE — NOT a pass, but it
+    // A guard/perf gate that reports gate_unavailable is frozen as UNAVAILABLE — NOT a pass, but it
     // can't be "fixed" by the developer either, so we stop re-running it (fail-open: the
     // repo can still reach 'ready'; the workflow surfaces the unavailability loudly).
+    // The CODE gate is NOT fail-open: its gate_unavailable means the SUITE never ran, so nothing in
+    // this run can say the PR/MR doesn't break the tests. Shipping on "it reads correct" is exactly
+    // what the green gate exists to stop, so it halts the repo instead (handled just below).
     openReviewers.forEach((rv) => {
       const v = verdict[rv.key]
-      if (v && v.gate_unavailable === true) { done[rv.key] = 'unavailable'; gatesUnavail[rv.key] = v.unavailable_reason || 'configured gate could not run in this run-context' }
-      else if (rv.passed(v)) done[rv.key] = true
+      const unavail = v?.gate_unavailable === true
+      if (unavail && rv.key !== 'review') { done[rv.key] = 'unavailable'; gatesUnavail[rv.key] = v.unavailable_reason || 'configured gate could not run in this run-context' }
+      else if (!unavail && rv.passed(v)) done[rv.key] = true
     })
+
+    // TEST GATE COULD NOT RUN — hard halt, never fail-open. The reviewer tried the repo harness
+    // (and any dependency stack it needs) and still could not produce a green receipt, so the
+    // verdict is UNVERIFIED: leave the PR/MR OPEN, merge nothing, and surface the unblocking
+    // command for a human. Re-run the dev-cycle once the suite can run.
+    const testGateDown = openReviewers.find((rv) => rv.key === 'review' && verdict[rv.key]?.gate_unavailable === true)
+    if (testGateDown) {
+      const why = verdict.review?.unavailable_reason || 'the repo test suite could not run in this run-context (no reason given)'
+      log(`⛔ [${R}] TEST GATE COULD NOT RUN on review round ${reviewRound} — ${why}. No approval, nothing merged; PR left OPEN. Unblock the suite, then re-run the dev-cycle.`)
+      return { repo: R, status: 'review-tests-unverified', plan: rp, pr, reviewRound, verdict, handoff: { status: 'blocked', summary: 'code review could not verify the suite is green', remaining: why } }
+    }
 
     // A reviewer that COMPLETED a pass in first-review mode has now done its one full review, so
     // every later pass for it is a re-visit. A crash (null verdict) leaves it in first-review mode.
@@ -1081,9 +1115,16 @@ if (aborted.length) {
   if (regressionHalts.length) {
     log(`⛔⛔ FIX-CAUSED REGRESSION HALT — human action required before this run can finish: ${regressionHalts.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR'})`).join(' | ')}. Nothing merged or distributed; the PR(s) are left OPEN. Fix the regression, then re-run \`/dev-cycle ${ticket}\` to resume.`)
   }
-  const runStatus = regressionHalts.length ? 'review-regression-halt' : 'repo-unresolved'
-  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, regressionHalts, repoResults, testSuiteRequested, testSuiteGateUnavailable })
-  return { ticket, status: runStatus, aborted, handoffs, regressionHalts, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+  // A code gate that could not RUN the suite is its own loud halt — distinct from open findings,
+  // because nothing here failed review: the review simply could not prove the branch is green, and
+  // approving/merging on that is precisely what the green gate forbids.
+  const testsUnverified = aborted.filter((id) => repoResults[id]?.status === 'review-tests-unverified')
+  if (testsUnverified.length) {
+    log(`⛔⛔ TEST GATE UNVERIFIED — the code review could not run the suite, so no approval was posted and nothing was merged: ${testsUnverified.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR'})`).join(' | ')}. The PR(s) are left OPEN. Unblock the suite, then re-run \`/dev-cycle ${ticket}\` to resume.`)
+  }
+  const runStatus = regressionHalts.length ? 'review-regression-halt' : testsUnverified.length ? 'review-tests-unverified' : 'repo-unresolved'
+  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, regressionHalts, testsUnverified, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: runStatus, aborted, handoffs, regressionHalts, testsUnverified, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.

@@ -30,9 +30,11 @@ it as the base context for everything below. In short:
 - **The review level sets the depth.** `review.level` in `workspace.config.yaml`
   (default **strict**) decides whether the nice-to-have tier is reported at all — see
   `basis.md` §4.
-- **Every claim carries a receipt.** Cite what you actually ran or read — you have no
-  build tool, so a compile/test result you didn't observe, or a claim about an unwritten
-  fix, is a suggestion for the developer's gate to settle, not a verdict (`basis.md` §5).
+- **Every claim carries a receipt.** Cite what you actually ran or read — a compile/test
+  result you didn't observe, or a claim about an unwritten fix, is a suggestion for the
+  developer's gate to settle, not a verdict. Most reviewers hold no build tool at all; one
+  that does (the `code-reviewer` agent, whose approval is gated on a green run) may assert
+  a suite result only from the run it actually performed (`basis.md` §5).
 
 The verdict runs along two axes, as **parallel sub-agents** (so they don't pollute each
 other's context), then this skill aggregates them:
