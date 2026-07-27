@@ -67,6 +67,9 @@ _TOKEN = re.compile(
     re.S | re.X,
 )
 _ESCAPES = {b"n": b"\n", b"r": b"\r", b"t": b"\t", b"b": b"\b", b"f": b"\f"}
+# A text-showing operator applied to a string/array operand — the marker that an inflated
+# stream is CONTENT (words) rather than a font or image blob.
+_SHOW_OP = re.compile(rb"(?:\)|\]|>)\s*(?:Tj|TJ|'|\")")
 
 # --- primitives ---------------------------------------------------------------------------
 
@@ -276,12 +279,23 @@ def extract(data: bytes) -> bytes:
 
     # 3. printable metadata (XMP, object streams). Font/image and already-decoded content
     #    streams are container noise and stay out.
+    #
+    #    A stream that shows text but that NO page reached is decoded too. That happens when
+    #    the /Contents edge is absent or written in a form this regex parser can't follow —
+    #    and for a PII backstop an unreachable text stream is the worst possible thing to
+    #    skip silently, since its words are still in the file a reader can open. Decoded with
+    #    no font map, so it yields the literal string bytes. Font/image streams are excluded
+    #    by requiring an actual show operator.
     for num, body in objs.items():
         if num in decoded:
             continue
         blob = _inflate(body)
-        if blob and any(marker in blob for marker in _METADATA_BLOB):
+        if not blob:
+            continue
+        if any(marker in blob for marker in _METADATA_BLOB):
             parts.append(_scrub(blob))
+        elif _SHOW_OP.search(blob):
+            parts.append(_page_text(blob, {}).encode("utf-8"))
 
     parts.append(_scrub(_STREAM.sub(b" ", data)))
     return b"\n".join(p for p in parts if p)

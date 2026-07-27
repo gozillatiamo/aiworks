@@ -1,8 +1,16 @@
 # scripts/lib/pii-patterns.txt — canonical external-PII detector list (the single policy).
 #
-# Loaded by BOTH engines so the policy lives in one place:
-#   - scripts/lib/pii-scan.sh          — egress gate for tickets/Slack (grep)
+# Loaded by every engine so the policy lives in one place:
+#   - scripts/lib/pii_provenance.py    — the egress decision: fingerprints these values at a
+#                                        prod read, redacts exactly those at a ticket/Slack
+#                                        write (docs/agents/pii-provenance.md)
+#   - scripts/lib/pii-scan.sh          — shape-only scanning + PDF text extraction (grep)
 #   - scripts/db/prod_repro_seed.py    — value-level mask on prod→local seed (Python re)
+#
+# NOTE these detectors decide WHAT COUNTS as a personal value, not whether to act on it. A
+# match on local or staging data is expected and harmless: without prod provenance nothing is
+# redacted, which is why an aggressive detector here (the IPv4 one also matches a 4-part
+# version string) no longer costs a false block.
 #
 # Format: one detector per line, TAB-separated:  <category><TAB><mode><TAB><ERE>
 #   mode = plain  → case-sensitive match

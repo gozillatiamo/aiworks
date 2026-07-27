@@ -133,9 +133,11 @@ fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --arg
 [[ "$fields" != "{}" || "$have_body" -eq 1 ]] \
   || die "nothing to update — pass at least one property flag or --body (see -h)"
 
-# PII egress gate: external-world PII (phone/email/wallet/bank/national-id) must not leave the
-# prod boundary into a ticket. Inner-system identity, aggregates, money integers and reproduce
-# SQL pass (see tracker_assert_no_pii in lib.sh).
-[[ "$have_body" -eq 1 ]] && tracker_assert_no_pii "$body_md"
+# PII egress redaction: PRODUCTION-derived personal values (phone/email/wallet/bank/
+# national-id, and shapeless ones like a name) are redacted to <prod-pii:…> before the body
+# leaves the prod boundary. Local/staging test data is untouched — provenance decides, not
+# shape. Inner-system identity, aggregates, money integers and reproduce SQL always pass
+# (see tracker_redact_prod_pii in lib.sh).
+[[ "$have_body" -eq 1 ]] && body_md="$(tracker_redact_prod_pii "$body_md")"
 
 tracker_upsert "$ticket" "$dry" "$fields" "$body_md"

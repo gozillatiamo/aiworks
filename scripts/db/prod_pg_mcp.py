@@ -30,6 +30,11 @@ Safety is layered, because a production database behind an AI tool is a real ris
      itself reject any write (including writable CTEs) with a clear error.
   3. `execute_sql` only accepts SELECT / WITH / TABLE / VALUES, a single statement, and
      paginates results at 200 rows/page so a fat table can't flood the context.
+  4. Every returned row is fed to the PII provenance vault (scripts/lib/pii_provenance.py) as
+     keyed hashes — never values. That is what makes the egress redaction in the tracker /
+     notify adapters prod-ONLY: they mask a personal value if and only if production is where
+     it came from, so parallel local/staging work is never touched. See
+     docs/agents/pii-provenance.md.
 
 Pools are lazy (min_size=0): the process holds zero prod connections until a tool is
 actually called, and `disconnect()` drops every pool so nothing lingers after a triage job
@@ -48,6 +53,16 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+
+# Value-exact PII provenance (scripts/lib/pii_provenance.py). Every row this server hands back
+# came from PRODUCTION by definition, so each personal value in it is vaulted as a keyed hash
+# — that record is what later lets the tracker/notify adapters redact exactly those values
+# from a ticket or Slack post while leaving identical-looking local/staging data alone.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+try:
+    import pii_provenance
+except Exception:  # provenance is a safety net; a missing module must not break triage
+    pii_provenance = None  # type: ignore[assignment]
 
 # --- configuration -----------------------------------------------------------------------
 
@@ -171,12 +186,19 @@ def _jsonable(payload: dict) -> dict:
 
 
 def _query(key: str, sql: str, params: tuple | None = None) -> tuple[list[str], list[dict]]:
+    """The single choke point for every prod read — which makes it the single place that has
+    to record provenance. Recording is best-effort and never observable to the caller."""
     pool = _pool(key)
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, params)
             cols = [d.name for d in cur.description] if cur.description else []
             rows = cur.fetchall() if cur.description else []
+    if pii_provenance is not None and rows:
+        try:
+            pii_provenance.record_rows(cols, rows)
+        except Exception:
+            pass
     return cols, rows
 
 
@@ -341,6 +363,7 @@ def _selftest() -> int:
     """Validate deps + config without connecting to prod. Prints only booleans (which
     targets are configured) — never a DSN value, honoring the workspace .env guard."""
     print(f"env file: {ENV_PATH} ({'present' if ENV_PATH.exists() else 'MISSING'})")
+    print(f"pii provenance: {'wired' if pii_provenance is not None else 'UNAVAILABLE'}")
     configured = _configured_targets()
     if configured:
         for key in configured:

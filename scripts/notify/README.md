@@ -39,8 +39,12 @@ scripts/notify/send.sh --reply FM-2098 '✅ FM-2098 — approved. Standards clea
   Combine with `--thread-ts` to attach into a thread. Needs a **bot token + the `files:write`
   scope** (a webhook can't upload); it can't combine with `--review`/`--reply`. Before any byte
   leaves the machine an **outbound gate** refuses (exit non-zero) a file that is over
-  `OUTBOUND_MAX_FILE_MB` (default 15), carries **external PII** (via `scripts/lib/pii-scan.sh`),
-  or matches a **secret/token** pattern. `--title` sets the file's title (default: its basename).
+  `OUTBOUND_MAX_FILE_MB` (default 15) or matches a **secret/token** pattern, and **redacts**
+  any **production**-derived personal value (a text file uploads as a redacted copy under the
+  same filename; a binary one is refused, since its bytes can't be rewritten safely). Local and
+  staging test data is never touched — provenance decides, not shape: see
+  `docs/agents/pii-provenance.md`. The message text and caption are redacted the same way.
+  `--title` sets the file's title (default: its basename).
   This is what lets the Slack dispatcher answer "give me a csv/pdf/md/json" with the actual file.
 
 ```sh
