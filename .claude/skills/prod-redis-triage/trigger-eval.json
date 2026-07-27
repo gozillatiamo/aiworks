@@ -1,0 +1,22 @@
+[
+  {"query": "player under agency f3a9c2 sees an old balance in the app but the db row is right — is the cached balance in prod redis stale?", "should_trigger": true},
+  {"query": "campaign-sub looks like it stopped processing daily checkin events. check the consumer group on the stream in production", "should_trigger": true},
+  {"query": "how many entries are in bet_stream on prod right now, and is any consumer group lagging behind?", "should_trigger": true},
+  {"query": "the agent token for site GC789 should exist after login but the api says unauthorized — does the key exist in prod redis and what's its ttl?", "should_trigger": true},
+  {"query": "OFB-3421: game list for one site shows games that were disabled weeks ago. what's actually cached under game:* in prod?", "should_trigger": true},
+  {"query": "a player keeps getting rate limited on withdraw. look up the rate_limit key for them in production", "should_trigger": true},
+  {"query": "live-sub raindrop stopped firing on staging — read refund_raindrop and its pending entries", "should_trigger": true},
+  {"query": "check the tournament leaderboard zset in prod, this player's score looks wrong compared to their turnover", "should_trigger": true},
+  {"query": "is site_code GC789's package cached in prod redis, and does it match what MAD says?", "should_trigger": true},
+  {"query": "grab the last 5 entries of lotto_transaction_stream from production so i can see the field shape", "should_trigger": true},
+  {"query": "check my local redis — did the seeded siteL agent token and session get written?", "should_trigger": false},
+  {"query": "a player under agency c1f0 has a wrong payout. pull the transaction rows from the production database", "should_trigger": false},
+  {"query": "why is agent-webservice throwing 500s in prod on the deposit endpoint? pull the logs", "should_trigger": false},
+  {"query": "get the trace for this slow checkout request in prod, trace id 4f9a1c22e0", "should_trigger": false},
+  {"query": "delete the stale cached balance key in prod redis so it refetches, ops already approved it", "should_trigger": false},
+  {"query": "our prod redis memory keeps climbing — how should i tune maxmemory-policy and the eviction settings?", "should_trigger": false},
+  {"query": "add a redis cache layer for the provider game ranking endpoint in the game crate", "should_trigger": false},
+  {"query": "the staging postgres has stale test data again — can you check the players table on staging?", "should_trigger": false},
+  {"query": "write an integration test that asserts we XADD to bet_stream once per completed bet", "should_trigger": false},
+  {"query": "which shard is agency 7b2e10 on?", "should_trigger": false}
+]

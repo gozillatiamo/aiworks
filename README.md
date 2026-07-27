@@ -99,7 +99,66 @@ glab auth login
 4.2 gcloud auth login
 ```sh
 gcloud auth application-default login
+gcloud auth login                        # user credential — `gcloud compute ssh` needs this one
 ```
+
+4.2.1 **Prod triage authorization** — the two read-only production-triage MCPs
+(`prod_pg_triage` for Postgres, `prod_redis_triage` for Redis/Streams) are read-only by
+construction, but under **auto mode** Claude also needs to be told that reading production
+through them is sanctioned, and where the line is. That context lives in your **personal**
+`~/.claude/settings.json` under `autoMode.environment` — per-machine, not shared, so each
+teammate adds it once:
+
+<details>
+<summary><strong>Show the three paragraphs to add (one-time, per machine)</strong></summary>
+
+Append these to the `autoMode.environment` array in `~/.claude/settings.json` (create the key
+if it isn't there). They are prose, not config — Claude reads them as standing authorization:
+
+> Production DB access is ONLY through the prod-pg-triage MCP, tool prefix
+> `mcp__prod_pg_triage__*`. Treat EVERY call to that prefix as a sensitive, read-only production
+> read against the OFB PRODUCTION Postgres (MAD master + 16 hex shards shard_0..shard_f),
+> regardless of hostname (targets carry no 'prod' segment). The server enforces a read-only
+> role; if any call under this prefix ever mutates prod, treat it as a production write, not a
+> read.
+
+> Local Postgres from `agent-db run` (localhost:5432 master, localhost:5433 shard) is an
+> ordinary LOCAL dev resource — routine local reads, scratch tables, and test queries there are
+> fine. The ONE restriction: prod-derived data may reach it ONLY as the MASKED output of
+> `scripts/db/prod_repro_seed.py`; a prod read (`mcp__prod_pg_triage__*`) written to local
+> Postgres WITHOUT going through `prod_repro_seed.py` is an unmasked prod-data flow and is NOT
+> authorized.
+
+> Production Redis access is ONLY through the prod-redis-triage MCP, tool prefix
+> `mcp__prod_redis_triage__*` — typed READ tools only, with no command passthrough. That server
+> owns its own `gcloud compute ssh` port-forward (127.0.0.1:6377 for prod, :6378 for staging)
+> and forwards the Redis port ONLY; it is never a remote shell, and the agent holds no `gcloud`
+> grant. Treat every `target="prod"` call as a sensitive read-only production read; if any call
+> under this prefix ever mutates Redis, treat it as a production write, not a read. Local Redis
+> (`mcp__redis`, localhost:6379) is an ordinary LOCAL dev resource and stays writable. Prod
+> Redis VALUES are never persisted locally: the only sanctioned local repro path is
+> `capture_shape` → `scripts/redis/replay_shape.py`, which writes SYNTHETIC values from a schema.
+
+Both servers are registered in **local scope**, not the shared `.mcp.json` — prod triage is
+occasional work, and Claude Code spawns every enabled server in every session, so the people
+doing it are the ones who carry it:
+
+```sh
+claude mcp add prod_pg_triage    --scope local -- uv run --quiet "$(pwd)/scripts/db/prod_pg_mcp.py"
+claude mcp add prod_redis_triage --scope local -- uv run --quiet "$(pwd)/scripts/redis/prod_redis_mcp.py"
+```
+
+Then verify the tunnels work on your machine (read-only; the second command touches prod with
+three cheap reads and disconnects):
+
+```sh
+uv run scripts/redis/prod_redis_mcp.py --verify staging
+uv run scripts/redis/prod_redis_mcp.py --smoke prod
+```
+
+Details: [`scripts/db/README.md`](scripts/db/README.md) ·
+[`scripts/redis/README.md`](scripts/redis/README.md)
+</details>
 
 4.3 SonarQube MCP token — the `sonarqube` MCP server runs as a **shared** container
 (`aiworks-mcp-sonarqube`, HTTP transport, like the postgres MCP services). Its

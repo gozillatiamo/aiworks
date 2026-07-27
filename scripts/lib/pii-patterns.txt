@@ -38,3 +38,16 @@ national_id	plain	\b[0-9]-[0-9]{4}-[0-9]{5}-[0-9]{2}-[0-9]\b
 national_id	ci	(national[ _-]?id|citizen[ _-]?id|บัตรประชาชน)[^0-9]{0,20}[0-9]{13}
 passport	ci	passport[^A-Za-z0-9]{0,20}[A-Z]{1,2}[0-9]{6,8}
 bank_account	ci	(bank[ _-]?acc(ount)?|acct[ _-]?no|เลขบัญชี)[^0-9]{0,20}[0-9]{6,17}
+
+# Live credentials — added with prod-redis-triage, because production Redis stores session and
+# agent tokens (`token:{agent:<id>}:*`, `agent_tokens:*`, `sso:*`) and a leaked one is an
+# account takeover, not a privacy incident. The MCP already masks these at the source; these
+# detectors are the last layer, for a credential that reaches a ticket/Slack by another path.
+#
+# Deliberately NOT here: a bare long hex or base64 run. A 40-char hex is a git commit SHA and a
+# 32-char one is any hash — redacting those would maul ordinary PR prose, which is exactly the
+# false-positive class this file warns about. So a credential is caught by an unambiguous SHAPE
+# (a JWT always opens with the base64 of `{"`, i.e. `eyJ`) or by its own LABEL.
+jwt	plain	\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}
+auth_token	ci	(bearer|authorization)[^A-Za-z0-9]{0,20}[A-Za-z0-9._~+/=-]{20,}
+auth_token	ci	(access[ _-]?token|refresh[ _-]?token|id[ _-]?token|session[ _-]?(id|token|key)|api[ _-]?key|secret[ _-]?key|client[ _-]?secret|passwd|password)[^A-Za-z0-9]{0,20}[A-Za-z0-9._~+/=-]{8,}

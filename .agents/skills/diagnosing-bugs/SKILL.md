@@ -53,6 +53,15 @@ Never hand-craft local `INSERT`s from prod values — the tool enforces mask + i
 teardown in code. This is a developer step and lives entirely within this skill's sandbox;
 the `--teardown` DROP is part of Phase 6 cleanup. (Full contract: developer.md "Prod data for a repro".)
 
+When the stale thing is a **cache, a session, or a stream** rather than a row, the ground truth
+is **`/prod-redis-triage`** (read-only, `target="staging"|"prod"`): a cached `user_balance:*` /
+`game:*` disagreeing with the DB, a session or agent token that should exist, or a consumer
+group behind on `bet_stream` / `daily_checkin_stream`. Redis has **no seed tool** — prod values
+never land locally. Reproduce by taking the observed *shape* into a test (the default), or,
+when the repro truly needs keys, `capture_shape` → `scripts/redis/replay_shape.py --label <KEY>`
+(synthetic values only, one `repro:<KEY>:` prefix, `--teardown` in Phase 6). A consumer group's
+pending-entry history cannot be replayed: read it live and fix forward.
+
 ### Tighten the loop
 
 Treat the loop as a product. Once you have _a_ loop, **tighten** it:

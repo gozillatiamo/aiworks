@@ -134,3 +134,13 @@ uv run scripts/db/prod_repro_seed.py --into-db ofb_local --spec seed.json --tear
 
 The read-only triage MCP does **not** use `PGLOCAL_ADMIN` and never seeds — reading and finding
 is its whole job. Only the developer's `/diagnosing-bugs` flow persists, and only through this tool.
+
+## Its cache/stream sibling — `scripts/redis/`
+
+Postgres rows are one half of the ground truth; the other is what is *true right now* in Redis
+(cached balances, sessions/tokens, the Stream backbone). That lives in
+[`scripts/redis/`](../redis/README.md) — same read-only, on-demand, disconnect-when-done shape,
+with two differences worth knowing: it owns its own **gcloud SSH tunnel** (Postgres connects
+directly), and it has **no read-only DB role to lean on**, so its typed tool surface *is* the
+guarantee rather than a convenience. It also has **no seed tool** — prod Redis values never land
+locally.

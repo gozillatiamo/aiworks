@@ -11,8 +11,8 @@ description: >-
   prod, a named shard, or across the fleet; or grounding another skill plan/fix with a real
   production DB fact. One on-demand, read-only MCP covers the whole fleet and always
   disconnects when done — it never writes or migrates. Do NOT use for local/dev DB
-  (postgres_ass/postgres_mad), staging, schema migrations (agent-db), or logs/traces
-  (telemetry-triage).
+  (postgres_ass/postgres_mad), staging, schema migrations (agent-db), logs/traces
+  (telemetry-triage), or cache / session / Redis-Stream state (prod-redis-triage).
 argument-hint: "[symptom / agency_id / shard hex / table / ticket-key]"
 ---
 

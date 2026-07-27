@@ -91,6 +91,10 @@ VALUE_TAIL_RE = {
     "national_id": re.compile(r"[0-9]{13}$"),
     "bank_account": re.compile(r"[0-9]{6,17}$"),
     "passport": re.compile(r"[A-Z]{1,2}[0-9]{6,8}$", re.IGNORECASE),
+    # A credential detector is label-gated too ("access_token <value>", "Bearer <value>"), so the
+    # label stays readable — "access_token <prod-pii:auth_token>" says what was redacted, which
+    # is the whole point of masking rather than blocking. `jwt` needs no tail: it is pure shape.
+    "auth_token": re.compile(r"[A-Za-z0-9._~+/=-]{8,}$"),
 }
 
 # Never vault these even from a PII-named column: they are inner-system identity (explicitly
@@ -565,6 +569,24 @@ def _selftest() -> int:
         masked, _ = mask_text("refund to bank account no 1234567890 failed")
         check("bank label kept, value masked",
               "bank account no <prod-pii:bank_account>" in masked)
+
+        # --- live credentials (prod Redis holds session/agent tokens) -------------------------
+        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJHQzc4OTAwMDAwMDIxIn0.7Hk2sQ3vBnL9pXqZ0aTdWm4Ye"
+        record_text(f"session blob {jwt}")
+        masked, _ = mask_text(f"the site sent {jwt} and got 401")
+        check("prod JWT masked", "<prod-pii:jwt>" in masked and jwt not in masked)
+        record_text("access_token 9f8e7d6c5b4a3210")
+        masked, _ = mask_text("agent_tokens holds access_token 9f8e7d6c5b4a3210 for the site")
+        check("labeled access_token masked, label kept",
+              "access_token <prod-pii:auth_token>" in masked)
+        # The false-positive class the credential detectors are shaped to avoid: a commit SHA and
+        # a bare hash are not credentials, and redacting them would maul ordinary PR prose.
+        os.environ["PII_GATE"] = "on"
+        shas = ("fix in 5cd356e9a1b2c3d4e5f60718293a4b5c6d7e8f90, digest "
+                "a3f5c9d1e7b2408695fd3c1a7e0b5d92")
+        masked, hits = mask_text(shas)
+        check("commit SHA + bare hash are not credentials", masked == shas and not hits)
+        os.environ["PII_GATE"] = "auto"
 
         # --- modes ---------------------------------------------------------------------------
         os.environ["PII_GATE"] = "off"

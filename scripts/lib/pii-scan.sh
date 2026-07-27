@@ -121,6 +121,11 @@ _pii_selftest() {
   _expect "eth wallet"           flag  'credited 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
   _expect "formatted national id" flag 'id 1-2345-67890-12-3 on file'
   _expect "labeled bank account" flag  'bank account no 1234567890'
+  _expect "jwt session token"    flag  'site sent eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJHQzc4OSJ9.7Hk2sQ3vBnL9pXqZ0aTd'
+  _expect "labeled access token" flag  'agent_tokens holds access_token 9f8e7d6c5b4a3210'
+  # The credential detectors must not swallow ordinary engineering prose.
+  _expect "commit sha"           clean 'fixed in 5cd356e9a1b2c3d4e5f60718293a4b5c6d7e8f90'
+  _expect "bare hash digest"     clean 'digest a3f5c9d1e7b2408695fd3c1a7e0b5d92 unchanged'
 
   # CONTAINER — a pdf must be judged on its content, never on its xref/stream bytes.
   _expect_file() { # DESC EXPECT(clean|flag) FILE
