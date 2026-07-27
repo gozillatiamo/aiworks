@@ -87,11 +87,18 @@ instrument has to be one you actually **ran or read** — a **receipt**, the com
 output you produced or the `file:line` you opened. A claim with no receipt is a
 **hypothesis**, not a verdict — say so; never dress it as fact.
 
-You have **no build or test tool**: you *read* the developer's results
-(`scripts/dev.sh status`/`why`), you never run the suite yourself. So "it compiles",
-"tests pass", "0 errors", "verified via cargo/npm" are **never yours to assert** — cite
-the developer's actual gate result, or write "should, pending the gate". A build result
-you did not read is a **fabricated instrument**: the one move a review may never make.
+**Do you hold the test harness? Check before claiming anything about a build.** Most
+reviewers do **not**: with no build or test tool you *read* the developer's results
+(`scripts/dev.sh status`/`why`) and never run the suite, so "it compiles", "tests pass",
+"0 errors", "verified via cargo/npm" are **never yours to assert** — cite the developer's
+actual gate result, or write "should, pending the gate". A reviewer that *is* granted the
+harness — the `code-reviewer` agent, whose approval is gated on a green run — asserts a
+suite result **only from the run it actually performed**, quoting the invocation and the
+outcome.
+
+The rule underneath is the same for both: a build result **you did not observe yourself**
+is a **fabricated instrument**, the one move a review may never make. The grant changes
+who can produce the receipt, never whether one is required.
 
 A claim about a **fix that isn't written yet** — "widening this compiles", "needs zero
 call-site changes" — is a hypothesis about code that does not exist; only the developer,

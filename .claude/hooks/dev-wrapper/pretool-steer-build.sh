@@ -48,7 +48,9 @@ fi
   echo "  scripts/dev.sh why <name>     # only the failure lines"
   echo "  scripts/dev.sh status [name]  # the recorded one-line summary"
   echo
-  echo "(Builds are the developer agent's job; other roles read results via status/why."
+  echo "(The developer owns builds; the code-reviewer runs the suite too — its approval is"
+  echo " gated on a green run — and both go through the wrapper. Other roles read results"
+  echo " via status/why."
   echo " If you truly need raw output, redirect it to a file: $cmd > /tmp/out.log 2>&1)"
 } >&2
 exit 2
