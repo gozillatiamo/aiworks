@@ -176,6 +176,26 @@ spam on the host.
   exists before writing `.aiworks/slack-context.json` — otherwise the Stop-hook backstop
   is silently disabled.
 
+## The post-back summary — short by contract
+
+The reply the agent posts to the thread is the one artifact of a turn a human actually
+reads, so `prompt.py` spends real prompt budget keeping it short. Three rules, applied to
+**every** kind of request, not just reviews:
+
+1. **Ultra-compressed.** The preamble tells the agent to invoke `/caveman:caveman` for
+   that message. Compression is style only — it never licenses skipping a step, and a
+   failure or an unverified claim still gets its line.
+2. **Budgeted.** ~8 lines. Outcome, the decision the human owes, the links + branch.
+3. **Link, don't restate.** Anything the reader can already open does not get a second
+   copy in Slack: inline PR/MR review comments (give the count + the worst one, the MR
+   link *is* the report), a doc/ticket you wrote (its URL), an attached deliverable, and
+   — the easy one to miss — anything a skill's own notify step already posted to that
+   **same** thread earlier in the turn. Then the post-back is a one-line pointer.
+
+Skills that post to Slack themselves own the matching half of this: `ultra-review` §4
+caps its combined verdict the same way, precisely so the two messages don't say the same
+thing twice in one thread.
+
 ## Stop-hook backstop (needs one manual settings edit)
 
 The **primary** post-back is the agent calling `send.sh` itself (instructed in the
