@@ -101,7 +101,10 @@ python3 scripts/lib/pii_provenance.py --selftest          # 13 cases, uses a thr
   `PII_GATE=off` for that write.
 - **Binary uploads can't be redacted.** A PDF/PNG carrying production PII is refused rather
   than rewritten (rewriting the bytes would corrupt the file). It is judged on text extracted
-  by `pii-scan.sh`; extraction that fails yields a pass, so a binary is a weaker check than a
-  text file.
+  by `pii-scan.sh` / `pdf-text.py`, which reads a PDF's real text layer — including a text
+  stream no page references. What no extractor reaches still passes: text baked into a raster
+  image, and non-Flate compressed streams. So a binary remains a weaker check than a text file.
+  Text/binary is decided by extension first, then by a NUL-byte probe: a small PNG is mostly
+  printable and a naive content sniff calls it text, which would corrupt the upload.
 - **Secrets are not part of this.** A token/key/credential in a Slack upload is refused
   outright, in every environment — a credential is never "redact and carry on".

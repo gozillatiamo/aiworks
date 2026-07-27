@@ -132,21 +132,27 @@ _pii_selftest() {
   }
   if command -v python3 >/dev/null; then
     local tmp; tmp="$(mktemp -d)"
+    # $3 = "linked" (a normal pdf: the page points at its content stream) or "orphan" (the
+    # /Contents edge is missing — a shape the extractor must still read, since an unreachable
+    # text stream is exactly what must not slip through a PII check).
     _mkpdf() { python3 -c '
 import sys, zlib
 body = zlib.compress(sys.argv[2].encode())
+page = b"<</Type/Page/Contents 2 0 R>>" if sys.argv[3] == "linked" else b"<</Type/Page>>"
 open(sys.argv[1], "wb").write(
-    b"%PDF-1.4\n1 0 obj<</Type/Page>>endobj\n2 0 obj<</Length "
+    b"%PDF-1.4\n1 0 obj" + page + b"endobj\n2 0 obj<</Length "
     + str(len(body)).encode() + b">>stream\n" + body
     + b"\nendstream\nendobj\nxref\n0 3\n0000000000 65535 f \n0000000015 00000 n \n"
       b"0000000327 00000 n \ntrailer<</Size 3>>\nstartxref\n999\n%%EOF\n")
-' "$1" "$2"; }
-    _mkpdf "$tmp/clean.pdf" 'BT (ADR-0003 personal runtime config overrides) Tj ET'
-    _expect_file "pdf with no PII (xref offsets ignored)" clean "$tmp/clean.pdf"
-    _mkpdf "$tmp/phone.pdf" 'BT [(call 08) -20 (91234567)] TJ ET'
-    _expect_file "pdf with a phone in its text layer"     flag  "$tmp/phone.pdf"
-    _mkpdf "$tmp/mail.pdf" 'BT (write to somebody@example.com) Tj ET'
-    _expect_file "pdf with an email in its text layer"    flag  "$tmp/mail.pdf"
+' "$1" "$2" "$3"; }
+    _mkpdf "$tmp/clean.pdf" 'BT (ADR-0003 personal runtime config overrides) Tj ET' linked
+    _expect_file "pdf with no PII (xref offsets ignored)"  clean "$tmp/clean.pdf"
+    _mkpdf "$tmp/phone.pdf" 'BT [(call 08) -20 (91234567)] TJ ET' linked
+    _expect_file "pdf with a phone in its text layer"      flag  "$tmp/phone.pdf"
+    _mkpdf "$tmp/mail.pdf" 'BT (write to somebody@example.com) Tj ET' linked
+    _expect_file "pdf with an email in its text layer"     flag  "$tmp/mail.pdf"
+    _mkpdf "$tmp/orphan.pdf" 'BT (write to somebody@example.com) Tj ET' orphan
+    _expect_file "pdf whose text stream no page references" flag "$tmp/orphan.pdf"
     rm -rf "$tmp"
   else
     echo "skip (no python3) pdf container fixtures"
