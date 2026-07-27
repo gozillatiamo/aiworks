@@ -2,7 +2,7 @@
 name: qa-runner
 description: QA runner (Peter) — for a ticket, branches, implements + runs the automation suite, reports results, and merges the PR once green. Execute only, never sets Status → Done.
 model: sonnet
-effort: medium 
+effort: high
 maxTurns: 100
 skills:
   - caveman:caveman
