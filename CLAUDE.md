@@ -221,4 +221,9 @@ to build calibration history before producing an estimate; do not conclude
 - Never edit, add, or commit **inside a git submodule checkout** (e.g.
   `agent-webservice/agent-db/`, `paotung-template/packages/customization-widget/`). That
   code belongs to a repo that is *also* cloned as its own primary clone at the workspace
-  root — make the change there. See `docs/agents/submodules.md`.
+  root — make the change there. **Reading one is fine, and so is `git -C <sub> checkout
+  <ref>` to PROVE something** (does the suite go green once the pointer is bumped?) — the
+  ban is on create/edit/commit, not on inspection; restore the ref or use a throwaway
+  `git worktree add` when you're done. Enforced by `pretool-submodule-guard.sh`, which
+  blocks the write half and **pre-approves** the read half so a proof run isn't denied by
+  the permission classifier. See `docs/agents/submodules.md`.

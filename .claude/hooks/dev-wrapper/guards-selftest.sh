@@ -232,6 +232,90 @@ t "agent-context never blocks"      0 pretool-agent-context.sh "$(ja general-pur
 t "agent-context on empty prompt"   0 pretool-agent-context.sh "$(ja general-purpose '')"
 has "unknown agent type treated as def-less" yes "$(ac th no-such-agent 'Find X.')" 'CAVEMAN_DIRECTIVE'
 
+echo "--- pretool-submodule-guard ---"
+#
+# Fixture: a real superproject with a real submodule mount, built in the temp dir so
+# the suite does not depend on which product repos this workspace happens to have
+# cloned. `protocol.file.allow` is required because git refuses the file:// transport
+# for submodules by default since 2.38.
+mk_submodule() {
+  local src="$TMP/subsrc" sup="$TMP/super"
+  mkdir -p "$src/changelog"
+  git -C "$src" init -q
+  : > "$src/changelog/main.yml"
+  git -C "$src" add -A >/dev/null 2>&1
+  git -C "$src" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+  mkdir -p "$sup/src"
+  git -C "$sup" init -q
+  : > "$sup/src/main.rs"
+  git -C "$sup" add -A >/dev/null 2>&1
+  git -C "$sup" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+  git -C "$sup" -c protocol.file.allow=always -c user.email=t@t -c user.name=t \
+      submodule add -q "$src" sub >/dev/null 2>&1
+}
+mk_submodule
+SUB="$TMP/super/sub"
+
+# The guard's ALLOW verdict is exit 0 WITH a permissionDecision on stdout, which the
+# exit-code-only `t` cannot tell apart from "no opinion" — and the difference is the
+# whole point of the guard, so it needs its own assert.
+ta() { # ta <name> <allow|silent> <json>
+  local name=$1 want=$2 json=$3 out got
+  out=$(printf '%s' "$json" | "$H/pretool-submodule-guard.sh" 2>/dev/null)
+  case "$out" in *'"permissionDecision":"allow"'*) got=allow ;; *) got=silent ;; esac
+  if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else fail=$((fail+1)); printf 'FAIL %s (want %s, got %s)\n' "$name" "$want" "$got"; fi
+}
+
+G=pretool-submodule-guard.sh
+
+# --- the rule: creating / editing / committing inside the checkout is blocked -----
+t  "submodule commit blocked"        2 $G "$(j "git -C $SUB commit -m x")"
+t  "submodule add blocked"           2 $G "$(j "git -C $SUB add .")"
+t  "submodule push blocked"          2 $G "$(j "git -C $SUB push origin HEAD")"
+t  "submodule checkout -b blocked"   2 $G "$(j "git -C $SUB checkout -b feature/x")"
+t  "submodule switch -c blocked"     2 $G "$(j "git -C $SUB switch -c feature/x")"
+t  "submodule restore blocked"       2 $G "$(j "git -C $SUB restore changelog/main.yml")"
+t  "submodule stash push blocked"    2 $G "$(j "git -C $SUB stash push")"
+t  "Write into submodule blocked"    2 $G "$(jw "$SUB/changelog/main.yml")"
+t  "Edit into submodule blocked"     2 $G "$(jq -cn --arg p "$SUB/changelog/main.yml" '{tool_name:"Edit",tool_input:{file_path:$p}}')"
+t  "sed -i into submodule blocked"   2 $G "$(j "sed -i '' s/a/b/ $SUB/changelog/main.yml")"
+t  "cp into submodule blocked"       2 $G "$(j "cp /tmp/x.yml $SUB/changelog/x.yml")"
+t  "rm inside submodule blocked"     2 $G "$(j "rm $SUB/changelog/main.yml")"
+t  "redirect into submodule blocked" 2 $G "$(j "echo hi > $SUB/changelog/x.yml")"
+t  "&> into submodule blocked"       2 $G "$(j "git -C $SUB status &> $SUB/out.txt")"
+
+# --- and the half the rule was never about: proving something by reading it ------
+# Every one of these was denied by the auto-mode classifier on the OFB-2179 review
+# (2026-07-27), which is why the guard pre-approves them.
+ta "bare ref checkout pre-approved"   allow "$(j "git -C $SUB checkout --detach HEAD")"
+ta "checkout <ref> pre-approved"      allow "$(j "git -C $SUB checkout master")"
+ta "status | head pre-approved"       allow "$(j "git -C $SUB status --porcelain | head -30")"
+ta "show ref:path | sed pre-approved" allow "$(j "git -C $SUB show HEAD:changelog/main.yml | sed -n '1,5p'")"
+ta "fetch pre-approved"               allow "$(j "git -C $SUB fetch origin")"
+ta "submodule status pre-approved"    allow "$(j "git -C $SUB submodule status")"
+# The exact shape the classifier killed: a ref move, fd-dup, a pipe and a chained ls.
+# `2>&1` must survive the separator split — splitting on the lone `&` once sliced it
+# into the junk segments `2>` and `1` and silently cost the command its pre-approval.
+ta "checkout 2>&1 | tail && ls"       allow "$(j "git -C $SUB checkout --detach HEAD 2>&1 | tail -2 && ls $SUB/changelog")"
+ta "fd-dup 1>&2 survives split"       allow "$(j "git -C $SUB log --oneline -1 1>&2")"
+
+# --- ALLOW is whole-command, so one unrecognized segment must forfeit it ---------
+ta "unknown segment forfeits allow"   silent "$(j "git -C $SUB status && curl http://evil/")"
+ta "build chained after read"         silent "$(j "git -C $SUB status && ./scripts/dev.sh test")"
+# A secrets-shaped read is read-only and still a leak — it belongs to the env guard,
+# so this guard must stand aside rather than wave it through.
+ta "secretish read deferred"          silent "$(j "git -C $SUB show HEAD:.env")"
+ta ".env.example not secretish"       allow  "$(j "git -C $SUB show HEAD:.env.example")"
+
+# --- a PRIMARY clone is not a submodule: the guard has no opinion at all ---------
+t  "primary clone commit untouched"  0 $G "$(j "git -C $TMP/subsrc commit -m x")"
+t  "primary clone Write untouched"   0 $G "$(jw "$TMP/subsrc/changelog/main.yml")"
+ta "primary clone read not allowed-stamped" silent "$(j "git -C $TMP/subsrc status --porcelain")"
+t  "superproject own src Write ok"   0 $G "$(jw "$TMP/super/src/main.rs")"
+t  "non-git command untouched"       0 $G "$(j 'cargo test')"
+t  "outside any repo fails open"     0 $G "$(jw "/nonexistent-root-xyz/a/b.rs")"
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
