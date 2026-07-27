@@ -16,6 +16,62 @@ superproject pins to one commit, not a place to develop.
 the PR/MR there. Bumping the superproject's pointer to the merged commit is a separate,
 deliberate step, not this skill's job.
 
+### …but READING one is fine, and so is a checkout that proves something
+
+The prohibition is on **create / edit / commit**, and on nothing else. Inspecting a
+submodule, and moving its ref to answer a question, are ordinary work:
+
+```sh
+git -C <sub> status                 # fine
+git -C <sub> show <ref>:<path>      # fine
+git -C <sub> diff / log / fetch     # fine
+git -C <sub> checkout <ref>         # fine — a BARE ref checkout, to prove something
+```
+
+That last one matters for review. "Does this suite go green once the pointer is bumped?"
+is answerable only by moving the ref and running the suite, and the difference between a
+finding that says *"I reasoned it will fail"* and one that says *"I ran it and it failed"*
+is the difference between an unverified claim handed back to a human and a settled one.
+Restore the original ref when you are done, or work in a throwaway `git worktree add`.
+
+What stays blocked is anything that writes: `add` · `commit` · `push` · `merge` · `rebase` ·
+`cherry-pick` · `apply` · `reset` · `restore` · `stash push` · `checkout -b` / `switch -c`
+(branch creation) — plus a plain filesystem write into the checkout (`cp`, `mv`, `rm`,
+`sed -i`, a `>` redirect, or a `Write`/`Edit` tool call).
+
+### It is enforced, not remembered
+
+`.claude/hooks/dev-wrapper/pretool-submodule-guard.sh` (`PreToolUse` on `Bash` and on
+`Write|Edit|NotebookEdit`) blocks the write half and **pre-approves** the read half.
+
+The pre-approval is the part worth knowing about. Added 2026-07-27 after the OFB-2179
+review, where this rule was prose-only and the outcome was exactly inverted: nothing
+mechanically stopped a write, while a read-only proof got denied anyway — by Claude Code's
+auto-mode permission classifier, which silently refused 8 commands that run in that
+session, among them
+
+```sh
+git -C agent-db checkout --detach origin/feature/OFB-2179 2>&1 | tail -2 && ls … && ./scripts/dev.sh test …
+git -C … status --porcelain | head -30
+git show <ref>:src/routes/reconcile_transaction_route.rs | sed -n '236,300p'
+```
+
+All 8 were **compound** commands. A static allow rule (`Bash(git *)`) is prefix-matched
+against the WHOLE command string, so anything wrapped in `cd … && …`, a pipe, or a heredoc
+matches no allow rule and falls through to the classifier. The guard closes that by
+emitting `permissionDecision: allow` itself.
+
+Two properties keep that narrow, and both are pinned by cases in
+`.claude/hooks/dev-wrapper/guards-selftest.sh`:
+
+- **Whole-command, so all-or-nothing.** `permissionDecision: allow` approves the entire
+  command, not the segment that earned it — so the guard pre-approves only when *every*
+  segment is in its recognized read-only set. `git -C <sub> status && curl http://evil/`
+  gets no pre-approval.
+- **Secrets are somebody else's job.** `git show <ref>:.env` is read-only and still a leak,
+  so the guard stands aside (no verdict) on anything secrets-shaped and lets
+  `pretool-env-guard.sh` block it.
+
 Current instances in this workspace (illustrative — detect from git, don't trust the list to stay current):
 
 | Submodule checkout — do NOT touch | Is really the repo | Develop here instead (primary clone at root) |
