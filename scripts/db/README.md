@@ -43,16 +43,29 @@ explicitly; a fleet-wide check is just a query per target.
    uv run scripts/db/prod_pg_mcp.py --selftest
    ```
 
-3. **Register the MCP in local scope** (personal, this project only) — use an absolute path
-   so it resolves regardless of the session's cwd:
+3. **Opt in, and let `aiworks` register it** in local scope (personal, this project only).
+   One line in your git-ignored `workspace.config.local.yaml` — the flag is read local-first,
+   so the shared default stays off and nobody else's session spawns this server:
+
+   ```yaml
+   prod_triage:
+     enabled: true
+   ```
+
+   ```bash
+   ./aiworks setup                     # or, on its own: scripts/prod-triage-mcp.sh sync
+   scripts/prod-triage-mcp.sh status   # policy + what is registered
+   ```
+
+   Restart the session so it connects. The `mcp__prod_pg_triage__*` tools then appear. Flipping
+   the flag back to `false` and re-running deregisters it. By hand, if you prefer (an absolute
+   path, so it resolves regardless of the session's cwd):
 
    ```bash
    claude mcp add prod_pg_triage --scope local -- \
      uv run --quiet "$(pwd)/scripts/db/prod_pg_mcp.py"
+   claude mcp remove prod_pg_triage --scope local
    ```
-
-   Restart the session so it connects. The `mcp__prod_pg_triage__*` tools then appear.
-   To remove it: `claude mcp remove prod_pg_triage --scope local`.
 
 ## Tools
 

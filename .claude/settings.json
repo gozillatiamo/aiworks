@@ -44,6 +44,7 @@
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py:*)",
       "Bash(python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py:*)",
       "Bash(uv run *prod_repro_seed.py*)",
+      "Bash(uv run *replay_shape.py*)",
       "Bash(docker compose up*)",
       "Bash(*scripts/vcs/pr-approve.sh*)",
       "Bash(*git remote get-url*)",
@@ -52,6 +53,8 @@
       "mcp__postgres_secondary",
       "mcp__postgres_main",
       "mcp__redis",
+      "mcp__prod_pg_triage",
+      "mcp__prod_redis_triage",
       "mcp__claude_ai_Figma__get_screenshot",
       "mcp__claude_ai_Figma__get_metadata",
       "mcp__claude_ai_Figma__get_design_context",
@@ -256,6 +259,18 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/slack-postback.sh",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prod-redis-tunnel-reap.sh",
+            "timeout": 15
           }
         ]
       }

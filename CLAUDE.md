@@ -45,7 +45,10 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   `design.figma_file_key` / `design.page_naming`), image-generation policy
   (`image_generation.enabled` — default OFF — `image_generation.quality` /
   `image_generation.max_per_request`), diagram-generation policy (`diagrams.enabled` —
-  default OFF — `diagrams.provider` / `diagrams.theme` / `diagrams.max_per_ticket`), and
+  default OFF — `diagrams.provider` / `diagrams.theme` / `diagrams.max_per_ticket`),
+  prod-triage policy (`prod_triage.enabled` — default OFF — whether THIS machine carries the
+  read-only production-triage MCPs `prod_pg_triage` + `prod_redis_triage`; read local-first and
+  reconciled by `aiworks sync` via `scripts/prod-triage-mcp.sh`), and
   the `products[].repos[]` registry
   (repo URLs). The source of truth for this workspace; `scripts/aiworks sync` sets
   everything up from it. Personal, non-shared overrides go in the git-ignored

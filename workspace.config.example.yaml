@@ -113,6 +113,19 @@ planning:
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
 
+# ── Production triage (read-only prod MCPs, registered per machine) ─────────────
+prod_triage:
+  enabled: false                   # MASTER switch (default OFF). Whether THIS machine carries
+                                   #   the read-only production-triage MCP servers
+                                   #   (prod_pg_triage → scripts/db, prod_redis_triage →
+                                   #   scripts/redis) in LOCAL scope. `aiworks sync` reconciles
+                                   #   registration against this flag, in both directions.
+                                   #   Read LOCAL-FIRST: put `prod_triage.enabled: true` in your
+                                   #   git-ignored workspace.config.local.yaml so opting in is a
+                                   #   per-person decision — every enabled MCP server spawns in
+                                   #   every session, and prod triage is occasional work.
+                                   #   See scripts/prod-triage-mcp.sh.
+
 # ── Artifacts (publishing an interactive doc as a shareable Claude Artifact) ────
 artifacts:
   enabled: false                   # MASTER switch (default OFF). false → an interactive doc

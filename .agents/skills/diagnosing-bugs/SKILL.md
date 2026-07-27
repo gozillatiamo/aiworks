@@ -49,6 +49,15 @@ uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json   # → rep
 uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown         # DROP it wholesale (Phase 6 cleanup)
 ```
 
+When the stale thing is a **cache, a session, or a stream** rather than a row, the ground truth
+is **`/prod-redis-triage`** (read-only, `target` from `scripts/redis/.env`): a cached value that
+disagrees with the DB, a session or token that should exist, or a consumer group behind on a
+stream. Redis has **no seed tool** — prod values never land locally. Reproduce by taking the
+observed *shape* into a test (the default), or, when the repro truly needs keys,
+`capture_shape` → `scripts/redis/replay_shape.py --label <KEY>` (synthetic values only, one
+`repro:<KEY>:` prefix, `--teardown` in Phase 6). A consumer group's pending-entry history cannot
+be replayed: read it live and fix forward.
+
 Never hand-craft local `INSERT`s from prod values — the tool enforces mask + isolation +
 teardown in code. This is a developer step and lives entirely within this skill's sandbox;
 the `--teardown` DROP is part of Phase 6 cleanup. (Full contract: developer.md "Prod data for a repro".)

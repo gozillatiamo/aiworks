@@ -21,6 +21,11 @@ skills:
   # prod_repro_seed to reproduce against local source). NOT for feature build — never touch prod
   # outside a bug repro. See "Prod data for a repro".
   - prod-pg-triage
+  # Read-only PRODUCTION/staging Redis ground truth — SAME /diagnosing-bugs SCOPE as
+  # prod-pg-triage. For a stale-cache / missing-session / stream-not-consumed bug. Prod values
+  # NEVER get persisted locally: fix forward with a test, or `capture_shape` -> replay_shape.py,
+  # which writes SYNTHETIC keys (schema only) into local Redis under a `repro:<label>:` prefix.
+  - prod-redis-triage
 tools:
   - Read
   - Grep
@@ -72,7 +77,44 @@ tools:
   - mcp__prod_pg_triage__disconnect
   # The ONE sanctioned path to persist prod-derived data locally — masks external PII, entity-
   # scoped, into a throwaway repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
+  # PRODUCTION/staging Redis, READ-ONLY, on-demand — same /diagnosing-bugs scope. Typed read
+  # tools only, no command passthrough, no KEYS. `target` is required; prod is never implied.
+  # disconnect when done (a 120s idle watchdog also reaps the tunnel).
+  - mcp__prod_redis_triage__list_targets
+  - mcp__prod_redis_triage__tunnel_status
+  - mcp__prod_redis_triage__cluster_topology
+  - mcp__prod_redis_triage__keyslot_of
+  - mcp__prod_redis_triage__server_info
+  - mcp__prod_redis_triage__dbsize
+  - mcp__prod_redis_triage__scan_keys
+  - mcp__prod_redis_triage__inspect_key
+  - mcp__prod_redis_triage__get_value
+  - mcp__prod_redis_triage__hget_field
+  - mcp__prod_redis_triage__hgetall_fields
+  - mcp__prod_redis_triage__hscan_fields
+  - mcp__prod_redis_triage__list_length
+  - mcp__prod_redis_triage__list_range
+  - mcp__prod_redis_triage__set_card
+  - mcp__prod_redis_triage__set_is_member
+  - mcp__prod_redis_triage__set_members
+  - mcp__prod_redis_triage__set_scan
+  - mcp__prod_redis_triage__zset_card
+  - mcp__prod_redis_triage__zset_score
+  - mcp__prod_redis_triage__zset_range
+  - mcp__prod_redis_triage__stream_length
+  - mcp__prod_redis_triage__stream_range
+  - mcp__prod_redis_triage__stream_info
+  - mcp__prod_redis_triage__stream_groups
+  - mcp__prod_redis_triage__stream_consumers
+  - mcp__prod_redis_triage__stream_pending
+  # Shape-only capture for a local Redis repro: types/TTLs/field names with every value
+  # SYNTHESIZED in the server. No production value crosses to local — that is the point.
+  - mcp__prod_redis_triage__capture_shape
+  - mcp__prod_redis_triage__disconnect
   - Bash(uv run *prod_repro_seed.py*)
+  # The Redis counterpart: replays a capture_shape descriptor as SYNTHETIC keys into LOCAL Redis
+  # under a `repro:<label>:` prefix, torn down by that prefix. Refuses a non-loopback URL.
+  - Bash(uv run *replay_shape.py*)
 ---
 
 ## Output language — resolve BEFORE writing (do this FIRST, before your role)

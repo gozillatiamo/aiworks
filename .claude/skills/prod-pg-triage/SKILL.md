@@ -8,8 +8,8 @@ description: >-
   count, or config value in prod or across several configured databases; or grounding another
   skill plan/fix with a real production DB fact. One on-demand, read-only MCP covers every
   configured target and always disconnects when done — it never writes or migrates. Do NOT use
-  for the local/dev DB (postgres_main/postgres_secondary), staging, schema migrations, or
-  logs/traces.
+  for the local/dev DB (postgres_main/postgres_secondary), staging, schema migrations,
+  logs/traces, or cache / session / Redis-Stream state (prod-redis-triage).
 argument-hint: "[symptom / target / table / ticket-key]"
 ---
 
@@ -40,9 +40,8 @@ one-time setup — do not improvise another route to prod:
 
 > The prod-pg-triage MCP isn't registered in this session. One-time setup (see
 > `scripts/db/README.md`): copy `scripts/db/.env.example` → `scripts/db/.env`, fill in the
-> **read-only** DSNs, then
-> `claude mcp add prod_pg_triage --scope local -- uv run --quiet "$(pwd)/scripts/db/prod_pg_mcp.py"`
-> and restart the session.
+> **read-only** DSNs, then set `prod_triage.enabled: true` in `workspace.config.local.yaml`
+> and run `scripts/prod-triage-mcp.sh sync`, and restart the session.
 
 This is a fail-loud gate on purpose: silently falling back to the local `postgres_*` MCPs
 would answer a prod question with dev data and mislead the whole investigation.

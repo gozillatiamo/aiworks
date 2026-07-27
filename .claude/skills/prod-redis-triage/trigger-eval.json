@@ -1,0 +1,22 @@
+[
+  {"query": "a user sees an old balance in the app but the database row is right — is the cached value in prod redis stale?", "should_trigger": true},
+  {"query": "the notification consumer looks like it stopped processing events. check the consumer group on the stream in production", "should_trigger": true},
+  {"query": "how many entries are in the events stream on prod right now, and is any consumer group lagging behind?", "should_trigger": true},
+  {"query": "the session for this account should exist after login but the api says unauthorized — does the key exist in prod redis and what's its ttl?", "should_trigger": true},
+  {"query": "APP-3421: the catalogue endpoint returns items that were disabled weeks ago. what's actually cached under the catalogue prefix in prod?", "should_trigger": true},
+  {"query": "a customer keeps getting rate limited on checkout. look up their rate_limit key in production", "should_trigger": true},
+  {"query": "the fan-out worker stopped firing on staging — read that stream and its pending entries", "should_trigger": true},
+  {"query": "check the leaderboard sorted set in prod, this account's score looks wrong compared to their totals", "should_trigger": true},
+  {"query": "is the tenant's plan config cached in prod redis, and does it match what the database says?", "should_trigger": true},
+  {"query": "grab the last 5 entries of the audit stream from production so i can see the field shape", "should_trigger": true},
+  {"query": "check my local redis — did the seeded test account's session get written?", "should_trigger": false},
+  {"query": "an account has a wrong payout. pull the transaction rows from the production database", "should_trigger": false},
+  {"query": "why is the api throwing 500s in prod on the checkout endpoint? pull the logs", "should_trigger": false},
+  {"query": "get the trace for this slow checkout request in prod, trace id 4f9a1c22e0", "should_trigger": false},
+  {"query": "delete the stale cached balance key in prod redis so it refetches, ops already approved it", "should_trigger": false},
+  {"query": "our prod redis memory keeps climbing — how should i tune maxmemory-policy and the eviction settings?", "should_trigger": false},
+  {"query": "add a redis cache layer for the product ranking endpoint", "should_trigger": false},
+  {"query": "the staging postgres has stale test data again — can you check the accounts table on staging?", "should_trigger": false},
+  {"query": "write an integration test that asserts we XADD to the events stream once per completed order", "should_trigger": false},
+  {"query": "which database target holds this tenant's rows?", "should_trigger": false}
+]
