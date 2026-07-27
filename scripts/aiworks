@@ -9,6 +9,7 @@
 #   aiworks sync   [<product>|<repo>] [options]   # onboard repos from config   (→ aiworks-sync.sh)
 #   aiworks remove <repo>|--all    [options]   # offboard a repo (or all)    (→ aiworks-remove.sh)
 #   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
+#   aiworks update                 [options]   # upgrade the prerequisites   (→ aiworks-update.sh)
 #   aiworks setup                  [args…]     # workspace setup             (→ .superset/setup.sh)
 #   aiworks run                    [args…]     # workspace run               (→ .superset/run.sh)
 #   aiworks teardown               [args…]     # workspace teardown          (→ .superset/teardown.sh)
@@ -64,6 +65,14 @@ Commands:
              .cursor/{hooks.json,cli.json,hooks/hook-shim.sh}, and the enabled plugins'
              skills linked into .claude/skills (git-ignored) so Cursor can see them too.
              add / sync run this automatically. Use --check in CI.
+  update     Upgrade the workspace's PREREQUISITE tooling — the half `setup` does not do
+             (its ensure_* helpers only install what is MISSING, never move a tool forward).
+             Upgrades each tool through the installer that owns it on THIS machine — brew
+             formulae/casks, rustup, corepack, gcloud, the Claude Code CLI + its declared
+             plugins, codegraph, and the shared MCP images — skipping anything brew does not
+             own rather than shadowing it. Best-effort: one failure never aborts the run.
+             node and repo dependencies are REPORTED, never changed (--check-deps lists what
+             is outdated per repo). Use -n to preview, --only/--skip to narrow.
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
              adapter .env, link adapters into each repo + git-exclude the links so they never
              dirty the product repo). Pass-through — forwards any extra args.
@@ -88,6 +97,11 @@ Examples:
   aiworks cursor                        # root + every repo
   aiworks cursor <repo>                 # just one repo
   aiworks cursor --check                # verify only; exit 1 on drift (CI)
+  # keep the host toolchain current (setup only ever installs what is missing):
+  aiworks update                        # every group: brew, rust, pnpm, gcloud, claude, …
+  aiworks update -n                     # preview — print each command, change nothing
+  aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
+  aiworks update --skip mcp --check-deps  # skip the image pull; report outdated repo deps
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
   aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
@@ -116,6 +130,7 @@ case "$cmd" in
   remove|rm)      exec "$DIR/aiworks-remove.sh" "$@" ;;
   config)         exec "$DIR/aiworks-config.sh" "$@" ;;
   cursor)         exec "$DIR/aiworks-cursor.sh" "$@" ;;
+  update)         exec "$DIR/aiworks-update.sh" "$@" ;;
   setup)          superset_hook setup "$@" ;;
   run)            superset_hook run "$@" ;;
   teardown)       superset_hook teardown "$@" ;;

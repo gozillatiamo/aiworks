@@ -155,6 +155,25 @@ Flip these in `workspace.config.yaml` (`planning.auto_approve`, `vcs.auto_merge`
 > ⚠️ Never hand-edit `mani.d/`, the `.code-workspace` file, or the CONFIG block in
 > `.claude/workflows/dev-cycle.js` — all generated from the config.
 
+## 🔄 Keeping the tooling current
+
+`setup` only ever **installs what is missing** — it never moves a tool forward. `update` is
+the other half: it upgrades each prerequisite through whichever installer owns it on your
+machine (brew, rustup, corepack, gcloud, the Claude Code CLI + its plugins, codegraph, the
+shared MCP images), and skips anything brew doesn't own rather than shadowing it.
+
+```sh
+./aiworks update                        # every group; best-effort, one failure never aborts
+./aiworks update -n                     # preview — print each command, change nothing
+./aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
+./aiworks update --check-deps           # …and report outdated deps per repo (read-only)
+```
+
+Two things it reports but never changes: **node** (an nvm major switch moves the global bin
+dir, so `pnpm` and every other global silently leaves PATH — the safe command is printed for
+you), and **repo dependencies** (`npm update` / `cargo update` rewrite a lockfile, so each is a
+branch + tests + MR per repo, not a maintenance chore). Restart Claude Code after a plugin update.
+
 ## 📚 Learn more
 
 - [`docs/aiworks.html`](docs/aiworks.html) — the full walkthrough (setup, CLI, dev-cycle)
