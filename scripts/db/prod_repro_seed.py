@@ -5,19 +5,25 @@
 #   "python-dotenv>=1.0",
 # ]
 # ///
-"""prod_repro_seed — the ONE sanctioned path to move OFB production data into local repro DBs.
+"""prod_repro_seed — the ONE sanctioned path to move deployed OFB data into local repro DBs.
 
-Purpose (decided in the prod-pg-triage allocation consult): during `/diagnosing-bugs`, a
-developer sometimes needs the *actual* offending prod rows to reproduce a data bug against the
-local source. Reading prod is what `prod-pg-triage` does; **persisting** any of it locally is
-gated here, so the mask/isolation/teardown invariants are enforced in code, not left to memory:
+Purpose (decided in the pg-triage allocation consult): during `/diagnosing-bugs`, a developer
+sometimes needs the *actual* offending rows to reproduce a data bug against the local source.
+Reading them is what `pg-triage` does; **persisting** any of it locally is gated here, so the
+mask/isolation/teardown invariants are enforced in code, not left to memory:
 
-  1. READ-ONLY prod  — pulled through the same read-only DSNs + read-only transaction as the
-     triage MCP. This tool never writes to prod.
-  2. HARD MASK on persist — every external-PII value (scripts/lib/pii-patterns.txt) and every
-     PII-named column is masked BEFORE it is written locally. Inner-system identity
-     (player_code/site_code/*_code, UUID), money integers and status survive (the bug needs
-     them); phone/email/wallet/bank/national-id do not.
+  0. PRODUCTION IS GATED — a `"env": "prod"` source requires the per-machine opt-in
+     (`triage.prod`, via scripts/lib/triage_policy.py), checked before the DSN is looked up.
+     Credentials being present in .env is not permission. Staging needs no opt-in.
+  1. READ-ONLY source — pulled through the same read-only DSNs + read-only transaction as the
+     triage MCP. This tool never writes to prod or staging.
+  2. HARD MASK on persist, FOR PRODUCTION — every external-PII value
+     (scripts/lib/pii-patterns.txt) and every PII-named column of a PROD row is masked BEFORE
+     it is written locally. Inner-system identity (player_code/site_code/*_code, UUID), money
+     integers and status survive (the bug needs them); phone/email/wallet/bank/national-id do
+     not. **Staging rows are loaded verbatim and never vaulted** — staging is not the prod
+     boundary, and a repro that hinges on the real shape of a value needs the real value
+     (docs/adr/0005, docs/agents/pii-provenance.md).
   3. THROWAWAY, ISOLATED DBs — data lands in dedicated `ofb_repro_<ticket>_<seed>` databases,
      never the shared local DB. `--teardown` DROPs every one for the ticket, across instances.
   4. ENTITY-SCOPED — you seed the rows reachable from the ticket's identifier, not a table
@@ -39,23 +45,27 @@ Normal development is untouched: this only governs prod-DERIVED data into throwa
   selftest:  prod_repro_seed.py --selftest      # deps/config/mask, no prod or local access
 
 Environment (scripts/db/.env — never Read/cat/grep it, the .env guard blocks it):
-  PGPROD_MAD / PGPROD_ASS_<hex>   read-only prod DSNs (shared with the triage MCP)
+  PGPROD_MAD / PGPROD_ASS_<hex>   read-only PROD DSNs (shared with the triage MCP)
+  PGSTG_DSN                       read-only STAGING base DSN; the dbname is swapped per target
+  PGSTG_DB_MAD / PGSTG_DB_ASS_FMT which staging dbnames a target maps to (default `mad` /
+                                  `shard_%s`) — see scripts/lib/pg_staging.py
   PGLOCAL_MAD_ADMIN               LOCAL master instance, maintenance DB, CREATEDB/DROPDB rights
   PGLOCAL_ASS_ADMIN               LOCAL shard  instance, maintenance DB, CREATEDB/DROPDB rights
   PGLOCAL_ADMIN                   fallback used when a seed names no admin_env
 
-Spec file (JSON) — one entry per prod source the repro needs:
+Spec file (JSON) — one entry per source the repro needs. `source.env` is REQUIRED
+("staging" | "prod"): the environment is never defaulted, so prod is never implied.
   {
     "seeds": [
       {
         "name": "mad",                                   // → DB ofb_repro_<ticket>_mad
-        "source": { "target": "mad" },
+        "source": { "env": "prod", "target": "mad" },
         "local":  { "admin_env": "PGLOCAL_MAD_ADMIN", "template_db": "ofb_master" },
         "tables": [ { "name": "master_site", "where": "site_code = 'ABCDE'", "limit": 5 } ]
       },
       {
         "name": "shard3",                                // → DB ofb_repro_<ticket>_shard3
-        "source": { "agency_id": "3ABCDE00000001" },
+        "source": { "env": "prod", "agency_id": "3ABCDE00000001" },
         "local":  { "admin_env": "PGLOCAL_ASS_ADMIN", "template_db": "ofb_shard" },
         "tables": [
           { "schema": "public", "name": "player",
@@ -100,7 +110,9 @@ ENV_PATH = Path(__file__).parent / ".env"
 # vault it records into (keyed hashes of the prod values seen, never the values), so those same
 # values are redacted later if they surface in a ticket or a Slack post.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import pg_staging  # noqa: E402  — the staging dbname mapping, shared with pg_triage_mcp.py
 import pii_provenance  # noqa: E402  (path must be set first)
+import triage_policy  # noqa: E402  — the production gate, same one the triage MCPs enforce
 
 PII_COLUMN_RE = pii_provenance.PII_COLUMN_RE
 value_has_pii = pii_provenance.value_has_pii
@@ -125,7 +137,56 @@ def mask_row(columns: list[str], row: dict, extra_mask: set[str]) -> tuple[dict,
     return masked, n
 
 
-# --- prod target resolution (mirrors prod_pg_mcp.py) -------------------------------------
+# --- env + target resolution (mirrors pg_triage_mcp.py) ----------------------------------
+ENV_PROD = "prod"
+ENV_STAGING = "staging"
+ENVS = (ENV_STAGING, ENV_PROD)
+STAGING_DSN_VAR = "PGSTG_DSN"
+
+
+def resolve_env(env: str | None) -> str:
+    """No default: a spec that does not name its environment is an error, so a prod pull is
+    always something someone wrote down."""
+    if not env:
+        raise ValueError(
+            'source needs `env`: "staging" or "prod" (no default — prod is never implied)'
+        )
+    e = str(env).strip().lower()
+    if e not in ENVS:
+        raise ValueError(f"invalid source env {env!r}; use {' | '.join(ENVS)}")
+    return e
+
+
+def staging_dbname(key: str) -> str:
+    """Staging is ONE instance holding every database, so a target is just a dbname. The mapping is
+    configured (`PGSTG_DB_MAD` / `PGSTG_DB_ASS_FMT`) and shared with the triage MCP through
+    scripts/lib/pg_staging.py — two copies would let the seeder pull from a different database than
+    the one triage read."""
+    return pg_staging.dbname(key)
+
+
+def source_dsn(env: str, key: str) -> str:
+    """The read-only DSN for one env+target. Gates production before the lookup, so a machine
+    without the opt-in never reaches prod even with credentials sitting in .env."""
+    if env == ENV_PROD:
+        triage_policy.assert_prod_allowed("seeding from PRODUCTION")
+        dsn = os.environ.get(prod_env_var(key))
+        if not dsn:
+            sys.exit(f"prod target {key!r} has no DSN — set {prod_env_var(key)}")
+        return dsn
+    base = os.environ.get(STAGING_DSN_VAR)
+    if not base:
+        sys.exit(
+            f"staging has no DSN — set {STAGING_DSN_VAR} in scripts/db/.env (read-only account); "
+            "one base DSN covers every staging database"
+        )
+    # make_conninfo rather than a regex swap: it accepts the keyword DSN form too, and the base
+    # DSN is written by hand in a file nobody may read back to check.
+    from psycopg.conninfo import make_conninfo
+
+    return make_conninfo(base, dbname=staging_dbname(key))
+
+
 def target_key(target: str | None, agency_id: str | None) -> str:
     if agency_id:
         first = agency_id.strip()[:1].lower()
@@ -185,10 +246,12 @@ def normalize_seeds(spec: dict) -> list[dict]:
     out = []
     for i, s in enumerate(seeds):
         src = s.get("source", {})
+        env = resolve_env(src.get("env"))
         key = target_key(src.get("target"), src.get("agency_id"))
         name = s.get("name") or ("mad" if key == "mad" else key[4:])
         out.append({
             "name": name,
+            "env": env,
             "prod_key": key,
             "admin_env": (s.get("local") or {}).get("admin_env", "PGLOCAL_ADMIN"),
             "template_db": (s.get("local") or {}).get("template_db"),
@@ -242,17 +305,18 @@ def do_seed(args) -> int:
     wired = []  # (seed_name, prod_key, db_name, admin_env, local_loc) for the final report
 
     for s in seeds:
-        prod_dsn = os.environ.get(prod_env_var(s["prod_key"]))
-        if not prod_dsn:
-            sys.exit(f"prod target {s['prod_key']!r} has no DSN — set {prod_env_var(s['prod_key'])}")
+        src_env = s["env"]
+        is_prod = src_env == ENV_PROD
+        src_dsn = source_dsn(src_env, s["prod_key"])
         admin = _admin_dsn(s["admin_env"])
         dbname = into_db or repro_db_name(args.ticket, s["name"])
         dest = f"existing DB {dbname} (into-db)" if into_db else dbname
-        print(f"  seed '{s['name']}': prod={s['prod_key']} → {dest} on {s['admin_env']} ({_host_port_db(admin)})")
+        print(f"  seed '{s['name']}': {src_env}={s['prod_key']} → {dest} on {s['admin_env']} "
+              f"({_host_port_db(admin)}) [{'masked + vaulted' if is_prod else 'verbatim, not vaulted'}]")
 
-        # 1) pull + mask from prod (read-only)
+        # 1) pull from the source (read-only), masking + vaulting PROD rows only
         pulled = []
-        with psycopg.connect(prod_dsn, autocommit=True, options=CONN_OPTIONS_RO) as pconn:
+        with psycopg.connect(src_dsn, autocommit=True, options=CONN_OPTIONS_RO) as pconn:
             for t in s["tables"]:
                 schema, name = t.get("schema", "public"), t["name"]
                 limit = min(int(t.get("limit", PER_TABLE_CAP)),
@@ -263,14 +327,19 @@ def do_seed(args) -> int:
                     cur.execute(sql)
                     cols = [d.name for d in cur.description]
                     rows = cur.fetchall()
-                # Vault the prod values BEFORE masking: what is masked out of the local sandbox
-                # is exactly what must also be redacted if it ever reaches a ticket or Slack.
-                pii_provenance.record_rows(cols, rows)
-                mrows = []
-                for r in rows:
-                    mr, n = mask_row(cols, r, extra)
-                    masked_cells += n
-                    mrows.append(mr)
+                if is_prod:
+                    # Vault the prod values BEFORE masking: what is masked out of the local
+                    # sandbox is exactly what must also be redacted if it ever reaches a ticket
+                    # or Slack. Staging is skipped on both counts — vaulting it would make
+                    # identical-looking local data start disappearing from tickets.
+                    pii_provenance.record_rows(cols, rows)
+                    mrows = []
+                    for r in rows:
+                        mr, n = mask_row(cols, r, extra)
+                        masked_cells += n
+                        mrows.append(mr)
+                else:
+                    mrows = list(rows)
                 pulled.append(({"schema": schema, "name": name}, mrows, cols))
                 print(f"      {len(rows):>4} rows from {schema}.{name}")
 
@@ -315,14 +384,16 @@ def do_seed(args) -> int:
                         cur.execute(ins, tuple(r[c] for c in cols))
                         inserted += cur.rowcount
             lconn.commit()
-        print(f"      inserted {inserted} masked rows")
+        print(f"      inserted {inserted} rows ({'masked' if is_prod else 'verbatim staging'})")
 
-    print(f"[seed] masked {masked_cells} PII cells total.")
+    envs_used = sorted({s["env"] for s in seeds})
+    print(f"[seed] sources: {', '.join(envs_used)}; masked {masked_cells} PII cells "
+          f"(prod rows only — staging rows are loaded verbatim).")
     if args.dry_run:
         print("[dry-run] no local write performed.")
         return 0
     if into_db:
-        print("\nMasked rows loaded into the existing DB the service already uses — reproduce directly (no reconfig):")
+        print("\nRows loaded into the existing DB the service already uses — reproduce directly (no reconfig):")
         for name, key, db, env, loc in wired:
             role = "MASTER" if key == "mad" else f"SHARD {key[4:]}"
             print(f"  {role:<9} → {db}   ({loc})")
@@ -420,7 +491,13 @@ def do_selftest(_args) -> int:
     print(f"patterns file: {patterns_file} ({'present' if patterns_file.is_file() else 'MISSING'})")
     print(f"loaded {len(detectors)} PII detectors: {sorted({c for c, _ in detectors})}")
     print(f"provenance vault: {pii_provenance.vault_dir()}")
-    for var in ADMIN_ENVS + ["PGPROD_MAD"]:
+    for key in ("enabled", "prod"):
+        value, source = triage_policy.resolve(key)
+        print(f"triage.{key:<8} = {str(value).lower():<5} ({source})")
+    dead = triage_policy.dead_key_present()
+    if dead:
+        print(f"  ! {dead} still sets the REMOVED key `prod_triage.enabled` — ignored; use triage.prod")
+    for var in ADMIN_ENVS + ["PGPROD_MAD", STAGING_DSN_VAR]:
         print(f"  {var:<18} {'set' if os.environ.get(var) else 'unset'}")
     import uuid as _uuid
     cols = ["player_code", "phone", "email", "balance", "note", "ip", "chat_token", "status",
@@ -441,7 +518,30 @@ def do_selftest(_args) -> int:
           and masked["ip"] == MASK and masked["chat_token"] == MASK)
     print(f"  mask demo: {masked}")
     print(f"  masked {n} cells; identity+money+status+enum/uuid/bool preserved, PII/secret masked: {'PASS' if ok else 'FAIL'}")
-    return 0 if ok else 1
+
+    # The env axis: a spec must name it, staging must resolve to a dbname, and a prod source must
+    # be refused unless this machine opted in.
+    spec_env_required = False
+    try:
+        normalize_seeds({"source": {"target": "mad"}, "tables": []})
+    except ValueError as exc:
+        spec_env_required = "env" in str(exc)
+    dbnames_ok = staging_dbname("mad") == pg_staging.dbname("mad") and staging_dbname(
+        "ass_a"
+    ) == pg_staging.dbname("ass_a")
+    if triage_policy.prod_allowed():
+        gate_ok = True
+        gate_note = "triage.prod is ON — prod sources are legitimately allowed"
+    else:
+        try:
+            source_dsn(ENV_PROD, "mad")
+            gate_ok, gate_note = False, "prod source was NOT refused"
+        except PermissionError:
+            gate_ok, gate_note = True, "prod source refused while triage.prod is off"
+    print(f"  spec requires source.env: {'PASS' if spec_env_required else 'FAIL'}")
+    print(f"  staging dbname mapping: {pg_staging.describe()} {'PASS' if dbnames_ok else 'FAIL'}")
+    print(f"  prod gate: {'PASS' if gate_ok else 'FAIL'} — {gate_note}")
+    return 0 if (ok and spec_env_required and dbnames_ok and gate_ok) else 1
 
 
 def main() -> int:

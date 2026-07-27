@@ -125,7 +125,7 @@ tracker_assert_body_language() {
 # day, so a shape-only gate blocks the wrong things.
 #
 # So provenance decides, not shape: scripts/lib/pii_provenance.py masks a value if and only if
-# a sanctioned prod-read path (the prod-pg-triage MCP, `--env prod` observability, the repro
+# a sanctioned prod-read path (the pg-triage MCP, `--env prod` observability, the repro
 # seed) actually saw that value and vaulted its keyed hash. A seeded local `player1@test.com`
 # is untouched; the real player's address is redacted to `<prod-pii:email>` wherever it turns
 # up, in any session or ticket.

@@ -1,138 +1,188 @@
-# scripts/db — production Postgres, read-only
+# scripts/db — deployed Postgres (staging + production), read-only
 
-`prod_pg_mcp.py` is an **on-demand, read-only MCP server** over the OFB **production**
-Postgres fleet. One MCP process serves the whole fleet; the database a tool touches is
-chosen **per call** by a `target` argument, so there is no per-shard server to spin up.
+`pg_triage_mcp.py` is an **on-demand, read-only MCP server** over the OFB **deployed** Postgres —
+**staging and production**. One MCP process serves both; which environment and which database a
+tool touches is chosen **per call** by `env` + `target`, so there is no per-env or per-shard
+server to spin up.
 
-It is the DB counterpart of the SigNoz `telemetry-triage` flow: ground-truth production
-data for root-causing a live issue, read-only, with a clean teardown. The driving skill is
-`prod-pg-triage` (`.claude/skills/prod-pg-triage/`).
+It is the DB counterpart of the SigNoz `telemetry-triage` flow: ground truth for root-causing a
+live issue, read-only, with a clean teardown. The driving skill is `pg-triage`
+(`.claude/skills/pg-triage/`).
 
-This is **opt-in and personal** — it is deliberately *not* in the shared `.mcp.json`, so it
-never spawns for teammates who aren't doing prod triage and never carries prod credentials
-into the shared repo. You register it in local scope on the machine that has the read-only
-DSNs.
+It lives in **local scope**, deliberately *not* in the shared `.mcp.json`, so prod credentials
+never enter the shared repo. `aiworks sync` registers it on every machine (`triage.enabled`,
+default on) because **staging needs no authorization**; **production** needs the per-machine
+`triage.prod` opt-in, enforced inside the server. See `docs/adr/0005`.
 
-## Targets
+## Environments and targets
+
+`env` is **required** on every data tool — there is no default, so production is never implied.
+
+| Env         | DSNs                                    | Topology                                                        |
+|-------------|-----------------------------------------|-----------------------------------------------------------------|
+| `staging`   | `PGSTG_DSN` (one base DSN)              | ONE instance, one database per target. The server swaps the dbname, per `PGSTG_DB_MAD` / `PGSTG_DB_ASS_FMT` (default `mad` / `shard_<hex>`). |
+| `prod`      | `PGPROD_MAD` / `PGPROD_ASS_<HEX>`       | A host fleet: 1 host holds 2 shards, so 0-f live across ASS1-8. Requires `triage.prod: true`. |
+
+The staging dbnames are **configuration, not convention**: `PGSTG_DB_ASS_FMT` substitutes `%s`
+with the shard hex, and a pattern with no `%s` points every target at a single database — so an
+org whose staging is `master` + `players_a…`, or one database for everything, needs no code change
+(`scripts/lib/pg_staging.py`, shared with the repro seeder so the two cannot disagree).
 
 | Target        | Selector                                   | Notes                                            |
 |---------------|--------------------------------------------|--------------------------------------------------|
 | MAD (master)  | `target="mad"`                             | Explicit only — never resolved from an agency id |
-| ASS shard 0-f | `target="<hex>"` or `agency_id="<id>"`     | Shard = first char of the agency id; 1 host = 2 shards, so 0-f live across ASS1-8 |
+| ASS shard 0-f | `target="<hex>"` or `agency_id="<id>"`     | Shard = first char of the agency id               |
 
 ## Setup (one-time, per machine)
 
 1. **Create the read-only credentials file** from the template and fill in real values.
-   Use a **read-only DB role** for every DSN.
+   Use a **read-only DB role** for every DSN — staging included.
 
    ```bash
    cp scripts/db/.env.example scripts/db/.env
    # edit scripts/db/.env  (git-ignored; also blocked by the .env-guard hook)
    ```
 
-2. **Pre-warm deps + validate config** (prints only which targets are set — never a DSN):
+   Staging is one line (`PGSTG_DSN`, plus the two optional dbname vars); prod is one line per
+   target. A machine that does staging only sets just `PGSTG_DSN` — the prod targets then report
+   "unconfigured".
+
+2. **Pre-warm deps + validate config + policy** (prints only which targets are set — never a
+   DSN):
 
    ```bash
-   uv run scripts/db/prod_pg_mcp.py --selftest
+   uv run scripts/db/pg_triage_mcp.py --selftest
    ```
 
-3. **Opt in, and let `aiworks` register it** in local scope (personal, this project only).
-   One line in your git-ignored `workspace.config.local.yaml` — the flag is read local-first,
-   so the shared default stays off and nobody else's session spawns this server:
+3. **Register it** — `aiworks` does this for you in local scope (personal, this project only):
+
+   ```bash
+   ./aiworks setup                  # or, on its own: scripts/triage-mcp.sh sync
+   scripts/triage-mcp.sh status     # policy + what is registered
+   ```
+
+   Restart the Claude session so it connects. The `mcp__pg_triage__*` tools then appear. By
+   hand, if you prefer (an absolute path, so it resolves regardless of the session's cwd):
+
+   ```bash
+   claude mcp add pg_triage --scope local -- \
+     uv run --quiet "$(pwd)/scripts/db/pg_triage_mcp.py"
+   claude mcp remove pg_triage --scope local
+   ```
+
+4. **To reach production**, add the opt-in to your git-ignored `workspace.config.local.yaml`.
+   The server reads it live, so this needs no re-register and no restart:
 
    ```yaml
-   prod_triage:
-     enabled: true
+   triage:
+     prod: true
    ```
 
-   ```bash
-   ./aiworks setup                     # or, on its own: scripts/prod-triage-mcp.sh sync
-   scripts/prod-triage-mcp.sh status   # policy + what is registered
-   ```
-
-   Restart the Claude session so it connects. The `mcp__prod_pg_triage__*` tools then appear.
-   Flipping the flag back to `false` and re-running deregisters it. By hand, if you prefer
-   (an absolute path, so it resolves regardless of the session's cwd):
+5. **Verify it works** (read-only; the staging run also asserts prod is refused while the
+   opt-in is off):
 
    ```bash
-   claude mcp add prod_pg_triage --scope local -- \
-     uv run --quiet "$(pwd)/scripts/db/prod_pg_mcp.py"
-   claude mcp remove prod_pg_triage --scope local
+   uv run scripts/db/pg_triage_mcp.py --verify staging
+   uv run scripts/db/pg_triage_mcp.py --verify prod            # needs triage.prod: true
+   uv run scripts/db/pg_triage_mcp.py --verify staging --target a   # a specific shard
    ```
 
 ## Tools
 
-| Tool                 | Purpose                                                             |
-|----------------------|---------------------------------------------------------------------|
-| `list_targets`       | Which targets are configured / have an open pool. No prod access.   |
-| `resolve_shard`      | `agency_id` → shard hex. Pure lookup, no DB access.                 |
-| `list_schemas`       | User schemas on a target.                                           |
-| `list_objects`       | Tables/views in a schema (optional `object_type` filter).           |
-| `get_object_details` | Columns + indexes of a table/view.                                  |
-| `explain_query`      | Query plan. `analyze=True` runs the query (off by default).         |
-| `execute_sql`        | Read-only query, paginated at 200 rows/page.                        |
-| `disconnect`         | Close all prod pools — the teardown. Leaves zero open connections.  |
+| Tool                 | Purpose                                                                      |
+|----------------------|------------------------------------------------------------------------------|
+| `list_targets`       | Both envs: which targets are configured, which pools are open, and whether prod is allowed. No DB access. |
+| `resolve_shard`      | `agency_id` → shard hex. Pure lookup, no DB access; `env` optional.          |
+| `list_schemas`       | User schemas on a target.                                                     |
+| `list_objects`       | Tables/views in a schema (optional `object_type` filter).                     |
+| `get_object_details` | Columns + indexes of a table/view.                                            |
+| `explain_query`      | Query plan. `analyze=True` runs the query (off by default).                    |
+| `execute_sql`        | Read-only query, paginated at 200 rows/page.                                   |
+| `disconnect`         | Close pools — both envs by default, or one via `env`. Leaves zero open connections. |
 
-Every data tool takes `target` **or** `agency_id`.
+Every data tool takes `env` **and** (`target` **or** `agency_id`). Every result carries
+`env` + `pii_vaulted`, so a mixed-env investigation can't mislabel where a row came from.
 
 ## Safety model (layered)
 
 A production DB behind an AI tool is a real risk, so protection does not rely on any single
 mechanism:
 
-1. **Read-only DB role** in every DSN — the actual guarantee. Nothing else is trusted to
+1. **Production opt-in** — `triage.prod` (local-first, `scripts/lib/triage_policy.py`) is checked
+   before the DSN is looked up: having the credentials is not permission. Staging is ungated.
+2. **Read-only DB role** in every DSN — the actual guarantee. Nothing else is trusted to
    substitute for it.
-2. **Read-only transaction + timeouts** forced on every connection
+3. **Read-only transaction + timeouts** forced on every connection
    (`default_transaction_read_only=on`, `statement_timeout=15s`,
    `idle_in_transaction_session_timeout=30s`) — the DB itself rejects any write, including
    writable CTEs, with a clear error.
-3. **SQL shape guard** — `execute_sql` accepts only a single SELECT / WITH / TABLE / VALUES
+4. **SQL shape guard** — `execute_sql` accepts only a single SELECT / WITH / TABLE / VALUES
    statement; `explain_query` handles EXPLAIN. This is for clear errors, not the guarantee.
-4. **Pagination** — results capped at 200 rows/page so a wide table can't flood context.
-5. **Lazy + teardown** — `min_size=0` pools hold no prod connection until first use, and
+5. **Pagination** — results capped at 200 rows/page so a wide table can't flood context.
+6. **Lazy + teardown** — `min_size=0` pools hold no connection until first use, and
    `disconnect()` drops every pool when a job is done; the Claude-managed process stays up
    but idle.
+7. **PII provenance, prod only** — rows a **prod** target returns are fingerprinted into the
+   vault so the tracker / notify adapters redact exactly those values at egress. **Staging rows
+   are never vaulted**, so identical-looking staging or local data flows untouched
+   (`docs/agents/pii-provenance.md`). One caveat worth knowing: the vault is keyed by *value*, so
+   a value production already fingerprinted stays masked at egress even when you read it from
+   staging — `PII_GATE=off` on that one command is the escape hatch.
 
 Credentials live only in `scripts/db/.env`, read only by this server process — never through
 Claude, the MCP config, or the transcript. Do not Read/cat/grep the `.env`.
 
 ## Repro seeding — `prod_repro_seed.py`
 
-`prod_repro_seed.py` is the **one sanctioned path** to move production data into a **local**
-repro database, used by the developer inside `/diagnosing-bugs` when a data bug only
-reproduces against the actual offending rows. It reads prod through the same read-only DSNs,
-then **masks external PII and loads an entity-scoped slice into a throwaway `ofb_repro_<ticket>`
-database** — never the shared local DB. `reproduce-then-DROP`, so nothing prod-derived
-lingers locally.
+`prod_repro_seed.py` is the **one sanctioned path** to move deployed data into a **local** repro
+database, used by the developer inside `/diagnosing-bugs` when a data bug only reproduces against
+the actual offending rows. It reads staging or prod through the same read-only DSNs, then loads an
+entity-scoped slice into a throwaway `ofb_repro_<ticket>` database — never the shared local DB.
+`reproduce-then-DROP`, so nothing lingers locally.
 
 Enforced invariants (in code, not memory):
 
-1. **Read-only prod** — same read-only role + read-only transaction as the MCP; never writes prod.
-2. **Hard mask on persist** — every external-PII value (`scripts/lib/pii-patterns.txt`, the same
-   list every engine reads) and PII-named column is masked before the local write.
-   Inner-system identity (`player_code`/`site_code`/`*_code`, UUID), money integers and status survive.
-   The same values are also fingerprinted into the **provenance vault**, so if one later surfaces
-   in a ticket or a Slack post the adapters redact it there too — and only it, never the
-   identical-looking local/staging data (`docs/agents/pii-provenance.md`).
-3. **Throwaway, isolated DBs** — data lands in `ofb_repro_<ticket>_<seed>` (created from a
+1. **Production is gated** — a `"env": "prod"` source requires `triage.prod`, checked before the
+   DSN lookup, so the seed tool can't walk around the gate the MCP enforces.
+2. **Read-only source** — same read-only role + read-only transaction as the MCP; never writes
+   staging or prod.
+3. **Hard mask on persist, for PROD sources** — every external-PII value
+   (`scripts/lib/pii-patterns.txt`, the same list every engine reads) and PII-named column is
+   masked before the local write. Inner-system identity (`player_code`/`site_code`/`*_code`,
+   UUID), money integers and status survive. The same values are also fingerprinted into the
+   **provenance vault**, so if one later surfaces in a ticket or a Slack post the adapters redact
+   it there too — and only it, never identical-looking local data
+   (`docs/agents/pii-provenance.md`). **A `staging` source is loaded verbatim and never vaulted**:
+   staging is not the prod boundary, and a repro that turns on the real shape of a value needs the
+   real value.
+4. **Throwaway, isolated DBs** — data lands in `ofb_repro_<ticket>_<seed>` (created from a
    `template_db` that has the schema); `--teardown` DROPs every one for the ticket, across
    instances. Never the shared local DB.
-4. **Entity-scoped** — seed the rows reachable from the ticket's identifier; a run above the
+5. **Entity-scoped** — seed the rows reachable from the ticket's identifier; a run above the
    row caps (per-table 500 / total 2000 across all seeds) needs `--approve-large`.
 
 **Split-topology, multi-source.** OFB's service connects to the master (MAD) **and** a player
-shard (ASS) at once, so a spec is a list of `seeds` — each pulls one prod source (`target`/
-`agency_id`) into one throwaway DB on one local instance (chosen by `local.admin_env`). Seed a
-MAD+shard bug with both in one run; the tool prints which DB to wire to the service's MASTER vs
-SHARD connection. A single-source bug can use the flat `{source, template_db, tables}` shorthand.
+shard (ASS) at once, so a spec is a list of `seeds` — each pulls one source
+(`{"env": …, "target"|"agency_id": …}`; `env` is required) into one throwaway DB on one local
+instance (chosen by `local.admin_env`). Seed a MAD+shard bug with both in one run; the tool prints
+which DB to wire to the service's MASTER vs SHARD connection, and per seed whether the rows were
+masked (prod) or loaded verbatim (staging). A single-source bug can use the flat
+`{source, template_db, tables}` shorthand.
 
 Extra config in `scripts/db/.env` — **local** maintenance DSNs with CREATEDB/DROPDB rights (NOT
 prod): `PGLOCAL_MAD_ADMIN` (local master instance, default :5432), `PGLOCAL_ASS_ADMIN` (local
 shard instance, default :5433), and `PGLOCAL_ADMIN` (fallback for shorthand specs). Leave unset
 on machines that don't run repro seeding.
 
+```json
+{ "seeds": [ { "name": "shard3",
+               "source": { "env": "staging", "agency_id": "3ABCDE00000001" },
+               "local":  { "admin_env": "PGLOCAL_ASS_ADMIN", "template_db": "ofb_shard" },
+               "tables": [ { "name": "player", "where": "player_code = 'ABCDE00000001'", "limit": 5 } ] } ] }
+```
+
 ```bash
-uv run scripts/db/prod_repro_seed.py --selftest                          # deps/config/mask, no DB access
+uv run scripts/db/prod_repro_seed.py --selftest                          # deps/config/mask/policy, no DB access
 uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json --dry-run   # pull+mask preview
 uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --spec seed.json --fk-bypass # create + load masked
 uv run scripts/db/prod_repro_seed.py --ticket OFB-123 --teardown                   # DROP the throwaway DB

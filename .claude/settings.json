@@ -44,8 +44,8 @@
       "mcp__postgres_ass",
       "mcp__postgres_mad",
       "mcp__redis",
-      "mcp__prod_pg_triage",
-      "mcp__prod_redis_triage",
+      "mcp__pg_triage",
+      "mcp__redis_triage",
       "mcp__claude_ai_Figma__get_screenshot",
       "mcp__claude_ai_Figma__get_metadata",
       "mcp__claude_ai_Figma__get_design_context",
@@ -303,7 +303,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prod-redis-tunnel-reap.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/redis-triage-tunnel-reap.sh",
             "timeout": 15
           }
         ]

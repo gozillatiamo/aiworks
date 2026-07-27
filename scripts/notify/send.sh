@@ -124,7 +124,7 @@ compose_review_digest() {  # KEY [TITLE]  -> prints the digest, or nothing if no
 
 # redact_prod_pii TEXT → prints TEXT with every PRODUCTION-derived personal value replaced by
 # a <prod-pii:…> placeholder. Provenance decides, not shape: a value is redacted only if a
-# sanctioned prod-read path (prod-pg-triage MCP, `--env prod` observability, the repro seed)
+# sanctioned prod-read path (pg-triage MCP, `--env prod` observability, the repro seed)
 # actually saw it and vaulted its keyed hash — so local/staging test data posted to Slack is
 # left exactly as written. Masks rather than refuses; the redaction is reported on stderr
 # (category + count, never the value). PII_GATE=off disables; =on also masks unvaulted shapes.

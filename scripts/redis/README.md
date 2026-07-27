@@ -1,20 +1,20 @@
-# scripts/redis — production Redis, read-only
+# scripts/redis — deployed Redis (staging + production), read-only
 
-`prod_redis_mcp.py` is an **on-demand, read-only MCP server** over the OFB **production** and
+`redis_triage_mcp.py` is an **on-demand, read-only MCP server** over the OFB **production** and
 **staging** Redis. One process serves both; which one a tool touches is chosen **per call** by a
 `target` argument, and there is **no default** — `prod` is only ever reached by naming it.
 
 It is the cache/stream counterpart of `scripts/db/` (Postgres rows) and of the SigNoz
 `telemetry-triage` flow (logs/traces): ground-truth live state for root-causing an issue,
-read-only, with a clean teardown. The driving skill is `prod-redis-triage`
-(`.claude/skills/prod-redis-triage/`).
+read-only, with a clean teardown. The driving skill is `redis-triage`
+(`.claude/skills/redis-triage/`).
 
 Neither Redis is reachable from a laptop, so **the server owns its own SSH tunnel**.
 
-| Target    | VM                    | Forward                              | Masking |
-|-----------|-----------------------|--------------------------------------|---------|
-| `staging` | `ofb-staging-vm`      | `127.0.0.1:6378` → `10.148.0.84:6379` | off — staging is not the prod boundary |
-| `prod`    | `agent-prod-redis-vm` | `127.0.0.1:6377` → `10.148.0.60:6379` | on — credentials masked at the source |
+| Target    | VM                    | Forward                              | Masking | Opt-in |
+|-----------|-----------------------|--------------------------------------|---------|--------|
+| `staging` | `ofb-staging-vm`      | `127.0.0.1:6378` → `10.148.0.84:6379` | off — staging is not the prod boundary | none |
+| `prod`    | `agent-prod-redis-vm` | `127.0.0.1:6377` → `10.148.0.60:6379` | on — credentials masked at the source | `triage.prod: true` |
 
 Neither port is `6379`, so the local dev Redis (`mcp__redis`) is never shadowed.
 
@@ -25,37 +25,38 @@ prerequisite is being logged in.
 
 ```bash
 gcloud auth login                                       # user credential (compute ssh needs it)
-uv run scripts/redis/prod_redis_mcp.py --selftest       # deps + guards, no network
+uv run scripts/redis/redis_triage_mcp.py --selftest       # deps + guards, no network
 ```
 
-Then opt in with one line in your personal, git-ignored `workspace.config.local.yaml` and let
-`aiworks` register the server for you (it does the same for `prod_pg_triage`):
-
-```yaml
-prod_triage:
-  enabled: true
-```
+`aiworks` registers the server for you (it does the same for `pg_triage`):
 
 ```bash
-./aiworks setup                          # or, on its own: scripts/prod-triage-mcp.sh sync
-scripts/prod-triage-mcp.sh status        # policy + what is registered
+./aiworks setup                     # or, on its own: scripts/triage-mcp.sh sync
+scripts/triage-mcp.sh status        # policy + what is registered
 ```
 
-Restart the session so it connects; the `mcp__prod_redis_triage__*` tools then appear. Flipping
-the flag back to `false` and re-running deregisters it again.
+Restart the session so it connects; the `mcp__redis_triage__*` tools then appear. `target="staging"`
+works from here on — staging needs no opt-in.
 
-It is deliberately **not** in the shared `.mcp.json`. Claude Code spawns every enabled stdio
-server at session start, so a shared entry would run this process (~13 MB, idle) and put 29 tool
-names in front of every teammate in every session, for a tool a given person uses a handful of
-times a month. Nothing about that spawn is dangerous — the tunnel is lazy, so an idle server
-holds zero connections and never invokes `gcloud` — it is simply cost with no payer. The flag is
-read **local-first**, so opting in is per person and the shared default stays off.
+**`target="prod"` does**, and the server refuses it (before spawning a tunnel) until this machine
+opts in. One line in your personal, git-ignored `workspace.config.local.yaml`, read live — no
+re-register, no restart:
+
+```yaml
+triage:
+  prod: true
+```
+
+The server is deliberately **not** in the shared `.mcp.json`: local scope keeps registration and
+production access a per-person matter, and the whole config surface stays in one place
+(`docs/adr/0005`). A machine that wants neither server at all sets `triage.enabled: false` and
+re-runs sync — nothing spawns, no tool names, no idle process.
 
 By hand, if you prefer (what the script runs):
 
 ```bash
-claude mcp add prod_redis_triage --scope local -- uv run --quiet "$(pwd)/scripts/redis/prod_redis_mcp.py"
-claude mcp remove prod_redis_triage --scope local
+claude mcp add redis_triage --scope local -- uv run --quiet "$(pwd)/scripts/redis/redis_triage_mcp.py"
+claude mcp remove redis_triage --scope local
 ```
 
 Auto mode also needs the authorization paragraph in your personal settings — see **Prod triage
@@ -84,7 +85,7 @@ Every data tool takes `target` (`staging` | `prod`) and an optional `db` (defaul
 ## Safety model (all layers are client-side — deliberately)
 
 Redis offers no read-only role and no read-only transaction, and this fleet has **no ACL user
-and no read-only replica**. So unlike `prod_pg_mcp.py` — whose guarantee is a read-only DB role
+and no read-only replica**. So unlike `pg_triage_mcp.py` — whose guarantee is a read-only DB role
 — nothing server-side stops a write here. Every layer below *is* the guarantee, not a
 convenience on top of one:
 
@@ -113,8 +114,11 @@ convenience on top of one:
    (`docs/agents/pii-provenance.md`).
 7. **The tunnel closes itself.** Lazy: no tunnel exists until the first call for a target. A
    watchdog kills any tunnel idle for 120s; `disconnect` closes on demand; atexit/SIGTERM close
-   on exit; a `SessionEnd` hook (`.claude/hooks/prod-redis-tunnel-reap.sh`) reaps an orphan left
+   on exit; a `SessionEnd` hook (`.claude/hooks/redis-triage-tunnel-reap.sh`) reaps an orphan left
    by a hard-killed session. "Must disconnect when done" is mechanical, not remembered.
+8. **Production is gated by policy.** `triage.prod` (local-first, `scripts/lib/triage_policy.py`)
+   is checked in `_connect` before a prod tunnel is spawned: being able to `gcloud ssh` the VM is
+   not permission. Staging is ungated (`docs/adr/0005`).
 
 The agent is never granted `gcloud`. That is on purpose: `gcloud compute ssh <vm> -- <command>`
 is a shell on the production VM, so the tunnel lives inside this server where the argv is built
@@ -123,11 +127,11 @@ from a frozen target table and no tool argument can reach the command line.
 ## Verifying it
 
 ```bash
-uv run scripts/redis/prod_redis_mcp.py --selftest            # guards + masking, no network
-uv run scripts/redis/prod_redis_mcp.py --verify staging      # live read-only acceptance run
-uv run scripts/redis/prod_redis_mcp.py --verify staging --verify-idle   # + prove the watchdog reaps
-uv run scripts/redis/prod_redis_mcp.py --smoke prod          # 3 cheap prod reads, then teardown
-PROD_REDIS_FORCE_MASK=1 uv run scripts/redis/prod_redis_mcp.py --verify staging   # exercise the prod masking path on staging
+uv run scripts/redis/redis_triage_mcp.py --selftest            # guards + masking, no network
+uv run scripts/redis/redis_triage_mcp.py --verify staging      # live read-only acceptance run
+uv run scripts/redis/redis_triage_mcp.py --verify staging --verify-idle   # + prove the watchdog reaps
+uv run scripts/redis/redis_triage_mcp.py --smoke prod          # 3 cheap prod reads, then teardown
+REDIS_TRIAGE_FORCE_MASK=1 uv run scripts/redis/redis_triage_mcp.py --verify staging   # exercise the prod masking path on staging
 ```
 
 `tunnel.sh` is the human's view of the tunnels — deliberately **not** granted to agents:

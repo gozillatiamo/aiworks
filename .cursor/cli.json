@@ -8,9 +8,11 @@
       "Mcp(claude_ai_Figma:get_variable_defs)",
       "Mcp(claude_ai_Figma:search_design_system)",
       "Mcp(codegraph:*)",
+      "Mcp(pg_triage:*)",
       "Mcp(postgres_ass:*)",
       "Mcp(postgres_mad:*)",
       "Mcp(redis:*)",
+      "Mcp(redis_triage:*)",
       "Mcp(sonarqube:*)",
       "Read(**)",
       "Shell(*git remote get-url*)",
@@ -45,6 +47,7 @@
       "Shell(scripts/perf.sh *)",
       "Shell(sonar *)",
       "Shell(uv run *prod_repro_seed.py*)",
+      "Shell(uv run *replay_shape.py*)",
       "Write(**)"
     ],
     "deny": [
