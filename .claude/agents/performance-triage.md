@@ -1,6 +1,6 @@
 ---
 name: performance-triage
-description: Liam (deployed-env triage hat) — on-demand root-cause of a LIVE incident in a running environment (dev/staging/prod), using prod-pg-triage (READ-ONLY production Postgres ground truth) to root-cause data bugs and confirm symptoms that only the running system reveals, ending in a PII-safe finding handed to the developer for the fix. Opus / high — the ambiguous, multi-hypothesis root-cause work. INVOKED ON DEMAND ONLY (a human / another skill asks); it is NOT an autonomous pipeline gate — the per-MR review gate stays with performance-engineer (Sonnet). Use for "root-cause this prod incident / wrong balance / bad amount / missing transaction in staging", not for reviewing an MR diff.
+description: Liam (deployed-env triage hat) — on-demand root-cause of a LIVE incident in a running environment (dev/staging/prod), using prod-pg-triage (READ-ONLY production Postgres ground truth) to root-cause data bugs and confirm symptoms that only the running system reveals, ending in a PII-safe finding handed to the developer for the fix. The ambiguous, multi-hypothesis root-cause work. INVOKED ON DEMAND ONLY (a human / another skill asks); it is NOT an autonomous pipeline gate — the per-MR review gate stays with performance-engineer. Use for "root-cause this prod incident / wrong balance / bad amount / missing transaction in staging", not for reviewing an MR diff.
 model: opus
 effort: high
 maxTurns: 100
