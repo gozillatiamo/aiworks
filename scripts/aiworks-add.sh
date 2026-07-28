@@ -131,6 +131,11 @@ classify_rc() {   # <rc> [under_timeout] → echoes: ok | timeout | signal | fai
   else echo fail
   fi
 }
+yaml_dq() {       # <text> → a YAML double-quoted scalar, safe for ':', '#', quotes, backslashes
+  local s=${1//\\/\\\\}       # backslashes first, so the next escape isn't re-escaped
+  s=${s//\"/\\\"}
+  printf '"%s"' "$s"
+}
 describe_rc() {   # <rc> [under_timeout] → a short human phrase for a SKIP/retry message
   local rc="$1" under_to="${2:-0}"
   case "$(classify_rc "$rc" "$under_to")" in
@@ -390,6 +395,12 @@ REPO_NAME="${URL%.git}"; REPO_NAME="${REPO_NAME##*/}"; REPO_NAME="${REPO_NAME##*
 [[ -n "$PATH_REL" ]] || PATH_REL="$REPO_NAME"          # clone DIR = repo name (override with --path)
 if [[ -n "$DESC" ]]; then DESC_GIVEN=1                  # an explicit --desc is written back to the config
 else DESC="The $REPO_NAME repo."; DESC_GIVEN=0; fi      # default desc = repo-name short description (mani only)
+# A desc is free prose, so it can hold ':', '#', quotes — all of which break an unquoted YAML
+# scalar. Emit it double-quoted and escaped. A ': ' left unquoted made mani.d/<product>.yaml an
+# invalid mapping, which took down EVERY mani command workspace-wide while `aiworks add` still
+# reported success (the clone, which runs through mani, silently did not happen).
+# aiworks-sync.sh's parse_repos() reads this value back and unescapes it, so it round-trips.
+DESC_YAML="$(yaml_dq "$DESC")"
 
 # ── locate the workspace root (where mani.yaml lives) ──────────────────────────
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -449,7 +460,7 @@ trap print_summary EXIT
 step "1. Register project '$REPO_NAME' in mani.d/$PRODUCT.yaml"
 mkdir -p "$ROOT/mani.d"
 printf -v mani_entry '  %s:\n    desc: %s\n    url: %s\n    path: ../%s\n    tags: [%s]\n' \
-  "$REPO_NAME" "$DESC" "$URL" "$PATH_REL" "$tags_yaml"
+  "$REPO_NAME" "$DESC_YAML" "$URL" "$PATH_REL" "$tags_yaml"
 if [[ -f "$MANI_FILE" ]] && grep -qE "^[[:space:]][[:space:]]$REPO_NAME:[[:space:]]*$" "$MANI_FILE"; then
   skip "1. mani.d/$PRODUCT.yaml already lists project '$REPO_NAME'"
 elif [[ -f "$MANI_FILE" ]] && grep -qE '^projects:' "$MANI_FILE"; then
@@ -493,7 +504,7 @@ if [[ ! -f "$WC" ]]; then
 fi
 # Build the minimal repo block (6/8-space indented). Optional fields only when meaningful.
 repo_block="      - url: $URL"$'\n'"        kind: $KIND"$'\n'
-[[ "$DESC_GIVEN" -eq 1 ]]                     && repo_block+="        desc: $DESC"$'\n'
+[[ "$DESC_GIVEN" -eq 1 ]]                     && repo_block+="        desc: $DESC_YAML"$'\n'
 [[ -n "$LANG" ]]                              && repo_block+="        lang: $LANG"$'\n'
 [[ -n "$APP_ID" ]]                            && repo_block+="        app_id: $APP_ID"$'\n'
 [[ -n "$DISTRIBUTE" && "$DISTRIBUTE" != none ]] && repo_block+="        distribute: $DISTRIBUTE"$'\n'

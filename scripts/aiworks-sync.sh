@@ -156,7 +156,22 @@ WC="$ROOT/workspace.config.yaml"
 # (2sp) per product; `    repos:` (4sp); `      - url:` (6sp) per repo; `        <field>:` (8sp).
 parse_repos() {
   awk '
-    function val(s){ sub(/^[^:]*:[ \t]*/,"",s); sub(/[ \t]+#.*$/,"",s); gsub(/^["'\'']|["'\'']$/,"",s); return s }
+    # A quoted scalar is read to its closing quote and unescaped, so a value holding ":",
+    # "#", or a quote round-trips through aiworks-add.sh (which writes desc double-quoted).
+    # Only an UNQUOTED value gets the trailing-comment strip — inside quotes, "#" is content.
+    function val(s,   r,i,c){ sub(/^[^:]*:[ \t]*/,"",s)
+      if(s ~ /^"/){ r=""
+        for(i=2;i<=length(s);i++){ c=substr(s,i,1)
+          if(c=="\\" && i<length(s)){ i++; r=r substr(s,i,1); continue }
+          if(c=="\""){ break }
+          r=r c }
+        return r }
+      if(s ~ /^'\''/){ r=""
+        for(i=2;i<=length(s);i++){ c=substr(s,i,1)
+          if(c=="'\''"){ if(substr(s,i+1,1)=="'\''"){ r=r "'\''"; i++; continue } break }
+          r=r c }
+        return r }
+      sub(/[ \t]+#.*$/,"",s); return s }
     function setkv(line){ k=line; sub(/^[ \t]*/,"",k)
       if(k ~ /^url:/) url=val(k); else if(k ~ /^kind:/) kind=val(k)
       else if(k ~ /^lang:/) lang=val(k); else if(k ~ /^distribute:/) dist=val(k)
