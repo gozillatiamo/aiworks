@@ -95,6 +95,15 @@ const STATUS = {
   done: 'DONE',
 }
 const REPOS = {
+  'turnover-commission-batch': {
+    path: 'turnover-commission-batch', kind: 'backend',
+    base: { feature: 'develop', fix: 'main' },
+    plan: 'development-planner', build: 'developer', review: 'code-reviewer',
+    guard: true, perf: true,
+    green: '<unit + integration tests>',
+    guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit',
+    distribute: null,
+  },
   'ofb-instruction': {
     path: 'ofb-instruction', kind: 'document',
     base: { feature: 'develop', fix: 'main' },

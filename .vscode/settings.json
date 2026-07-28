@@ -19,6 +19,7 @@
     "bet-aggregator/target": true,
     "campaign-sub/target": true,
     "live-sub/target": true,
-    "lotto-service/target": true
+    "lotto-service/target": true,
+    "turnover-commission-batch/target": true
   }
 }

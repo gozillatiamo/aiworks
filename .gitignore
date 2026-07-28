@@ -98,3 +98,4 @@ workspace.config.local.yaml
 /.claude/skills/caveman-review
 /.claude/skills/frontend-design
 # <<< aiworks cursor: plugin-skill links
+/turnover-commission-batch/
