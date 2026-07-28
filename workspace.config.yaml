@@ -109,7 +109,7 @@ products:
 
       - url: git@gitlab.com:bluepicode/ofb/agent-webservice.git
         kind: backend 
-        desc: The monolithic backend service for the platform. It's contains mostly the business logic for the platform.
+        desc: The monolithic backend service for the platform. It's contains mostly the business logic for the platform. Currently, it also temporary background thread to run consumers to consume event stream to trigger process across multiple features form the bet-payout distribution.
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection, input validation"
@@ -176,7 +176,7 @@ products:
       
       - url: git@gitlab.com:bluepicode/ofb/bet-aggregator.git
         kind: backend
-        desc: A Rust service to aggregate the bet data full cycle bet + payout, including free-spin and feature-bet when the bet is compeleted then feed it into the redis stream.
+        desc: A Rust service to aggregate the bet data full cycle bet + payout, including free-spin and feature-bet when the bet is compeleted then feed it into the redis stream, mostly it used for tournament campaign and public chat boardcast stream.
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection"

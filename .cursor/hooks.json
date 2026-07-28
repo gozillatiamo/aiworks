@@ -32,6 +32,11 @@
         "matcher": "Shell"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-submodule-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-notify-guard.sh'",
         "timeout": 10,
         "matcher": "Shell"
@@ -49,6 +54,11 @@
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-plan-path-guard.sh'",
         "timeout": 10,
         "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-submodule-guard.sh'",
+        "timeout": 10,
+        "matcher": "Write|Edit|NotebookEdit"
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-repo-context.sh'",
