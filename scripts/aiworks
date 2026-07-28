@@ -69,10 +69,11 @@ Commands:
              (its ensure_* helpers only install what is MISSING, never move a tool forward).
              Upgrades each tool through the installer that owns it on THIS machine — brew
              formulae/casks, rustup, corepack, gcloud, the Claude Code CLI + its declared
-             plugins, codegraph, and the shared MCP images — skipping anything brew does not
-             own rather than shadowing it. Best-effort: one failure never aborts the run.
-             node and repo dependencies are REPORTED, never changed (--check-deps lists what
-             is outdated per repo). Use -n to preview, --only/--skip to narrow.
+             plugins, codegraph, the root's third-party Agent Skills (skills-lock.json), and
+             the shared MCP images — skipping anything brew does not own rather than shadowing
+             it. Best-effort: one failure never aborts the run. node, repo dependencies and
+             the per-repo/global skill locks are REPORTED, never changed (--check-deps lists
+             what is outdated per repo). Use -n to preview, --only/--skip to narrow.
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
              adapter .env, link adapters into each repo + git-exclude the links so they never
              dirty the product repo). Pass-through — forwards any extra args.
@@ -101,6 +102,7 @@ Examples:
   aiworks update                        # every group: brew, rust, pnpm, gcloud, claude, …
   aiworks update -n                     # preview — print each command, change nothing
   aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
+  aiworks update --only skills -v       # just the third-party skills, per-skill hash detail
   aiworks update --skip mcp --check-deps  # skip the image pull; report outdated repo deps
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
