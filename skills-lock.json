@@ -1,18 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "characteristic-voice": {
-      "source": "NoizAI/skills",
-      "sourceType": "github",
-      "skillPath": "skills/characteristic-voice/SKILL.md",
-      "computedHash": "519d6d8a92069eb9e05385a2902762457459981940f78d2ac679959c87749d0e"
-    },
-    "chat-with-anyone": {
-      "source": "NoizAI/skills",
-      "sourceType": "github",
-      "skillPath": "skills/chat-with-anyone/SKILL.md",
-      "computedHash": "f83285c9d12d9129f95db037f5b1ff8b483a99bd565490f737170dfb00b89d44"
-    },
     "diagnosing-bugs": {
       "source": "mattpocock/skills",
       "sourceType": "github",
@@ -42,30 +30,6 @@
       "sourceType": "github",
       "skillPath": "skills/productivity/grilling/SKILL.md",
       "computedHash": "368d3dd7251247c69f3656d93dc83c8f1577792eacac2111f1e7981db2ece49b"
-    },
-    "sound-fx": {
-      "source": "NoizAI/skills",
-      "sourceType": "github",
-      "skillPath": "skills/sound-fx/SKILL.md",
-      "computedHash": "19e5289b19a5494cdb622cfb2c0691e95950bff148bfdd9a86a4012b4c10b0df"
-    },
-    "speech-to-text": {
-      "source": "NoizAI/skills",
-      "sourceType": "github",
-      "skillPath": "skills/speech-to-text/SKILL.md",
-      "computedHash": "cd2f177a69f586be9940878a9cf2a8e5a7c93cc9bf1f31fd97dc38a65f17252c"
-    },
-    "template-skill": {
-      "source": "NoizAI/skills",
-      "sourceType": "github",
-      "skillPath": "skills/template-skill/SKILL.md",
-      "computedHash": "91a0b031b0973e9bd8819b9f549edb52dc331b9cb87e030a9f806212d35fb12c"
-    },
-    "tts": {
-      "source": "NoizAI/skills",
-      "sourceType": "github",
-      "skillPath": "skills/tts/SKILL.md",
-      "computedHash": "ccfb890d9f797a1316ca9d6528f9c240bc0a287a2c0cb09758b41d8a8a0e18df"
     }
   }
 }
