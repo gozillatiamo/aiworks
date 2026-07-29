@@ -15,6 +15,7 @@
 #   aiworks voice say "ข้อความ"      speak a line now (blocks until spoken) — a live check
 #   aiworks voice audition "…"      speak the same request at all 3 chattiness levels, to compare
 #   aiworks voice cues [--force]    generate the sound-cue catalog
+#   aiworks voice normalize [-n]    level the ALREADY-cached audio to voice.tts.loudness (-n = dry run)
 #   aiworks voice test              speak one line and report the timings
 #   aiworks voice mic-check [secs]  calibrate the push-to-talk silence thresholds to your room
 #   aiworks voice ptt install       write ~/.hammerspoon/voice-ptt.lua and print the manual steps
@@ -51,6 +52,48 @@ case "$cmd" in
     # Bare `aiworks voice mute` reports rather than toggles: a toggle you cannot see the state
     # of is how you end up muted for a day without knowing.
     exec "$VOICE/queue.sh" mute "${1:-status}"
+    ;;
+
+  normalize)
+    # New syntheses are levelled by speak.sh. Everything ALREADY in the cache was recorded at
+    # whatever loudness its vendor felt like, so it would keep playing at the old level forever
+    # — and re-synthesizing it all would cost real money for audio we already own. This levels
+    # the existing files in place instead: local ffmpeg, no API call, no credit spent.
+    # Idempotent (a file already at the target gets a ~0 dB gain), so re-running it is harmless.
+    # shellcheck source=./voice/lib.sh
+    . "$VOICE/lib.sh" 2>/dev/null || die "could not load $VOICE/lib.sh"
+    dry=0; [[ "${1:-}" == -n || "${1:-}" == --dry-run ]] && dry=1
+    target="$(voice_loudness_target)"
+    [[ -n "$target" ]] || die "voice.tts.loudness is off — nothing to normalize to"
+    command -v ffmpeg >/dev/null 2>&1 || die "ffmpeg is required (aiworks voice setup)"
+    printf 'target %s LUFS  %s\n\n' "$target" "$([[ $dry -eq 1 ]] && echo '(dry run — nothing written)')"
+    n=0; done_=0; skipped=0
+    while IFS= read -r f; do
+      n=$((n + 1))
+      before="$(ffmpeg -hide_banner -nostats -i "$f" -af ebur128 -f null - 2>&1 \
+                | awk '/^  Integrated loudness/{g=1} g&&/I:/{print $2; exit}')"
+      if [[ $dry -eq 1 ]]; then
+        printf '  %-42s %8s LUFS\n' "$(basename "$f")" "${before:-?}"; continue
+      fi
+      tmp="$f.norm.$$.mp3"
+      if voice_loudnorm "$f" "$tmp"; then
+        mv "$tmp" "$f"; done_=$((done_ + 1))
+        printf '  %-42s %8s → %s LUFS\n' "$(basename "$f")" "${before:-?}" "$target"
+      else
+        rm -f "$tmp"; skipped=$((skipped + 1))
+        printf '  %-42s %8s %sleft alone%s\n' "$(basename "$f")" "${before:-?}" "$c_dim" "$c_off"
+      fi
+      # SPEECH ONLY — cue/ is deliberately out of scope. Two reasons: an integrated-loudness
+      # measurement over a 0.6 s chime is not trustworthy (R128 gating wants seconds of
+      # material, so a short cue can come back over-amplified), and the cue levels that ARE in
+      # the mix were auditioned by ear against `CUE_VOL`, so re-levelling them would silently
+      # retune a balance somebody already chose. Cues do vary (−12.2 to −21.4 LUFS measured) —
+      # that is a separate decision, taken by ear, not a bug this command should fix.
+    done < <(find "$VOICE_AUDIO_DIR" "$VOICE_PREFIX_DIR" -type f -name '*.mp3' 2>/dev/null | sort)
+    printf '\n%s%d speech file(s)%s' "$c_dim" "$n" "$c_off"
+    [[ $dry -eq 1 ]] || printf ' · %d levelled · %d left alone' "$done_" "$skipped"
+    printf '\n%scue/ left alone on purpose — see the comment in aiworks-voice.sh%s\n' "$c_dim" "$c_off"
+    exit 0
     ;;
 
   status)

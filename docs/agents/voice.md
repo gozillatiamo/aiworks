@@ -146,20 +146,27 @@ aiworks voice audition "ช่วยเช็ค commission calculator ใน ag
 
 Speaks the same request at all three levels with the character count printed. Cost scales with it —
 ack and closing lines never hit the cache, so at 100 turns/day on elevenlabs it is roughly
-**terse $48 · balanced $76 · chatty $105** per month; `tts.provider: gemini` is ~6× cheaper for 3 %
-fewer surviving English terms.
+**terse $48 · balanced $76 · chatty $105** per month. `tts.provider: openai` (voice `sage`) is
+~2.2× cheaper *and* measured best on Thai; `gemini` is ~6× cheaper but slowest and weakest of the
+four. Every vendor's voices were swept — see `scripts/voice/README.md` § Thai voice selection.
 
 ## What it says, versus what is written
 
 Two rewrites happen between a line of text and the audio, and both exist because the naive version
 was wrong out loud.
 
-**Identifiers are spelled, quantities are not.** `OFB-1598` is read digit by digit — every engine
-otherwise reads it as one four-figure number, which nobody can map back to a ticket. A branch gets
-the same treatment plus its separators, so `feature/OFB-1598-add-cashback` is spoken as
-*"feature OFB หนึ่ง ห้า เก้า แปด add cashback"*. Ordinary numbers are left alone: `3 must-fix` and
-`12 tests` are quantities. **`MR` and `PR` are expanded** to *merge request* / *pull request* — read
-verbatim, `MR` comes out as the honorific *Mr.*
+**Identifiers are spelled, quantities are read as numbers — both in Thai.** `OFB-1598` is read
+digit by digit, because every engine otherwise reads it as one four-figure number that nobody can
+map back to a ticket; a branch gets the same treatment plus its separators, so
+`feature/OFB-1598-add-cashback` is spoken as *"feature OFB หนึ่ง ห้า เก้า แปด add cashback"*. An
+ordinary quantity stays a quantity but becomes a Thai **word** — `บรรทัด 142` is *"บรรทัด
+หนึ่งร้อยสี่สิบสอง"*, `8%` is *"แปด เปอร์เซ็นต์"* — because a numeral is still spoken in some
+language and the vendors disagree on which: ElevenLabs reads them in **English** mid-Thai-sentence
+(*"มี two must fix"*, *"450 milliseconds"*) while the other three read them in Thai. Converting the
+text takes that discretion away, so switching provider no longer changes what is said. Version
+strings, times and dates are untouched (`gpt-4o`, `14:30`, `2026-07-29`). **`MR` and `PR` are
+expanded** to *merge request* / *pull request* — read verbatim, `MR` comes out as the honorific
+*Mr.*
 
 **The session you are prompting in never introduces itself.** The identity prefix (the ticket key or
 branch spoken before a sentence) is suppressed for the worktree that last received a prompt — you

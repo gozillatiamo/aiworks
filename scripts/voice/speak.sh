@@ -163,6 +163,10 @@ else
   # choose an output format" — which cost a mix on the first run of this code.
   RAW="$AUDIO.raw.$$.mp3"
   voice_tts_synth "$TEXT" "$RAW"
+  # Loudness BEFORE the mix, not after: the cue's bed gain is a fixed number, so it can only
+  # mean the same thing on every provider if the voice under it is already at one level.
+  NORM="$AUDIO.norm.$$.mp3"
+  if voice_loudnorm "$RAW" "$NORM"; then mv "$NORM" "$RAW"; else rm -f "$NORM"; fi
   if [[ -n "$CUE_FILE" ]]; then
     voice_require ffmpeg ffprobe
     vlog "mix: $CUE ($MIX @ $CUE_VOL)"

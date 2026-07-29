@@ -61,10 +61,12 @@ artifacts:
 #   git-ignored workspace.config.local.yaml — never by editing this file.
 #
 #   Providers are switchable because they are not interchangeable. Measured on this
-#   workspace's own Thai+English dev sentences (agent_logs/voice/implementation-plan.md §3–4):
-#     tts  elevenlabs  best term survival (96 %), $100/1M chars
-#          gemini      93 %, ~6× cheaper, but 4.5–15.9 s of latency variance
-#          cartesia    fastest (1.7–3.1 s), and quality is PER VOICE — audition before use
+#   workspace's own Thai+English dev sentences (scripts/voice/README.md § Thai voice
+#   selection), best voice of each vendor, median of 5 transcription passes:
+#     tts  openai      sage 98 % term survival, 2.3 s, $45/1M chars — best measured
+#          cartesia    Suda 95 %, FASTEST (1.8 s), native Thai; plan-based credits
+#          elevenlabs  Sarah 86 %, 4.2 s, $100/1M chars — the most CONSISTENT voice measured
+#          gemini      Leda 84 %, slowest (7.5 s, variable), but ~6× cheaper than 11labs
 #     stt  openai      gpt-4o-transcribe, 0.915 similarity at 1.37 s — the best measured
 #          gemini      cheapest per hour; elevenlabs — accurate, over-capitalizes
 #   Voice ids are keyed BY PROVIDER on purpose: switching `provider` must not carry a voice
@@ -76,11 +78,25 @@ voice:
   enabled: false
   tts:
     provider: elevenlabs
+    # Each entry is the vendor's BEST-MEASURED Thai voice, not its most famous one. Swept
+    # 2026-07-29: every candidate voice of every vendor (24 ElevenLabs + 13 OpenAI + 30 Gemini
+    # + 7 Cartesia) spoke the same five Thai+English dev sentences. Score = how many of 43
+    # English technical tokens survive as Latin script, median of FIVE transcription passes —
+    # one pass cannot rank two voices a token apart, because the transcriber is the noisy
+    # component (byte-identical audio scored 0/6 then 6/6 on consecutive passes).
     voice:
-      elevenlabs: "EXAVITQu4vr4xnSDxMaL"          # Sarah (female)
-      cartesia: "5de076e9-7b28-4442-b279-e7d80d573505"   # Somchai (male, native Thai)
-      gemini: "Kore"
-      openai: "nova"
+      elevenlabs: "EXAVITQu4vr4xnSDxMaL"          # Sarah (female) — 37/43, spread ±1: the steadiest voice measured
+      cartesia: "ccc7bb22-dcd0-42e4-822e-0731b950972f"   # Suda (female, native Thai) — 41/43; Thaksin/Somchai tie it
+      gemini: "Leda"                              # 36/43 (female) — beats Kore's 34 on both metrics
+      openai: "sage"                              # 42/43 (female) — the best Thai voice of any vendor here
+    # Integrated loudness every synthesized line is levelled to (EBU R128, -1.5 dBTP ceiling).
+    # NOT cosmetic: vendors ship wildly different volumes and so do voices inside one vendor —
+    # measured on one sentence, ElevenLabs Sarah came out at -14.1 LUFS and OpenAI sage at
+    # -31.5, an 17 LU gap that reads as "three times quieter" and made switching provider
+    # silently change how loud the assistant is. It also fixes `--cue`: the bed gain is a fixed
+    # 0.22, which can only mean one thing if the voice under it is at one level.
+    # `off` disables it. Existing cache: `aiworks voice normalize` (local ffmpeg, no API spend).
+    loudness: -16
   stt:
     provider: openai
   # Turns a prompt into the ONE Thai line that gets spoken back. Model is keyed by provider

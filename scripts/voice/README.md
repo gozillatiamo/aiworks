@@ -76,6 +76,38 @@ time, and playback is an access), so the lines you keep hearing survive. `prefix
 `cue/` are exempt — a handful of tiny files with the highest reuse here, each costing an
 API call to rebuild.
 
+## One loudness, because vendors do not agree on one
+
+Every synthesized line is levelled to `voice.tts.loudness` (default **−16 LUFS**, ceiling
+−1.5 dBTP) before it is mixed and cached. This is not polish. Measured on the same sentence:
+
+```
+elevenlabs Sarah   -14.1 LUFS      gemini Leda       -19.2      cartesia Suda   -28.8
+openai     nova    -19.7           cartesia Somchai  -22.6      openai sage     -31.5
+```
+
+**17 LU** — about "three times quieter" by ear, and it is per *voice*, not just per vendor
+(`sage` sits 12 LU below `nova` on the same endpoint). Two things broke because of it:
+switching provider or voice silently changed how loud the assistant is, so the system volume
+you set yesterday is wrong today; and `--cue`'s bed level is a fixed gain, so the same `0.22`
+buried the cue under Sarah and let it drown `sage`. After levelling, the spread across 308
+cached clips is **1.7 LU** and every true peak sits at or below −1.7 dBFS.
+
+`linear=true` keeps it a single gain change over the whole clip, so the voice's own dynamics
+survive; ffmpeg drops to its dynamic mode only when linear gain cannot reach the target under
+the peak ceiling. Every failure path is **fail-open** — the un-levelled line still plays,
+because a sentence already paid for must not be lost to a cosmetic step.
+
+```bash
+aiworks voice normalize -n     # what the already-cached audio measures now
+aiworks voice normalize        # level it in place — local ffmpeg, no API call, no credit spent
+```
+
+The migration exists so switching this on does not re-buy audio you already own. It is
+idempotent, and it deliberately skips `cue/`: an integrated-loudness reading over a 0.6 s chime
+is not trustworthy, and those levels were auditioned by ear against `CUE_VOL`. Cues do vary
+(−12.2 to −21.4 LUFS measured) — a separate call, by ear, not this command's business.
+
 ## One queue, one lock, no daemon
 
 ```
@@ -599,9 +631,12 @@ the key addresses what the audio actually contains.
 | `OFB-1598` | `OFB หนึ่ง ห้า เก้า แปด` | an identifier is not a quantity; every engine read it as *หนึ่งพันห้าร้อยเก้าสิบแปด* |
 | `feature/OFB-1598-add-cashback` | `feature OFB หนึ่ง ห้า เก้า แปด add cashback` | a path read verbatim is "slash" and "dash" between every word |
 | `MR` · `PR` | `merge request` · `pull request` | read verbatim, `MR` is the honorific *Mr.* |
-| `3 must-fix` · `12 tests` | unchanged | quantities stay quantities — only a ticket key's digits split |
+| `142` · `12 เคส` · `21 ใบ` | `หนึ่งร้อยสี่สิบสอง` · `สิบสอง เคส` · `ยี่สิบเอ็ด ใบ` | a quantity is still spoken in a *language*, and the vendors disagree on which |
+| `8%` · `60%` | `แปด เปอร์เซ็นต์` | read verbatim the sign comes out as English "percent" |
+| `0.915` | `ศูนย์ จุด เก้า หนึ่ง ห้า` | Thai reads a fraction digit by digit after จุด |
 | `https://…/merge_requests/12` | unchanged | the lookbehind refuses a path segment preceded by `/`, so URLs are left alone |
-| `Mr. Somchai` · `PRD` · `UTF-8` · `gpt-4o` | unchanged | case-sensitive `MR`/`PR` with ASCII lookarounds; the generic key pattern needs 3+ digits |
+| `gpt-4o` · `eleven_v3` · `UTF-8` · `sonic-3` · `14:30` · `2026-07-29` | unchanged | a digit run glued to an ASCII letter, `.`, `:` or `-` is part of something else, not a count |
+| `Mr. Somchai` · `PRD` | unchanged | case-sensitive `MR`/`PR` with ASCII lookarounds; the generic key pattern needs 3+ digits |
 
 A key is recognised from the workspace's own `tracker.ticket_prefix` (either case, any digit count,
 so a lowercase branch matches) plus a generic `UPPERCASE-\d{3,}` fallback for another project's key.
@@ -609,20 +644,100 @@ Digits become Thai **words** rather than spaced digits so no engine gets a secon
 clever about them. The lookarounds are ASCII-only, never `\b`: Thai runs words together, and
 `มีMRรอreview` would fail a `\b` test and keep the honorific reading.
 
+**Why quantities are converted at all**, having been deliberately left alone at first: they are
+not vendor-neutral. Measured on the same Thai sentences —
+
+| written | ElevenLabs Sarah | OpenAI sage | Cartesia Suda | Gemini Leda |
+|---|---|---|---|---|
+| `1 2 3 … 10` | *One, two, three…* | หนึ่ง สอง สาม | หนึ่ง สอง สาม | *One, two…* |
+| `มี 2 must-fix` | *มี two must fix* | มีสอง | มีสอง | มีสอง |
+| `450 ms` | *450 milliseconds* | สี่ร้อยห้าสิบ | สี่ร้อยห้าสิบ | สี่ร้อยห้าสิบ |
+| `8%` | *eight percent* | แปดเปอร์เซ็นต์ | แปดเปอร์เซ็นต์ | แปดเปอร์เซ็นต์ |
+
+ElevenLabs reads numerals in **English** in the middle of a Thai sentence. Converting the digits
+to Thai words in the text removes the vendor's discretion, so what the assistant says no longer
+changes when `voice.tts.provider` does. Ticket keys are spelled **first**, so their digits are
+already words by the time the quantity pass runs and cannot be re-read as a magnitude.
+
+The three Thai irregulars are handled and are not optional — 20 is `ยี่สิบ` (not สองสิบ), a lone
+10 is `สิบ` (not หนึ่งสิบ), and a trailing 1 is `เอ็ด` **only when the tens digit above it is
+non-zero**:
+
+```
+21 → ยี่สิบเอ็ด      11 → สิบเอ็ด      121 → หนึ่งร้อยยี่สิบเอ็ด      tens non-zero ⇒ เอ็ด
+101 → หนึ่งร้อยหนึ่ง  1001 → หนึ่งพันหนึ่ง  1101 → หนึ่งพันหนึ่งร้อยหนึ่ง   tens 0 ⇒ หนึ่ง
+```
+
+`เอ็ด` belongs to the …สิบเอ็ด position specifically. The first version of this converter used
+"trailing 1 in a number longer than one digit", which is close enough to pass 21 and 11 and wrong
+on 101 — and a native ear catches it immediately, so the condition is the tens digit, not the
+length. A run longer than
+9 digits is spelled digit by digit instead: past a billion it is an id somebody wrote without a
+prefix, not a quantity. **Dates and clock times are still left in digits** — `2026-07-29` and
+`14:30` reach the engine untouched, so on ElevenLabs they are still read in English. Rare enough
+in a spoken line to leave; the Thai reading of a date is a bigger job than this rewrite.
+
 ## Providers
 
-Switchable because they are **not** interchangeable. Measured on this workspace's own
-Thai+English dev sentences (`agent_logs/voice/implementation-plan.md` §3):
+Switchable because they are **not** interchangeable. Numbers are from the Thai voice sweep
+below — best voice of each vendor, median of five transcription passes:
 
-| `voice.tts.provider` | measured | why you'd pick it |
-|---|---|---|
-| `elevenlabs` (default) | 96 % of English tech terms survive, 0.958 similarity | best quality; $100/1M chars |
-| `gemini` | 93 %, 0.962 | ~6× cheaper, but 4.5–15.9 s of latency variance |
-| `cartesia` | Somchai 89 %, Narin 63 % | fastest (1.7–3.1 s); quality is **per voice** — audition first |
-| `openai` | nova 93 %, 0.950 | fast and mid-priced; mood via free-text instructions |
+| `voice.tts.provider` | best voice | terms kept | latency | why you'd pick it |
+|---|---|---|---|---|
+| `openai` | `sage` | **42/43 (98 %)** | 2.3 s | best measured Thai; $45/1M chars |
+| `cartesia` | `Suda` | 41/43 (95 %) | **1.8 s** | fastest, and the only NATIVE Thai voices; plan-based credits |
+| `elevenlabs` (default) | `Sarah` | 37/43 (86 %) | 4.2 s | steadiest voice measured (±1); most natural to most ears; $100/1M chars |
+| `gemini` | `Leda` | 36/43 (84 %) | 7.5 s | cheapest ($16.7/1M) but slowest and most variable |
 
 Voice ids are keyed **by provider** (`voice.tts.voice.<provider>`) so switching provider
 cannot carry an id from the wrong vendor.
+
+## Thai voice selection
+
+Every candidate voice of every vendor was measured, not just the famous ones: **24** ElevenLabs
+(the whole account library), **13** OpenAI, **30** Gemini prebuilt, **7** Cartesia native Thai.
+Each spoke the same five Thai+English dev sentences; score is how many of **43** English
+technical tokens come back as **Latin script** through `gpt-4o-transcribe`.
+
+**One transcription pass is not a measurement.** Re-scoring byte-identical cached audio gave
+`sage` 0/6 on one pass and 6/6 on the next, and `Sarah` 4/6 then 1/6 — the noisy component is
+the *transcriber*, not the voice. Every number here is the **median of five passes**, and the
+spread is reported because a wide one is itself a finding.
+
+| vendor | best | runner-up | worst of the field | note |
+|---|---|---|---|---|
+| OpenAI | `sage` 42 | `coral` 37 | `ash`, `ballad` (6/11 on the screen) | `nova`, the old default, scored 35 |
+| Cartesia | `Suda` 41 (f) | `Thaksin` 41 (m), `Somchai` 41 (m) | `Narin` | three-way tie; pick by gender/timbre |
+| ElevenLabs | `Sarah` 37 (±1) | `Chris` 37 (±11), `Jessica` 35 | `Roger`/`Brian`/`Daniel`/`Liam`/`Will` — 0/11 | the sweep **confirmed** the original default |
+| Gemini | `Leda` 36 | `Zephyr` 34, `Kore` 34 | `Puck` 30 | 22 of 30 voices score identically — see below |
+
+What the sweep actually taught, beyond the ranking:
+
+- **Native Thai training shows up in one specific place.** On a line that packs English terms
+  into dense Thai with no pauses (`query นี้ใช้เวลา 450 ms ที่ index scan เลย cache …`), the
+  Cartesia natives kept 5–6 of 6 terms in Latin script; ElevenLabs `Sarah` kept 1, and Gemini
+  and OpenAI `nova` kept 0. Everyone else transliterates — `อินเด็กซ์สแกน`, `เรดิส`, `เลเทนซี`.
+  On the other four sentences the four vendors are within a token of each other.
+- **A one-sentence audition is actively misleading.** `Laura` won the single-sentence screen
+  outright (11/11) and finished last of the ElevenLabs finalists over five (31/43, spread ±21),
+  having *translated* `develop` into Thai (`เข้าพัฒนาแล้ว`) on one of them.
+- **For Gemini the voice barely matters.** 22 of 30 prebuilt voices scored identically on the
+  screening line: Thai rendering is a property of the model, not the voice. Choosing a
+  different Gemini voice will not fix Thai — and `gemini-2.5-pro-preview-tts` /
+  `gemini-3.1-flash-tts-preview` measured no better on it either (both slower).
+- **ElevenLabs has no Thai voices to find.** Only `eleven_v3` lists Thai at all, the shared
+  voice library returns **zero** for `language=th`, and an IVC clone of a native Thai reference
+  measured worse than stock. Five of the account's own voices cannot carry Thai.
+
+Reproduce or re-rank by ear — no config edit needed:
+
+```bash
+scripts/voice/speak.sh --provider openai --voice sage --sync "review เสร็จแล้ว มี 2 must-fix"
+scripts/voice/speak.sh --provider cartesia --voice ccc7bb22-dcd0-42e4-822e-0731b950972f --sync "…"
+```
+
+The score answers "will the dictation loop and the listener get the terms right". It says
+nothing about which voice you want in your ears for eight hours — that part is yours.
 
 Traps that are already handled, and that you must not "simplify" away:
 
@@ -631,6 +746,11 @@ Traps that are already handled, and that you must not "simplify" away:
 - Gemini returns **raw PCM**, not a container; `providers/gemini.sh` wraps it with ffmpeg at
   the sample rate the response itself declares.
 - Cartesia needs the `Cartesia-Version` header and calls the text field `transcript`.
+- **Batch work must be serial.** Cartesia's free tier allows ~1 concurrent request and the
+  Gemini TTS preview models have a tight RPM cap — a 3-worker sweep lost 20 of 74 clips to
+  `429`. Normal use is one utterance at a time, so this only bites when benchmarking.
+- The ElevenLabs key here lacks the `user_read` scope, so `/v1/user/subscription` returns
+  `missing_permissions` — remaining credits cannot be checked from a script.
 - ffmpeg picks its **output** muxer from the file extension, so every temp file keeps `.mp3`.
 
 ## Credentials
@@ -671,6 +791,7 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.tts.provider` | `elevenlabs` | `elevenlabs` \| `gemini` \| `cartesia` \| `openai` |
 | `voice.tts.voice.<provider>` | per provider | voice id for that vendor |
 | `voice.tts.model` | per provider | override the model |
+| `voice.tts.loudness` | `-16` | target LUFS every synthesized line is levelled to; `off` disables |
 | `voice.tts.gender.<provider>` | from a table | `f` \| `m` — pins the Thai sentence-final particle (`ค่ะ`/`ครับ`) |
 | `voice.stt.provider` | `openai` | `openai` \| `elevenlabs` \| `gemini` |
 | `voice.stt.model` | per provider | override the model |

@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # TTS provider — Gemini `gemini-2.5-flash-preview-tts`.
 #
-# Measured: 93 % term survival / 0.962 similarity, natively good at Thai, and it reads bare
-# digits correctly ("บรรทัด 142") so no number normalizer is needed. ~6× cheaper than
-# ElevenLabs (≈$16.7 vs $100 per 1M chars) — the switch to make when the bill matters.
+# Measured: reads bare digits correctly ("บรรทัด 142") so no number normalizer is needed, and
+# ~6× cheaper than ElevenLabs (≈$16.7 vs $100 per 1M chars) — the switch to make when the bill
+# matters. On Thai it is the WEAKEST of the four vendors: `Leda`, the best of all 30 prebuilt
+# voices, kept 36 of 43 English technical tokens vs OpenAI `sage`'s 42.
 #
+# ⚠ THE VOICE BARELY MATTERS HERE. 22 of the 30 prebuilt voices scored identically on the
+# screening sentence — Thai rendering is a property of the MODEL, not the voice, so choose a
+# Gemini voice by timbre and do not expect a different one to fix Thai.
+# ⚠ `gemini-2.5-pro-preview-tts` and `gemini-3.1-flash-tts-preview` both answer on v1beta and
+# measured no better on Thai (and slower), so the flash default stays. NOTE: 3.1 returns 404
+# for an INVALID voice name instead of a 400 listing the valid ones — probe 2.5-flash for that.
 # ⚠ LATENCY IS VARIABLE: 4.5 s to 15.9 s observed on identical-length input. Fine for a
 # milestone, risky for anything the user is waiting on.
 # ⚠ IT DOES NOT RETURN A CONTAINER. The response is base64 raw PCM (`audio/L16;codec=pcm;
@@ -16,16 +23,16 @@
 . "$VOICE_DIR/providers/common.sh"
 
 voice_tts_describe() {
-  printf '%s %s %s' gemini "$(voice_pick Kore)" "$(voice_cfg voice.tts.model gemini-2.5-flash-preview-tts)"
+  printf '%s %s %s' gemini "$(voice_pick Leda)" "$(voice_cfg voice.tts.model gemini-2.5-flash-preview-tts)"
 }
 
 voice_tts_gender() {
-  voice_pick_gender "$(voice_pick Kore)" Kore:f Leda:f Aoede:f Puck:m Charon:m Enceladus:m Fenrir:m
+  voice_pick_gender "$(voice_pick Leda)" Kore:f Leda:f Aoede:f Puck:m Charon:m Enceladus:m Fenrir:m
 }
 
 voice_tts_synth() {   # TEXT OUT_MP3
   local text="$1" out="$2" voice model key tmp pcm rate
-  voice="$(voice_pick Kore)"
+  voice="$(voice_pick Leda)"
   model="$(voice_cfg voice.tts.model gemini-2.5-flash-preview-tts)"
   key="$(voice_need_key GEMINI_VOICE_API_KEY)"
   voice_require ffmpeg
