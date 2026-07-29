@@ -22,7 +22,7 @@
 #
 # MUTE IS GLOBAL AND TOTAL FOR THIS MACHINE'S SPEAKERS, AND IT IS AN OFF SWITCH. It is a file
 # (~/.cache/aiworks/voice/mute), so it applies to every clone and worktree at once, and it covers
-# ack, milestone, heartbeat, the identity prefix, the dictation cues and a direct `speak.sh` alike.
+# ack, milestone, narration, the identity prefix, the dictation cues and a direct `speak.sh` alike.
 # Muted, nothing is summarized and nothing is synthesized — speech costs ZERO while it is on,
 # rather than paying for audio that goes nowhere.
 #
@@ -125,27 +125,27 @@ case "$cmd" in
               'voice.autoplay.ack|  · ack per prompt|true' \
               'voice.autoplay.milestones|  · closing line|true' \
               'voice.autoplay.milestone_every_turn|    every turn|true' \
-              'voice.autoplay.heartbeat|  · heartbeat|true' \
+              'voice.autoplay.narrate|  · step narration|true' \
               'voice.notify_voice.enabled|slack voice note|false' \
               'voice.push_to_talk.enabled|push-to-talk|false'; do
       k="${kv%%|*}"; rest="${kv#*|}"; label="${rest%|*}"; def="${rest##*|}"
       if voice_cfg_bool "$k" "$def"; then printf '%-19s on %s✓%s\n' "$label" "$c_ok" "$c_off"
       else printf '%-19s off\n' "$label"; fi
     done
-    # `max` reaches a third channel (the heartbeat's cadence), so the note has to say so — and if
-    # the heartbeat is OFF, say THAT, because the mid-turn narration is most of what `max` buys and
-    # a level that silently delivers half of itself is the kind of thing you debug for ten minutes.
+    # `max` reaches a third channel (the step narrator), so the note has to say so — and if
+    # `narrate` is OFF, say THAT, because the mid-turn commentary is most of what `max` buys and a
+    # level that silently delivers half of itself is the kind of thing you debug for ten minutes.
     chat="$(voice_chattiness)"
     if [[ "$chat" != "max" ]]; then
       printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
         "$chat" "$c_dim" "$c_off"
-    elif voice_cfg_bool voice.autoplay.heartbeat true; then
-      printf 'chattiness        %s %s(ack + closing line + a 10-beat heartbeat from 45 s)%s\n' \
+    elif voice_cfg_bool voice.autoplay.narrate true; then
+      printf 'chattiness        %s %s(ack + closing line + a line per step while the turn runs)%s\n' \
         "$chat" "$c_dim" "$c_off"
     else
-      printf 'chattiness        %s %s← heartbeat is off, so nothing speaks mid-turn — most of `max`\n' \
+      printf 'chattiness        %s %s← narrate is off, so nothing speaks mid-turn — the running\n' \
         "$chat" "$c_warn"
-      printf '                  is the heartbeat. Set voice.autoplay.heartbeat: true%s\n' "$c_off"
+      printf '                  commentary is most of `max`. Set voice.autoplay.narrate: true%s\n' "$c_off"
     fi
     printf 'tts               %s / %s\n' "$(voice_cfg voice.tts.provider elevenlabs)" \
       "$(voice_cfg "voice.tts.voice.$(voice_cfg voice.tts.provider elevenlabs)" '(provider default)')"
@@ -255,8 +255,8 @@ case "$cmd" in
     # should not cost four config edits and four restarts to hear four options. This speaks the
     # same request at all four, in order, announcing each one first.
     #
-    # What it CANNOT audition is `max`'s heartbeat: that one only exists inside a long turn, and
-    # faking it here would be a demo of a thing you have not actually turned on.
+    # What it CANNOT audition is `max`'s step narration: that one only exists inside a running turn,
+    # and faking it here would be a demo of a thing you have not actually turned on.
     [[ $# -gt 0 ]] || die "usage: aiworks voice audition \"the prompt to react to\" [--kind ack|report]"
     . "$VOICE/lib.sh" 2>/dev/null || die "could not load $VOICE/lib.sh"
     set +e

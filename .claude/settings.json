@@ -261,6 +261,16 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-codegraph-sync.sh"
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

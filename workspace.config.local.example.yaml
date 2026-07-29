@@ -58,8 +58,8 @@
 #
 # COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn now speaks a closing
 # line, and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
-# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$150/mo (that last
-# one extrapolated from its character ceiling, not measured). (An earlier note here said $14–24 —
+# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$230/mo (that last
+# one extrapolated, not measured — ~$142 of ack + closing line plus ~$88 of step narration). (An earlier note here said $14–24 —
 # that was from when milestones almost never spoke.) `tts.provider: gemini` is ~6× cheaper for 3 %
 # fewer surviving English terms.
 #
@@ -79,15 +79,17 @@
 #     # what makes them one level. Change it and run `aiworks voice normalize` to re-level the cache.
 #     loudness: -16
 #   autoplay:
-#     enabled: true       # local speech; `ack`, `milestones`, `heartbeat` switch independently
+#     enabled: true       # local speech; `ack`, `milestones`, `narrate` switch independently
 #     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
 #     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (up to 4, and
 #     # the only level that narrates the STEPS — the ack states the order of the work, the closing
-#     # line lists what it did, and the heartbeat goes to 10 beats from 45 s so a long run keeps
-#     # saying where it is; it needs `heartbeat: true` below to be itself). Ceiling, not quota —
-#     # one fact still means one sentence. `aiworks voice audition "…"` compares all four.
+#     # line lists what it did, and it talks THROUGH the turn: one line per step, as the step
+#     # happens). Ceiling, not quota — one fact still means one sentence.
+#     # `aiworks voice audition "…"` compares all four.
 #     chattiness: balanced
-#     heartbeat: true     # the mid-turn line. Most of what `max` buys, and this still vetoes it
+#     # The step narration, `max` only, and the only mid-turn voice there is. false ⇒ keep max's
+#     # lengths, stop the mid-turn talking (it is the level's main cost: ~$88/mo of the ~$230).
+#     narrate: true
 #   notify_voice:
 #     enabled: true       # attach a voice note to the review-request / ship messages
 #   push_to_talk:

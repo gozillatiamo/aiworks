@@ -80,9 +80,17 @@ tag-only.
 never whether they speak. `terse` is the length the feature shipped with; `balanced` adds a softener,
 a short reaction word and the second fact; `chatty` adds the third fact and the follow-through; `max`
 adds the fourth, narrates the STEPS in the order they happen (the only level allowed to — the others
-forbid it) and tightens the heartbeat to 10 beats from 45 s, so a long run keeps saying where it is.
-The budget is a ceiling, not a quota, and bad news keeps the plain register at every level.
+forbid it) and turns on the [[step narrator]] so the turn is described while it runs. The budget is a
+ceiling, not a quota, and bad news keeps the plain register at every level.
 `aiworks voice audition "…"` speaks all four.
+
+**step narration**:
+`voice.autoplay.narrate`, `chattiness: max` only — one spoken line per tool call, taken from the
+assistant's OWN prose (the sentence it writes before reaching for a tool already says what it is doing
+and what comes next), so it costs no summarizer call. Deduped per prose block, rate-floored, and
+dropped after 12 s because its content goes off in seconds. It is the only mid-turn voice the feature
+has: the timed heartbeat that used to fill that space was removed, because a clock cannot know whether
+a step happened and says "still working" instead of what is being worked on.
 
 **`VOICE:` tag**:
 A `VOICE[group]: <one line>` line in a reply, which is how a turn writes its own closing line

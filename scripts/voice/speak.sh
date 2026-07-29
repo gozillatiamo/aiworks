@@ -8,7 +8,10 @@
 #
 #   --provider NAME              audition another TTS provider without editing config
 #   --voice ID                   audition another voice on that provider
-#   --kind ack|milestone|manual  queue priority (default: manual — never dropped)
+#   --kind ack|narration|milestone|manual
+#                                queue priority (default: manual — never dropped).
+#                                `narration` is the `max` step narrator: last in line, dropped
+#                                hardest, because its content goes off in seconds
 #   --cue NAME                   mix a cue from the catalog under/around the line
 #   --mix under|sting|duck|tail  how the cue sits against the voice (default: under)
 #   --cue-volume N               cue level for `under`/`tail` (default 0.22; 0.15 for bad news)
@@ -62,7 +65,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$TEXT" ]] || vdie "nothing to say — pass the text as an argument"
-case "$KIND" in ack|milestone|manual) ;; *) vdie "--kind must be ack|milestone|manual" ;; esac
+case "$KIND" in ack|narration|milestone|manual) ;; *) vdie "--kind must be ack|narration|milestone|manual" ;; esac
 case "$MIX" in under|sting|duck|tail) ;; *) vdie "--mix must be under|sting|duck|tail" ;; esac
 
 voice_gate_or_exit "speak"

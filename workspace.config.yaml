@@ -122,7 +122,19 @@ voice:
     enabled: false
     ack: true          # a spoken acknowledgement for every prompt
     milestones: true   # the closing line — what the finished turn actually produced
-    heartbeat: true    # "still working, currently X" on a turn that has run long
+    # There was a `heartbeat` here — "still working, currently X" on a clock, every 90 s then
+    # backing off. REMOVED, not defaulted off: in use it read as an odd, disembodied interruption,
+    # because a clock cannot know whether anything happened and can only name the tool it happens to
+    # catch. The mid-turn space belongs to `narrate` below, which speaks because the WORK moved.
+    #
+    # The RUNNING COMMENTARY, and `chattiness: max` ONLY (inert at every other level, so it needs no
+    # second thought until you switch). One line per step, spoken WHILE the work happens, taken from
+    # the assistant's own prose — the sentence it writes before reaching for a tool already says what
+    # it is doing and what comes next, so there is no summarizer call and nothing to invent.
+    #
+    # `false` keeps `max`'s longer ack and closing line but stops the mid-turn talking — which is
+    # also the cost lever: see the figures below.
+    narrate: true
     # EVERY finished turn speaks its result. The result is the half you cannot get from glancing at
     # the screen, and a version that stayed quiet unless the turn declared an event announced the
     # START of the work and then never said it was done.
@@ -136,9 +148,9 @@ voice:
     # `milestone_backstop`, which is still honoured in its `false` position.)
     milestone_every_turn: true
     # HOW MUCH it says when it speaks — never WHETHER it speaks (that is the four switches above).
-    # Reaches the ack and the closing line; `max` additionally tightens the heartbeat's CADENCE (not
-    # its words). The Slack voice note stays one canonical sentence at every level, because its
-    # repetition is what makes it free (it hits the audio cache).
+    # Reaches the ack and the closing line; `max` additionally turns on the step narrator. The Slack
+    # voice note stays one canonical sentence at every level, because its repetition is what makes it
+    # free (it hits the audio cache).
     #
     #   terse      1 sentence, facts only, no softener and no reaction word — the shipped behaviour
     #   balanced   1-2 sentences, + a softener (ให้นะคะ) + a 1-2 word reaction (ได้ค่ะ / เจอแล้วค่ะ)
@@ -147,11 +159,16 @@ voice:
     #              what is waiting for you)
     #   max        up to 4, in the register of a flight engineer reporting to the person in charge:
     #              every sentence is [subject] [state] [figure], the ack states the ORDER it will
-    #              work in, the closing line lists the STEPS it took, and the heartbeat moves to 10
-    #              beats from 45 s so a long run keeps saying where it is. THE ONLY LEVEL THAT
-    #              NARRATES THE PROCESS — the others forbid it, since for them the process is filler.
-    #              Needs `heartbeat: true` to be itself: most of what this level buys is the
-    #              mid-turn narration, and the heartbeat switch above still vetoes it.
+    #              work in, the closing line lists the STEPS it took — AND it talks THROUGH the
+    #              turn: one line per step, as the step happens (`narrate` above). THE ONLY LEVEL
+    #              THAT NARRATES THE PROCESS; the others forbid it, since for them the process is
+    #              filler around the one fact that matters.
+    #
+    #              The first version of `max` did the mid-turn half with a TIMED heartbeat instead
+    #              (45 s × 10 beats). Wrong mechanism, not a wrong number: a clock fires whether or
+    #              not anything happened — it narrates a 3-second step never and a 90-second step
+    #              twice — and it can only name the tool it happens to catch, never why. Steps are
+    #              the unit, so the narrator hooks the step; the heartbeat has since been deleted.
     #
     # The character budget is a CEILING, NOT A QUOTA: one fact ⇒ one sentence, even at `max`.
     # That is the safety property — given room and nothing to fill it with, a model pads, and
@@ -164,16 +181,18 @@ voice:
     # EVERY level: a warm register is the wrong register for an incident, and this is a set-once
     # preference nobody turns down before production breaks.
     #
-    # COST, since this is the feature's biggest lever — ack and closing lines never hit the cache
-    # (unique text every time), at ~$0.0001/char on elevenlabs, 100 turns/day × 22 days:
-    #   terse ~$48/mo   ·   balanced ~$76/mo   ·   chatty ~$105/mo   ·   max ~$150/mo
-    # The first three are measured; `max` is EXTRAPOLATED from its character ceiling (620 vs terse's
-    # 210) plus ~$12 of heartbeat — the beats are templated and partly cached, so that half is the
-    # cheap half even at ten of them.
+    # COST, since this is the feature's biggest lever — every spoken line here is unique text, so
+    # none of it hits the audio cache. At ~$0.0001/char on elevenlabs, 100 turns/day × 22 days:
+    #   terse ~$48/mo   ·   balanced ~$76/mo   ·   chatty ~$105/mo   ·   max ~$230/mo
+    # The first three are measured. `max` is EXTRAPOLATED, and it is the one worth reading twice:
+    # ~$142 for its longer ack + closing line (character ceiling 620 vs terse's 210), plus ~$88 for
+    # the narration — call it 5 lines × ~80 chars on an average turn, which is ~$0.04 a turn. A
+    # tool-heavy turn is several times that; a one-answer turn is nothing. `narrate: false` removes
+    # that second half and leaves the level's lengths.
     # `voice.tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
     #
     # `aiworks voice audition "<a request>"` speaks all four so you can pick by ear. It cannot
-    # audition `max`'s heartbeat: that one only exists inside a long turn.
+    # audition `max`'s step narration: that one only exists inside a running turn.
     chattiness: terse
   # A voice note attached to the Slack messages the workflow already sends. THE ONLY switch for it:
   # `aiworks voice mute` deliberately does not reach it, because that audio is a deliverable for the

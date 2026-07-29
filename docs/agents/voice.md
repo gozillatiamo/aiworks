@@ -29,7 +29,7 @@ aiworks voice mute off
 aiworks voice status       # every switch that decides whether you hear anything, in order
 ```
 
-Muted, nothing is summarized and nothing is synthesized: no ack, no milestone, no heartbeat, no
+Muted, nothing is summarized and nothing is synthesized: no ack, no milestone, no narration, no
 identity prefix, no dictation cue. The point is the bill — the alternative was paying for an LLM
 call and a TTS call per turn to render audio into muted speakers.
 
@@ -107,11 +107,12 @@ voice:
 ```
 
 **How much, never whether.** "Whether" already has four switches (`ack` · `milestones` ·
-`heartbeat` · `milestone_every_turn`); a fifth thing that could also produce silence would give
+`milestone_every_turn` · `narrate`); a fifth thing that could also produce silence would give
 "why is it quiet?" five possible answers and no way to tell which. `terse`…`chatty` reach the **ack
-and the closing line only**; `max` also tightens the **heartbeat's cadence**, never its words. The
-Slack voice note stays one canonical sentence at every level, because its repetition is what makes
-it free (it hits the audio cache).
+and the closing line only** — so at those levels nothing at all is spoken between them; `max`
+additionally turns on the **step narrator** (`narrate`), which is the only mid-turn voice the feature
+has. The Slack voice note stays one canonical sentence at every level, because its repetition is what
+makes it free (it hits the audio cache).
 
 The same finished turn, at each level:
 
@@ -126,11 +127,11 @@ chatty    เรียบร้อยค่ะ การแก้ mute ทำใ
           ปกติ 23031 bytes เอกสารแก้ครบ 6 ไฟล์ รอคุณสั่งค่ะ
           + the third fact, + the follow-through (what will be reported, what waits for you)
 
-max       เรียบร้อยค่ะ แก้ 4 script เสร็จแล้ว ได้แก่ lib.sh เพิ่ม voice_heartbeat_gaps,
-          summarize.sh เพิ่ม cap 260 chars สำหรับ ack และ 360 สำหรับ report, heartbeat.sh อ่าน
-          cadence จาก chattiness เป็น 10 beats เริ่มที่ 45 วินาที, aiworks-voice.sh audition ครบ
-          4 ระดับ รอการตรวจสอบจากคุณค่ะ
-          + the STEPS, in the order they happened, one status each — and the mid-turn heartbeat
+max       เรียบร้อยค่ะ แก้ 4 script เสร็จแล้ว ได้แก่ lib.sh เพิ่ม narration state,
+          summarize.sh เพิ่ม cap 260 chars สำหรับ ack และ 360 สำหรับ report, queue.sh เพิ่ม kind
+          narration, aiworks-voice.sh audition ครบ 4 ระดับ รอการตรวจสอบจากคุณค่ะ
+          + the STEPS, in the order they happened, one status each — and it talked through the
+          turn while the work happened
 ```
 
 ### `max`, and why it is a different kind of level
@@ -149,13 +150,49 @@ It lands on three channels at once, which is what makes it feel continuous rathe
 | channel | at `max` |
 |---|---|
 | the **ack** | states the work *and the order it will be worked in* — the level replaces the shipped "…and stop" with the sequence |
-| the **heartbeat** | 10 beats from 45 s instead of 6 from 90 s. Same template, same near-free cache — only the cadence moves |
+| the **step narrator** | one line per step, spoken *while* the turn runs (`narrate.sh`, on `PostToolUse`) |
 | the **closing line** | up to 4 sentences: the steps taken, one status each, finishing on the outcome |
 
-**`max` needs `heartbeat: true` to be itself.** The mid-turn narration is most of what the level
-buys, and `voice.autoplay.heartbeat: false` still vetoes it — a chattiness level must never switch a
-channel back on, or "why is it quiet?" stops having one answer. `aiworks voice status` says so
-outright when the two disagree.
+### The step narrator — what it speaks, and why it costs no model call
+
+The assistant already writes a short line before it reaches for a tool — *"อ่าน `queue.sh` ก่อน
+แล้วค่อยแก้ cadence"*. **That line already is the narration**: it says what is happening and what
+comes next, in the assistant's own words, and it is already in the transcript. So the narrator speaks
+it verbatim (trimmed to one sentence) instead of asking a model to describe a tool call.
+
+- **no summarizer call** — the text exists. A per-step LLM call would cost more on one long turn than the ack and the closing line together
+- **it cannot drift** — it is the assistant's own sentence, not a guess about what a tool did
+- **no tool vocabulary** — *"Read summarize.sh"* is what a machine would say; the prose explains *why* the file is being read
+
+When several steps go by with no prose at all, the fallback is the last tool activity as a template
+(*"กำลัง Read summarize.sh"*) — thin but true, and better than a silent stretch.
+
+**Why it is not a timer, and why the first version of `max` was wrong.** That version tightened a
+timed **heartbeat** instead — a background sleeper that said *"still working, currently X"* every 45 s,
+ten beats. A clock fires whether or not anything happened, so it narrates a 3-second step never and a
+90-second step twice, and it can only ever name the tool it happens to catch, never *why*. `max` is
+not asking for liveness, it is asking to be told what is happening; that is a property of the **work**,
+so the narrator hooks the step.
+
+**That heartbeat has since been deleted outright**, not merely switched off: in use it read as an odd,
+disembodied interruption, and once the narrator exists there is nothing a clock adds. Mid-turn speech
+is therefore `max`-only and event-driven.
+
+**Three rules keep it from becoming noise**, and each exists because the naive version fails:
+
+| rule | why |
+|---|---|
+| **dedupe** by hash, per session | one prose block introduces *several* tool calls — measured on a real session, 314 prose blocks against 1 523 tool calls (~1 per 5) — so the same sentence would otherwise be spoken five times in a row |
+| **rate floor** of 9 s in the producer, 7 s in the queue | tool calls fire several per second while a spoken line takes 3–6 s; without a floor the queue takes on work faster than it can drain |
+| **staleness** of 12 s, its own queue kind | *"กำลังอ่าน X"* arriving after X is done and two steps have passed describes the wrong moment. This is the only kind whose content goes off in **seconds** — hence harder drop rules than an ack, and last place in line behind results |
+
+It also stays quiet once the turn has **ended**: the closing line owns the end of a turn, and a step
+narration landing after the result describes work the user has already been told about.
+
+**`max` needs `narrate: true` to be itself** — the running commentary is most of what the level buys,
+and `voice.autoplay.narrate: false` keeps the longer ack and closing line while stopping the mid-turn
+talking. `aiworks voice status` says so outright when the two disagree. Regression suite:
+`scripts/voice/narrate-selftest.sh` (12 cases, throwaway tree, stubbed synthesis — costs nothing).
 
 **Three prompt conflicts had to be resolved for it to work at all**, and the room the level adds is
 what surfaced each one:
@@ -193,12 +230,14 @@ set-once preference nobody turns down before production breaks.
 aiworks voice audition "ช่วยเช็ค commission calculator ใน agent-webservice"
 ```
 
-Speaks the same request at all four levels with the character count printed — but not `max`'s
-heartbeat, which only exists inside a long turn and would be a demo of something you have not turned
-on. Cost scales with the level: ack and closing lines never hit the cache, so at 100 turns/day on
-elevenlabs it is roughly **terse $48 · balanced $76 · chatty $105 · max ~$150** per month (the first
-three measured; `max` extrapolated from its 620-character ceiling plus ~$12 of templated, partly
-cached heartbeat). `tts.provider: openai` (voice `sage`) is
+Speaks the same request at all four levels with the character count printed — but not `max`'s step
+narration, which only exists inside a running turn and would be a demo of something you have not
+turned on. Cost scales with the level: every line here is unique text, so none of it hits the cache.
+At 100 turns/day on elevenlabs it is roughly **terse $48 · balanced $76 · chatty $105 · max ~$230**
+per month — the first three measured; `max` extrapolated as ~$142 for its longer ack + closing line
+(620-character ceiling vs terse's 210) plus ~$88 for the narration (~5 lines × 80 chars on an average
+turn, so ~$0.04 a turn; a tool-heavy turn is several times that). `narrate: false` drops that second
+half. `tts.provider: openai` (voice `sage`) is
 ~2.2× cheaper *and* measured best on Thai; `gemini` is ~6× cheaper but slowest and weakest of the
 four. Every vendor's voices were swept — see `scripts/voice/README.md` § Thai voice selection.
 

@@ -49,7 +49,6 @@ voice_cfg_bool voice.autoplay.enabled false || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 session="$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)"
 prompt="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null || true)"
-transcript="$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
 [ -n "$session" ] || session="$root"
 [ -n "$prompt" ] || exit 0
 
@@ -75,12 +74,9 @@ printf '%s' "$prompt" > "$pf"
 ( nohup "$root/scripts/voice/ack.sh" --session "$session" --file "$pf" >/dev/null 2>&1
   rm -f "$pf" ) >/dev/null 2>&1 &
 
-# The long-turn heartbeat watcher. Started here rather than on a timer because THIS is the
-# moment the turn begins; it sleeps, and exits by itself as soon as the turn marker says the
-# turn closed or a newer prompt arrived. `turn` is passed explicitly so the watcher is bound to
-# the turn it was born for and cannot outlive it by reading a fresher marker.
-turn="$(voice_turn_get "$session" turn 2>/dev/null || printf 0)"
-( nohup "$root/scripts/voice/heartbeat.sh" --session "$session" --turn "$turn" \
-    ${transcript:+--transcript "$transcript"} >/dev/null 2>&1 ) >/dev/null 2>&1 &
-
+# NOTHING ELSE IS STARTED HERE. There used to be a long-turn heartbeat watcher — a background sleeper
+# that said "still working, currently X" on a clock — and it was REMOVED, not switched off: in use it
+# read as an odd, disembodied interruption, because a clock cannot know whether anything happened.
+# What replaced it is per-step narration (scripts/voice/narrate.sh, on PostToolUse), which speaks
+# because the WORK moved. Mid-turn speech is therefore `chattiness: max` only, and it is event-driven.
 exit 0

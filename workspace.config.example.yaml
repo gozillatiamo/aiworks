@@ -259,7 +259,13 @@ voice:
     enabled: false
     ack: true                      # a spoken acknowledgement for every prompt
     milestones: true               # the closing line — what the finished turn actually produced
-    heartbeat: true                # "still working, currently X" on a turn that has run long
+    narrate: true                  # the RUNNING COMMENTARY, chattiness: max ONLY (inert elsewhere):
+                                   #   one line per step, spoken WHILE the work happens, taken from
+                                   #   the assistant's own prose — the sentence it writes before
+                                   #   reaching for a tool already says what it is doing and what
+                                   #   comes next, so there is no summarizer call. `false` keeps
+                                   #   max's longer ack + closing line without the mid-turn talking,
+                                   #   which is also this level's main cost lever
     milestone_every_turn: true     # true → EVERY finished turn speaks its result (the half you
                                    #   cannot get from glancing at the screen; a version that spoke
                                    #   only on a declared event announced the START of the work and
@@ -273,16 +279,17 @@ voice:
                                    #   (2-3, + the follow-through) | max (up to 4, the register of a
                                    #   flight engineer reporting in: [subject] [state] [figure], the
                                    #   ack states the ORDER of the work, the closing line lists the
-                                   #   STEPS, and the heartbeat moves to 10 beats from 45 s so a long
-                                   #   run keeps saying where it is — the only level that narrates
-                                   #   the process, and it needs `heartbeat: true` to be itself).
+                                   #   STEPS, and it TALKS THROUGH the turn — one line per step as it
+                                   #   happens — the only level that narrates the process, and it
+                                   #   needs `narrate: true` above to be itself).
                                    #   A CEILING, not a quota — one fact still means one sentence,
                                    #   which is the safety property: given room and nothing to fill
                                    #   it with, a model pads, and padding is one step from inventing.
                                    #   Bad news drops the softener at every level. Cost at 100
                                    #   turns/day × 22 days on elevenlabs: terse ~$48/mo · balanced
-                                   #   ~$76 · chatty ~$105 · max ~$150 (that last one extrapolated
-                                   #   from the character ceiling, not measured).
+                                   #   ~$76 · chatty ~$105 · max ~$230 (that last one extrapolated,
+                                   #   not measured: ~$142 of ack + closing line and ~$88 of
+                                   #   narration at ~5 lines a turn — `narrate: false` drops it).
                                    #   `aiworks voice audition "<a request>"` speaks all four.
   # A voice note attached to the Slack messages the workflow already sends. `aiworks voice mute`
   # deliberately does NOT reach it: that audio is a deliverable for the team — rendered on one
