@@ -28,6 +28,12 @@
 # It overrides this file for everything read at RUNTIME (chat, agents, interactive skills); the
 # committed workflow mirror is always regenerated from THIS shared file only, so your prefs never
 # leak into git. See workspace.config.local.example.yaml.
+#
+# KEEPING THIS TEMPLATE HONEST: a new org bootstraps its config by COPYING this file
+# (`aiworks add` does it automatically), so a key that only ever lands in a live
+# workspace.config.yaml is a feature nobody else can discover. `aiworks config` — which
+# `aiworks sync` runs on every pass — WARNS when a live key is undocumented here. Add the key
+# to this file in the same change, with a neutral/OFF default and the comment that explains it.
 # ─────────────────────────────────────────────────────────────────────────────
 
 org:
@@ -74,6 +80,18 @@ notify:
   channel: "#code-reviews"         # the Slack channel the digest is posted to (id or #name). The token/
                                    #   webhook live in scripts/notify/.env (seeded by `aiworks sync`).
 
+# ── Observability (the traces/logs the perf + triage agents read) ──────────────
+# Where the performance-engineer and performance-triage agents get ground truth about a
+# RUNNING environment. Read through the observability adapter (scripts/observability/),
+# provider-agnostic like vcs/tracker/notify.
+observability:
+  enabled: false                   # true → those agents may pull traces + logs when they
+                                   #   root-cause a deployed-env incident. false → they work
+                                   #   from code, tests and the diff only.
+  provider: signoz                 # signoz (the only provider today)
+  base_url: ""                     # your instance root, e.g. https://signoz.your-org.com — the
+                                   #   API key lives in scripts/observability/.env, never here.
+
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
   provider: notion                 # notion | jira
@@ -103,6 +121,17 @@ branch_model:
 quality_gate:
   provider: sonarqube              # sonarqube | none
 
+# ── Review depth (how much the Review phase is allowed to report) ──────────────
+review:
+  level: strict                    # strict (default) | thorough
+                                   #   strict   → the three review gates (code-reviewer + guardian
+                                   #     + performance) report BLOCKING must-fixes ONLY: no
+                                   #     "[minor / fold-in]" comments, no Improvement tickets. The
+                                   #     merge waits on real defects and nothing else.
+                                   #   thorough → must-fixes AND the nice-to-have tier — small
+                                   #     fold-ins applied inside the same PR/MR, larger follow-ups
+                                   #     filed as Improvement tickets.
+
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:
   auto_approve: true               # auto-approve-plan. true → execution proceeds straight from the
@@ -112,6 +141,28 @@ planning:
   to_html: false                   # plan-to-html. true → each plan is ALSO rendered to a self-contained
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.
+
+# ── Diagram generation (/diagram-ticket) ───────────────────────────────────────
+# Renders a Mermaid diagram for a ticket and attaches it to the ticket (the image + a
+# mermaid.live link so a human can keep editing it) — see docs/agents/diagram-generation.md.
+diagrams:
+  enabled: false                   # MASTER switch (default OFF). A diagram ENHANCES a ticket's
+                                   #   spec rather than being a required deliverable, so when this
+                                   #   is off the step is skipped QUIETLY — unlike the design /
+                                   #   image-generation gates, it never fails a run loudly.
+  provider: mermaid-ink            # mermaid-ink (the only provider today) — no API key needed
+  theme: default                   # default | neutral | dark | forest
+  max_per_ticket: 2                # budget cap: the MOST diagrams attached to a single ticket
+
+# ── Artifacts (publish an .html deliverable as a shareable Claude Artifact) ─────
+artifacts:
+  enabled: false                   # MASTER switch (default OFF). With planning.to_html on, the
+                                   #   rendered plan/doc is a LOCAL file that only its author can
+                                   #   open; true → it is ALSO published as a (private) Claude
+                                   #   Artifact and the run reports the URL, which is what makes it
+                                   #   reviewable by someone else. Publishing is main-agent-only —
+                                   #   a subagent hands the prepped file back — and sharing it with
+                                   #   the org stays MANUAL. See docs/agents/plan-artifacts.md.
 
 # ── Design (governs ALL Figma usage across the workspace) ──────────────────────
 # How the team works with Figma — see docs/agents/figma.md for the full convention.
@@ -146,6 +197,129 @@ image_generation:
                                    #   (seeded into .claude/settings.local.json env by `aiworks sync`).
   max_per_request: 2               # budget cap: the MOST generations the graphic-designer fires per
                                    #   request (keeps Gemini spend bounded). Raise only when needed.
+
+# ── Voice (scripts/voice/) — spoken acknowledgements, milestones, dictation ────
+# A `th`-ONLY FEATURE, OFF BY DEFAULT, and per-person. The gate lives in scripts/voice/lib.sh:
+# with any other `language` every voice command exits 0 SILENTLY (run it with -v to hear why),
+# so this block is inert for the whole team as shipped. A teammate opts in through the
+# git-ignored workspace.config.local.yaml — never by editing this file.
+# Credentials never live here: ~/.config/aiworks/voice.env (mode 600), with scripts/voice/.env
+# as a per-clone override. Full doc: docs/agents/voice.md · scripts/voice/README.md
+voice:
+  enabled: false                   # MASTER switch for the whole feature
+  tts:
+    provider: elevenlabs           # elevenlabs | openai | cartesia | gemini
+                                   #   Not interchangeable. Measured on Thai+English dev sentences
+                                   #   (README § Thai voice selection), best voice of each vendor,
+                                   #   median of 5 transcription passes — how many English technical
+                                   #   terms survive as Latin script, and how fast:
+                                   #     openai      98 %, 2.3 s, ~$45/1M chars — best measured
+                                   #     cartesia    95 %, FASTEST (1.8 s), native Thai voices
+                                   #     elevenlabs  86 %, 4.2 s, ~$100/1M — most CONSISTENT voice
+                                   #     gemini      84 %, slowest + variable, ~6× cheaper than 11labs
+    # Voice ids are keyed BY PROVIDER on purpose: switching `provider` must never carry a voice
+    # id from the wrong vendor. Each default below is that vendor's BEST-MEASURED Thai voice, not
+    # its most famous one. A one-sentence audition cannot rank these — the transcriber is the
+    # noisy component (byte-identical audio scored 0/6 then 6/6 on consecutive passes), which is
+    # why every number here is a median of five passes over five sentences.
+    voice:
+      elevenlabs: "EXAVITQu4vr4xnSDxMaL"                 # Sarah (f) — steadiest measured (±1)
+      cartesia: "ccc7bb22-dcd0-42e4-822e-0731b950972f"   # Suda (f, native Thai)
+      gemini: "Leda"                                     # (f) — on Thai the MODEL decides, not the voice
+      openai: "sage"                                     # (f) — best Thai voice of any vendor here
+    loudness: -16                  # integrated loudness (EBU R128) every synthesized line is
+                                   #   levelled to, -1.5 dBTP ceiling. NOT cosmetic: vendors ship
+                                   #   wildly different volumes and so do voices inside one vendor
+                                   #   (17 LU apart, measured), so switching provider silently
+                                   #   changed how loud the assistant was. It also makes `--cue`
+                                   #   meaningful — the bed gain is a fixed number, which can only
+                                   #   mean one thing if the voice under it is at one level.
+                                   #   `off` disables it. Re-level an existing cache with
+                                   #   `aiworks voice normalize` (local ffmpeg, no API spend).
+  stt:
+    provider: openai               # openai (gpt-4o-transcribe, best measured) | gemini (cheapest)
+                                   #   | elevenlabs (accurate, over-capitalizes)
+  # Turns a finished turn into the ONE line that gets spoken. Model is keyed by provider for the
+  # same reason the voice id is. `claude` means the headless CLI (`claude -p`), no API key needed.
+  summarizer:
+    provider: openai               # openai | gemini | claude
+    model:
+      openai: gpt-4o-mini
+      gemini: gemini-2.5-flash
+      claude: claude-haiku-4-5-20251001
+  sfx:
+    provider: elevenlabs           # sound effects (the cues mixed under a spoken line)
+  # Local speech. `enabled` is the master switch; the three below are independently useful — the
+  # per-prompt acks are the first thing to tire of, while the milestones are the reason to turn
+  # any of this on, so one flag for all three would force an all-or-nothing choice.
+  # To go quiet for a while use `aiworks voice mute on` instead of editing this: it applies
+  # machine-wide at once and DISABLES what the machine says (nothing summarized, nothing
+  # synthesized, so it then costs nothing) without touching `notify_voice` or dictation.
+  autoplay:
+    enabled: false
+    ack: true                      # a spoken acknowledgement for every prompt
+    milestones: true               # the closing line — what the finished turn actually produced
+    heartbeat: true                # "still working, currently X" on a turn that has run long
+    milestone_every_turn: true     # true → EVERY finished turn speaks its result (the half you
+                                   #   cannot get from glancing at the screen; a version that spoke
+                                   #   only on a declared event announced the START of the work and
+                                   #   then never said it was done). A turn can name its own line
+                                   #   with a `VOICE[group]: …` tag — free, exact, and it picks the
+                                   #   cue; without one the reply is summarized (~$0.01/turn).
+                                   #   false → the conservative mode: only a TAGGED turn speaks.
+    chattiness: terse              # HOW MUCH it says when it speaks, never WHETHER (that is the
+                                   #   four switches above): terse (1 sentence, facts only) |
+                                   #   balanced (1-2, + a softener and a short reaction) | chatty
+                                   #   (2-3, + the follow-through). A CEILING, not a quota — one
+                                   #   fact still means one sentence, which is the safety property:
+                                   #   given room and nothing to fill it with, a model pads, and
+                                   #   padding is one step from inventing. Bad news drops the
+                                   #   softener at every level. Cost at 100 turns/day × 22 days on
+                                   #   elevenlabs: terse ~$48/mo · balanced ~$76 · chatty ~$105.
+                                   #   `aiworks voice audition "<a request>"` speaks all three.
+  # A voice note attached to the Slack messages the workflow already sends. `aiworks voice mute`
+  # deliberately does NOT reach it: that audio is a deliverable for the team — rendered on one
+  # machine, heard on someone else's phone — so it is a standing decision made HERE, not a side
+  # effect of one person's speakers being quiet for a call.
+  notify_voice:
+    enabled: false
+  push_to_talk:
+    enabled: false
+    hotkey: "left_cmd+right_cmd"   # Both ⌘ keys — left and right are separate keycodes, so a
+                                   #   side-specific chord collides with nothing, and the two
+                                   #   together do nothing on their own. `fn+…` works ONLY on a
+                                   #   built-in Apple keyboard: an external keyboard's fn is handled
+                                   #   in its own firmware and never reaches macOS (measured).
+    mic: default                   # `default` follows System Settings → Sound → Input, so plugging
+                                   #   in a headset moves dictation with it. A device NAME pins it.
+                                   #   An avfoundation INDEX is never accepted — the numbering
+                                   #   changes with whatever is plugged in, and a wrong index
+                                   #   records the wrong room.
+    preview:
+      provider: elevenlabs         # none | elevenlabs | openai — live transcript in the HUD
+      window_seconds: 12           # the HUD re-transcribes only the last N seconds. Re-sending the
+                                   #   whole prefix made the lag GROW with the utterance (0.98 s at
+                                   #   2 s of audio, 1.86 s at 10 s); a trailing window keeps it flat
+                                   #   at ~1.5 s. The text that gets TYPED is always the accurate
+                                   #   pass over the COMPLETE recording, so nothing is lost.
+    auto_send: true                # forced false when preview.provider is none
+  cache:
+    max_mb: 500                    # the synthesized-audio cache (LRU by access time). The key is
+                                   #   provider|voice|model|cue|mix|text, so a repeated line is free.
+
+# ── Deployed-env triage MCPs (read-only pg_triage + redis_triage) ──────────────
+# Whether THIS machine carries the read-only triage MCP servers, reconciled by `aiworks sync`
+# via scripts/triage-mcp.sh. Both keys are read LOCAL-FIRST. See docs/adr/0005.
+triage:
+  enabled: true                    # register both servers (LOCAL scope). ON by default: STAGING
+                                   #   triage needs no authorization, so making everyone flip a flag
+                                   #   before they can look at staging is friction with no payer.
+                                   #   false → keep both out of every session on this machine.
+  prod: false                      # the PRODUCTION opt-in, per PERSON (default OFF) — enforced
+                                   #   INSIDE the servers (scripts/lib/triage_policy.py), so an
+                                   #   env="prod" call is refused until it is true even on a machine
+                                   #   that HAS the prod DSNs. Set it in the git-ignored
+                                   #   workspace.config.local.yaml, which wins over this file.
 
 # ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
 # A product groups the repos that ship together. Each product is ONE
