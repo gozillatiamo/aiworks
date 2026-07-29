@@ -302,12 +302,25 @@ voice_sha() { printf '%s' "$1" | shasum -a 256 | cut -c1-40; }
 #   MR · PR               "MR" is read as the honorific Mr. — "มี MR รอ review" came out as
 #                         "มี mister รอ review". Expanded to the words they stand for, in
 #                         English, which is what a Thai dev says anyway.
+#   142 · 8% · 12         A QUANTITY IS STILL SPOKEN IN A LANGUAGE, and the vendors disagree on
+#                         which. Measured on the same Thai sentences: ElevenLabs reads every
+#                         numeral in ENGLISH mid-Thai-sentence ("มี two must fix", "450
+#                         milliseconds", "8%" as "eight percent"), while OpenAI, Cartesia and
+#                         Gemini read them in Thai. Bare "1 2 3 … 10" came out English on
+#                         ElevenLabs and Gemini both. So the digits are converted to Thai number
+#                         WORDS here, and what the assistant says stops depending on which
+#                         vendor is configured.
 #
-# ORDINARY NUMBERS ARE LEFT ALONE. "3 must-fix", "12 tests", "5 นาที" are quantities and must
-# stay quantities — only a ticket key's digits are split. A key is recognised by the workspace's
-# own tracker.ticket_prefix (any digit count, either case, so a branch matches too), plus a
-# generic UPPERCASE-3+DIGITS fallback for another project's key — 3 digits, so "UTF-8" and
-# "gpt-4o" are not identifiers as far as this is concerned.
+# A QUANTITY IS STILL A QUANTITY. "142" becomes "หนึ่งร้อยสี่สิบสอง", the number — not the four
+# digits, which is the identifier reading and is reserved for ticket keys. A key is recognised by
+# the workspace's own tracker.ticket_prefix (any digit count, either case, so a branch matches
+# too), plus a generic UPPERCASE-3+DIGITS fallback for another project's key — 3 digits, so
+# "UTF-8" and "gpt-4o" are not identifiers as far as this is concerned. Keys are spelled FIRST,
+# so their digits are already words by the time the quantity pass runs and cannot be re-read.
+#
+# Anything glued to an ASCII letter or to `.`/`:`/`-` is left alone, which is what keeps
+# `gpt-4o`, `eleven_v3`, `UTF-8`, `sonic-3` and `14:30` out of it. A decimal is read the Thai
+# way — the integer part as a number, then "จุด" and the fraction digit by digit.
 voice_spoken_form() {
   local text="${1:-}" prefix
   [[ -n "$text" ]] || return 0
@@ -326,6 +339,45 @@ text, prefix = sys.argv[1], sys.argv[2]
 TH = {"0": "ศูนย์", "1": "หนึ่ง", "2": "สอง", "3": "สาม", "4": "สี่",
       "5": "ห้า", "6": "หก", "7": "เจ็ด", "8": "แปด", "9": "เก้า"}
 def spell(n): return " ".join(TH[c] for c in n)
+
+# Thai reading of a number. The three irregulars are not optional — a Thai listener hears
+# "ยี่สิบหนึ่ง" as a foreigner speaking: 20 is ยี่สิบ (not สองสิบ), a lone 10 is สิบ (not หนึ่งสิบ),
+# and a trailing 1 is เอ็ด — but ONLY when the tens digit above it is non-zero.
+#
+# That last condition is the whole rule, and getting it wrong is not subtle to a native ear:
+#   21 → ยี่สิบเอ็ด        11 → สิบเอ็ด        121 → หนึ่งร้อยยี่สิบเอ็ด     (tens non-zero ⇒ เอ็ด)
+#   101 → หนึ่งร้อยหนึ่ง   1001 → หนึ่งพันหนึ่ง   1101 → หนึ่งพันหนึ่งร้อยหนึ่ง  (tens 0 ⇒ หนึ่ง)
+# เอ็ด belongs to the …สิบเอ็ด position specifically; a 0 in the tens place always gives หนึ่ง.
+UNITS = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน"]
+def th_int(n):
+    if n == 0:
+        return "ศูนย์"
+    if n >= 10 ** 6:                       # ล้าน is a full group, and it nests: 100000000 = หนึ่งร้อยล้าน
+        head, rest = divmod(n, 10 ** 6)
+        return th_int(head) + "ล้าน" + (th_int(rest) if rest else "")
+    s, out = str(n), ""
+    tens = int(s[-2]) if len(s) >= 2 else 0
+    for i, c in enumerate(s):
+        d, place = int(c), len(s) - 1 - i
+        if d == 0:
+            continue
+        if place == 1 and d == 2:
+            out += "ยี่สิบ"
+        elif place == 1 and d == 1:
+            out += "สิบ"
+        elif place == 0 and d == 1 and tens != 0:
+            out += "เอ็ด"
+        else:
+            out += TH[c] + UNITS[place]
+    return out
+
+def th_number(tok):
+    if "." in tok:                          # 0.915 → ศูนย์ จุด เก้า หนึ่ง ห้า
+        whole, frac = tok.split(".", 1)
+        return th_int(int(whole)) + " จุด " + spell(frac)
+    # Past a million-and-a-half digits nothing is a quantity any more — that is an id someone
+    # wrote without a prefix, so read it as digits rather than inventing a magnitude.
+    return th_int(int(tok)) if len(tok) <= 9 else spell(tok)
 
 # Lookarounds on ASCII only, never \b: \w is unicode-aware, so "มีMRรอ" (Thai runs together
 # without spaces) would fail a \b test and keep the honorific reading.
@@ -359,8 +411,20 @@ text = re.sub(NB + r"MR(?![A-Za-z0-9])", " merge request ", text)
 text = re.sub(NB + r"PR(?![A-Za-z0-9])", " pull request ", text)
 text = BRANCH.sub(branch, text)
 text = spell_keys(text)
+
+# QUANTITIES, last — after every identifier has already become words. The guard on both sides is
+# what keeps a version or a time out of it: a digit run touching an ASCII letter, `.`, `:` or `-`
+# is part of something else (gpt-4o, eleven_v3, UTF-8, 14:30, 2026-07-29), not a count. The
+# decimal form is matched as one token so "0.915" is not read as two numbers.
+QTY = re.compile(r"(?<![A-Za-z0-9.:-])(\d+(?:\.\d+)?)(?![A-Za-z0-9.:-])")
+text = QTY.sub(lambda m: " " + th_number(m.group(1)) + " ", text)
+# Only now, so "8%" has already become "แปด %". Read verbatim the sign comes out as English
+# "percent" on the same engines that read the numeral in English.
+text = text.replace("%", " เปอร์เซ็นต์ ")
 text = re.sub(r"  +", " ", text)
-# "!" is deliberately not in the set: `MR !12` is a GitLab number, and it reads as one.
+# "!" is deliberately not in the set: `MR !12` is a GitLab number, and it reads as one — so the
+# space the quantity pass inserts after it is taken back out, or it becomes "! สิบสอง".
+text = re.sub(r"! +", "!", text)
 text = re.sub(r" +([.,;:?)])", r"\1", text)
 sys.stdout.write(text.strip())
 ' "$text" "$prefix" 2>/dev/null || printf '%s' "$text"
@@ -394,6 +458,62 @@ voice_is_focused() {   # [SESSION]
 # in the key, because the cache holds the FINISHED (already mixed) file.
 voice_cache_key() {
   voice_sha "$(printf '%s|%s|%s|%s|%s|%s' "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}" "$(voice_normalize_text "$1")")"
+}
+
+# ── loudness ──────────────────────────────────────────────────────────────────────
+# EVERY VENDOR SHIPS A DIFFERENT VOLUME, and so does every voice inside a vendor. Measured on
+# one sentence: ElevenLabs Sarah −14.1 LUFS · Gemini Leda −19.2 · OpenAI nova −19.7 · Cartesia
+# Somchai −22.6 · Cartesia Suda −28.8 · OpenAI sage −31.5. That is an 17 LU spread — roughly
+# "three times quieter" by ear, and it was audible the first time two providers were auditioned
+# back to back. Two things break because of it:
+#
+#   · switching `voice.tts.provider` (or just the voice) silently changes how loud the
+#     assistant is, so the system volume you set yesterday is wrong today;
+#   · `--cue`'s bed level is a FIXED gain (`CUE_VOL`, 0.22), so the same number buries the cue
+#     under Sarah and lets it drown sage.
+#
+# So every synthesized line is normalized to one target before it is mixed and cached. A cache
+# hit pays nothing: this runs on the synthesis path only.
+voice_loudness_target() {   # prints the target LUFS, or nothing when normalization is off
+  local t; t="$(voice_cfg voice.tts.loudness -16)"
+  case "$t" in off|none|false|"") return 0 ;; esac
+  printf '%s' "$t"
+}
+
+_voice_ln_field() { printf '%s\n' "$1" | sed -nE "s/.*\"$2\"[^\"]*\"([^\"]*)\".*/\1/p"; }
+
+# voice_loudnorm IN OUT — two-pass EBU R128 normalization to voice_loudness_target.
+#
+# `linear=true` makes it ONE gain change across the clip, so the voice's own dynamics survive;
+# ffmpeg falls back to its dynamic mode only when linear gain cannot reach the target without
+# breaching the −1.5 dBTP ceiling. Measured on the sweep clips: an 18.4 LU spread collapsed to
+# 0.8 LU with every true peak at or under −1.7 dBFS.
+#
+# FAIL-OPEN on every path: the caller keeps the original file. A sentence already paid for must
+# never be lost to a cosmetic step — the same rule the cue mix follows.
+voice_loudnorm() {
+  local in="$1" out="$2" target json I TP LRA THR OFF
+  target="$(voice_loudness_target)"
+  [[ -n "$target" ]] || return 1
+  command -v ffmpeg >/dev/null 2>&1 || { vlog "loudnorm skipped: no ffmpeg"; return 1; }
+
+  json="$(ffmpeg -hide_banner -nostats -i "$in" \
+            -af "loudnorm=I=$target:TP=-1.5:LRA=11:print_format=json" -f null - 2>&1 \
+          | sed -n '/^{/,/^}/p')" || { vlog "loudnorm: measure pass failed"; return 1; }
+  I="$(_voice_ln_field "$json" input_i)";       TP="$(_voice_ln_field "$json" input_tp)"
+  LRA="$(_voice_ln_field "$json" input_lra)";   THR="$(_voice_ln_field "$json" input_thresh)"
+  OFF="$(_voice_ln_field "$json" target_offset)"
+  [[ -n "$I" && -n "$TP" && -n "$LRA" && -n "$THR" && -n "$OFF" ]] \
+    || { vlog "loudnorm: could not read the measurement"; return 1; }
+  # A clip measured as silence has no gain that fixes it, and `-inf` poisons the apply pass.
+  case "$I" in -inf*|inf*|nan*) vlog "loudnorm: input measured $I — left alone"; return 1 ;; esac
+
+  ffmpeg -y -hide_banner -loglevel error -i "$in" -af \
+    "loudnorm=I=$target:TP=-1.5:LRA=11:measured_I=$I:measured_TP=$TP:measured_LRA=$LRA:measured_thresh=$THR:offset=$OFF:linear=true" \
+    -c:a libmp3lame -b:a 128k "$out" \
+    || { rm -f "$out"; vlog "loudnorm: apply pass failed"; return 1; }
+  [[ -s "$out" ]] || { rm -f "$out"; vlog "loudnorm: apply pass wrote nothing"; return 1; }
+  vlog "loudnorm: $I LUFS → $target LUFS"
 }
 
 # ── cache size ────────────────────────────────────────────────────────────────────
