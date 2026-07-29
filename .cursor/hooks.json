@@ -109,6 +109,10 @@
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repo-health-check.sh'",
         "timeout": 15
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-ack.sh'",
+        "timeout": 10
       }
     ],
     "sessionStart": [
@@ -134,6 +138,10 @@
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/slack-postback.sh'",
         "timeout": 30
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-milestone.sh'",
+        "timeout": 10
       }
     ]
   }

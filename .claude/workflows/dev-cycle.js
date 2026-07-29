@@ -761,7 +761,11 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
 // human to merge — so we ping the team to review them. Gated on notify.enabled (NOTIFY). With
 // auto-merge ON the run merges + distributes itself (nothing to review), so this is never
 // reached. Best-effort: a send failure NEVER changes the run's outcome — the PRs are already
-// open + validated. The /notify skill owns the digest: `scripts/notify/send.sh --review <KEY>`
+// open + validated. The command is `scripts/voice/notify-voice.sh`, which is send.sh plus a
+// voice note: when `voice.notify_voice.enabled` is on (a `th`-only, opt-in, per-machine flag) the
+// review request goes out as ONE message carrying the text AND a short spoken line; with the flag
+// off — the shipped default, so this is a no-op for the team — it forwards to send.sh verbatim.
+// The /notify skill owns the digest: `scripts/notify/send.sh --review <KEY>`
 // GATHERS the ticket's open PR/MR across every workspace repo, composes the message, and sends —
 // one source of truth for format + gather (no repo missed, nothing hand-assembled here). This
 // phase only decides WHETHER to notify: repoResults gives a cheap "is there any open PR?" check
@@ -778,7 +782,7 @@ async function notifyReview(reposInOrder) {
   const r = await safeAgent(
     `${tag('all', 'notifier', 'notify')} Post the review-request notification for ${ticket} via the /notify skill. ONE command does it all — it gathers the ticket's open PR/MR across every workspace repo, composes the digest, and sends. Run it from the WORKSPACE (org) ROOT (the dir holding .claude/); do NOT cd into a repo, touch git, or the tracker.
 
-scripts/notify/send.sh --review ${ticket}${titleArg}${channelArg}
+scripts/voice/notify-voice.sh --review ${ticket}${titleArg}${channelArg}
 
 On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY if it exited 0 (printed ok=1), with the permalink + channel="${NOTIFY_CHANNEL}" when printed; on ANY failure (including "no open PR/MR found … nothing to announce") return sent:false with the command's stderr in note. Do NOT retry more than once.`,
     { agentType: 'documentor', phase: 'Notify', label: `notify:${ticket}`, schema: NOTIFY_SCHEMA },

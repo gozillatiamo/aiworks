@@ -281,6 +281,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repo-health-check.sh",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-ack.sh",
+            "timeout": 10
           }
         ]
       }
@@ -293,6 +298,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/slack-postback.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-milestone.sh",
+            "timeout": 10
           }
         ]
       }

@@ -48,3 +48,38 @@
 # triage:
 #   prod: true
 #   enabled: false
+
+# Let the workspace TALK — a spoken acknowledgement per prompt, a line when something actually
+# happens, a voice note on the Slack messages it already sends, and hold-to-dictate.
+#
+# `th`-ONLY BY DESIGN, and off in the shared config, so this file is the only way in. With any
+# other `language` every voice command exits 0 silently (run it with -v to hear why). Run
+# `aiworks voice setup` first, then `aiworks voice test`.
+#
+# COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn now speaks a closing
+# line, and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
+# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo. (An earlier note here
+# said $14–24 — that was from when milestones almost never spoke.) `tts.provider: gemini` is ~6×
+# cheaper for 3 % fewer surviving English terms.
+#
+# To go quiet for a while, do NOT edit this back: `aiworks voice mute on` disables what the machine
+# SAYS, machine-wide, and it then costs nothing at all. It does not touch `notify_voice` (audio for
+# the team — config only) or dictation. `aiworks voice status` prints every switch, in order.
+# Full doc: docs/agents/voice.md · reference: scripts/voice/README.md
+# voice:
+#   enabled: true
+#   autoplay:
+#     enabled: true       # local speech; `ack`, `milestones`, `heartbeat` switch independently
+#     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
+#     # + a softener and a short reaction) | chatty (2-3, + the follow-through). Ceiling, not
+#     # quota — one fact still means one sentence. `aiworks voice audition "…"` compares all three.
+#     chattiness: balanced
+#   notify_voice:
+#     enabled: true       # attach a voice note to the review-request / ship messages
+#   push_to_talk:
+#     enabled: true
+#     # Both ⌘ keys. `fn+…` works ONLY on a built-in Apple keyboard — an external keyboard's fn is
+#     # firmware-local and never reaches macOS (measured). Left/right are separate keycodes, so a
+#     # side-specific chord collides with no existing shortcut.
+#     hotkey: "left_cmd+right_cmd"
+#     mic: default        # follows System Settings → Sound → Input; or a device NAME. Never an index
