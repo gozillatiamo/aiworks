@@ -12,7 +12,7 @@
 #   voice_normalize_text       whitespace-normalize the spoken text (part of the cache key)
 #   voice_spoken_form TEXT     rewrite written text into what should be SAID (ids, MR/PR)
 #   voice_chattiness           terse | balanced | chatty | max — how MUCH it says when it speaks
-#   voice_heartbeat_gaps       the mid-turn cadence for that level (the only channel `max` adds)
+#   voice_narrate_get / _set   what the `max` step narrator last said, per session (dedupe + rate)
 #   voice_focus_set / _is_focused   which worktree the user is currently prompting in
 #   voice_is_muted             one machine-global file: muted ⇒ the feature spends NOTHING
 #
@@ -147,7 +147,7 @@ voice_language() {
 
 # ── chattiness ────────────────────────────────────────────────────────────────────
 # How much it says when it speaks — NOT whether it speaks. "When" already has four switches
-# (autoplay.ack / .milestones / .heartbeat / .milestone_every_turn); a fifth thing that could also
+# (autoplay.ack / .milestones / .milestone_every_turn / .narrate); a fifth thing that could also
 # produce silence would give "why is it quiet?" five possible answers and no way to tell which.
 #
 #   terse      one sentence, facts only, no softener and no reaction word. Byte-for-byte the
@@ -158,14 +158,16 @@ voice_language() {
 #              what is waiting for you).
 #   max        up to four, in the register of a flight engineer reporting to the person in charge:
 #              every sentence is [subject] [state] [figure] addressed to them, the STEPS are named
-#              in the order they happen, and the heartbeat tightens so a long run keeps saying
-#              where it is. The one level that narrates the process rather than only the outcome.
+#              in the order they happen — AND a running narration mid-turn: one line per step,
+#              spoken as the work happens (narrate.sh). The one level that narrates the process
+#              rather than only the outcome.
 #
-# `terse`…`chatty` reach ack.sh and milestone.sh ONLY. `max` additionally reaches the heartbeat's
-# SCHEDULE (voice_heartbeat_gaps below) — never its words. The Slack voice note stays one canonical
-# sentence per event at every level (its repetition is what makes it free — it hits the audio cache
-# — and that audio is the team's, not this machine's), and the identity prefix is an identifier
-# with nothing to lengthen.
+# `terse`…`chatty` reach ack.sh and milestone.sh ONLY — so at those levels nothing at all is spoken
+# between the ack and the closing line. `max` additionally turns on narrate.sh, the step narrator,
+# which is now the ONLY mid-turn voice there is (the timed heartbeat that used to fill that space was
+# removed). The Slack voice note stays one canonical sentence per event at every level (its repetition
+# is what makes it free — it hits the audio cache — and that audio is the team's, not this
+# machine's), and the identity prefix is an identifier with nothing to lengthen.
 #
 # An unreadable value falls back to `terse` rather than aborting: a typo in a personal config file
 # must not take speech down, and falling back to the DOCUMENTED default is more predictable than
@@ -183,28 +185,41 @@ voice_chattiness() {
   esac
 }
 
-# ── the heartbeat cadence, keyed by chattiness ─────────────────────────────────────
-# `max` is the only level that reaches the heartbeat, and it reaches the SCHEDULE, not the words:
-# same template, same near-free audio cache, just sooner and more often. That IS the level's whole
-# point — a run you are not watching keeps telling you where it is, instead of going quiet between
-# "starting" and "done" — and it is still "how much", never "whether": `autoplay.heartbeat: false`
-# vetoes every level alike, and `max` does not override it (a level that could switch a channel back
-# on would make "why is it quiet?" unanswerable, which is the rule the whole ladder is built on).
+# ── narration state (the `max` step narrator) ─────────────────────────────────────
+# WHY THE FIRST ATTEMPT AT `max` WAS WRONG, since this replaces it: it tightened a timed HEARTBEAT
+# (45 s, ten beats) — a background sleeper that said "still working, currently <last tool>". A clock
+# fires whether or not anything happened, so it narrates a 3-second step never and a 90-second step
+# twice, and it can only name the tool it happens to catch, never why. That is a liveness ping, and
+# `max` is not asking for liveness: it is asking to be TOLD WHAT IS HAPPENING, which is a property of
+# the WORK, not of elapsed time. The heartbeat has since been DELETED outright rather than left off:
+# in use it read as an odd, disembodied interruption, and nothing wants it back.
 #
-# The words stay a template even here. Routing ten beats through the summarizer would cost more per
-# long turn than the ack and the closing line together, for prose nobody listens to closely — and
-# the summarizer's input mid-turn is a tool call, not a result, so it has nothing to summarize.
+# So `max` is event-driven: every tool call is a step, and the narrator speaks THE ASSISTANT'S OWN
+# PROSE — the line it writes before reaching for a tool ("อ่าน queue ก่อน แล้วค่อยแก้ cadence"),
+# which is already exactly "what I am doing and what I am about to do". It costs no summarizer call,
+# it cannot drift from the truth, and it needs no model of its own.
 #
-#   terse|balanced|chatty   90 s, 3 min, then 5 min × 4 — 6 beats, ~24 min of cover
-#   max                     45 s, 1 min, 90 s, then 2–5 min — 10 beats, ~29 min of cover
-#
-# BOTH schedules back off and both are capped, at every level. A fixed short interval across a
-# twenty-minute dev-cycle speaks thirteen times and becomes the thing you mute.
-voice_heartbeat_gaps() {
-  case "$(voice_chattiness)" in
-    max) printf '45 60 90 120 180 180 240 240 300 300' ;;
-    *)   printf '90 180 300 300 300 300' ;;
-  esac
+# This file is that channel's whole memory, because every PostToolUse hook is a FRESH process:
+#   hash   what was last spoken. One prose block introduces SEVERAL tool calls (measured on a real
+#          session: 314 prose blocks against 1 523 tool calls, ~1 per 5), so without this the same
+#          sentence would be spoken five times in a row.
+#   ts     when. Tool calls fire several per second while a spoken line takes seconds, so the
+#          narrator needs a floor between utterances or it queues faster than it can drain.
+voice_narrate_file() { printf '%s/nar-%s.json' "$VOICE_TURN_DIR" "$(voice_sha "${1:-default}")"; }
+
+voice_narrate_get() {   # SESSION FIELD(hash|ts) → value ("" / 0 when unknown)
+  local f v; f="$(voice_narrate_file "$1")"
+  [[ -f "$f" ]] || { [[ "$2" == "ts" ]] && printf 0; return 0; }
+  v="$(jq -r --arg k "$2" '.[$k] // empty' "$f" 2>/dev/null || true)"
+  if [[ "$2" == "ts" ]]; then [[ "$v" =~ ^[0-9]+$ ]] || v=0; fi
+  printf '%s' "$v"
+}
+
+voice_narrate_set() {   # SESSION HASH
+  voice_mkdirs
+  local f; f="$(voice_narrate_file "$1")"
+  jq -n --arg h "$2" --argjson t "$(voice_now)" '{hash: $h, ts: $t}' > "$f.tmp" 2>/dev/null \
+    && mv "$f.tmp" "$f"
 }
 
 # ── the gate ──────────────────────────────────────────────────────────────────────
@@ -621,7 +636,7 @@ voice_stt_hint() {
 # point — the alternative was paying an LLM call and a TTS call per turn to render audio into
 # muted speakers.
 #
-# It covers ack, milestone, heartbeat, the identity prefix and a direct speak.sh alike. A person
+# It covers ack, milestone, narration, the identity prefix and a direct speak.sh alike. A person
 # who mutes by hand means "stop", not "a bit less".
 #
 # TWO THINGS IT DELIBERATELY DOES NOT COVER, because neither is this machine talking:

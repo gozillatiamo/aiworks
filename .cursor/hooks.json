@@ -95,6 +95,10 @@
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-codegraph-sync.sh'",
         "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
+        "timeout": 10
       }
     ],
     "beforeSubmitPrompt": [

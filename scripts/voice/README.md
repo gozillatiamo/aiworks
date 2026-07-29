@@ -10,7 +10,7 @@ something lands, and push-to-talk dictation. Same shape as the other adapters �
 directly by a skill or agent that could just as well go through the entry script.
 
 **Status: complete and in use.** The core, cues, the per-prompt acknowledgement, the closing
-line, the long-turn heartbeat, Slack voice notes and push-to-talk dictation are all built.
+line, the per-step narration, Slack voice notes and push-to-talk dictation are all built.
 Dictation still needs four **manual** steps before it works — `aiworks voice ptt install`
 prints them, and `aiworks voice ptt doctor` says which one is missing.
 
@@ -27,7 +27,7 @@ voice.enabled            ⇒ voice runs   false              ⇒ exit 0, prints 
 voice.autoplay.enabled   ⇒ speech runs  false              ⇒ the hooks do nothing
 ```
 
-Under `autoplay` the three kinds switch independently — `ack`, `milestones`, `heartbeat` —
+Under `autoplay` the three kinds switch independently — `ack`, `milestones`, `narrate` —
 because they wear out at different rates. A spoken line for every prompt is the first thing to
 tire of; a line when an MR lands is the reason to turn any of this on.
 
@@ -315,7 +315,7 @@ aiworks voice mute          # report (bare form never toggles — a mute you can
 One file, `~/.cache/aiworks/voice/mute`. Present ⇒ silent, absent ⇒ speech.
 
 - **An off switch, not a volume knob.** Muted, nothing is summarized and nothing is
-  synthesized — ack, milestone, heartbeat, identity prefix, dictation cues and a direct
+  synthesized — ack, milestone, narration, identity prefix, dictation cues and a direct
   `speak.sh` alike. So speech costs **zero** while it is on, instead of paying for an LLM call
   and a TTS call per turn to render audio nobody hears.
 - **Global.** Machine-wide, so every clone and worktree goes quiet at once.
@@ -461,26 +461,18 @@ scripts/voice/milestone.sh -v --say '[ship] OFB-1952 merged แล้วคร�
 scripts/voice/milestone.sh -v --text "<a reply>"                        # test classification
 ```
 
-## Heartbeat
+## Mid-turn speech: there used to be a heartbeat, and it was removed
 
-On a turn that has run long, "still working, currently X" — where X is the last tool call read
-from the transcript. 90 s, then 3 min, then 5 min, capped at six; a fixed interval would speak
-thirteen times during a twenty-minute `dev-cycle` run and become the thing you mute.
+`heartbeat.sh` was a background sleeper spawned per turn that said *"ยังทำงานอยู่ครับ ตอนนี้ X"* on a
+clock — 90 s, then 3 min, then 5 min, capped at six. **Deleted, not defaulted off.** In use it read as
+an odd, disembodied interruption, and the reason is structural rather than a matter of tuning: a clock
+fires whether or not anything happened, so it narrates a 3-second step never and a 90-second step
+twice, and it can only name whichever tool it happens to catch — never why that tool.
 
-**`chattiness: max` tightens the schedule** to 45 s · 1 min · 90 s · then 2–5 min, ten beats, ~29 min
-of cover (`voice_heartbeat_gaps`, lib.sh) — that level's whole point is a run that keeps saying where
-it is, and this is the only channel that speaks *while* the work happens. Both schedules back off and
-both are capped. The **words are identical at every level**; only the cadence moves. And
-`voice.autoplay.heartbeat: false` still wins at `max` too: a chattiness level must never switch a
-channel back on, or "why is it quiet?" stops having one answer.
-
-No LLM call: the line is a template, because a heartbeat's whole value is *alive, and doing X*.
-The elapsed minutes are deliberately **not** spoken — they would make every heartbeat a unique
-string and turn a permanent cache hit into a synthesis every time.
-
-Queued as an `ack`, not a milestone: it is the most droppable thing here, so it should inherit
-exactly the ack rules (stale at 30 s, superseded by a newer one, silent inside 20 s of anything
-else). The watcher exits the moment the turn closes or a newer prompt arrives.
+Mid-turn speech is now the **step narrator** (below): `chattiness: max` only, one line per step,
+spoken because the WORK moved. At every other level nothing at all is spoken between the ack and the
+closing line, which is the honest shape of the ladder — if you want to be talked through a turn, that
+is what `max` is for.
 
 ## Slack voice notes
 
@@ -570,16 +562,16 @@ overridable per call with `VOICE_CHATTINESS` or `summarize.sh --chattiness`.
 
 **Scope: how much, never whether.** "Whether" has four switches already; a fifth that could also
 produce silence would give "why is it quiet?" five answers. `terse`…`chatty` reach the **ack +
-closing line** only; `max` also moves the **heartbeat's cadence** (never its words —
-`voice_heartbeat_gaps`). The Slack voice note stays one canonical sentence at every level, because its
-repetition is what makes it free.
+closing line** only; `max` also turns on the **step narrator** (`narrate.sh`), which is the only
+mid-turn voice the feature has. The Slack voice note stays one canonical sentence at every level,
+because its repetition is what makes it free.
 
 | level | sentences | ack cap | closing cap | personality allowed |
 |---|---|---|---|---|
 | `terse` | 1 | 90 | 120 | none — facts only. **The shipped prompt, byte for byte** |
 | `balanced` | ≤2 | 140 | 200 | + softener (`ให้นะคะ`) + 1–2 word reaction (`ได้ค่ะ`) + 2nd fact |
 | `chatty` | ≤3 | 200 | 280 | + 3rd fact + follow-through (what will be reported / what waits) |
-| `max` | ≤4 | 260 | 360 | + **step narration** — the order of the work, one status per step — + the tightened heartbeat |
+| `max` | ≤4 | 260 | 360 | + **step narration** — the order of the work, one status per step — + a spoken line per step *during* the turn |
 
 Three graded pieces, each picked for what it *cannot* do: a **softener** is 2–3 characters and cannot
 carry a false fact; a **reaction** states the outcome in itself, unlike a greeting, which costs
@@ -627,6 +619,43 @@ sentence phrase still carries its own verb agreement (`ONE short Thai sentence *
 level specified as "unchanged" really is. The word `single` in *"the single most important number"*
 is likewise kept only at `terse` — at three sentences there is room for two figures and pinning it to
 one would throw the second away.
+
+### The step narrator (`narrate.sh`) — `max` only
+
+`PostToolUse` hook → `narrate.sh`, detached. It speaks **the assistant's own prose**: the line written
+before reaching for a tool ("อ่าน `queue.sh` ก่อน แล้วค่อยแก้ cadence") already says what is happening
+and what comes next, so there is **no summarizer call**, nothing to invent, and no tool vocabulary
+("Read summarize.sh" is what a machine would say; the prose says *why*).
+
+Text and `tool_use` never share one assistant message — measured, 0 of 2 534 in a real session — so
+the prose is its own entry immediately before the tool it introduces, and "the last text block in the
+file" is exactly the line that explains the step that just ran. Fallback for a stretch with no prose:
+the last tool activity as a template (`กำลัง <activity>`) — the one piece of the deleted heartbeat
+that outlived it.
+
+| rule | value | why |
+|---|---|---|
+| dedupe by hash, per session | — | one prose block introduces several tool calls (314 blocks / 1 523 calls ≈ 1 per 5, measured), so the same sentence would be spoken five times |
+| producer rate floor | 9 s | tool calls fire several per second; a line takes 3–6 s to speak |
+| queue rate floor | 7 s | counts utterances from other kinds and other worktrees, which the producer cannot see |
+| queue staleness | 12 s | "กำลังอ่าน X" arriving after X is done and two steps have passed describes the wrong moment |
+| char cap | 120 | ~8 s of Thai speech — a step narration has to be over before the step is |
+
+Written prose is not speakable prose, so the trim strips fences, table rows, heading marks, list
+markers and link URLs, and keeps **backtick contents** (an identifier is usually the most informative
+word in the line). Only the first sentence survives — **unless it carries nothing**: measured on this
+workspace's own transcript, a plain "first chunk" rule produced `both: 0` (7 chars) and
+`Memory เก็บแล้ว ทีนี้ max` with its point amputated, because an em dash is used mid-sentence
+constantly here. So chunks accumulate to ~25 characters before the cap trims the tail — a too-short
+line is the worse failure, since a long one is merely cut while a thin one says nothing.
+
+It stays quiet once the turn has **ended** (the closing line owns the end), on a `VOICE[...]` tag
+block (same reason), and at every level except `max`.
+
+Regression suite: `scripts/voice/narrate-selftest.sh` — 12 cases in a throwaway tree with its own
+config and a stubbed `speak.sh`, so it costs nothing. Session ids are **run-scoped** on purpose:
+narration state is machine-global and keyed by session, so fixed ids leaked the previous run's dedupe
+state into the next one, which is how the suite first went red on its own second run.
 
 ### Ceiling, not quota — and it is enforced, not requested
 
@@ -852,9 +881,9 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.autoplay.enabled` | `false` | master switch for local speech |
 | `voice.autoplay.ack` | `true` | the per-prompt acknowledgement |
 | `voice.autoplay.milestones` | `true` | the closing line on a finished turn |
-| `voice.autoplay.heartbeat` | `true` | "still working" on a long turn. Vetoes the mid-turn line at every level, `max` included |
+| `voice.autoplay.narrate` | `true` | the `max` step narrator: one line per tool call, from the assistant's own prose. Inert at every other level |
 | `voice.autoplay.milestone_every_turn` | `true` | false ⇒ only an explicit `VOICE:` tag speaks (was `milestone_backstop`, still read in its `false` position) |
-| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also tightens the heartbeat's cadence and is the only level that narrates the steps |
+| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the step narrator and is the only level that narrates the process |
 | `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; `aiworks voice mute` does not reach it |
 | `voice.push_to_talk.enabled` | `false` | hold-to-dictate |
 | `voice.push_to_talk.hotkey` | `right_cmd+right_alt` | the chord; baked into the Lua by `ptt install` |
