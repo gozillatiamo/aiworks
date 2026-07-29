@@ -1,0 +1,20 @@
+# Domain vocabulary handed to the speech-to-text model as its `prompt`. One flat list, comma
+# separated; lines starting with # are ignored.
+#
+# THIS FILE IS LOAD-BEARING, not a nicety. Without it the measured transcripts turned `null
+# check` into "now check" and mangled repo names — the model has no way to know it is listening
+# to a conversation about this codebase. Every term added here is one the engine got wrong.
+#
+# Add to it whenever dictation mis-hears a name you use often. Keep it under a few hundred
+# terms: it is sent with every request, and a bloated hint starts biasing ordinary words.
+
+# YOUR ticket prefix and repo names — REPLACE THESE. This is the highest-value section of
+# the file: an engine has no way to guess a name it has never seen, and your repo names are
+# the terms you say most. Take them from `products[].repos[]` in workspace.config.yaml.
+APP, your-app, your-tests, shared-lib
+
+# the words the engines actually got wrong (generic engineering vocabulary — keep, extend)
+null check, shard, aggregator, redis stream, merge request, must-fix, regression,
+edge case, test coverage, hotfix, deploy, staging, pipeline, endpoint, migration,
+rollback, SonarQube, Cypress, k6, Postgres, Redis, Rust, cargo test, Next.js,
+Storybook, MR, PR, QA, PII

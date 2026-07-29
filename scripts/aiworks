@@ -80,6 +80,15 @@ Commands:
              forwards any extra args. (Errors clearly if .superset/run.sh does not exist.)
   teardown   Run the workspace teardown hook: exec .superset/teardown.sh verbatim (remove the
              cloned product repos). Pass-through — forwards any extra args.
+  voice      Front door to the voice adapter (scripts/voice/, `th`-only, off by default).
+             `setup` installs its prerequisites — deliberately NOT part of `aiworks setup`, since
+             this is one person's opt-in and the team should not carry ffmpeg and a GUI automation
+             app for a feature that is inert for them.
+             `mute on|off` silences EVERY spoken output on this machine — one file, so every
+             clone and worktree at once, and ack/milestone/manual alike (there is deliberately
+             no automatic call detection to half-cover it). `status` prints, in the order they
+             are decided, every switch that determines whether you hear anything. Also `say`,
+             `cues` and `test`.
   help       Show this help. Use `aiworks <command> -h` for a command's options.
 
 Examples:
@@ -102,6 +111,12 @@ Examples:
   aiworks update -n                     # preview — print each command, change nothing
   aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
   aiworks update --skip mcp --check-deps  # skip the image pull; report outdated repo deps
+  # voice (th-only, off by default):
+  aiworks voice setup                   # ffmpeg + the credential file + the sound cues
+  aiworks voice mute on                 # going into a call: silence everything, everywhere
+  aiworks voice mute off                # back
+  aiworks voice status                  # why is it (not) talking?
+  aiworks voice test                    # end-to-end check with timings
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
   aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
@@ -131,6 +146,7 @@ case "$cmd" in
   config)         exec "$DIR/aiworks-config.sh" "$@" ;;
   cursor)         exec "$DIR/aiworks-cursor.sh" "$@" ;;
   update)         exec "$DIR/aiworks-update.sh" "$@" ;;
+  voice)          exec "$DIR/aiworks-voice.sh" "$@" ;;
   setup)          superset_hook setup "$@" ;;
   run)            superset_hook run "$@" ;;
   teardown)       superset_hook teardown "$@" ;;
