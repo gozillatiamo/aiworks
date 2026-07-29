@@ -23,6 +23,14 @@
 #     and a personal pref must never change that for a shared run.
 #
 # The realistic use for this file is a personal preference like output language:
+#
+# COPY THE KEYS, NOT THE COMMENTS. This template is the documentation; the live
+# `workspace.config.local.yaml` carries NO comments at all — same rule as the shared config, for
+# the same reason (a comment in a live config is re-read by every session, forever, while one here
+# is read once). A PreToolUse hook blocks an agent from adding one; to clean a file by hand:
+#   python3 scripts/lib/yaml_comments.py --write workspace.config.local.yaml
+# Note WHY you set something in your commit message, or in docs/ if it is worth sharing.
+# See docs/adr/0006-config-carries-no-comments.md.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Write in Thai locally while the team default stays English — see docs/agents/language.md.

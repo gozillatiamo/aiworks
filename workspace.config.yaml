@@ -35,7 +35,7 @@ branch_model:
   fix_base:     main
 
 quality_gate:
-  provider: sonarqube 
+  provider: sonarqube
 
 review:
   level: strict
@@ -53,55 +53,18 @@ diagrams:
 artifacts:
   enabled: false
 
-# Voice (scripts/voice/) — spoken acknowledgements, milestones and push-to-talk dictation.
-#
-#   A `th`-ONLY FEATURE, OFF BY DEFAULT. The gate lives in scripts/voice/lib.sh: with any
-#   other `language` every voice command exits 0 SILENTLY (run it with -v to hear why). So
-#   this block is inert for the whole team as shipped, and a teammate opts in through the
-#   git-ignored workspace.config.local.yaml — never by editing this file.
-#
-#   Providers are switchable because they are not interchangeable. Measured on this
-#   workspace's own Thai+English dev sentences (scripts/voice/README.md § Thai voice
-#   selection), best voice of each vendor, median of 5 transcription passes:
-#     tts  openai      sage 98 % term survival, 2.3 s, $45/1M chars — best measured
-#          cartesia    Suda 95 %, FASTEST (1.8 s), native Thai; plan-based credits
-#          elevenlabs  Sarah 86 %, 4.2 s, $100/1M chars — the most CONSISTENT voice measured
-#          gemini      Leda 84 %, slowest (7.5 s, variable), but ~6× cheaper than 11labs
-#     stt  openai      gpt-4o-transcribe, 0.915 similarity at 1.37 s — the best measured
-#          gemini      cheapest per hour; elevenlabs — accurate, over-capitalizes
-#   Voice ids are keyed BY PROVIDER on purpose: switching `provider` must not carry a voice
-#   id from the wrong vendor.
-#
-#   Credentials never live here. They go in ~/.config/aiworks/voice.env (mode 600), with
-#   scripts/voice/.env as a per-clone override — see scripts/voice/README.md.
 voice:
   enabled: false
   tts:
     provider: elevenlabs
-    # Each entry is the vendor's BEST-MEASURED Thai voice, not its most famous one. Swept
-    # 2026-07-29: every candidate voice of every vendor (24 ElevenLabs + 13 OpenAI + 30 Gemini
-    # + 7 Cartesia) spoke the same five Thai+English dev sentences. Score = how many of 43
-    # English technical tokens survive as Latin script, median of FIVE transcription passes —
-    # one pass cannot rank two voices a token apart, because the transcriber is the noisy
-    # component (byte-identical audio scored 0/6 then 6/6 on consecutive passes).
     voice:
-      elevenlabs: "EXAVITQu4vr4xnSDxMaL"          # Sarah (female) — 37/43, spread ±1: the steadiest voice measured
-      cartesia: "ccc7bb22-dcd0-42e4-822e-0731b950972f"   # Suda (female, native Thai) — 41/43; Thaksin/Somchai tie it
-      gemini: "Leda"                              # 36/43 (female) — beats Kore's 34 on both metrics
-      openai: "sage"                              # 42/43 (female) — the best Thai voice of any vendor here
-    # Integrated loudness every synthesized line is levelled to (EBU R128, -1.5 dBTP ceiling).
-    # NOT cosmetic: vendors ship wildly different volumes and so do voices inside one vendor —
-    # measured on one sentence, ElevenLabs Sarah came out at -14.1 LUFS and OpenAI sage at
-    # -31.5, an 17 LU gap that reads as "three times quieter" and made switching provider
-    # silently change how loud the assistant is. It also fixes `--cue`: the bed gain is a fixed
-    # 0.22, which can only mean one thing if the voice under it is at one level.
-    # `off` disables it. Existing cache: `aiworks voice normalize` (local ffmpeg, no API spend).
+      elevenlabs: "EXAVITQu4vr4xnSDxMaL"
+      cartesia: "ccc7bb22-dcd0-42e4-822e-0731b950972f"
+      gemini: "Leda"
+      openai: "sage"
     loudness: -16
   stt:
     provider: openai
-  # Turns a prompt into the ONE Thai line that gets spoken back. Model is keyed by provider
-  # for the same reason the voice id is: switching `provider` must not carry a model name
-  # from the wrong vendor. `claude` means the headless CLI (`claude -p`), no API key needed.
   summarizer:
     provider: openai
     model:
@@ -110,131 +73,26 @@ voice:
       claude: claude-haiku-4-5-20251001
   sfx:
     provider: elevenlabs
-  # Local speech. `enabled` is the master switch; the three below are independently useful —
-  # per-prompt acks are the first thing to tire of, while milestones are the reason to turn any
-  # of this on, so one flag for all three would force an all-or-nothing choice.
-  #
-  # For "quiet for the next twenty minutes" use `aiworks voice mute on` instead of editing this:
-  # it is a file, it applies machine-wide at once, and it DISABLES what this machine says rather
-  # than merely silencing it — nothing is summarized or synthesized while it is on. It does NOT
-  # touch `notify_voice` below (that audio is for the team, decided here) or dictation.
   autoplay:
     enabled: false
-    ack: true          # a spoken acknowledgement for every prompt
-    milestones: true   # the closing line — what the finished turn actually produced
-    # There was a `heartbeat` here — "still working, currently X" on a clock, every 90 s then
-    # backing off. REMOVED, not defaulted off: in use it read as an odd, disembodied interruption,
-    # because a clock cannot know whether anything happened and can only name the tool it happens to
-    # catch. The mid-turn space belongs to `narrate` below, which speaks because the WORK moved.
-    #
-    # The RUNNING COMMENTARY, and `chattiness: max` ONLY (inert at every other level, so it needs no
-    # second thought until you switch). One line per step, spoken WHILE the work happens, taken from
-    # the assistant's own prose — the sentence it writes before reaching for a tool already says what
-    # it is doing and what comes next, so there is no summarizer call and nothing to invent.
-    #
-    # `false` keeps `max`'s longer ack and closing line but stops the mid-turn talking — which is
-    # also the cost lever: see the figures below.
+    ack: true
+    milestones: true
     narrate: true
-    # EVERY finished turn speaks its result. The result is the half you cannot get from glancing at
-    # the screen, and a version that stayed quiet unless the turn declared an event announced the
-    # START of the work and then never said it was done.
-    #
-    # A turn can name its own line with `VOICE[group]: …` in the reply — free, exact, and it picks
-    # the cue. Without one, the reply is summarized (one call, ~$0.01 a turn: a finish summary is
-    # unique text, so it never hits the audio cache) and a narrow keyword match decides only which
-    # cue to attach, never whether to speak.
-    #
-    # false ⇒ the conservative mode: ONLY a tagged turn says anything. (Replaces the pre-rename
-    # `milestone_backstop`, which is still honoured in its `false` position.)
     milestone_every_turn: true
-    # HOW MUCH it says when it speaks — never WHETHER it speaks (that is the four switches above).
-    # Reaches the ack and the closing line; `max` additionally turns on the step narrator. The Slack
-    # voice note stays one canonical sentence at every level, because its repetition is what makes it
-    # free (it hits the audio cache).
-    #
-    #   terse      1 sentence, facts only, no softener and no reaction word — the shipped behaviour
-    #   balanced   1-2 sentences, + a softener (ให้นะคะ) + a 1-2 word reaction (ได้ค่ะ / เจอแล้วค่ะ)
-    #              + the second fact
-    #   chatty     2-3 sentences, + the third fact + the follow-through (what will be reported,
-    #              what is waiting for you)
-    #   max        up to 4, in the register of a flight engineer reporting to the person in charge:
-    #              every sentence is [subject] [state] [figure], the ack states the ORDER it will
-    #              work in, the closing line lists the STEPS it took — AND it talks THROUGH the
-    #              turn: one line per step, as the step happens (`narrate` above). THE ONLY LEVEL
-    #              THAT NARRATES THE PROCESS; the others forbid it, since for them the process is
-    #              filler around the one fact that matters.
-    #
-    #              The first version of `max` did the mid-turn half with a TIMED heartbeat instead
-    #              (45 s × 10 beats). Wrong mechanism, not a wrong number: a clock fires whether or
-    #              not anything happened — it narrates a 3-second step never and a 90-second step
-    #              twice — and it can only name the tool it happens to catch, never why. Steps are
-    #              the unit, so the narrator hooks the step; the heartbeat has since been deleted.
-    #
-    # The character budget is a CEILING, NOT A QUOTA: one fact ⇒ one sentence, even at `max`.
-    # That is the safety property — given room and nothing to fill it with, a model pads, and
-    # padding is one step from inventing (measured on this feature: an open-ended prompt reached for
-    # a plausible-looking file name, which is why the "never invent" rule exists). Re-measured at
-    # `max`, the level with the most room and explicit permission to narrate: the one-line input
-    # "แก้ typo ใน README แล้ว" produced one 33-38 character sentence, 3 runs of 3, no invented step.
-    #
-    # Bad news (`prod`/`error` intent, `red`/`incident` group) drops the softener and the reaction at
-    # EVERY level: a warm register is the wrong register for an incident, and this is a set-once
-    # preference nobody turns down before production breaks.
-    #
-    # COST, since this is the feature's biggest lever — every spoken line here is unique text, so
-    # none of it hits the audio cache. At ~$0.0001/char on elevenlabs, 100 turns/day × 22 days:
-    #   terse ~$48/mo   ·   balanced ~$76/mo   ·   chatty ~$105/mo   ·   max ~$230/mo
-    # The first three are measured. `max` is EXTRAPOLATED, and it is the one worth reading twice:
-    # ~$142 for its longer ack + closing line (character ceiling 620 vs terse's 210), plus ~$88 for
-    # the narration — call it 5 lines × ~80 chars on an average turn, which is ~$0.04 a turn. A
-    # tool-heavy turn is several times that; a one-answer turn is nothing. `narrate: false` removes
-    # that second half and leaves the level's lengths.
-    # `voice.tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
-    #
-    # `aiworks voice audition "<a request>"` speaks all four so you can pick by ear. It cannot
-    # audition `max`'s step narration: that one only exists inside a running turn.
     chattiness: terse
-  # A voice note attached to the Slack messages the workflow already sends. THE ONLY switch for it:
-  # `aiworks voice mute` deliberately does not reach it, because that audio is a deliverable for the
-  # team — rendered on this machine, heard on someone else's phone — so whether the channel gets one
-  # is a standing decision made HERE, not a side effect of my speakers being quiet for a call.
   notify_voice:
     enabled: false
   push_to_talk:
     enabled: false
-    # Left and right modifiers are separate keycodes, so a right-side chord collides with
-    # nothing. `fn+…` works ONLY on a built-in Apple keyboard — an external keyboard's fn key is
-    # handled in its own firmware and never reaches macOS (measured), whatever AppleFnUsageType
-    # is set to. Both ⌘ keys exist everywhere and do nothing when held together.
     hotkey: "left_cmd+right_cmd"
-    # `default` follows System Settings → Sound → Input, so plugging in a headset moves dictation
-    # with it. A device NAME pins it instead. An avfoundation INDEX is never accepted: the
-    # numbering changes with whatever is plugged in, and a wrong index records the wrong room.
     mic: default
     preview:
-      provider: elevenlabs                        # none | elevenlabs | openai
-      # The HUD re-transcribes only the last N seconds. Re-sending the whole prefix each pass made
-      # the lag GROW with the utterance (0.98 s at 2 s of audio, 1.86 s at 10 s); a trailing
-      # window keeps the update rate flat at ~1.5 s however long you talk. The text that gets
-      # TYPED is always the accurate pass over the complete recording, so nothing is lost.
+      provider: elevenlabs
       window_seconds: 12
-    auto_send: true                               # forced false when preview.provider is none
+    auto_send: true
   cache:
     max_mb: 500
 
-# Read-only deployed-env triage MCP servers (pg_triage, redis_triage — STAGING + PRODUCTION),
-# registered in LOCAL scope by `aiworks sync` / `aiworks setup`.
-#
-#   enabled  registration. ON by default: staging triage needs no authorization, so making
-#            everyone flip a flag before they can look at staging is friction with no payer.
-#            Set false to keep both servers out of every session on this machine.
-#   prod     the PRODUCTION opt-in, per PERSON. OFF by default and enforced INSIDE the servers
-#            (scripts/lib/triage_policy.py) — a `env="prod"` / `target="prod"` call is refused
-#            until it is true, even on a machine that has the prod DSNs. Set it in
-#            workspace.config.local.yaml (git-ignored), which wins over this file.
-#
-# See scripts/triage-mcp.sh and docs/adr/0005. The pre-0005 key `prod_triage.enabled` is REMOVED
-# and never honoured — a leftover copy of it is reported by `scripts/triage-mcp.sh status`.
 triage:
   enabled: true
   prod: false
@@ -250,7 +108,7 @@ products:
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/ofb/ofb-instruction.git
-        kind: document 
+        kind: document
         desc: Instruction for setup the product for the first time.
         lang: markdown
 
@@ -270,7 +128,7 @@ products:
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/ofb/customization-widget.git
-        kind: package 
+        kind: package
         desc: The package library for the player sites, to convert the template data into the real component.
         lang: next.js
         green: "tests via stroybook and lint passed successfully"
@@ -284,7 +142,7 @@ products:
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/ofb/agent-webservice.git
-        kind: backend 
+        kind: backend
         desc: The monolithic backend service for the platform. It's contains mostly the business logic for the platform. Currently, it also temporary background thread to run consumers to consume event stream to trigger process across multiple features form the bet-payout distribution.
         lang: rust
         green: "unit tests + integration tests passed successfully"
@@ -297,22 +155,22 @@ products:
         green: "tests via cypress passed successfully"
 
       - url: git@gitlab.com:bluepicode/ofb/backoffice.git
-        kind: web-app 
+        kind: web-app
         desc: The backoffice CRM for Admins a Agents to manage the platform. Under the concept of Agency and sites with different theme and packages. currently it's gently convert into Bullet Proof React pattern.
-        lang: next.js 
+        lang: next.js
         green: "tests via stroybook and lint passed successfully"
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/qa/ofb-backoffice-cypress.git
-        kind: test-suite 
+        kind: test-suite
         desc: The cross-repo QA suite for the backoffice repo. It's contains the E2E UI tests for the backoffice. Including the Newman API tests for the platform.
-        lang: cypress, newman 
+        lang: cypress, newman
         green: "tests via cypress and newman passed successfully"
-      
+
       - url: git@gitlab.com:bluepicode/ofb/mock-agency-api.git
-        kind: backend 
+        kind: backend
         desc: The mock API service that user for simulate the agency service for any site that using package S.
-        lang: json 
+        lang: json
         green: "The service is running with healthy"
 
       - url: git@gitlab.com:bluepicode/ofb/commission-batch.git
@@ -323,19 +181,19 @@ products:
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/ofb/seamless-api.git
-        kind: web-app 
+        kind: web-app
         desc: The Seamless platform for any agency that open a site for using exposed the seamless APIs, It's included the implementation documents and Interactive test suite UI.
-        lang: next.js 
+        lang: next.js
         green: "run and tests passed successfully"
         guardian_focus: "secrets, data-protection"
 
       - url: git@gitlab.com:bluepicode/ofb/game.git
-        kind: package 
-        desc: The game lib package, for any Rust service, It's handle most of functionality that interact with game, mainly to get/fetch game/games. It's included caching ability. 
-        lang: rust 
+        kind: package
+        desc: The game lib package, for any Rust service, It's handle most of functionality that interact with game, mainly to get/fetch game/games. It's included caching ability.
+        lang: rust
         green: "unit tests and integration passed successfully"
         guardian_focus: "secrets, data-protection"
-      
+
       - url: git@gitlab.com:bluepicode/ofb/cashback-batch.git
         kind: backend
         desc: A Rust batch job(cronjob) to calculate the cashback from promotion to player.
@@ -349,7 +207,7 @@ products:
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection"
-      
+
       - url: git@gitlab.com:bluepicode/ofb/bet-aggregator.git
         kind: backend
         desc: A Rust service to aggregate the bet data full cycle bet + payout, including free-spin and feature-bet when the bet is compeleted then feed it into the redis stream, mostly it used for tournament campaign and public chat boardcast stream.
@@ -383,7 +241,7 @@ products:
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection, input validation"
-      
+
       - url: git@gitlab.com:bluepicode/ofb/dev-script.git
         kind: script
         desc: The developer scripts that use for troubleshooting on production(and usable for staging and local). It's variants of scripts for different purposes like postgres queries, and shell scripts to generate curl commands, and might add more in the future.

@@ -58,11 +58,20 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   `workspace.config.local.yaml` (analogue of `.claude/settings.local.json`; see
   `workspace.config.local.example.yaml`) — it overrides this file for everything read at
   runtime (chat, agents, interactive skills); the committed workflow mirror stays shared-only.
+  ⚠️ **Both live config files carry NO comments** — they are data. Every explanation (what a key
+  does, its options, a measurement, a tombstone for a removed key) belongs in
+  `workspace.config.example.yaml` / `workspace.config.local.example.yaml`, in `docs/`, or in the
+  owning script's README — the templates are the documentation surface, and the drift guard
+  already requires every live key to appear there. This file is `@`-injected into EVERY session,
+  so a comment in it is re-read on every turn forever. Enforced by
+  `pretool-config-comment-guard.sh` (`Write`/`Edit`) + an advisory check in `aiworks config`;
+  clean a file with `python3 scripts/lib/yaml_comments.py --write <file>`. See `docs/adr/0006`.
 - `CONTEXT.md` — the workspace glossary (ubiquitous language: orchestration, providers, repos,
   language, config). One place to look up a term; each entry links to its fuller home.
 - `docs/adr/` — architecture decision records: why the workspace is shaped as it is
   (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides,
-  `0004` the Cursor mirror, `0005` deployed-env triage + the production gate).
+  `0004` the Cursor mirror, `0005` deployed-env triage + the production gate, `0006` the live
+  config carries no comments).
 - `docs/agents/cursor.md` — how this workspace runs under **Cursor**. Everything (project
   instruction, rules, skills, subagents, hooks, permissions, MCP, adapters) works there via a
   GENERATED mirror — `aiworks cursor` — built from symlinks back to the `.claude/` files, so
@@ -237,6 +246,12 @@ to build calibration history before producing an estimate; do not conclude
 - Read, print, or trace-dump any `.env` / `.env.*` file (except `.env.example`) — see the
   ⚠️ warning above. Highest priority: a leaked adapter secret (Jira/GitLab/Slack/SigNoz/...)
   is a live credential, not just a file.
+- Never write a **comment** into `workspace.config.yaml` or `workspace.config.local.yaml` —
+  not a header, not a section divider, not a trailing note, not a tombstone for a key you
+  removed. Both are data; the `*.example.yaml` template beside them (or `docs/`) is where the
+  explanation goes, and every live key must be documented there anyway. The rule holds when
+  you ADD a key too: add it to the template in the same change, with the comment there.
+  Enforced by `pretool-config-comment-guard.sh`; rationale in `docs/adr/0006`.
 - Never run `codegraph` without naming the repo. The index is **per-repo** and the
   workspace root has none, so every query needs `-p $CLAUDE_PROJECT_DIR/<repo>` — an
   **absolute** path. A relative `-p` is only right when the cwd happens to be the

@@ -59,6 +59,10 @@ t() { # t <name> <expected-exit> <hook> <json>
 # catch-all) and report a pass for a guard that had never run.
 j()  { jq -cn --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}'; }
 jw() { jq -cn --arg p "$1" '{tool_name:"Write",tool_input:{file_path:$p}}'; }
+# Write/Edit WITH the payload text — the config-comment guard judges what is about to land
+# in the file, not just which file it is.
+jwc() { jq -cn --arg p "$1" --arg c "$2" '{tool_name:"Write",tool_input:{file_path:$p,content:$c}}'; }
+jec() { jq -cn --arg p "$1" --arg s "$2" '{tool_name:"Edit",tool_input:{file_path:$p,new_string:$s}}'; }
 jr() { jq -cn --arg p "$1" '{tool_name:"Read",tool_input:{file_path:$p}}'; }
 ja() { jq -cn --arg a "$1" --arg p "$2" '{tool_input:{subagent_type:$a,prompt:$p}}'; }
 
@@ -112,6 +116,43 @@ t "source file untouched"        0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/sr
 t ".html in subdir blocked"      2 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/development-planner/APP-1-svc-plan.html")"
 t "no ticket key untouched"      0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/rollout-plan.md")"
 t "outside any repo fails open"  0 pretool-plan-path-guard.sh "$(jw "/nonexistent-root-xyz/agent_logs/APP-1-plan.md")"
+
+echo "--- pretool-config-comment-guard ---"
+HASH='#'   # kept out of the literals so editing this suite through a heredoc stays honest
+t "comment-only line blocked"    2 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.yaml" "$HASH the org
+org:
+  name: Acme")"
+t "trailing comment blocked"     2 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.yaml" "language: th  $HASH personal")"
+t "clean config allowed"         0 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.yaml" "org:
+  name: Acme
+language: th")"
+# The one edit most likely to be legitimate — a Slack channel is a value that STARTS with #.
+t "quoted hash value allowed"    0 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.yaml" "notify:
+  channel: \"${HASH}dev-oneforbet\"")"
+t "url fragment allowed"         0 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.yaml" "url: git@host:org/repo${HASH}tag")"
+# A block scalar's body is verbatim text, so a # in it is content.
+t "block scalar body allowed"    0 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.yaml" "desc: |
+  ${HASH} still data
+  x")"
+t "local config blocked too"     2 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.local.yaml" "$HASH mine
+language: th")"
+t "Edit new_string blocked"      2 pretool-config-comment-guard.sh "$(jec "$TMP/meta/workspace.config.yaml" "  enabled: true   $HASH turned on")"
+t "Edit clean allowed"           0 pretool-config-comment-guard.sh "$(jec "$TMP/meta/workspace.config.yaml" "  enabled: true")"
+# The templates are the DOCUMENTATION — comments there are the whole point.
+t "example template allowed"     0 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.example.yaml" "$HASH what this key does
+language: en")"
+t "local example allowed"        0 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/workspace.config.local.example.yaml" "$HASH copy me
+language: th")"
+t "other yaml untouched"         0 pretool-config-comment-guard.sh "$(jwc "$TMP/meta/mani.d/ofb.yaml" "$HASH GENERATED
+projects: {}")"
+t "no payload fails open"        0 pretool-config-comment-guard.sh "$(jw "$TMP/meta/workspace.config.yaml")"
+
+echo "--- yaml_comments scanner (the guard's # detection) ---"
+if python3 "$ROOT/scripts/lib/yaml_comments.py" --selftest >/dev/null 2>&1; then
+  pass=$((pass+1)); printf 'ok   %s\n' "scanner fixtures green"
+else
+  fail=$((fail+1)); printf 'FAIL %s\n' "scanner fixtures (run scripts/lib/yaml_comments.py --selftest)"
+fi
 
 echo "--- pretool-agent-brief-guard ---"
 t "planner told to open MR blocked"   2 pretool-agent-brief-guard.sh "$(ja development-planner 'Produce the plan, then commit it and open a PR/MR for human review via the VCS adapter.')"

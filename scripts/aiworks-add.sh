@@ -495,10 +495,19 @@ fi
 step "2.5. Register the repo in workspace.config.yaml (products[$PRODUCT].repos[])"
 if [[ ! -f "$WC" ]]; then
   if [[ -f "$ROOT/workspace.config.example.yaml" ]]; then
-    cp "$ROOT/workspace.config.example.yaml" "$WC" && ok "created workspace.config.yaml from workspace.config.example.yaml"
-    FOLLOWUP+=("fill in workspace.config.yaml (org/product, vcs/tracker providers, ticket_prefix, statuses) — it was seeded from the example; the placeholder product block can be deleted")
+    # Seeded from the template, but WITHOUT its comments: the live config is data and the
+    # template is the documentation (docs/adr/0006-config-carries-no-comments.md). A plain `cp`
+    # used to hand a new org a config that violated the rule from its very first line, and the
+    # explanation it copied along was already one file away in the template.
+    if [[ -f "$ROOT/scripts/lib/yaml_comments.py" ]] && command -v python3 >/dev/null 2>&1 \
+       && python3 "$ROOT/scripts/lib/yaml_comments.py" --strip "$ROOT/workspace.config.example.yaml" > "$WC"; then
+      ok "created workspace.config.yaml from workspace.config.example.yaml (comments stripped)"
+    else
+      cp "$ROOT/workspace.config.example.yaml" "$WC" && ok "created workspace.config.yaml from workspace.config.example.yaml"
+    fi
+    FOLLOWUP+=("fill in workspace.config.yaml (org/product, vcs/tracker providers, ticket_prefix, statuses) — it was seeded from the example (comments stripped: it is data, the example is the documentation); the placeholder product block can be deleted")
   else
-    printf '# workspace.config.yaml — the source of truth for this workspace.\nproducts:\n' > "$WC" && ok "created a minimal workspace.config.yaml (products: only)"
+    printf 'products:\n' > "$WC" && ok "created a minimal workspace.config.yaml (products: only)"
     FOLLOWUP+=("flesh out workspace.config.yaml (org/product, vcs/tracker providers, ticket_prefix, statuses) — only a products: block was created")
   fi
 fi
