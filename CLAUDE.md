@@ -91,6 +91,21 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   diagram and attaches it to a ticket (image + a mermaid.live edit link), gated by
   `diagrams.enabled` (default OFF); skipped quietly (not a fail-loud gate) when off,
   since a diagram is an enhancement to a ticket's spec, not a required deliverable.
+- `docs/agents/voice.md` — how the workspace TALKS: a spoken acknowledgement per prompt, a line
+  when something happens, a voice note on the Slack messages it already sends, and hold-to-dictate.
+  A **`th`-only, off-by-default, per-person** feature (`voice.enabled` in the git-ignored
+  `workspace.config.local.yaml`) — inert for the team as shipped, and every command exits 0
+  silently when a gate fails. **The one thing that concerns you when writing a reply: every
+  finished turn speaks a closing line, so the only question is whether YOU write it.** Put a
+  `VOICE[group]: <one line>` tag in the reply (`green` · `red` · `ship` · `needs-you` · `incident`)
+  and that line is spoken verbatim — free, exact, and it picks the cue; leave it out and the reply
+  is summarized instead, which costs a call and gives the model the last word on your work. Say the
+  **result** — the finding, number, verdict, or what is waiting for the user — never that you
+  finished, which they can already see. `aiworks voice mute on` **disables** what
+  this machine says out loud, machine-wide — nothing summarized, nothing synthesized, so a muted
+  machine costs nothing; it does not touch the Slack voice note (that is
+  `voice.notify_voice.enabled` in config, audio for the team) or dictation. The assistant's spoken
+  name is **Sunmi (ซันมี่)** — answer to it.
 - `docs/agents/pii-provenance.md` — how personal data is kept inside the prod boundary
   **without** getting in the way of local/staging work. A value is redacted at egress (ticket
   / Slack) if and only if a sanctioned PRODUCTION read actually returned it — tracked by keyed

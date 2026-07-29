@@ -62,6 +62,37 @@ The concrete tool behind an adapter — `gitlab`, `jira`, `slack` — selected i
 **vcs** / **tracker** / **notify**:
 The three adapter families: pull/merge requests, tickets, and chat notifications.
 
+**voice**:
+The adapter that makes the workspace speak and listen (`scripts/voice/`) — a spoken
+acknowledgement per prompt, a closing line on every finished turn, a voice note on Slack,
+hold-to-dictate. `th`-only and off by default, per person. Full doc: `docs/agents/voice.md`.
+
+**Sunmi** (ซันมี่):
+The assistant's spoken name, used by the summarizer and (deferred) as the wake word.
+
+**closing line**:
+The spoken result at the end of a turn. Every finished turn gets one — the ack says what is
+starting, this says what came out of it. `voice.autoplay.milestone_every_turn: false` reverts to
+tag-only.
+
+**chattiness**:
+`voice.autoplay.chattiness: terse | balanced | chatty` — how MUCH the ack and closing line say,
+never whether they speak. `terse` is the length the feature shipped with; `balanced` adds a softener,
+a short reaction word and the second fact; `chatty` adds the third fact and the follow-through. The
+budget is a ceiling, not a quota, and bad news keeps the plain register at every level.
+`aiworks voice audition "…"` speaks all three.
+
+**`VOICE:` tag**:
+A `VOICE[group]: <one line>` line in a reply, which is how a turn writes its own closing line
+(`green` · `red` · `ship` · `needs-you` · `incident`). Free and exact; without one the reply is
+summarized instead, and the model gets the last word on the work.
+
+**mute**:
+`aiworks voice mute on` — one machine-global file that disables what THIS MACHINE says (and so its
+spend). It does not reach the Slack voice note (`voice.notify_voice.enabled`, audio for the team) or
+dictation. There is deliberately no automatic call detection: a browser meeting has no process to
+find, so an auto-detect would cover some calls and silently miss others.
+
 ## Repos
 
 **Product**:

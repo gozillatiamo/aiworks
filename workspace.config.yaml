@@ -53,6 +53,127 @@ diagrams:
 artifacts:
   enabled: false
 
+# Voice (scripts/voice/) — spoken acknowledgements, milestones and push-to-talk dictation.
+#
+#   A `th`-ONLY FEATURE, OFF BY DEFAULT. The gate lives in scripts/voice/lib.sh: with any
+#   other `language` every voice command exits 0 SILENTLY (run it with -v to hear why). So
+#   this block is inert for the whole team as shipped, and a teammate opts in through the
+#   git-ignored workspace.config.local.yaml — never by editing this file.
+#
+#   Providers are switchable because they are not interchangeable. Measured on this
+#   workspace's own Thai+English dev sentences (agent_logs/voice/implementation-plan.md §3–4):
+#     tts  elevenlabs  best term survival (96 %), $100/1M chars
+#          gemini      93 %, ~6× cheaper, but 4.5–15.9 s of latency variance
+#          cartesia    fastest (1.7–3.1 s), and quality is PER VOICE — audition before use
+#     stt  openai      gpt-4o-transcribe, 0.915 similarity at 1.37 s — the best measured
+#          gemini      cheapest per hour; elevenlabs — accurate, over-capitalizes
+#   Voice ids are keyed BY PROVIDER on purpose: switching `provider` must not carry a voice
+#   id from the wrong vendor.
+#
+#   Credentials never live here. They go in ~/.config/aiworks/voice.env (mode 600), with
+#   scripts/voice/.env as a per-clone override — see scripts/voice/README.md.
+voice:
+  enabled: false
+  tts:
+    provider: elevenlabs
+    voice:
+      elevenlabs: "EXAVITQu4vr4xnSDxMaL"          # Sarah (female)
+      cartesia: "5de076e9-7b28-4442-b279-e7d80d573505"   # Somchai (male, native Thai)
+      gemini: "Kore"
+      openai: "nova"
+  stt:
+    provider: openai
+  # Turns a prompt into the ONE Thai line that gets spoken back. Model is keyed by provider
+  # for the same reason the voice id is: switching `provider` must not carry a model name
+  # from the wrong vendor. `claude` means the headless CLI (`claude -p`), no API key needed.
+  summarizer:
+    provider: openai
+    model:
+      openai: gpt-4o-mini
+      gemini: gemini-2.5-flash
+      claude: claude-haiku-4-5-20251001
+  sfx:
+    provider: elevenlabs
+  # Local speech. `enabled` is the master switch; the three below are independently useful —
+  # per-prompt acks are the first thing to tire of, while milestones are the reason to turn any
+  # of this on, so one flag for all three would force an all-or-nothing choice.
+  #
+  # For "quiet for the next twenty minutes" use `aiworks voice mute on` instead of editing this:
+  # it is a file, it applies machine-wide at once, and it DISABLES what this machine says rather
+  # than merely silencing it — nothing is summarized or synthesized while it is on. It does NOT
+  # touch `notify_voice` below (that audio is for the team, decided here) or dictation.
+  autoplay:
+    enabled: false
+    ack: true          # a spoken acknowledgement for every prompt
+    milestones: true   # the closing line — what the finished turn actually produced
+    heartbeat: true    # "still working, currently X" on a turn that has run long
+    # EVERY finished turn speaks its result. The result is the half you cannot get from glancing at
+    # the screen, and a version that stayed quiet unless the turn declared an event announced the
+    # START of the work and then never said it was done.
+    #
+    # A turn can name its own line with `VOICE[group]: …` in the reply — free, exact, and it picks
+    # the cue. Without one, the reply is summarized (one call, ~$0.01 a turn: a finish summary is
+    # unique text, so it never hits the audio cache) and a narrow keyword match decides only which
+    # cue to attach, never whether to speak.
+    #
+    # false ⇒ the conservative mode: ONLY a tagged turn says anything. (Replaces the pre-rename
+    # `milestone_backstop`, which is still honoured in its `false` position.)
+    milestone_every_turn: true
+    # HOW MUCH it says when it speaks — never WHETHER it speaks (that is the four switches above).
+    # Reaches the ack and the closing line only: the heartbeat stays a template and the Slack voice
+    # note stays one canonical sentence, because in both cases the repetition is what makes them
+    # free (they hit the audio cache).
+    #
+    #   terse      1 sentence, facts only, no softener and no reaction word — the shipped behaviour
+    #   balanced   1-2 sentences, + a softener (ให้นะคะ) + a 1-2 word reaction (ได้ค่ะ / เจอแล้วค่ะ)
+    #              + the second fact
+    #   chatty     2-3 sentences, + the third fact + the follow-through (what will be reported,
+    #              what is waiting for you)
+    #
+    # The character budget is a CEILING, NOT A QUOTA: one fact ⇒ one sentence, even at `chatty`.
+    # That is the safety property — given room and nothing to fill it with, a model pads, and
+    # padding is one step from inventing (measured on this feature: an open-ended prompt reached for
+    # a plausible-looking file name, which is why the "never invent" rule exists).
+    #
+    # Bad news (`prod`/`error` intent, `red`/`incident` group) drops the softener and the reaction at
+    # EVERY level: a warm register is the wrong register for an incident, and this is a set-once
+    # preference nobody turns down before production breaks.
+    #
+    # COST, since this is the feature's biggest lever — ack and closing lines never hit the cache
+    # (unique text every time), at ~$0.0001/char on elevenlabs, 100 turns/day × 22 days:
+    #   terse ~$48/mo   ·   balanced ~$76/mo   ·   chatty ~$105/mo
+    # `voice.tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
+    #
+    # `aiworks voice audition "<a request>"` speaks all three so you can pick by ear.
+    chattiness: terse
+  # A voice note attached to the Slack messages the workflow already sends. THE ONLY switch for it:
+  # `aiworks voice mute` deliberately does not reach it, because that audio is a deliverable for the
+  # team — rendered on this machine, heard on someone else's phone — so whether the channel gets one
+  # is a standing decision made HERE, not a side effect of my speakers being quiet for a call.
+  notify_voice:
+    enabled: false
+  push_to_talk:
+    enabled: false
+    # Left and right modifiers are separate keycodes, so a right-side chord collides with
+    # nothing. `fn+…` works ONLY on a built-in Apple keyboard — an external keyboard's fn key is
+    # handled in its own firmware and never reaches macOS (measured), whatever AppleFnUsageType
+    # is set to. Both ⌘ keys exist everywhere and do nothing when held together.
+    hotkey: "left_cmd+right_cmd"
+    # `default` follows System Settings → Sound → Input, so plugging in a headset moves dictation
+    # with it. A device NAME pins it instead. An avfoundation INDEX is never accepted: the
+    # numbering changes with whatever is plugged in, and a wrong index records the wrong room.
+    mic: default
+    preview:
+      provider: elevenlabs                        # none | elevenlabs | openai
+      # The HUD re-transcribes only the last N seconds. Re-sending the whole prefix each pass made
+      # the lag GROW with the utterance (0.98 s at 2 s of audio, 1.86 s at 10 s); a trailing
+      # window keeps the update rate flat at ~1.5 s however long you talk. The text that gets
+      # TYPED is always the accurate pass over the complete recording, so nothing is lost.
+      window_seconds: 12
+    auto_send: true                               # forced false when preview.provider is none
+  cache:
+    max_mb: 500
+
 # Read-only deployed-env triage MCP servers (pg_triage, redis_triage — STAGING + PRODUCTION),
 # registered in LOCAL scope by `aiworks sync` / `aiworks setup`.
 #
