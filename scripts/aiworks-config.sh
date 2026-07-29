@@ -202,6 +202,30 @@ config_drift_check() {
 }
 config_drift_check
 
+# ── 0b. comment guard: the LIVE config files carry NO comments ──────────────────────────
+# The counterpart of the drift guard above: the example TEMPLATE is where an explanation
+# belongs, and the live file is data. `.claude/hooks/dev-wrapper/pretool-config-comment-guard.sh`
+# blocks an agent from writing one; this catches the other way in — a hand edit in an editor,
+# or a config copied wholesale from the template before the copy path learned to strip.
+# ADVISORY like the drift guard: nothing about a comment breaks a run, and `aiworks sync` must
+# not fail over a formatting rule. It prints the one command that fixes it.
+# Rationale: docs/adr/0006-config-carries-no-comments.md
+config_comment_check() {
+  local scanner="$ROOT/scripts/lib/yaml_comments.py" f hits dirty=0
+  [[ -f "$scanner" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  for f in "$WC" "$WC_LOCAL"; do
+    [[ -f "$f" ]] || continue
+    hits="$(python3 "$scanner" --check "$f" 2>&1)" && continue
+    dirty=1
+    warn "$(basename "$f") carries $(printf '%s\n' "$hits" | grep -c .) YAML comment line(s) — the live config is data, not documentation:" >&2
+    printf '%s\n' "$hits" | head -5 >&2
+    warn "  move the explanation to $(basename "${f%.yaml}").example.yaml (or docs/) and strip the file: python3 scripts/lib/yaml_comments.py --write $(basename "$f")" >&2
+  done
+  [[ "$dirty" -eq 1 || "$QUIET" -eq 1 ]] || ok "the live config files carry no comments"
+}
+config_comment_check
+
 START_RE='>>> AIWORKS:CONFIG START'
 END_RE='<<< AIWORKS:CONFIG END'
 if ! grep -qF "$START_RE" "$TARGET" || ! grep -qF "$END_RE" "$TARGET"; then

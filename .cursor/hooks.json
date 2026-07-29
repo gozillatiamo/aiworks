@@ -56,6 +56,11 @@
         "matcher": "Write|Edit"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-config-comment-guard.sh'",
+        "timeout": 10,
+        "matcher": "Write|Edit"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-submodule-guard.sh'",
         "timeout": 10,
         "matcher": "Write|Edit|NotebookEdit"

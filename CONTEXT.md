@@ -158,6 +158,14 @@ repo) — always **English**, even under `th`, since it lives beside the code.
 The shared source of truth — providers, ticket prefix, status lifecycle, policies, and the
 `products[].repos[]` registry. `aiworks sync` sets the workspace up from it.
 
+**Comment-free config**:
+The rule that both LIVE config files (`workspace.config.yaml`, `workspace.config.local.yaml`)
+hold data only — no header, no divider, no trailing note, no tombstone. The `*.example.yaml`
+templates are the documentation surface and keep their comments; measurements and design rationale
+go to `docs/` or the owning script's README. Enforced by `pretool-config-comment-guard.sh`, an
+advisory check in `aiworks config`, and a stripped bootstrap copy in `aiworks add`; the scanner is
+`scripts/lib/yaml_comments.py`. → [ADR-0006](docs/adr/0006-config-carries-no-comments.md)
+
 **Personal override** / **`workspace.config.local.yaml`**:
 A git-ignored, per-user file (analogue of `.claude/settings.local.json`) that overrides the
 shared config at **runtime only**. → [ADR-0003](docs/adr/0003-personal-runtime-config-overrides.md)

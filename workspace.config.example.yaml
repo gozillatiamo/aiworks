@@ -34,6 +34,17 @@
 # workspace.config.yaml is a feature nobody else can discover. `aiworks config` — which
 # `aiworks sync` runs on every pass — WARNS when a live key is undocumented here. Add the key
 # to this file in the same change, with a neutral/OFF default and the comment that explains it.
+#
+# THIS FILE IS THE DOCUMENTATION; THE LIVE CONFIG IS DATA. Every comment you see here is
+# deliberate, and the live `workspace.config.yaml` carries NONE of them — no header, no section
+# divider, no trailing note, no tombstone for a removed key. Reason: CLAUDE.md `@`-injects the
+# live config into EVERY session, so a comment there is re-read on every turn forever, while a
+# comment here is read once by whoever sets the workspace up. The bootstrap copy strips them for
+# you (`aiworks add`), a PreToolUse hook blocks an agent from adding one, and `aiworks config`
+# warns if one arrives by hand. Clean a file with:
+#   python3 scripts/lib/yaml_comments.py --write workspace.config.yaml
+# So: explain a key HERE (and put measurements / design rationale in docs/ or the owning script's
+# README) — never in the file the workspace actually runs on. See docs/adr/0006-config-carries-no-comments.md.
 # ─────────────────────────────────────────────────────────────────────────────
 
 org:
