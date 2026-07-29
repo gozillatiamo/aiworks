@@ -100,8 +100,8 @@ const REPOS = {
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
-    green: '<unit + integration tests>',
-    guardianFocus: 'authz, secrets, input validation, event-schema compat, PII at rest/in transit',
+    green: 'unit tests + integration tests passed successfully',
+    guardianFocus: 'secrets, data-protection',
     distribute: null,
   },
   'ofb-instruction': {
