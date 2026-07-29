@@ -21,8 +21,21 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # the workspace root
 T="$(mktemp -d -t voice-narrate-selftest)"
 trap 'rm -rf "$T"' EXIT
 
-rm -rf "$T"; mkdir -p "$T/scripts"
+rm -rf "$T"; mkdir -p "$T/scripts" "$T/cache/cue" "$T/bin"
 cp -R "$SRC/scripts/voice" "$T/scripts/voice"
+# ISOLATE THE MACHINE'S STATE, both halves of it. Narration state, the spool and the hand mute all
+# live under VOICE_CACHE_HOME, and the OS mute is read from the laptop's audio device — so without
+# these two lines the suite goes red for everyone whose machine happens to be muted while they run
+# it, which is exactly the state you are in when you are working on mute.
+export VOICE_CACHE_HOME="$T/cache"
+export VOICE_OS_MUTED=0
+# A fake afplay, so "did a sound actually play?" is a file test rather than a thing you listen for.
+cat > "$T/bin/afplay" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "${VOICE_CACHE_HOME}/played"
+STUB
+chmod +x "$T/bin/afplay"
+export PATH="$T/bin:$PATH"
 cat > "$T/workspace.config.yaml" <<'YAML'
 language: th
 voice:
@@ -44,6 +57,14 @@ done
 printf 'SPOKE[%s%s]: %s\n' "$kind" "${cue:+/$cue}" "$*"
 STUB
 chmod +x "$T/scripts/voice/speak.sh"
+# Stub the summarizer as well. narrate.sh never calls it (a fact line is a template, and prose is
+# the transcript's own sentence) — but the ack-cue case below runs the REAL UserPromptSubmit hook,
+# which forks ack.sh, and that one does. Without this the suite would make a paid LLM call.
+cat > "$T/scripts/voice/summarize.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'กำลังไปดูให้ค่ะ\n'
+STUB
+chmod +x "$T/scripts/voice/summarize.sh"
 N="$T/scripts/voice/narrate.sh"
 G="$T/scripts/voice/gate.sh"
 RUN="$$"          # session ids must be unique per run: narration state is machine-global
@@ -232,6 +253,58 @@ sed -i.bak '/gates: false/d' "$T/workspace.config.yaml"
 gpay PermissionRequest Bash '{"command":"cargo build"}'
 ck "a gate speaks at terse too, unlike narration" "ขออนุญาตรัน cargo build ค่ะ" \
    "$(VOICE_CHATTINESS=terse grun "$(_s gt12)" PermissionRequest)"
+
+echo "== mute: EVERY output is off, and nothing is spent =="
+# The stub speak.sh is the proxy for spend: it is what a real run would pay an LLM and a TTS call
+# for, so silence here means the producer exited before either one.
+: > "$T/cache/mute"
+ck "a hand mute silences narration"  EMPTY "$(run "$(_s m1)" "$T/p-read.json")"
+ck "a hand mute silences the gate voice" EMPTY \
+   "$(gpay PermissionRequest Bash '{"command":"cargo test"}'; grun "$(_s m2)" PermissionRequest)"
+rm -f "$T/cache/mute"
+ck "the OS mute silences narration" EMPTY \
+   "$(VOICE_OS_MUTED=1 run "$(_s m3)" "$T/p-read.json")"
+ck "the OS mute silences the gate voice" EMPTY \
+   "$(gpay PermissionRequest Bash '{"command":"cargo test"}'; VOICE_OS_MUTED=1 grun "$(_s m4)" PermissionRequest)"
+ck "…and both off speaks again" "SPOKE[narration]" "$(run "$(_s m5)" "$T/p-read.json")"
+
+# voice_mute_reason names the switch — a status line that says "muted" without saying WHICH mute
+# sends you to unmute the wrong one.
+reason() { ( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_mute_reason ); }
+ck "reason: nothing"  EMPTY "$(reason)"
+ck "reason: the OS"   "os"  "$(VOICE_OS_MUTED=1 reason)"
+: > "$T/cache/mute"
+ck "reason: by hand wins when both are on" "hand" "$(VOICE_OS_MUTED=1 reason)"
+rm -f "$T/cache/mute"
+
+echo "== mute covers the SOUND EFFECTS too, not just the speech =="
+: > "$T/cache/cue/ack.mp3"; printf x > "$T/cache/cue/ack.mp3"
+rm -f "$T/cache/played"
+out="$(VOICE_OS_MUTED=1 "$T/scripts/voice/sfx.sh" play ack 2>&1)"
+ck "sfx.sh play says it is muted instead of playing" "muted (os)" "$out"
+[[ -f "$T/cache/played" ]] && { echo "  FAIL sfx played a cue while muted"; fail=$((fail+1)); } \
+                          || { echo "  ok   …and no cue reached afplay"; pass=$((pass+1)); }
+rm -f "$T/cache/played"
+VOICE_OS_MUTED=0 "$T/scripts/voice/sfx.sh" play ack >/dev/null 2>&1
+[[ -f "$T/cache/played" ]] && { echo "  ok   unmuted, the same cue does play"; pass=$((pass+1)); } \
+                          || { echo "  FAIL cue did not play when unmuted"; fail=$((fail+1)); }
+
+echo "== the ack cue the hook plays INLINE is muted too =="
+# The one output that never went through speak.sh or queue.sh, and so was the one that still went
+# "bong" on a muted machine. Run the real hook against the throwaway tree.
+hook="$SRC/.claude/hooks/voice-ack.sh"
+hookrun() { # hookrun <VOICE_OS_MUTED> — returns after the backgrounded cue had its chance
+  rm -f "$T/cache/played"
+  printf '{"session_id":"%s","prompt":"ตรวจ turnover commission ให้หน่อย"}' "$(_s h$1)" \
+    | CLAUDE_PROJECT_DIR="$T" VOICE_OS_MUTED="$1" bash "$hook" >/dev/null 2>&1
+  local i=0; while [[ ! -f "$T/cache/played" && $i -lt 30 ]]; do sleep 0.05; i=$((i+1)); done
+}
+hookrun 1
+[[ -f "$T/cache/played" ]] && { echo "  FAIL the hook played the ack cue while muted"; fail=$((fail+1)); } \
+                          || { echo "  ok   muted: the hook plays no cue"; pass=$((pass+1)); }
+hookrun 0
+[[ -f "$T/cache/played" ]] && { echo "  ok   unmuted: the cue still lands"; pass=$((pass+1)); } \
+                          || { echo "  FAIL the cue stopped landing when unmuted"; fail=$((fail+1)); }
 
 echo "== tool-fact.py fixtures =="
 if python3 "$SRC/scripts/voice/tool-fact.py" --selftest >/dev/null 2>&1; then

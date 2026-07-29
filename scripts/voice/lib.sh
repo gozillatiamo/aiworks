@@ -723,18 +723,30 @@ voice_stt_hint() {
 }
 
 # ── mute ──────────────────────────────────────────────────────────────────────────
-# One file, machine-global: present ⇒ silence, absent ⇒ speech. `aiworks voice mute on|off`.
+# TWO MUTES, ONE MEANING: silence is an OFF SWITCH, never a volume knob.
 #
-# MUTE IS AN OFF SWITCH FOR THIS MACHINE'S SPEAKERS, NOT A VOLUME KNOB. Muted, everything the
-# laptop was going to SAY is DISABLED rather than merely silenced: nothing is summarized, nothing
-# is synthesized, no cue is played. So a muted machine spends nothing on speech, which is the
-# point — the alternative was paying an LLM call and a TTS call per turn to render audio into
-# muted speakers.
+#   BY HAND   one file, machine-global: present ⇒ silence, absent ⇒ speech.
+#             `aiworks voice mute on|off`.
+#   BY THE OS  the system output is muted (the F10 key, the menu-bar slider, Control Centre).
+#             Read live from macOS, not remembered.
 #
-# It covers ack, milestone, narration, the identity prefix and a direct speak.sh alike. A person
-# who mutes by hand means "stop", not "a bit less".
+# EITHER ONE DISABLES EVERY OUTPUT, rather than merely silencing it: nothing is summarized,
+# nothing is synthesized, no cue and no sound effect is played. So a muted machine spends
+# NOTHING on speech — which is the whole point. The alternative, and what this used to do for
+# the OS half, was paying an LLM call plus a TTS call per turn to render audio into speakers
+# that are off.
 #
-# TWO THINGS IT DELIBERATELY DOES NOT COVER, because neither is this machine talking:
+# It covers ack, milestone, narration, the gate voice, the identity prefix, the `ack` cue the
+# UserPromptSubmit hook plays inline, `sfx.sh play` and a direct speak.sh alike. A person who
+# mutes — by either switch — means "stop", not "a bit less".
+#
+# WHY THE OS FLAG AND NOT A VOLUME THRESHOLD: `output muted` is an explicit human action, and it
+# is the one field that means it. `output volume: 0` is NOT the same signal — macOS reports 0 for
+# HDMI / AirPlay / optical output, where the external device owns the volume, so treating 0 as
+# silence would quietly kill the feature for anyone on a monitor's speakers. Muted is muted;
+# quiet is not.
+#
+# TWO THINGS NEITHER MUTE COVERS, because neither is this machine talking:
 #
 #   The SLACK VOICE NOTE. That audio is a deliverable for the team, rendered here and heard on
 #   someone else's phone, so it is not a question about the state of my speakers. Its one switch is
@@ -746,20 +758,69 @@ voice_stt_hint() {
 #   background spend to save, and a mute that stopped you from dictating would be the switch
 #   breaking a feature you just explicitly asked for. Only its cues go quiet.
 #
-# A FILE, not a config key: this is a "for the next twenty minutes" decision. Putting it in
-# workspace.config.local.yaml would mean editing config to go quiet — and forgetting to edit it
-# back. Machine-global, so every worktree goes quiet at once rather than one clone at a time.
+# THE HAND MUTE IS A FILE, not a config key: it is a "for the next twenty minutes" decision, and
+# putting it in workspace.config.local.yaml would mean editing config to go quiet — then forgetting
+# to edit it back. Machine-global, so every worktree goes quiet at once rather than one clone at a
+# time. The OS mute needs no state of ours at all: the system already holds it.
 #
 # THERE IS NO AUTOMATIC CALL DETECTION, by decision. An earlier version pgrep'd for
 # Zoom/Teams/Webex; it was removed because it cannot be made honest — Google Meet is a browser
 # TAB with no process to find, so the auto-detect would cover some calls and silently miss
-# others, which is worse than covering none and having one switch you actually reach for.
+# others, which is worse than covering none and having one switch you actually reach for. Muting
+# the machine before a call, which people already do out of habit, is now that switch.
 VOICE_MUTE_FILE="$VOICE_CACHE_HOME/mute"
 
-voice_is_muted() {
-  [[ -f "$VOICE_MUTE_FILE" ]] || return 1
-  vlog "muted ($VOICE_MUTE_FILE — 'aiworks voice mute off' to undo)"
+# Is the SYSTEM output muted? macOS only, read live.
+#
+# COST: one osascript, ~120 ms measured. That is affordable because every producer of speech runs
+# DETACHED (nohup'd out of the hook), so the 120 ms is never on the user's turn — and it buys back
+# a whole LLM + TTS round-trip. The one inline caller, the `ack` cue in
+# .claude/hooks/voice-ack.sh, does the check inside its own background subshell for the same reason.
+#
+# Memoized for ONE SECOND, not for the process: queue.sh's drain calls this once per job while it
+# plays a backlog, and a mute pressed mid-drain has to stop the rest of it. A per-process memo
+# would carry a stale "not muted" through the whole queue.
+#
+# `VOICE_OS_MUTED=1|0` forces the answer — the selftest uses it so the suite needs no audio device
+# and no macOS, and it is the escape hatch if a machine ever reports this field wrongly.
+#
+# NOT muted is the answer when we cannot tell (no osascript, i.e. not macOS; or the call fails).
+# Failing open keeps a working feature working; failing closed would make voice silently dead on a
+# machine that never had a mute to begin with.
+_VOICE_OS_MUTE_VAL=""
+_VOICE_OS_MUTE_AT=0
+voice_os_muted() {
+  if [[ -n "${VOICE_OS_MUTED:-}" ]]; then
+    [[ "$VOICE_OS_MUTED" == "1" ]] && return 0 || return 1
+  fi
+  command -v osascript >/dev/null 2>&1 || return 1
+  local now; now="$(date +%s)"
+  if [[ -z "$_VOICE_OS_MUTE_VAL" ]] || (( now - _VOICE_OS_MUTE_AT >= 1 )); then
+    _VOICE_OS_MUTE_VAL="$(osascript -e 'output muted of (get volume settings)' 2>/dev/null)"
+    [[ "$_VOICE_OS_MUTE_VAL" == "true" ]] || _VOICE_OS_MUTE_VAL="false"
+    _VOICE_OS_MUTE_AT="$now"
+  fi
+  [[ "$_VOICE_OS_MUTE_VAL" == "true" ]]
+}
+
+# Which switch is holding it: `hand` | `os` | `` (not muted). For status output and logs — the
+# answer to "why is it silent?" has to name the switch, or you go looking for the wrong one.
+voice_mute_reason() {
+  [[ -f "$VOICE_MUTE_FILE" ]] && { printf 'hand'; return 0; }
+  voice_os_muted && { printf 'os'; return 0; }
   return 0
+}
+
+voice_is_muted() {
+  if [[ -f "$VOICE_MUTE_FILE" ]]; then
+    vlog "muted ($VOICE_MUTE_FILE — 'aiworks voice mute off' to undo)"
+    return 0
+  fi
+  if voice_os_muted; then
+    vlog "muted (system output is muted — unmute the machine to hear anything)"
+    return 0
+  fi
+  return 1
 }
 
 voice_now() { date +%s; }

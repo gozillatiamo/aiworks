@@ -252,8 +252,11 @@ cmd_status() {
     printf '  %-28s %s\n' "$(basename "$j")" "$(jq -r '.text // ""' "$j" | cut -c1-60)"
   done
   printf 'last spoke %s at %s\n' "$(_last_spoken_field session)" "$(_last_spoken_field ts)"
-  if [[ -f "$VOICE_MUTE_FILE" ]]; then printf 'mute       ON (queue.sh mute off to unmute)\n'
-  else printf 'mute       off\n'; fi
+  case "$(voice_mute_reason)" in
+    hand) printf 'mute       ON by hand (queue.sh mute off to unmute)\n' ;;
+    os)   printf 'mute       ON — system output is muted (unmute the machine)\n' ;;
+    *)    printf 'mute       off\n' ;;
+  esac
   if python3 - "$VOICE_LOCK" <<'PY'
 import fcntl, os, sys
 fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o600)
@@ -267,15 +270,28 @@ PY
 
 cmd_purge() { rm -f "$VOICE_SPOOL_DIR"/*.json 2>/dev/null || true; vlog "spool purged"; }
 
-# See the rationale on voice_is_muted in lib.sh (a file, machine-global, silences every kind).
+# See the rationale on voice_is_muted in lib.sh (two switches — this file, and the system output
+# mute — either of which silences every kind and spends nothing).
+#
+# `on`/`off` own the FILE only: the OS mute is the system's state, not ours to toggle. But `off`
+# reports it, because "I turned the mute off and it is still silent" is otherwise a bug hunt.
 cmd_mute() {
   voice_mkdirs
   case "${1:-status}" in
     on)     : > "$VOICE_MUTE_FILE"
             printf 'voice muted — nothing spoken, summarized or synthesized on this machine\n'
             printf '  (Slack voice notes and dictation are unaffected — neither is this machine talking)\n' ;;
-    off)    rm -f "$VOICE_MUTE_FILE"; printf 'voice unmuted\n' ;;
-    status) [[ -f "$VOICE_MUTE_FILE" ]] && printf 'muted\n' || printf 'not muted\n' ;;
+    off)    rm -f "$VOICE_MUTE_FILE"
+            if voice_os_muted; then
+              printf 'voice unmuted — but the SYSTEM output is still muted, so nothing will be spoken or synthesized\n'
+            else
+              printf 'voice unmuted\n'
+            fi ;;
+    status) case "$(voice_mute_reason)" in
+              hand) printf 'muted\n' ;;
+              os)   printf 'muted (system output)\n' ;;
+              *)    printf 'not muted\n' ;;
+            esac ;;
     *)      vdie "mute: use on|off|status" ;;
   esac
 }

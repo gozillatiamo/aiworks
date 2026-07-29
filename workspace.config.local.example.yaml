@@ -73,9 +73,11 @@
 # before max's ack and closing line were shortened to the register they now use.)
 # `tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
 #
-# To go quiet for a while, do NOT edit this back: `aiworks voice mute on` disables what the machine
-# SAYS, machine-wide, and it then costs nothing at all. It does not touch `notify_voice` (audio for
-# the team — config only) or dictation. `aiworks voice status` prints every switch, in order.
+# To go quiet for a while, do NOT edit this back: MUTE THE MACHINE. `aiworks voice mute on` and the
+# system output mute (the mute key / Control Centre, read live) both DISABLE what the machine SAYS,
+# machine-wide — nothing summarized, nothing synthesized, no cue, no sound effect — so it then costs
+# nothing at all. Neither touches `notify_voice` (audio for the team — config only) or dictation.
+# `aiworks voice status` prints every switch, in order, and names which mute is holding it.
 # Full doc: docs/agents/voice.md · reference: scripts/voice/README.md
 # voice:
 #   enabled: true
