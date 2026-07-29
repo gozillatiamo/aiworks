@@ -220,6 +220,24 @@ _slack_channel_id() {
         id="$(printf '%s' "$resp" | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1)"
       fi
       printf '%s' "$id" ;;
+    U*|W*)
+      # A USER id, not a channel. chat.postMessage accepts one and opens the IM for you, but
+      # the file-upload API does NOT — files.completeUploadExternal answers `invalid_arguments`
+      # for a U… channel_id, which is how a DM'd file upload fails. conversations.open resolves
+      # it to the IM's own D… id; opening an existing IM is idempotent and notifies nobody.
+      #
+      # ⚠ NEEDS THE `im:write` BOT SCOPE, which this workspace's app does NOT currently have
+      #   (measured 2026-07-28: conversations.open → missing_scope, needed
+      #   "channels:write,groups:write,mpim:write,im:write"). Until an admin adds im:write in
+      #   the Slack app's OAuth & Permissions and reinstalls, this falls back to the id as
+      #   given and a file upload to a DM still fails with invalid_arguments. The fallback is
+      #   also what keeps a genuine channel whose id starts with U/W from being mangled.
+      resp="$(curl -sS -X POST https://slack.com/api/conversations.open \
+        -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+        -H 'Content-Type: application/json; charset=utf-8' \
+        --data "$(jq -nc --arg u "$ch" '{users: $u}')" 2>/dev/null || true)"
+      id="$(printf '%s' "$resp" | jq -r '.channel.id // empty' 2>/dev/null || true)"
+      printf '%s' "${id:-$ch}" ;;
     *)   printf '%s' "$ch" ;;
   esac
 }
