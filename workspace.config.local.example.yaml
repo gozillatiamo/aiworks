@@ -68,6 +68,15 @@
 # Full doc: docs/agents/voice.md · reference: scripts/voice/README.md
 # voice:
 #   enabled: true
+#   tts:
+#     # WHOSE voice you hear. Measured on Thai (scripts/voice/README.md § Thai voice selection):
+#     # openai `sage` kept the most English technical terms (98 %) and is half ElevenLabs' price;
+#     # cartesia is the fastest; gemini is ~6× cheaper for 3 % fewer terms. Voice ids are keyed by
+#     # provider in the shared file, so switching here never carries the wrong vendor's id along.
+#     provider: openai
+#     # LUFS every line is levelled to (`off` disables). Vendors ship volumes 17 LU apart — this is
+#     # what makes them one level. Change it and run `aiworks voice normalize` to re-level the cache.
+#     loudness: -16
 #   autoplay:
 #     enabled: true       # local speech; `ack`, `milestones`, `heartbeat` switch independently
 #     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
