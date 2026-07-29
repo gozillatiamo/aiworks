@@ -263,9 +263,10 @@ voice:
   # Local speech. `enabled` is the master switch; the three below are independently useful — the
   # per-prompt acks are the first thing to tire of, while the milestones are the reason to turn
   # any of this on, so one flag for all three would force an all-or-nothing choice.
-  # To go quiet for a while use `aiworks voice mute on` instead of editing this: it applies
-  # machine-wide at once and DISABLES what the machine says (nothing summarized, nothing
-  # synthesized, so it then costs nothing) without touching `notify_voice` or dictation.
+  # To go quiet for a while, do not edit this — mute. `aiworks voice mute on` applies machine-wide
+  # at once, and MUTING THE SYSTEM OUTPUT does the same thing (it is read live from macOS): either
+  # one DISABLES what the machine says — nothing summarized, nothing synthesized, no cue and no
+  # sound effect played, so it then costs nothing — without touching `notify_voice` or dictation.
   autoplay:
     enabled: false
     ack: true                      # a spoken acknowledgement for every prompt

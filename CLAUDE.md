@@ -110,10 +110,11 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   and that line is spoken verbatim — free, exact, and it picks the cue; leave it out and the reply
   is summarized instead, which costs a call and gives the model the last word on your work. Say the
   **result** — the finding, number, verdict, or what is waiting for the user — never that you
-  finished, which they can already see. `aiworks voice mute on` **disables** what
-  this machine says out loud, machine-wide — nothing summarized, nothing synthesized, so a muted
-  machine costs nothing; it does not touch the Slack voice note (that is
-  `voice.notify_voice.enabled` in config, audio for the team) or dictation. The assistant's spoken
+  finished, which they can already see. **A muted machine costs nothing** — `aiworks voice mute on`
+  *or* simply muting the system output (read live from macOS) **disables** everything this machine
+  says out loud, machine-wide: nothing summarized, nothing synthesized, no cue and no sound effect
+  played. Neither reaches the Slack voice note (that is `voice.notify_voice.enabled` in config,
+  audio for the team) or dictation. The assistant's spoken
   name is **Sunmi (ซันมี่)** — answer to it.
 - `docs/agents/pii-provenance.md` — how personal data is kept inside the prod boundary
   **without** getting in the way of local/staging work. A value is redacted at egress (ticket

@@ -23,19 +23,39 @@ and `-v` on any voice command explains why it stayed quiet.
 
 ## Mute is an off switch, not a volume knob
 
+**Muting the machine is enough.** There are two mutes and they mean the same thing:
+
+| | how | state lives |
+|---|---|---|
+| by hand | `aiworks voice mute on` / `off` | one file, `~/.cache/aiworks/voice/mute` |
+| by the OS | the mute key, the menu-bar slider, Control Centre | macOS, read live |
+
 ```bash
 aiworks voice mute on      # the output half is DISABLED machine-wide — and costs nothing
-aiworks voice mute off
+aiworks voice mute off     # says so if the SYSTEM output is still muted (else you hunt a bug)
 aiworks voice status       # every switch that decides whether you hear anything, in order
 ```
 
-Muted, nothing is summarized and nothing is synthesized: no ack, no milestone, no narration, no
-identity prefix, no dictation cue. The point is the bill — the alternative was paying for an LLM
-call and a TTS call per turn to render audio into muted speakers.
+Either one, nothing is summarized and nothing is synthesized: no ack, no closing line, no
+narration, no gate voice, no identity prefix, no cue, no sound effect, no dictation cue. The point
+is the bill — the alternative was paying for an LLM call and a TTS call per turn to render audio
+into speakers that are off.
 
-One file (`~/.cache/aiworks/voice/mute`), so every clone and worktree goes quiet at once. There is
-deliberately no automatic call detection: Google Meet is a browser tab with no process to find, so
-an auto-detect would cover some calls and silently miss others.
+The hand mute is a file, so every clone and worktree goes quiet at once; the OS mute needs no state
+of ours, because the system already holds it. The one output that used to escape both was the `ack`
+cue the `UserPromptSubmit` hook plays inline — it now does the check inside its own background
+subshell, so the hook still returns instantly and the cue lands ~130 ms in instead of ~10 ms.
+
+**`output muted`, never a volume threshold.** `output volume: 0` is not the same signal: macOS
+reports 0 for HDMI / AirPlay / optical output, where the external device owns the volume — so
+treating 0 as silence would quietly kill the feature for anyone using a monitor's speakers. Muted
+is muted; quiet is not. When the flag cannot be read at all (not macOS), the answer is *not muted*:
+failing open keeps a working feature working. `VOICE_OS_MUTED=1|0` forces it, which is how the
+selftest covers this with no audio device.
+
+**There is still no automatic call detection**, and now there is less need for one: Google Meet is a
+browser tab with no process to find, so an auto-detect would cover some calls and silently miss
+others. Muting the machine before a call — which people do by habit — is that switch.
 
 **Two things it does not touch, because neither is this machine talking:**
 

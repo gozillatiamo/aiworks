@@ -152,6 +152,14 @@ cmd_play() {
   local n="${1:?usage: sfx.sh play NAME}" f="$VOICE_CUE_DIR/$1.mp3"
   _entry "$n" >/dev/null || vdie "no cue named '$n' — one of: $(_names | tr '\n' ' ')"
   [[ -s "$f" ]] || vdie "cue '$n' is not generated yet — run: sfx.sh generate $n"
+  # A cue is OUTPUT, so mute covers it — by hand or by the OS. It says so out loud rather than
+  # doing nothing: you asked to hear a sound, and silence with no reason reads as a broken cue
+  # file. `generate` above is deliberately NOT gated — that is a setup step you ran on purpose,
+  # and its output is a file, not a sound.
+  if voice_is_muted; then
+    printf 'muted (%s) — not playing %s\n' "$(voice_mute_reason)" "$n" >&2
+    return 0
+  fi
   afplay "$f"
 }
 

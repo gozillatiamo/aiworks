@@ -307,24 +307,56 @@ gemini   →   … ทำไม null check ที่ chart 3 ทำให้ pay
 
 ```bash
 aiworks voice mute on       # this machine says nothing — and pays for nothing
-aiworks voice mute off
+aiworks voice mute off      # reports it if the SYSTEM output is still muted, which also silences
 aiworks voice mute          # report (bare form never toggles — a mute you can't see the
-                            # state of is how you stay muted for a day without knowing)
+                            # state of is how you stay muted for a day without knowing).
+                            # Prints `muted (system output)` when that is what is holding it
 ```
 
-One file, `~/.cache/aiworks/voice/mute`. Present ⇒ silent, absent ⇒ speech.
+**Two switches, one meaning.** `voice_is_muted` in `lib.sh` is true if EITHER holds:
+
+| | how | state | function |
+|---|---|---|---|
+| by hand | `aiworks voice mute on\|off` | one file, `~/.cache/aiworks/voice/mute` | file test |
+| by the OS | the mute key / menu-bar slider / Control Centre | macOS holds it | `voice_os_muted` |
+
+`voice_mute_reason` prints which one — `hand` \| `os` \| empty. Every status line uses it: "muted"
+that does not say *which* mute sends you to unmute the wrong one.
 
 - **An off switch, not a volume knob.** Muted, nothing is summarized and nothing is
-  synthesized — ack, milestone, narration, identity prefix, dictation cues and a direct
-  `speak.sh` alike. So speech costs **zero** while it is on, instead of paying for an LLM call
-  and a TTS call per turn to render audio nobody hears.
-- **Global.** Machine-wide, so every clone and worktree goes quiet at once.
+  synthesized — ack, closing line, narration, gate voice, identity prefix, cues, sound effects,
+  dictation cues and a direct `speak.sh` alike. So speech costs **zero** while it is on, instead
+  of paying for an LLM call and a TTS call per turn to render audio nobody hears.
+- **Global.** The hand mute is machine-wide, so every clone and worktree goes quiet at once. The
+  OS mute is the machine's own state, so it needs nothing of ours.
 - **Checked at every producer**, before it spends: `ack.sh` before the summarizer,
-  `milestone.sh` before the summarizer, `speak.sh` before synthesis, `identity.sh` before the
-  prefix synth — and once more at drain, so anything queued before you muted does not slip out.
+  `milestone.sh` before the summarizer, `narrate.sh` and `gate.sh` first thing, `speak.sh` before
+  synthesis, `identity.sh` before the prefix synth, `sfx.sh play` before `afplay`, the
+  `UserPromptSubmit` hook before the inline `ack` cue — and once more at drain, so anything queued
+  before you muted does not slip out.
 - **Drops, not defers.** Unmuting must not fire a backlog of everything you chose not to hear.
 - **Drop the `.sh` and it is `aiworks voice mute`**, on purpose: this is the one thing a person
   does with the feature by hand.
+
+### Reading the OS mute
+
+`osascript -e 'output muted of (get volume settings)'`, ~120 ms measured. Affordable because every
+producer runs DETACHED (nohup'd out of the hook), so it is never on the user's turn — and it buys
+back a whole LLM + TTS round-trip. Two details that are not incidental:
+
+- **Memoized for one second, not for the process.** `queue.sh`'s drain asks once per job while it
+  plays a backlog; a mute pressed mid-drain has to stop the rest of it, and a per-process memo
+  would carry a stale "not muted" through the whole queue.
+- **`output muted` only, never `output volume == 0`.** macOS reports volume 0 for HDMI / AirPlay /
+  optical output, where the external device owns the volume — treating 0 as silence would kill the
+  feature for anyone on a monitor's speakers. When the field cannot be read at all (not macOS) the
+  answer is *not muted*: failing open keeps a working feature working. `VOICE_OS_MUTED=1|0` forces
+  it, which is how `narrate-selftest.sh` covers all of this with no audio device.
+
+The inline `ack` cue is the one output that used to escape mute entirely: it never went through
+`speak.sh` or `queue.sh`, so a muted machine still went "bong" on every prompt. The hook now does
+the check inside the background subshell that plays it — the hook returns as fast as before and the
+cue lands ~130 ms in rather than ~10 ms, still inside the 400 ms that makes it read as *heard you*.
 
 ### What mute is NOT about
 
@@ -339,14 +371,21 @@ Two things it deliberately does not touch, because neither one is this machine t
 diagnostic, and one that went silent while muted would hide the report you ran it for. It prints
 `mute ON` instead.
 
-**A file, not a config key**, because mute is a "for the next twenty minutes" decision — config
-would mean editing it to go quiet and forgetting to edit it back. The two switches in the table
-above are the reverse: standing decisions, so they live in config and nowhere else.
+`sfx.sh generate` is exempt on the same grounds: it is a setup step you ran on purpose and its
+output is a *file*, not a sound. `sfx.sh play` is not exempt — a cue is output — and it prints
+`muted (<reason>)` rather than doing nothing, because silence with no reason reads as a broken
+cue file.
 
-**There is no automatic call detection**, by decision. An earlier version `pgrep`'d for
-Zoom/Teams/Webex and was removed: Google Meet is a browser tab with no process to find, so
-auto-detect would cover some calls and silently miss others. One switch you actually reach for
-beats a guess that is right most of the time.
+**The hand mute is a file, not a config key**, because it is a "for the next twenty minutes"
+decision — config would mean editing it to go quiet and forgetting to edit it back. The two
+switches in the table above are the reverse: standing decisions, so they live in config and nowhere
+else. The OS mute is neither: it is the machine's own state, already in the place people reach for.
+
+**There is no automatic call detection**, by decision — and honouring the OS mute is why it is no
+longer missed. An earlier version `pgrep`'d for Zoom/Teams/Webex and was removed: Google Meet is a
+browser tab with no process to find, so auto-detect would cover some calls and silently miss
+others. Muting the machine before a call is the switch people already reach for by habit, and it
+now costs nothing.
 
 ## The acknowledgement (phase 2)
 
@@ -367,7 +406,7 @@ It stays quiet when speaking would be worse than silence:
 | a session-management command | `/clear`, `/compact`, `/model` … an explicit list, not a guess: `/dev-cycle OFB-1952` still gets an ack |
 | the turn already ended | the answer is on screen; "กำลังไปดู X" after it is worse than nothing |
 | a newer prompt arrived | this ack would describe the previous request |
-| the machine is muted | `aiworks voice mute on` — checked before anything is spent |
+| the machine is muted | `aiworks voice mute on`, **or** the system output is muted — checked before anything is spent |
 | the summarizer returned nothing | speak nothing rather than a canned "รับทราบครับ" — filler on every failure is what this feature must not become |
 
 **It states the task, it does not read your words back.** The summarizer is told it is ACCEPTING
@@ -934,7 +973,7 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.autoplay.gates` | `true` | speak when something WAITS for you: permission prompt, plan approval, auto-mode denial, idle. Independent of `chattiness` |
 | `voice.autoplay.milestone_every_turn` | `true` | false ⇒ only an explicit `VOICE:` tag speaks (was `milestone_backstop`, still read in its `false` position) |
 | `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the step narrator + thresholds and is the only level that narrates the process; its ack/closing line are SHORTER than `chatty`'s on purpose |
-| `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; `aiworks voice mute` does not reach it |
+| `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; neither mute (by hand or by the OS) reaches it |
 | `voice.push_to_talk.enabled` | `false` | hold-to-dictate |
 | `voice.push_to_talk.hotkey` | `right_cmd+right_alt` | the chord; baked into the Lua by `ptt install` |
 | `voice.push_to_talk.mic` | `default` | `default` follows System Settings → Sound → Input; or a device NAME substring. Never an index |

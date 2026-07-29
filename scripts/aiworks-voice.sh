@@ -106,17 +106,24 @@ case "$cmd" in
     printf 'language          %s' "$lang"
     [[ "$lang" == "th" ]] && printf ' %s✓%s\n' "$c_ok" "$c_off" \
                           || printf ' %s← voice is th-only, everything below is inert%s\n' "$c_warn" "$c_off"
-    # SECOND, above every config switch: mute now DISABLES the output half rather than turning it
+    # SECOND, above every config switch: mute DISABLES the output half rather than turning it
     # down, so it is the answer to "why is it silent?" more often than any of the flags below —
-    # and reading it last, after nine rows of `on ✓`, is how you waste ten minutes.
-    if voice_is_muted; then
-      printf 'mute              %sON — this machine says nothing, and synthesizes nothing%s\n' \
-        "$c_warn" "$c_off"
-      printf '                  %saiworks voice mute off · Slack voice notes + dictation unaffected%s\n' \
-        "$c_dim" "$c_off"
-    else
-      printf 'mute              off\n'
-    fi
+    # and reading it last, after nine rows of `on ✓`, is how you waste ten minutes. Both switches
+    # get their OWN row and the reason is named: "muted" that does not say WHICH mute sends you to
+    # the wrong one.
+    case "$(voice_mute_reason)" in
+      hand)
+        printf 'mute              %sON (by hand) — nothing spoken, summarized or synthesized%s\n' \
+          "$c_warn" "$c_off"
+        printf '                  %saiworks voice mute off · Slack voice notes + dictation unaffected%s\n' \
+          "$c_dim" "$c_off" ;;
+      os)
+        printf 'mute              %sON (system output is muted) — nothing spoken, summarized or synthesized%s\n' \
+          "$c_warn" "$c_off"
+        printf '                  %sunmute the machine · Slack voice notes + dictation unaffected%s\n' \
+          "$c_dim" "$c_off" ;;
+      *)  printf 'mute              off\n' ;;
+    esac
     # Short labels rather than the config path, so the value column stays aligned — a status
     # table that shifts by row is harder to read than the paths are to look up.
     # 'key|label|default' — the autoplay sub-switches default TRUE, so a missing key must not
@@ -271,7 +278,8 @@ case "$cmd" in
       esac
     done
     if voice_is_muted; then
-      printf '%smuted — unmute first, or you will audition three silences%s\n' "$c_warn" "$c_off"; exit 0
+      printf '%smuted (%s) — unmute first, or you will audition four silences%s\n' \
+        "$c_warn" "$(voice_mute_reason)" "$c_off"; exit 0
     fi
     printf '%s%s%s  (%s)\n\n' "$c_dim" "$text" "$c_off" "$kind"
     for lvl in terse balanced chatty max; do
@@ -580,7 +588,12 @@ case "$cmd" in
         "$c_warn" "$(voice_language)" "$c_off"; exit 0
     fi
     voice_cfg_bool voice.enabled false || { printf '%svoice.enabled is false%s\n' "$c_warn" "$c_off"; exit 0; }
-    if voice_is_muted; then printf '%smuted — run: aiworks voice mute off%s\n' "$c_warn" "$c_off"; exit 0; fi
+    if voice_is_muted; then
+      [[ "$(voice_mute_reason)" == os ]] \
+        && printf '%smuted — the system output is muted, unmute the machine%s\n' "$c_warn" "$c_off" \
+        || printf '%smuted — run: aiworks voice mute off%s\n' "$c_warn" "$c_off"
+      exit 0
+    fi
     t0="$(python3 -c 'import time;print(time.time())')"
     el() { python3 -c "import time;print(time.time()-$t0)"; }
     # Backgrounded, like the real hook does it — playing the cue synchronously would fold its

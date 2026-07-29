@@ -56,12 +56,18 @@ prompt="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null || true)"
 # closes it so a slow ack can tell the answer already landed.
 voice_turn_start "$session" 2>/dev/null || true
 
-# The cue, detached and unconditional. It deliberately does NOT go through queue.sh: the queue
-# serializes speech behind a lock, and a cue that waits for a milestone to finish speaking is
-# not an acknowledgement any more. A 0.5 s cue landing under an ongoing sentence is a fair
-# trade for it always being immediate.
+# The cue, detached. It deliberately does NOT go through queue.sh: the queue serializes speech
+# behind a lock, and a cue that waits for a milestone to finish speaking is not an
+# acknowledgement any more. A 0.5 s cue landing under an ongoing sentence is a fair trade for it
+# always being immediate.
+#
+# THE MUTE CHECK RUNS INSIDE THE SUBSHELL, not before it. It costs ~120 ms (one osascript to read
+# the system output mute) and this hook is in front of the user's turn — so the hook forks and
+# returns, and the cue lands ~130 ms in instead of ~10 ms, still well inside the 400 ms that makes
+# it read as "heard you". This used to play unconditionally, which is how a muted machine still
+# went "bong" on every prompt.
 cue="$VOICE_CUE_DIR/ack.mp3"
-[ -s "$cue" ] && ( afplay "$cue" >/dev/null 2>&1 & ) 2>/dev/null
+( voice_is_muted || { [ -s "$cue" ] && afplay "$cue"; } ) >/dev/null 2>&1 &
 
 # Hand off the prompt by FILE: a prompt can be tens of kilobytes of pasted log, which is past
 # what is safe to pass as an argv string.

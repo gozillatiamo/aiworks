@@ -112,10 +112,14 @@ A `VOICE[group]: <one line>` line in a reply, which is how a turn writes its own
 summarized instead, and the model gets the last word on the work.
 
 **mute**:
-`aiworks voice mute on` — one machine-global file that disables what THIS MACHINE says (and so its
-spend). It does not reach the Slack voice note (`voice.notify_voice.enabled`, audio for the team) or
-dictation. There is deliberately no automatic call detection: a browser meeting has no process to
-find, so an auto-detect would cover some calls and silently miss others.
+Two switches, one meaning — `aiworks voice mute on` (a machine-global file) **or the OS output
+being muted** (read live from macOS). Either disables what THIS MACHINE says, and so its spend:
+nothing summarized, nothing synthesized, no cue and no sound effect played. Neither reaches the
+Slack voice note (`voice.notify_voice.enabled`, audio for the team) or dictation (input, and only
+while you hold the key). The OS half is `output muted` alone, never `volume == 0` — macOS reports 0
+for HDMI/AirPlay, where the external device owns the volume. There is deliberately no automatic
+call detection: a browser meeting has no process to find, so an auto-detect would cover some calls
+and silently miss others — muting the machine, which people already do, is that switch.
 
 ## Repos
 
