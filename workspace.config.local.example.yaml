@@ -58,9 +58,10 @@
 #
 # COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn now speaks a closing
 # line, and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
-# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo. (An earlier note here
-# said $14–24 — that was from when milestones almost never spoke.) `tts.provider: gemini` is ~6×
-# cheaper for 3 % fewer surviving English terms.
+# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$150/mo (that last
+# one extrapolated from its character ceiling, not measured). (An earlier note here said $14–24 —
+# that was from when milestones almost never spoke.) `tts.provider: gemini` is ~6× cheaper for 3 %
+# fewer surviving English terms.
 #
 # To go quiet for a while, do NOT edit this back: `aiworks voice mute on` disables what the machine
 # SAYS, machine-wide, and it then costs nothing at all. It does not touch `notify_voice` (audio for
@@ -80,9 +81,13 @@
 #   autoplay:
 #     enabled: true       # local speech; `ack`, `milestones`, `heartbeat` switch independently
 #     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
-#     # + a softener and a short reaction) | chatty (2-3, + the follow-through). Ceiling, not
-#     # quota — one fact still means one sentence. `aiworks voice audition "…"` compares all three.
+#     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (up to 4, and
+#     # the only level that narrates the STEPS — the ack states the order of the work, the closing
+#     # line lists what it did, and the heartbeat goes to 10 beats from 45 s so a long run keeps
+#     # saying where it is; it needs `heartbeat: true` below to be itself). Ceiling, not quota —
+#     # one fact still means one sentence. `aiworks voice audition "…"` compares all four.
 #     chattiness: balanced
+#     heartbeat: true     # the mid-turn line. Most of what `max` buys, and this still vetoes it
 #   notify_voice:
 #     enabled: true       # attach a voice note to the review-request / ship messages
 #   push_to_talk:

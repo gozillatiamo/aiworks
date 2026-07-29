@@ -11,7 +11,8 @@
 #   voice_cache_key …          content-address a synthesis request
 #   voice_normalize_text       whitespace-normalize the spoken text (part of the cache key)
 #   voice_spoken_form TEXT     rewrite written text into what should be SAID (ids, MR/PR)
-#   voice_chattiness           terse | balanced | chatty — how MUCH it says when it speaks
+#   voice_chattiness           terse | balanced | chatty | max — how MUCH it says when it speaks
+#   voice_heartbeat_gaps       the mid-turn cadence for that level (the only channel `max` adds)
 #   voice_focus_set / _is_focused   which worktree the user is currently prompting in
 #   voice_is_muted             one machine-global file: muted ⇒ the feature spends NOTHING
 #
@@ -155,11 +156,16 @@ voice_language() {
 #              เจอแล้วค่ะ) and the second fact.
 #   chatty     two or three, plus the third fact and the follow-through (what will be reported,
 #              what is waiting for you).
+#   max        up to four, in the register of a flight engineer reporting to the person in charge:
+#              every sentence is [subject] [state] [figure] addressed to them, the STEPS are named
+#              in the order they happen, and the heartbeat tightens so a long run keeps saying
+#              where it is. The one level that narrates the process rather than only the outcome.
 #
-# It reaches ack.sh and milestone.sh ONLY. The heartbeat stays a template (its repetition is what
-# makes it free — it hits the audio cache), the Slack voice note stays one canonical sentence per
-# event (same reason, and that audio is the team's, not this machine's), and the identity prefix is
-# an identifier with nothing to lengthen.
+# `terse`…`chatty` reach ack.sh and milestone.sh ONLY. `max` additionally reaches the heartbeat's
+# SCHEDULE (voice_heartbeat_gaps below) — never its words. The Slack voice note stays one canonical
+# sentence per event at every level (its repetition is what makes it free — it hits the audio cache
+# — and that audio is the team's, not this machine's), and the identity prefix is an identifier
+# with nothing to lengthen.
 #
 # An unreadable value falls back to `terse` rather than aborting: a typo in a personal config file
 # must not take speech down, and falling back to the DOCUMENTED default is more predictable than
@@ -172,8 +178,32 @@ voice_chattiness() {
   v="${VOICE_CHATTINESS:-$(voice_cfg voice.autoplay.chattiness terse)}"
   v="$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')"
   case "$v" in
-    terse|balanced|chatty) printf '%s' "$v" ;;
-    *) vlog "chattiness: '$v' is not terse|balanced|chatty — using terse"; printf 'terse' ;;
+    terse|balanced|chatty|max) printf '%s' "$v" ;;
+    *) vlog "chattiness: '$v' is not terse|balanced|chatty|max — using terse"; printf 'terse' ;;
+  esac
+}
+
+# ── the heartbeat cadence, keyed by chattiness ─────────────────────────────────────
+# `max` is the only level that reaches the heartbeat, and it reaches the SCHEDULE, not the words:
+# same template, same near-free audio cache, just sooner and more often. That IS the level's whole
+# point — a run you are not watching keeps telling you where it is, instead of going quiet between
+# "starting" and "done" — and it is still "how much", never "whether": `autoplay.heartbeat: false`
+# vetoes every level alike, and `max` does not override it (a level that could switch a channel back
+# on would make "why is it quiet?" unanswerable, which is the rule the whole ladder is built on).
+#
+# The words stay a template even here. Routing ten beats through the summarizer would cost more per
+# long turn than the ack and the closing line together, for prose nobody listens to closely — and
+# the summarizer's input mid-turn is a tool call, not a result, so it has nothing to summarize.
+#
+#   terse|balanced|chatty   90 s, 3 min, then 5 min × 4 — 6 beats, ~24 min of cover
+#   max                     45 s, 1 min, 90 s, then 2–5 min — 10 beats, ~29 min of cover
+#
+# BOTH schedules back off and both are capped, at every level. A fixed short interval across a
+# twenty-minute dev-cycle speaks thirteen times and becomes the thing you mute.
+voice_heartbeat_gaps() {
+  case "$(voice_chattiness)" in
+    max) printf '45 60 90 120 180 180 240 240 300 300' ;;
+    *)   printf '90 180 300 300 300 300' ;;
   esac
 }
 

@@ -136,20 +136,29 @@ voice:
     # `milestone_backstop`, which is still honoured in its `false` position.)
     milestone_every_turn: true
     # HOW MUCH it says when it speaks — never WHETHER it speaks (that is the four switches above).
-    # Reaches the ack and the closing line only: the heartbeat stays a template and the Slack voice
-    # note stays one canonical sentence, because in both cases the repetition is what makes them
-    # free (they hit the audio cache).
+    # Reaches the ack and the closing line; `max` additionally tightens the heartbeat's CADENCE (not
+    # its words). The Slack voice note stays one canonical sentence at every level, because its
+    # repetition is what makes it free (it hits the audio cache).
     #
     #   terse      1 sentence, facts only, no softener and no reaction word — the shipped behaviour
     #   balanced   1-2 sentences, + a softener (ให้นะคะ) + a 1-2 word reaction (ได้ค่ะ / เจอแล้วค่ะ)
     #              + the second fact
     #   chatty     2-3 sentences, + the third fact + the follow-through (what will be reported,
     #              what is waiting for you)
+    #   max        up to 4, in the register of a flight engineer reporting to the person in charge:
+    #              every sentence is [subject] [state] [figure], the ack states the ORDER it will
+    #              work in, the closing line lists the STEPS it took, and the heartbeat moves to 10
+    #              beats from 45 s so a long run keeps saying where it is. THE ONLY LEVEL THAT
+    #              NARRATES THE PROCESS — the others forbid it, since for them the process is filler.
+    #              Needs `heartbeat: true` to be itself: most of what this level buys is the
+    #              mid-turn narration, and the heartbeat switch above still vetoes it.
     #
-    # The character budget is a CEILING, NOT A QUOTA: one fact ⇒ one sentence, even at `chatty`.
+    # The character budget is a CEILING, NOT A QUOTA: one fact ⇒ one sentence, even at `max`.
     # That is the safety property — given room and nothing to fill it with, a model pads, and
     # padding is one step from inventing (measured on this feature: an open-ended prompt reached for
-    # a plausible-looking file name, which is why the "never invent" rule exists).
+    # a plausible-looking file name, which is why the "never invent" rule exists). Re-measured at
+    # `max`, the level with the most room and explicit permission to narrate: the one-line input
+    # "แก้ typo ใน README แล้ว" produced one 33-38 character sentence, 3 runs of 3, no invented step.
     #
     # Bad news (`prod`/`error` intent, `red`/`incident` group) drops the softener and the reaction at
     # EVERY level: a warm register is the wrong register for an incident, and this is a set-once
@@ -157,10 +166,14 @@ voice:
     #
     # COST, since this is the feature's biggest lever — ack and closing lines never hit the cache
     # (unique text every time), at ~$0.0001/char on elevenlabs, 100 turns/day × 22 days:
-    #   terse ~$48/mo   ·   balanced ~$76/mo   ·   chatty ~$105/mo
+    #   terse ~$48/mo   ·   balanced ~$76/mo   ·   chatty ~$105/mo   ·   max ~$150/mo
+    # The first three are measured; `max` is EXTRAPOLATED from its character ceiling (620 vs terse's
+    # 210) plus ~$12 of heartbeat — the beats are templated and partly cached, so that half is the
+    # cheap half even at ten of them.
     # `voice.tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
     #
-    # `aiworks voice audition "<a request>"` speaks all three so you can pick by ear.
+    # `aiworks voice audition "<a request>"` speaks all four so you can pick by ear. It cannot
+    # audition `max`'s heartbeat: that one only exists inside a long turn.
     chattiness: terse
   # A voice note attached to the Slack messages the workflow already sends. THE ONLY switch for it:
   # `aiworks voice mute` deliberately does not reach it, because that audio is a deliverable for the
