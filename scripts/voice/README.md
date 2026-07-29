@@ -5,14 +5,19 @@
 > skills call them directly.
 
 Spoken output for the workspace: an acknowledgement when you send a prompt, a line when
-something lands, and (later) push-to-talk dictation. Same shape as the other adapters —
+something lands, and push-to-talk dictation. Same shape as the other adapters —
 `scripts/notify`, `scripts/diagram` — so it is switchable by config and never called
 directly by a skill or agent that could just as well go through the entry script.
 
-**Status: Phases 1–4 of 5.** The core, cues, the per-prompt acknowledgement, milestones, the
-long-turn heartbeat, Slack voice notes and push-to-talk dictation are all built. Phase 4 needs
-four **manual** steps before it works (`aiworks voice ptt install` prints them). Cleanup + the
-committed doc are phase 5. The full plan is `agent_logs/voice/implementation-plan.md`.
+**Status: complete and in use.** The core, cues, the per-prompt acknowledgement, the closing
+line, the long-turn heartbeat, Slack voice notes and push-to-talk dictation are all built.
+Dictation still needs four **manual** steps before it works — `aiworks voice ptt install`
+prints them, and `aiworks voice ptt doctor` says which one is missing.
+
+> **`agent_logs/voice/` is git-ignored** — every `agent_logs/voice/…` path cited below is a
+> working note on the machine that built this, not a file in your clone. The measurements those
+> notes justify are restated here and in `docs/agents/voice.md`, which are the committed
+> record. Nothing in the adapter reads them at runtime.
 
 ## Three gates, all silent
 

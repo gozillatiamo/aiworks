@@ -223,6 +223,10 @@ workspace and a per-repo-only path would leave voice dead in every worktree.
 ## Where the rest lives
 
 - `scripts/voice/README.md` — the reference: every key, every provider, every measured number
-- `agent_logs/voice/implementation-plan.md` — the decisions and what measurement changed about them
-- `agent_logs/voice/wake-word-plan.md` — the deferred wake word
-- `agent_logs/voice/bench/` — the probes and benchmarks behind the numbers
+
+`agent_logs/` is **git-ignored**, so the three working notes behind this feature —
+`agent_logs/voice/implementation-plan.md` (the decisions and what measurement changed about
+them), `wake-word-plan.md` (the deferred wake word) and `bench/` (the probes) — exist only on
+the machine that built it. They are not in your clone and nothing reads them at runtime: this
+page and `scripts/voice/README.md` carry every number that survived into a decision. Ask if you
+want one of them promoted into `docs/`.
