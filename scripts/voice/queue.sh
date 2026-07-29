@@ -50,7 +50,12 @@ voice_mkdirs
 ACK_MAX_AGE=30      # an ack older than this is stale — the answer has moved on
 SILENCE_GAP=20      # no two utterances closer than this, for acks
 NARRATION_MAX_AGE=12  # a step narration older than this is about a step that already finished
-NARRATION_GAP=7     # …and the running commentary needs a shorter floor than an ack's 20 s
+# The drain floor for narration, from the same config key the ENQUEUE floor uses
+# (voice.autoplay.narrate_gap, 4 s). Two floors, one number on purpose: the enqueue side stops the
+# narrator from queuing faster than it drains, and this side stops a burst that is already IN the
+# queue from being read as one long paragraph. When they disagreed (7 here, 9 there), the shorter
+# one was dead code and the cadence was silently the longer one.
+NARRATION_GAP="$(voice_narrate_gap)"
 PREFIX_GAP=60       # silence long enough that "which worktree?" is a real question again
 
 # The session identity a job belongs to. Claude Code exports no stable session id to a hook's

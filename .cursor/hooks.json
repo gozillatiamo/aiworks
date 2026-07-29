@@ -79,6 +79,11 @@
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-agent-context.sh'",
         "timeout": 10,
         "matcher": "Task"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh'",
+        "timeout": 10,
+        "matcher": "ExitPlanMode"
       }
     ],
     "postToolUse": [

@@ -1,65 +1,86 @@
 #!/usr/bin/env bash
 #
-# The step narrator — "here is what I am doing, and what I am about to do", spoken WHILE the turn
-# runs. `voice.autoplay.chattiness: max` only. Runs DETACHED, spawned by
-# .claude/hooks/voice-narrate.sh on PostToolUse.
+# The step narrator — one short spoken FACT per step, while the turn runs.
+# `voice.autoplay.chattiness: max` only. Runs DETACHED, spawned by
+# .claude/hooks/voice-narrate.sh on PostToolUse and PostToolUseFailure.
 #
 # Usage:
-#   narrate.sh [-v] --session ID --transcript PATH
+#   narrate.sh [-v] --session ID --transcript PATH [--payload FILE] [--event NAME]
 #
-# ── WHAT IT SPEAKS, AND WHY THAT COSTS NOTHING ─────────────────────────────────────
-# The assistant already writes one short line before it reaches for a tool — "อ่าน queue ก่อน
-# แล้วค่อยแก้ cadence". That line IS the narration: it says what is happening and what comes next,
-# in the assistant's own words, and it is already in the transcript. So this speaks it verbatim
-# (trimmed) instead of asking a model to invent a description of a tool call.
+# ── WHAT IT SPEAKS ─────────────────────────────────────────────────────────────────
+# `voice.autoplay.narrate_source: facts` (the default) — the tool call's OWN response, turned into
+# one line by scripts/voice/tool-fact.py:
 #
-#   no summarizer call   the text exists — a per-step LLM call would cost more than the ack and
-#                        the closing line together on a long turn
-#   cannot drift         it is the assistant's own sentence, not a guess about what a tool did
-#   no tool vocabulary   "Read summarize.sh" is what a machine would say; the prose is what a
-#                        person would say, and it explains WHY the file is being read
+#     queue.sh อ่านแล้ว 260 บรรทัด        cargo test ผ่าน 42        เจอ 14 แห่ง
 #
-# The fallback, when several tool calls go by with no prose at all, is the last tool activity as a
-# template ("กำลัง <activity>") — thin but true, and it keeps a long silent stretch from being
-# silent. This extraction came from the timed heartbeat that used to hold this space, and outlived it.
+# Short (3–8 words), a subject and a figure, and NEW information every time. That form is not a
+# style choice: it is what JARVIS actually does in the Iron Man films — "The armour is now at 92%",
+# "18,000 feet. 10,000 feet. 6,000 feet", "Thirteen, sir." He never narrates an intention, and the
+# density that makes him feel present comes from FREQUENCY, not from length. The first `max` got
+# that backwards and made the sentences longer.
+#
+# `narrate_source: prose` is the previous mechanism, kept: the assistant's own sentence from just
+# before the tool call. Free, true, and an intention rather than a result — which is why it is now
+# the fallback (used whenever a step yields no speakable fact) rather than the source.
+#
+# Either way there is NO summarizer call on this path, so the whole channel costs zero tokens; the
+# only spend is the TTS for a line that is deliberately tiny.
+#
+# ── THRESHOLDS (voice.autoplay.thresholds) ─────────────────────────────────────────
+# JARVIS also speaks up unbidden when something crosses a line, and always names the consequence:
+# "Sir, the suit has not even passed a basic wind-tunnel test", "may I remind you that you've been
+# awake for nearly seventy-two hours". Three of those exist here:
+#
+#   red         a step FAILED (PostToolUseFailure, or a runner that printed failures). Skips the
+#               rate floor and the per-turn cap — a failure is the one thing worth interrupting for.
+#   again       the SAME step failed twice in a row. The second failure is the news.
+#   long-turn   the turn has been running past voice.autoplay.long_turn_seconds. SINGLE-SHOT per
+#               turn (and once more at 3×), and only on a step that actually ran — which is what
+#               makes it a threshold and not the deleted heartbeat. A clock fires whether or not
+#               anything happened; this cannot.
 #
 # ── WHY IT IS NOT A TIMER (the first `max` was, and it was wrong) ───────────────────
-# A clock fires whether or not anything happened: it narrates a 3-second step never and a 90-second
-# step twice, and it can only name the tool it happens to catch, never why. Steps are the unit `max`
-# is about, so the hook fires on the step. That heartbeat has since been DELETED — in use it read as
-# an odd, disembodied interruption — so this is the only mid-turn voice in the feature.
+# A clock narrates a 3-second step never and a 90-second step twice, and can only name the tool it
+# happens to catch. Steps are the unit `max` is about, so the hook fires on the step. That heartbeat
+# is DELETED, not defaulted off.
 #
-# ── THE THREE RULES THAT KEEP IT FROM BECOMING NOISE ───────────────────────────────
-#   dedupe   one prose block introduces several tool calls (~1 block per 5 calls, measured), so
-#            the same line would otherwise be spoken five times. Hash-compared, per session.
-#   rate     MIN_GAP seconds between utterances. Tool calls fire several per second while a spoken
-#            line takes seconds — without a floor the queue takes on work faster than it drains.
-#   stale    a narration is dropped by the queue if it waits too long: "กำลังอ่าน X" arriving
-#            after X is finished and two steps have passed is worse than silence. Hence its own
-#            queue kind, with a tighter staleness than an ack.
+# ── THE FOUR RULES THAT KEEP IT FROM BECOMING NOISE ────────────────────────────────
+#   dedupe   the same line is never spoken twice in a row (hash, per session). With `prose` this
+#            matters most — one block introduces ~5 tool calls — but facts repeat too (three Reads
+#            of the same file), and a repeated line is also a free CACHE hit when it is spoken.
+#   rate     voice.autoplay.narrate_gap seconds between lines (4 by default).
+#   cap      voice.autoplay.narrate_max_per_turn lines per turn (25). The cost ceiling. When it
+#            bites it is LOGGED, never silent.
+#   stale    the queue drops a narration that waited too long — a fact about a step that finished
+#            three steps ago is worse than silence. Hence its own queue kind.
 #
-# It stays quiet when the turn has ENDED, too: the closing line owns the end of a turn, and a step
-# narration landing after the result would describe work the user has already been told about.
+# It stays quiet once the turn has ENDED: the closing line owns the end of a turn.
 
 set -euo pipefail
 VOICE_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib.sh
 . "$VOICE_SELF_DIR/lib.sh"
 
-MIN_GAP=9          # seconds between narrations — a spoken line is ~3-6 s, so this leaves air
-MAX_CHARS=120      # ~8 s of Thai speech. A step narration must be shorter than the step
+MAX_CHARS=60       # ~4 s of Thai speech. A JARVIS line is 3-8 words; so is this one
 MIN_CHARS=12       # below this there is no sentence, only a fragment
+PROSE_CHARS=90     # the prose fallback is a written sentence, so it gets a little more room
 
-SESSION="" TRANSCRIPT=""
+SESSION="" TRANSCRIPT="" PAYLOAD="" EVENT="PostToolUse"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -v|--verbose) export VOICE_VERBOSE=1; shift ;;
     --session)    SESSION="${2:-}"; shift 2 ;;
     --transcript) TRANSCRIPT="${2:-}"; shift 2 ;;
+    --payload)    PAYLOAD="${2:-}"; shift 2 ;;
+    --event)      EVENT="${2:-PostToolUse}"; shift 2 ;;
     -h|--help)    sed -n '2,/^set -euo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; exit 0 ;;
     *)            vdie "unknown option $1 (see -h)" ;;
   esac
 done
+
+# The payload is a temp file the hook owns; this process is the only reader, so it cleans up.
+cleanup() { [[ -n "$PAYLOAD" && -f "$PAYLOAD" ]] && rm -f "$PAYLOAD"; return 0; }
+trap cleanup EXIT
 
 voice_gate_or_exit "narrate"
 voice_cfg_bool voice.autoplay.enabled false || { vlog "narrate skipped: autoplay off"; exit 0; }
@@ -69,7 +90,6 @@ voice_cfg_bool voice.autoplay.narrate true || { vlog "narrate skipped: voice.aut
 [[ "$(voice_chattiness)" == "max" ]] || { vlog "narrate skipped: chattiness is $(voice_chattiness), not max"; exit 0; }
 voice_is_muted && { vlog "narrate: muted — nothing synthesized"; exit 0; }
 [[ -n "$SESSION" ]] || SESSION="$VOICE_ROOT"
-[[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || { vlog "narrate: no readable transcript"; exit 0; }
 voice_require jq
 
 # ── the turn must still be open ───────────────────────────────────────────────────
@@ -80,54 +100,33 @@ if [[ "$ENDED" -ge "$TURN" && "$TURN" -gt 0 ]]; then
   exit 0
 fi
 
-# ── the rate floor, checked before anything is read or synthesized ─────────────────
-LAST_TS="$(voice_narrate_get "$SESSION" ts)"
+SOURCE="$(voice_narrate_source)"
+GAP="$(voice_narrate_gap)"
+CAP="$(voice_narrate_cap)"
 NOW="$(voice_now)"
-if [[ "$LAST_TS" -gt 0 ]] && (( NOW - LAST_TS < MIN_GAP )); then
-  vlog "narrate: $((NOW - LAST_TS))s since the last line, floor is ${MIN_GAP}s — skipping"
-  exit 0
-fi
+LAST_TS="$(voice_narrate_get "$SESSION" ts)"
+SPOKEN="$(voice_narrate_count "$SESSION" "$TURN")"
 
-# ── the assistant's own last prose block ──────────────────────────────────────────
-# Text and tool_use never share one assistant message (measured: 0 of 2 534 messages in a real
-# session had both), so the prose is its own entry immediately before the tool it introduces —
-# which means "the last text block in the file" is exactly the line that explains the step that
-# just ran.
-_last_prose() {
-  jq -rs '[.[] | select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text]
-          | last // ""' "$TRANSCRIPT" 2>/dev/null || printf ''
+# ── the fact, from the step's own response ────────────────────────────────────────
+# `<severity>\t<line>`, or nothing when the step carries no news (see tool-fact.py's SKIP_TOOLS).
+SEV=info LINE="" SRC=""
+_try_fact() {
+  [[ -n "$PAYLOAD" && -f "$PAYLOAD" ]] || return 1
+  local out
+  out="$(python3 "$VOICE_SELF_DIR/tool-fact.py" --event "$EVENT" < "$PAYLOAD" 2>/dev/null || true)"
+  [[ -n "$out" ]] || return 1
+  SEV="${out%%$'\t'*}"
+  LINE="${out#*$'\t'}"
+  SRC=fact
+  return 0
 }
 
-# The tool-activity fallback, for a stretch with no prose at all.
-_last_activity() {
-  jq -rs '
-    [.[] | select(.type=="assistant") | .message.content[]? | select(.type=="tool_use")] | last
-    | if . == null then ""
-      elif .name == "Bash"      then (.input.description // (.input.command // "" | .[0:60]))
-      elif .name == "Task"      then ("agent: " + (.input.description // ""))
-      elif (.name | test("^(Read|Edit|Write|NotebookEdit)$")) then
-        (.name + " " + ((.input.file_path // "") | split("/") | last))
-      elif (.name | test("^(Grep|Glob)$")) then (.name + " " + (.input.pattern // ""))
-      elif (.name | startswith("mcp__")) then (.name | split("__") | .[1:] | join(" "))
-      else .name end
-    | gsub("[\"`]"; "") | .[0:70]
-  ' "$TRANSCRIPT" 2>/dev/null || printf ''
-}
-
-# ── prose → one speakable line ────────────────────────────────────────────────────
-# Written for the eye, spoken by an engine: fences, tables and list markers are read out as
-# punctuation noise, and a heading is not a sentence. Backtick CONTENT is kept — an identifier is
-# usually the most informative word in the line — while the backticks themselves go.
-#
-# Only the FIRST sentence survives — the prose block can be a paragraph, and a step narration has
-# to be over before the step is.
-#
-# …EXCEPT when that sentence carries nothing. Measured against this workspace's own transcript: an
-# em dash is used mid-sentence constantly here, so a plain "first chunk" rule produced "both: 0"
-# (7 characters, from "`both: 0` — prose กับ tool_use เป็น assistant message แยกกัน…") and
-# "Memory เก็บแล้ว ทีนี้ max" — one meaningless, one with its point amputated. So chunks are
-# ACCUMULATED until there is enough to be worth hearing, and the character cap trims the tail. A
-# too-short line is the worse failure: a long one is merely cut, a thin one says nothing at all.
+# ── the prose fallback ────────────────────────────────────────────────────────────
+# Written for the eye, spoken by an engine: fences, tables and list markers read as punctuation
+# noise, and a heading is not a sentence. Backtick CONTENT survives — an identifier is usually the
+# most informative word in the line. Only the first sentence, accumulated to at least ENOUGH
+# characters, because an em dash is used mid-sentence constantly in this prose and a plain
+# "first chunk" rule produced "both: 0" (7 characters) and one amputated line.
 _speakable() {   # TEXT → one line, or nothing
   printf '%s' "$1" | python3 -c '
 import re, sys
@@ -141,8 +140,6 @@ t = t.replace("`", "").replace("**", "").replace("__", "")
 t = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", t)        # links: say the label, not the URL
 t = re.sub(r"<[^>]{1,40}>", " ", t)                   # stray tags
 t = re.sub(r"\s+", " ", t).strip()
-# Thai has no full stop, so a newline, an em dash or a colon ends a sentence here too — and those
-# are what this prose actually uses. Take chunks until the line carries something.
 ENOUGH = 25
 line = ""
 for part in re.split(r"(?<=[.!?])\s+|\s+[—:·]\s+", t):
@@ -156,34 +153,100 @@ sys.stdout.write(line[:400])
 ' 2>/dev/null || true
 }
 
-RAW="$(_last_prose)"
-SRC=prose
-LINE="$(_speakable "$RAW")"
-if [[ "$(printf '%s' "$LINE" | wc -m | tr -d ' ')" -lt "$MIN_CHARS" ]]; then
-  act="$(_last_activity)"
-  [[ -n "$act" ]] || { vlog "narrate: no prose and no activity — nothing to say"; exit 0; }
-  LINE="กำลัง $act"
-  SRC=activity
+_last_prose() {
+  jq -rs '[.[] | select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text]
+          | last // ""' "$TRANSCRIPT" 2>/dev/null || printf ''
+}
+
+_try_prose() {
+  [[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || return 1
+  local out
+  out="$(_speakable "$(_last_prose)")"
+  [[ "$(printf '%s' "$out" | wc -m | tr -d ' ')" -ge "$MIN_CHARS" ]] || return 1
+  # A `VOICE[...]` tag is the CLOSING line's mechanism — speaking it mid-turn would announce the
+  # result before the work is done, twice.
+  case "$out" in *VOICE\[*|*VOICE:*) return 1 ;; esac
+  LINE="$out"
+  SRC=prose
+  return 0
+}
+
+# Each source is the other's fallback, which is why both survive: `facts` goes quiet on a step whose
+# response carries no figure (see SKIP_TOOLS), and `prose` goes quiet on the four-in-five tool calls
+# that have no sentence of their own in front of them.
+if [[ "$SOURCE" == "facts" ]]; then
+  _try_fact || _try_prose || true
+else
+  _try_prose || _try_fact || true
+fi
+[[ -n "$LINE" ]] || { vlog "narrate: nothing to say (no fact, no usable prose)"; exit 0; }
+CHAR_CAP="$MAX_CHARS"
+[[ "$SRC" == "prose" ]] && CHAR_CAP="$PROSE_CHARS"
+URGENT_CHARS=110   # a threshold line prefixes the fact ("ผ่านมา 11 นาที… ล่าสุด <fact>"), and the
+                   # tail is the informative half — the step cap would cut exactly that off
+
+# ── thresholds: what speaks even when the floor says no ────────────────────────────
+# URGENT skips the rate floor AND the per-turn cap. Only a failure and the long-turn crossing get
+# it, both of which are things the user would rather hear late than not at all.
+URGENT=0 CUE=""
+if voice_cfg_bool voice.autoplay.thresholds true; then
+  if [[ "$SEV" == "bad" ]]; then
+    URGENT=1 CUE=red
+    # The SAME step failing twice is a different event from two steps failing once: say so, because
+    # "still red" is the fact that changes a person's next move. Counted rather than flagged — the
+    # third attempt is more news than the second, and a fixed "ซ้ำรอบสอง" would call it the second
+    # forever (and be swallowed by the dedupe hash for saying the identical thing).
+    FAILHASH="$(voice_sha "$(voice_normalize_text "$LINE")")"
+    FAILN=1
+    if [[ "$FAILHASH" == "$(voice_narrate_get "$SESSION" fail)" ]]; then
+      FAILN=$(( $(voice_narrate_get "$SESSION" failn) + 1 ))
+      LINE="$LINE ซ้ำรอบ $FAILN"
+    fi
+    voice_narrate_put "$SESSION" fail "$FAILHASH"
+    voice_narrate_put "$SESSION" failn "$FAILN"
+  elif [[ "$TURN" -gt 0 ]]; then
+    LONG="$(voice_long_turn_seconds)"
+    ELAPSED=$(( NOW - TURN ))
+    for mult in 3 1; do
+      (( ELAPSED >= LONG * mult )) || continue
+      if voice_threshold_fire "$SESSION" "$TURN" "long$mult"; then
+        LINE="ผ่านมา $(( ELAPSED / 60 )) นาทีแล้ว ยังทำอยู่ ล่าสุด $LINE"
+        URGENT=1 CUE=attention
+      fi
+      break
+    done
+  fi
 fi
 
-# A `VOICE[...]` tag is the CLOSING line's mechanism — speaking it mid-turn would announce the
-# result before the work is done, twice.
-case "$LINE" in *VOICE\[*|*VOICE:*) vlog "narrate: that block is a VOICE tag — the closing line owns it"; exit 0 ;; esac
+# ── the floors, checked after the line exists so a red can bypass them ─────────────
+if [[ "$URGENT" -eq 0 ]]; then
+  if [[ "$LAST_TS" -gt 0 ]] && (( NOW - LAST_TS < GAP )); then
+    vlog "narrate: $((NOW - LAST_TS))s since the last line, floor is ${GAP}s — skipping"
+    exit 0
+  fi
+  if (( SPOKEN >= CAP )); then
+    # Said out loud in the log, not swallowed: a cap that hides itself looks like a dead feature.
+    vlog "narrate: per-turn cap reached ($SPOKEN/$CAP lines) — staying quiet for the rest of this turn"
+    exit 0
+  fi
+fi
 
-# Cap by CHARACTERS, not bytes: Thai is multibyte and ${#} would cut a 40-character line at 120
+[[ "$URGENT" -eq 1 ]] && CHAR_CAP="$URGENT_CHARS"
+
+# Cap by CHARACTERS, not bytes: Thai is multibyte and ${#} would cut a 40-character line at 60
 # bytes, mid-syllable. Cut at a word boundary when there is one nearby.
-if [[ "$(printf '%s' "$LINE" | wc -m | tr -d ' ')" -gt "$MAX_CHARS" ]]; then
+if [[ "$(printf '%s' "$LINE" | wc -m | tr -d ' ')" -gt "$CHAR_CAP" ]]; then
   LINE="$(printf '%s' "$LINE" | python3 -c '
 import sys
 s = sys.stdin.read()
-n = '"$MAX_CHARS"'
+n = int(sys.argv[1])
 cut = s[:n]
 sp = cut.rfind(" ")
 sys.stdout.write(cut if sp < n * 0.6 else cut[:sp])
-' 2>/dev/null || printf '%s' "$LINE")"
+' "$CHAR_CAP" 2>/dev/null || printf '%s' "$LINE")"
 fi
 
-# ── dedupe: has this exact line already been spoken this session? ──────────────────
+# ── dedupe: has this exact line already been spoken? ───────────────────────────────
 HASH="$(voice_sha "$(voice_normalize_text "$LINE")")"
 if [[ "$HASH" == "$(voice_narrate_get "$SESSION" hash)" ]]; then
   vlog "narrate: same line as last time ($SRC) — skipping"
@@ -192,9 +255,17 @@ fi
 
 # Recorded BEFORE speaking, not after: two PostToolUse hooks can land in the same second, and the
 # loser of that race must see the winner's hash rather than both queuing the same sentence.
-voice_narrate_set "$SESSION" "$HASH"
-vlog "narrate[$SRC]: $LINE"
+voice_narrate_set "$SESSION" "$HASH" "$TURN"
+vlog "narrate[$SRC${CUE:+/$CUE}] $((SPOKEN + 1))/$CAP: $LINE"
 
-# --kind narration: its own queue class, dropped harder than an ack (see queue.sh). No cue — a
-# sound before every step would be a metronome — and no identity prefix logic beyond the usual.
+# A normal step is --kind narration: its own queue class, dropped harder than an ack, and no cue —
+# a sound before every step would be a metronome. A threshold is a MILESTONE: never dropped, and it
+# carries the cue that says which kind of news it is.
+# The payload is deleted HERE rather than left to the EXIT trap: `exec` replaces this process, so
+# the trap never runs on the one path that always reaches the end. (Measured — every narrated step
+# leaked one temp file until the suite started asserting on it.)
+cleanup
+if [[ "$URGENT" -eq 1 ]]; then
+  exec "$VOICE_SELF_DIR/speak.sh" --kind milestone ${CUE:+--cue "$CUE"} "$LINE"
+fi
 exec "$VOICE_SELF_DIR/speak.sh" --kind narration "$LINE"
