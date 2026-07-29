@@ -64,12 +64,14 @@
 # other `language` every voice command exits 0 silently (run it with -v to hear why). Run
 # `aiworks voice setup` first, then `aiworks voice test`.
 #
-# COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn now speaks a closing
-# line, and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
-# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$230/mo (that last
-# one extrapolated, not measured — ~$142 of ack + closing line plus ~$88 of step narration). (An earlier note here said $14–24 —
-# that was from when milestones almost never spoke.) `tts.provider: gemini` is ~6× cheaper for 3 %
-# fewer surviving English terms.
+# COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn speaks a closing line,
+# and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
+# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$165/mo typical,
+# up to ~$295 if every turn hits `narrate_max_per_turn` (max is extrapolated, not measured — ~$75 of
+# ack + closing line, plus ~$90 of step narration at ~10 short lines a turn). (Earlier notes here
+# said $14–24, then $230: the first was from when milestones almost never spoke, the second from
+# before max's ack and closing line were shortened to the register they now use.)
+# `tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
 #
 # To go quiet for a while, do NOT edit this back: `aiworks voice mute on` disables what the machine
 # SAYS, machine-wide, and it then costs nothing at all. It does not touch `notify_voice` (audio for
@@ -89,15 +91,22 @@
 #   autoplay:
 #     enabled: true       # local speech; `ack`, `milestones`, `narrate` switch independently
 #     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
-#     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (up to 4, and
-#     # the only level that narrates the STEPS — the ack states the order of the work, the closing
-#     # line lists what it did, and it talks THROUGH the turn: one line per step, as the step
-#     # happens). Ceiling, not quota — one fact still means one sentence.
+#     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (the ship's-AI
+#     # register — every sentence is [subject] [state] [figure] under ~45 characters, and it talks
+#     # THROUGH the turn: one short line per step as it happens, plus a word when a step fails and
+#     # when something is waiting for you). Ceiling, not quota — one fact still means one sentence.
 #     # `aiworks voice audition "…"` compares all four.
 #     chattiness: balanced
-#     # The step narration, `max` only, and the only mid-turn voice there is. false ⇒ keep max's
-#     # lengths, stop the mid-turn talking (it is the level's main cost: ~$88/mo of the ~$230).
+#     # The step narration, `max` only, and the biggest mid-turn voice there is. false ⇒ keep max's
+#     # ack + closing line, stop the per-step talking (~$90/mo of max's ~$165).
 #     narrate: true
+#     # What a narrated line is MADE of: facts (the tool's own response — "cargo test ผ่าน 42") or
+#     # prose (the assistant's sentence before the call, an intention). Each falls back to the other.
+#     narrate_source: facts
+#     narrate_gap: 4               # seconds between narrated lines — the frequency dial
+#     narrate_max_per_turn: 25     # per-turn ceiling, i.e. the cost ceiling
+#     thresholds: true             # speak unbidden on a failed step, a second failure, a long turn
+#     gates: true                  # speak when something WAITS for you (permission, plan, denial)
 #   notify_voice:
 #     enabled: true       # attach a voice note to the review-request / ship messages
 #   push_to_talk:

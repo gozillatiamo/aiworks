@@ -105,8 +105,17 @@ _level_cap() {   # → "<max chars>|<max sentences>"
     balanced:report) printf '200|2' ;;
     chatty:ack)      printf '200|3' ;;
     chatty:report)   printf '280|3' ;;
-    max:ack)         printf '260|4' ;;
-    max:report)      printf '360|4' ;;
+    # `max` is SHORTER than `chatty`, which reads wrong on a ladder until you look at what the
+    # ladder is a ladder OF. It is not "how many characters"; it is "how much of what happens does
+    # the machine tell you". `max` gets that from the step narrator and the gate voice — dozens of
+    # 3-8-word lines during the turn — so its ack and closing line are the SHORT bookends around
+    # them, not the whole account. Research settled it: JARVIS's longest line in three films is
+    # "Congratulations sir. You have created a new element. Sir, the reactor has accepted the
+    # modified core. I will begin running diagnostics." — 4 sentences, ~135 characters, all of them
+    # a subject and a state. The first `max` allowed 260/360 and produced a status report read
+    # aloud: correct facts, wrong character.
+    max:ack)         printf '150|3' ;;
+    max:report)      printf '190|4' ;;
     *)               printf '90|1' ;;
   esac
 }
@@ -163,7 +172,7 @@ _persona() {
     terse)    printf 'Facts only — no softener, no reaction word, no preamble.' ;;
     balanced) printf 'You may end on a soft address to the user (ให้นะคะ / แล้วนะคะ style) and open with a 1–2 word reaction that states the outcome (ได้ค่ะ / เจอแล้วค่ะ / เรียบร้อยค่ะ). No greeting, no narration, no opinion you have no evidence for.' ;;
     chatty)   printf 'You may open with a 1–2 word reaction that states the outcome (ได้ค่ะ / เจอแล้วค่ะ / เรียบร้อยค่ะ), end on a soft address to the user, and close with the follow-through — what you will report back, or what is now waiting for the user. Still no greeting, no narration, no jokes, and no opinion you have no evidence for.' ;;
-    max)      printf 'Report like a flight engineer speaking to the person in charge: every sentence is one status — the subject, its state, and the figure or name if there is one — addressed to them, never to nobody. You may open with a 1–2 word reaction that states the outcome (ได้ค่ะ / เจอแล้วค่ะ / เรียบร้อยค่ะ), name the STEPS in the order they happen, end on a soft address to the user, and close with the follow-through — what you will report back next, or what is now waiting for them. Naming the steps is allowed at this level and ONLY for steps the text below actually contains: never invent a step, a stage, a figure, a file or a next action to fill the room. Still no greeting, no jokes, no opinion you have no evidence for, and no sentence whose only content is that work is happening.' ;;
+    max)      printf 'Report to the person in charge the way a ship'"'"'s AI does: EVERY sentence is one status in the shape [subject] [state] [figure or name] — "cargo test ผ่าน 42", "MR !12 เปิดแล้ว" — addressed to them, never to nobody. KEEP EACH SENTENCE UNDER ABOUT 45 CHARACTERS — short statuses, never long ones, however many the sentence budget above allows (it may be one). Say the figure whenever the text below has one; a status with a number in it is the whole point of this register. You may open with a 1–2 word reaction that states the outcome (ได้ค่ะ / เจอแล้วค่ะ / เรียบร้อยค่ะ), name the STEPS in the order they happen, and close with what is now waiting for the user. You may add AT MOST ONE dry, deadpan aside of four words or fewer, and only riding on a fact you are already stating — never a joke of its own, never about yourself, never when the news is bad. Naming the steps is allowed at this level and ONLY for steps the text below actually contains: never invent a step, a stage, a figure, a file or a next action to fill the room. No greeting, no opinion you have no evidence for, and no sentence whose only content is that work is happening.' ;;
   esac
 }
 
@@ -265,7 +274,7 @@ opening reaction may only mean "understood" (ได้ค่ะ / รับท�
 # change is not licence to re-tune a level nobody asked about.
 NO_PROCESS='Do not describe your process, do not list what you did step by step, do not say you will do
 anything next, and do not thank anyone.'
-[[ "$LEVEL" == "max" ]] && NO_PROCESS='List the steps you actually took, in the order you took them — one status each — and finish on the outcome. Never list a step that is not in the text below, and do not thank anyone.'
+[[ "$LEVEL" == "max" ]] && NO_PROCESS='List the steps you actually took, in the order you took them — one SHORT status each, under about 45 characters, with the figure the text gives for it — and finish on what is now waiting for the user. Never list a step that is not in the text below, and do not thank anyone.'
 
 # The prompt is the measured one from the demo round, plus the three fixes measurement exposed:
 # the particle is pinned to the voice's gender, English technical terms must stay in Latin

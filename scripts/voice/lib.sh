@@ -128,6 +128,18 @@ voice_cfg_bool() {   # true only for true/yes/1/on
   esac
 }
 
+# voice_cfg_int <dotted.path> <default> [min] [max] — a NUMERIC setting, clamped.
+# Clamped rather than trusted: these numbers are seconds and counts that decide how often the
+# machine talks and how much it spends. A typo'd `narrate_gap: 0` is an unbounded queue and a
+# `400` is silence, and neither should be reachable by dropping a digit in a personal config.
+voice_cfg_int() {
+  local v; v="$(voice_cfg "$1" "$2")"
+  [[ "$v" =~ ^-?[0-9]+$ ]] || { vlog "cfg $1: '$v' is not a number — using $2"; v="$2"; }
+  if [[ -n "${3:-}" ]] && (( v < $3 )); then v="$3"; fi
+  if [[ -n "${4:-}" ]] && (( v > $4 )); then v="$4"; fi
+  printf '%s' "$v"
+}
+
 # The workspace output language, same precedence as everything else. VOICE_LANGUAGE is an
 # override for TESTS and for a caller that already resolved it (the language hook) — it is
 # not a way to opt a machine in or out; the config is.
@@ -185,6 +197,36 @@ voice_chattiness() {
   esac
 }
 
+# ── the `max` register knobs (all inert at every other level) ──────────────────────
+# Set by research, not by taste: JARVIS's lines in the Iron Man films are 3–8 words, spoken as a
+# figure CHANGES, several within a few seconds during a burst. Length was the wrong dial — the
+# first `max` raised it (4 long sentences, a 360-char ceiling) and came out sounding like a status
+# report read aloud. These four dials are the right ones: shorter, more often, made of facts.
+#
+# `facts` reads the tool's own response (scripts/voice/tool-fact.py) and says the FIGURE — "queue.sh
+# อ่านแล้ว 260 บรรทัด", "cargo test ผ่าน 42". `prose` is the previous mechanism, the assistant's own
+# pre-tool sentence, which is an INTENTION — kept because it is free and because the two are worth
+# comparing by ear, not because it is the default.
+voice_narrate_source() {
+  local v; v="$(printf '%s' "${VOICE_NARRATE_SOURCE:-$(voice_cfg voice.autoplay.narrate_source facts)}" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in facts|prose) printf '%s' "$v" ;; *) vlog "narrate_source: '$v' is not facts|prose — using facts"; printf 'facts' ;; esac
+}
+
+# Seconds between narrated lines. 4 s, down from the first version's 9: at 9 s a burst of ten tool
+# calls in twenty seconds could say two things, which is the opposite of the character being
+# imitated. A spoken fact line is ~2-3 s, so 4 s still leaves air and still bounds the queue.
+voice_narrate_gap() { voice_cfg_int voice.autoplay.narrate_gap 4 1 60; }
+
+# The per-TURN ceiling, and the cost dial. Every narrated line is TTS spend; a runaway turn with
+# 200 tool calls must not be able to spend 200 lines' worth. When it bites, narrate.sh SAYS so in
+# its log rather than going quietly silent — a silent cap reads as a broken feature.
+voice_narrate_cap() { voice_cfg_int voice.autoplay.narrate_max_per_turn 25 1 200; }
+
+# When a turn passing this many seconds is worth mentioning ONCE (and once more at 3×). The
+# heartbeat's mistake was repeating on a clock; this is a threshold crossing, single-shot per turn
+# (see voice_threshold_fire), and it only ever fires on a step that actually ran.
+voice_long_turn_seconds() { voice_cfg_int voice.autoplay.long_turn_seconds 300 30 3600; }
+
 # ── narration state (the `max` step narrator) ─────────────────────────────────────
 # WHY THE FIRST ATTEMPT AT `max` WAS WRONG, since this replaces it: it tightened a timed HEARTBEAT
 # (45 s, ten beats) — a background sleeper that said "still working, currently <last tool>". A clock
@@ -207,19 +249,72 @@ voice_chattiness() {
 #          narrator needs a floor between utterances or it queues faster than it can drain.
 voice_narrate_file() { printf '%s/nar-%s.json' "$VOICE_TURN_DIR" "$(voice_sha "${1:-default}")"; }
 
-voice_narrate_get() {   # SESSION FIELD(hash|ts) → value ("" / 0 when unknown)
+#   n      how many lines this TURN has already spoken — the per-turn cost ceiling. Reset by
+#          `nturn` below rather than by a cleanup pass, because nothing runs between turns.
+#   nturn  the turn `n` belongs to (the turn's start timestamp). A counter with no turn stamp
+#          would carry one long turn's total into the next one and mute it.
+#   fail   the hash of the last FAILED step, so a command that fails twice can be told from two
+#          different commands failing once (the second failure is the news, not the first).
+#   thr    space-separated names of the single-shot thresholds already announced this turn.
+#
+# NUMERIC FIELDS are ts / n / nturn: they default to 0, so a caller can do arithmetic on the
+# result of a first-ever read without testing for the empty string.
+voice_narrate_file() { printf '%s/nar-%s.json' "$VOICE_TURN_DIR" "$(voice_sha "${1:-default}")"; }
+
+_voice_narrate_numeric() { case "$1" in ts|n|nturn|gatets|failn) return 0 ;; *) return 1 ;; esac; }
+
+voice_narrate_get() {   # SESSION FIELD(hash|ts|n|nturn|fail|thr) → value ("" / 0 when unknown)
   local f v; f="$(voice_narrate_file "$1")"
-  [[ -f "$f" ]] || { [[ "$2" == "ts" ]] && printf 0; return 0; }
+  [[ -f "$f" ]] || { _voice_narrate_numeric "$2" && printf 0; return 0; }
   v="$(jq -r --arg k "$2" '.[$k] // empty' "$f" 2>/dev/null || true)"
-  if [[ "$2" == "ts" ]]; then [[ "$v" =~ ^[0-9]+$ ]] || v=0; fi
+  if _voice_narrate_numeric "$2"; then [[ "$v" =~ ^[0-9]+$ ]] || v=0; fi
   printf '%s' "$v"
 }
 
-voice_narrate_set() {   # SESSION HASH
+# MERGES rather than replaces (the first version wrote a fresh {hash, ts} object): the counters
+# and the threshold list live in the same file, and a setter that dropped them would re-arm every
+# single-shot threshold on the next narrated step.
+voice_narrate_put() {   # SESSION FIELD VALUE — a string/number field, timestamp untouched
   voice_mkdirs
   local f; f="$(voice_narrate_file "$1")"
-  jq -n --arg h "$2" --argjson t "$(voice_now)" '{hash: $h, ts: $t}' > "$f.tmp" 2>/dev/null \
-    && mv "$f.tmp" "$f"
+  if [[ -f "$f" ]]; then
+    jq --arg k "$2" --arg v "$3" '.[$k] = $v' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  else
+    jq -n --arg k "$2" --arg v "$3" '{($k): $v}' > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  fi
+}
+
+voice_narrate_set() {   # SESSION HASH [TURN] — records what was said and WHEN, bumping the count
+  voice_mkdirs
+  local f turn; f="$(voice_narrate_file "$1")"; turn="${3:-0}"
+  if [[ -f "$f" ]]; then
+    jq --arg h "$2" --argjson t "$(voice_now)" --arg turn "$turn" '
+      . as $o
+      | (if ($o.nturn // "0") == $turn then (($o.n // "0") | tonumber) else 0 end) as $n
+      | $o + {hash: $h, ts: $t, n: (($n + 1) | tostring), nturn: $turn}
+    ' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  else
+    jq -n --arg h "$2" --argjson t "$(voice_now)" --arg turn "$turn" \
+      '{hash: $h, ts: $t, n: "1", nturn: $turn}' > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  fi
+}
+
+# How many lines this turn has spoken — 0 once the turn stamp moves on, without a reset pass.
+voice_narrate_count() {   # SESSION TURN → number
+  local n turn
+  n="$(voice_narrate_get "$1" n)"; turn="$(voice_narrate_get "$1" nturn)"
+  [[ "$turn" == "$2" ]] && printf '%s' "$n" || printf 0
+}
+
+# A single-shot threshold: true (and ARMS it) the first time it is asked for in this turn, false
+# after. This is what separates a threshold from the deleted heartbeat — the same condition
+# staying true does NOT keep speaking, because a repeated "still slow" is a clock in disguise.
+voice_threshold_fire() {   # SESSION TURN NAME → 0 = speak now, 1 = already announced
+  local key="$2:$3" seen
+  seen="$(voice_narrate_get "$1" thr)"
+  case " $seen " in *" $key "*) return 1 ;; esac
+  voice_narrate_put "$1" thr "$(printf '%s %s' "$seen" "$key" | sed -E 's/^ +//')"
+  return 0
 }
 
 # ── the gate ──────────────────────────────────────────────────────────────────────

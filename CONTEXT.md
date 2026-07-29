@@ -85,12 +85,26 @@ ceiling, not a quota, and bad news keeps the plain register at every level.
 `aiworks voice audition "…"` speaks all four.
 
 **step narration**:
-`voice.autoplay.narrate`, `chattiness: max` only — one spoken line per tool call, taken from the
-assistant's OWN prose (the sentence it writes before reaching for a tool already says what it is doing
-and what comes next), so it costs no summarizer call. Deduped per prose block, rate-floored, and
-dropped after 12 s because its content goes off in seconds. It is the only mid-turn voice the feature
-has: the timed heartbeat that used to fill that space was removed, because a clock cannot know whether
-a step happened and says "still working" instead of what is being worked on.
+`voice.autoplay.narrate`, `chattiness: max` only — one short spoken line per tool call, built by
+template from the tool's OWN response (`voice.autoplay.narrate_source: facts` — "cargo test ผ่าน 42",
+"queue.sh อ่านแล้ว 260 บรรทัด"), so it costs no summarizer call and can invent nothing.
+`narrate_source: prose` is the alternative and the fallback: the assistant's sentence from before the
+call, which is an intention rather than a result. Deduped, rate-floored at `narrate_gap` (4 s), capped
+per turn, and dropped after 12 s because its content goes off in seconds. The shape (3–8 words, a
+subject and a figure) is researched from the JARVIS dialogue in the Iron Man films, where the density
+comes from frequency, never from length.
+
+**threshold** (voice):
+`voice.autoplay.thresholds` — the mid-turn lines that are NOT one-per-step: a step failed (red cue,
+bypasses the rate floor), the same step failed again (counted), or the turn has run past
+`long_turn_seconds`. Each is single-shot per turn and fires only on a step that actually ran, which is
+what distinguishes it from the deleted heartbeat: a clock speaks whether or not anything happened.
+
+**gate voice**:
+`voice.autoplay.gates` — speech when the run STOPS AND WAITS FOR YOU: a permission prompt, a plan up
+for approval, an auto-mode denial (invisible otherwise), an idle prompt. The only spoken channel that
+is independent of `chattiness`, because a gate is a *whether*, not a *how much*. It never reads the
+notification's English text aloud, and dedupes on the gate class so one prompt asks once.
 
 **`VOICE:` tag**:
 A `VOICE[group]: <one line>` line in a reply, which is how a turn writes its own closing line

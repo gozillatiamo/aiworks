@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Regression suite for narrate.sh — the `max` step narrator.
+# Regression suite for the `max` mid-turn voice: narrate.sh (step facts + thresholds) and gate.sh
+# (the "waiting for you" voice). tool-fact.py has its own fixtures — `tool-fact.py --selftest` —
+# and this suite runs them too, so one command covers the whole channel.
 #
 # Run:  scripts/voice/narrate-selftest.sh
 # Exit: 0 = all green, 1 = at least one case regressed.
@@ -10,9 +12,10 @@
 # never reads the machine's real voice settings, and it costs nothing — no synthesis, no API call.
 # Same doctrine as guards-selftest.sh.
 #
-# WHY SESSION IDS ARE RUN-SCOPED: narration state (the dedupe hash + the rate stamp) is
-# machine-global and keyed by session id, so fixed ids would leak the PREVIOUS run's state into this
-# one — which is exactly how this suite first went red on its own second run.
+# WHY SESSION IDS ARE RUN-SCOPED: narration state (the dedupe hash, the rate stamp, the per-turn
+# count, the fired thresholds) is machine-global and keyed by session id, so fixed ids would leak the
+# PREVIOUS run's state into this one — which is exactly how this suite first went red on its own
+# second run.
 set -uo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # the workspace root
 T="$(mktemp -d -t voice-narrate-selftest)"
@@ -27,15 +30,22 @@ voice:
   autoplay:
     enabled: true
     chattiness: max
+    narrate_gap: 4
+    narrate_max_per_turn: 3
+    long_turn_seconds: 300
 YAML
-# Stub speak.sh: prove the handoff and the exact line, spend nothing.
+# Stub speak.sh: prove the handoff, the kind, the cue and the exact line — and spend nothing.
 cat > "$T/scripts/voice/speak.sh" <<'STUB'
 #!/usr/bin/env bash
-kind=""; while [[ $# -gt 0 ]]; do case "$1" in --kind) kind="$2"; shift 2 ;; -*) shift ;; *) break ;; esac; done
-printf 'SPOKE[%s]: %s\n' "$kind" "$*"
+kind=""; cue=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --kind) kind="$2"; shift 2 ;; --cue) cue="$2"; shift 2 ;; -*) shift ;; *) break ;; esac
+done
+printf 'SPOKE[%s%s]: %s\n' "$kind" "${cue:+/$cue}" "$*"
 STUB
 chmod +x "$T/scripts/voice/speak.sh"
 N="$T/scripts/voice/narrate.sh"
+G="$T/scripts/voice/gate.sh"
 RUN="$$"          # session ids must be unique per run: narration state is machine-global
 _s() { printf '%s-%s' "$RUN" "$1"; }
 
@@ -62,6 +72,17 @@ mk "$T/t-heading.jsonl"  "$(txt '## ผลการตรวจ
 - **พบ 3 จุด** ที่ `chattiness` ถูกอ่าน
 - ต่อไปจะแก้ `lib.sh`')" "$(tool Grep chattiness)"
 
+# ── synthetic hook payloads (what PostToolUse actually sends) ──────────────────────
+pay() { # pay <file> <tool> <input-json> <response-json> [event]
+  jq -n --arg n "$2" --argjson i "$3" --argjson r "$4" --arg e "${5:-PostToolUse}" \
+    '{session_id:"x",hook_event_name:$e,tool_name:$n,tool_input:$i,tool_response:$r}' > "$1"
+}
+pay "$T/p-read.json"  Read '{"file_path":"/a/b/queue.sh"}' '"l1\nl2\nl3"'
+pay "$T/p-green.json" Bash '{"command":"cargo test --lib"}' '"test result: ok. 42 passed; 0 failed"'
+pay "$T/p-red.json"   Bash '{"command":"cargo test --lib"}' '"error: could not compile"' PostToolUseFailure
+pay "$T/p-skip.json"  TodoWrite '{}' '"ok"'
+pay "$T/p-grep.json"  Grep '{"pattern":"voice_cfg"}' '"a\nb\nc\nd"'
+
 pass=0; fail=0
 ck() { # ck <label> <expect-substring|EMPTY> <actual>
   if [[ "$2" == "EMPTY" ]]; then
@@ -69,46 +90,155 @@ ck() { # ck <label> <expect-substring|EMPTY> <actual>
   elif [[ "$3" == *"$2"* ]]; then echo "  ok   $1"; pass=$((pass+1))
   else echo "  FAIL $1"; echo "        want ⊃ $2"; echo "        got    $3"; fail=$((fail+1)); fi
 }
+# The payload is consumed (deleted) by narrate.sh, so every case gets its own copy.
+run() { # run <session> <payload|-> [transcript|-] [extra args...]
+  local s="$1" p="$2" tr="${3:--}"
+  # NOT `shift 3 || true`: with two arguments that shift FAILS and leaves argv untouched, so the
+  # positional parameters were passed through to narrate.sh as stray operands and it died in its
+  # own option parser. Every fact case failed that way while the prose cases (three arguments)
+  # passed, which is a very convincing wrong answer.
+  shift $(( $# > 3 ? 3 : $# ))
+  local args=(--session "$s")
+  if [[ "$p" != "-" ]]; then cp "$p" "$T/live.json"; args+=(--payload "$T/live.json"); fi
+  [[ "$tr" != "-" ]] && args+=(--transcript "$tr")
+  "$N" "${args[@]}" "$@" 2>/dev/null
+}
 
-echo "== the line it speaks =="
-out="$("$N" --session "$(_s s1)" --transcript "$T/t-prose.jsonl" 2>/dev/null)"
-ck "prose becomes one sentence, no fence/table" "SPOKE[narration]: อ่าน queue.sh ก่อน แล้วค่อยแก้ cadence" "$out"
+echo "== facts: the line comes from the tool's own response =="
+ck "Read says the file and its line count" "SPOKE[narration]: queue.sh อ่านแล้ว 3 บรรทัด" \
+   "$(run "$(_s f1)" "$T/p-read.json")"
+ck "a green test run says the figure" "SPOKE[narration]: cargo test ผ่าน 42" \
+   "$(run "$(_s f2)" "$T/p-green.json")"
+ck "grep says how many matches" "voice_cfg เจอ 4 แห่ง" \
+   "$(run "$(_s f3)" "$T/p-grep.json")"
 
-echo "== dedupe: the same prose introduces the next tool call too =="
-out2="$(VOICE_VERBOSE= "$N" --session "$(_s s1)" --transcript "$T/t-prose.jsonl" 2>/dev/null)"
-ck "second call on the same block is silent" EMPTY "$out2"
-why="$("$N" -v --session "$(_s s1)" --transcript "$T/t-prose.jsonl" 2>&1 >/dev/null | tail -1)"
+echo "== a failed step is a THRESHOLD, not a narration =="
+out="$(run "$(_s f4)" "$T/p-red.json")"
+ck "red goes out as a milestone with the red cue" "SPOKE[milestone/red]: cargo test ล้ม" "$out"
+# Same failing step again, INSIDE the rate floor: a red must bypass the floor, and the repeat is
+# itself the news.
+out2="$(run "$(_s f4)" "$T/p-red.json")"
+ck "the same failure again bypasses the floor and counts itself" "ล้ม ซ้ำรอบ 2" "$out2"
+
+echo "== facts fall back to prose, and prose falls back to facts =="
+ck "a skipped tool (no figure) uses the prose instead" "อ่าน queue.sh ก่อน" \
+   "$(run "$(_s f5)" "$T/p-skip.json" "$T/t-prose.jsonl")"
+ck "narrate_source=prose prefers the sentence" "อ่าน queue.sh ก่อน" \
+   "$(VOICE_NARRATE_SOURCE=prose run "$(_s f6)" "$T/p-read.json" "$T/t-prose.jsonl")"
+ck "…and still speaks the fact when there is no prose" "queue.sh อ่านแล้ว 3 บรรทัด" \
+   "$(VOICE_NARRATE_SOURCE=prose run "$(_s f7)" "$T/p-read.json" "$T/t-noprose.jsonl")"
+ck "no fact and no prose is silence" EMPTY \
+   "$(run "$(_s f8)" "$T/p-skip.json" "$T/t-noprose.jsonl")"
+
+echo "== the prose path still cleans markdown up =="
+ck "heading marks stripped, words kept" "ผลการตรวจ" \
+   "$(run "$(_s p1)" - "$T/t-heading.jsonl")"
+ck "a VOICE tag is never narrated" EMPTY "$(run "$(_s p2)" - "$T/t-tag.jsonl")"
+
+echo "== dedupe =="
+ck "first line speaks" "SPOKE[narration]" "$(run "$(_s d1)" "$T/p-read.json")"
+ck "the identical line is not spoken twice" EMPTY "$(run "$(_s d1)" "$T/p-read.json")"
+why="$(cp "$T/p-read.json" "$T/live.json"; "$N" -v --session "$(_s d1)" --payload "$T/live.json" 2>&1 >/dev/null | tail -1)"
 ck "…and says why with -v" "narrate:" "$why"
 
-echo "== markdown headings and list markers =="
-out="$("$N" --session "$(_s s2)" --transcript "$T/t-heading.jsonl" 2>/dev/null)"
-ck "heading marks stripped, words kept" "ผลการตรวจ" "$out"
+echo "== rate floor: a DIFFERENT line, too soon =="
+ck "first speaks" "SPOKE[narration]" "$(run "$(_s r1)" "$T/p-read.json")"
+ck "a different line inside the floor is dropped" EMPTY "$(run "$(_s r1)" "$T/p-grep.json")"
 
-echo "== a VOICE tag belongs to the closing line =="
-out="$("$N" --session "$(_s s3)" --transcript "$T/t-tag.jsonl" 2>/dev/null)"
-ck "tag block is never narrated" EMPTY "$out"
+echo "== the per-turn cap (3 in this suite's config) =="
+CAPS="$(_s c1)"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_turn_start "$CAPS" ) >/dev/null 2>&1
+spoke=0
+for i in 1 2 3 4 5; do
+  # Each iteration needs a DIFFERENT line (dedupe) and no floor in the way, so the stamp is
+  # rewound between calls — the cap is what is under test here, not the cadence.
+  ( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_put "$CAPS" ts 0 ) >/dev/null 2>&1
+  pay "$T/p-loop.json" Read "{\"file_path\":\"/a/f$i.sh\"}" '"x\ny"'
+  out="$(run "$CAPS" "$T/p-loop.json")"
+  [[ -n "${out//[[:space:]]/}" ]] && spoke=$((spoke+1))
+done
+ck "stops at the cap and no further" "3" "$spoke"
 
-echo "== no prose at all: the activity fallback =="
-out="$("$N" --session "$(_s s4)" --transcript "$T/t-noprose.jsonl" 2>/dev/null)"
-ck "falls back to the tool activity" "กำลัง Read summarize.sh" "$out"
+echo "== the long-turn threshold: single-shot, and only on a real step =="
+LS="$(_s l1)"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null
+  voice_turn_start "$LS"
+  f="$(voice_turn_file "$LS")"; jq '.turn = (.turn - 700)' "$f" > "$f.t" && mv "$f.t" "$f" ) >/dev/null 2>&1
+out="$(run "$LS" "$T/p-read.json")"
+ck "says how long it has been running, with the last step" "ผ่านมา 11 นาที" "$out"
+ck "…as a milestone that cannot be dropped" "SPOKE[milestone/attention]" "$out"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_put "$LS" ts 0 ) >/dev/null 2>&1
+out2="$(run "$LS" "$T/p-grep.json")"
+ck "the threshold does not fire twice in one turn" "SPOKE[narration]" "$out2"
 
 echo "== the turn already ended: the closing line owns it =="
 export VOICE_CACHE_HOME="${VOICE_CACHE_HOME:-$HOME/.cache/aiworks/voice}"
-( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_turn_start "$(_s s5)"; voice_turn_end "$(_s s5)" ) >/dev/null 2>&1
-out="$("$N" --session "$(_s s5)" --transcript "$T/t-prose.jsonl" 2>/dev/null)"
-ck "silent after the turn closed" EMPTY "$out"
-
-echo "== rate floor: a fresh block within MIN_GAP =="
-out="$("$N" --session "$(_s s6)" --transcript "$T/t-prose.jsonl" 2>/dev/null)"          # first, speaks
-out2="$("$N" --session "$(_s s6)" --transcript "$T/t-heading.jsonl" 2>/dev/null)"       # different text, too soon
-ck "first line speaks"                 "SPOKE[narration]" "$out"
-ck "a DIFFERENT line inside the floor is dropped" EMPTY "$out2"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_turn_start "$(_s e1)"; voice_turn_end "$(_s e1)" ) >/dev/null 2>&1
+ck "silent after the turn closed" EMPTY "$(run "$(_s e1)" "$T/p-read.json")"
 
 echo "== every OTHER chattiness level is silent =="
 for lvl in terse balanced chatty; do
-  out="$(VOICE_CHATTINESS=$lvl "$N" --session "$(_s s-$lvl)" --transcript "$T/t-prose.jsonl" 2>/dev/null)"
-  ck "chattiness=$lvl narrates nothing" EMPTY "$out"
+  ck "chattiness=$lvl narrates nothing" EMPTY \
+     "$(VOICE_CHATTINESS=$lvl run "$(_s x-$lvl)" "$T/p-read.json")"
 done
+
+echo "== the payload temp file is always cleaned up =="
+cp "$T/p-read.json" "$T/live.json"
+"$N" --session "$(_s g0)" --payload "$T/live.json" >/dev/null 2>&1
+[[ -f "$T/live.json" ]] && { echo "  FAIL payload left behind"; fail=$((fail+1)); } || { echo "  ok   payload deleted by the reader"; pass=$((pass+1)); }
+cp "$T/p-read.json" "$T/live.json"
+VOICE_CHATTINESS=terse "$N" --session "$(_s g0b)" --payload "$T/live.json" >/dev/null 2>&1
+[[ -f "$T/live.json" ]] && { echo "  FAIL payload left behind on an early gate exit"; fail=$((fail+1)); } || { echo "  ok   …even when a gate exits early"; pass=$((pass+1)); }
+
+echo "== the gate voice =="
+gpay() { jq -n --arg e "$1" --arg n "$2" --argjson i "$3" --arg m "${4:-}" \
+  '{session_id:"x",hook_event_name:$e,tool_name:$n,tool_input:$i,message:$m}' > "$T/gate.json"; }
+grun() { cp "$T/gate.json" "$T/glive.json"; "$G" --session "$1" --event "$2" --payload "$T/glive.json" 2>/dev/null; }
+
+gpay PermissionRequest Bash '{"command":"cargo test --lib -p ofb"}'
+ck "permission names the command" "SPOKE[milestone/attention]: ขออนุญาตรัน cargo test ค่ะ" \
+   "$(grun "$(_s gt1)" PermissionRequest)"
+gpay PermissionRequest Write '{"file_path":"/a/b/main.rs"}'
+ck "permission for a file names the file" "ขออนุญาตใช้ Write กับ main.rs ค่ะ" \
+   "$(grun "$(_s gt2)" PermissionRequest)"
+gpay PermissionDenied Bash '{"command":"git push origin develop"}'
+ck "an auto-mode denial is spoken, in red" "SPOKE[milestone/red]: git push ถูก block ค่ะ" \
+   "$(grun "$(_s gt3)" PermissionDenied)"
+gpay PreToolUse ExitPlanMode '{}'
+ck "a plan up for approval" "แผนพร้อมแล้ว ขออนุมัติค่ะ" "$(grun "$(_s gt4)" PreToolUse)"
+gpay PreToolUse Bash '{"command":"ls"}'
+ck "PreToolUse for anything else is not a gate" EMPTY "$(grun "$(_s gt5)" PreToolUse)"
+gpay Notification "" '{}' "Claude needs your permission to use Bash"
+ck "a permission notification is classified" "ขออนุญาตทำงานต่อค่ะ" "$(grun "$(_s gt6)" Notification)"
+gpay Notification "" '{}' "Claude is waiting for your input"
+ck "an idle notification is classified" "รอคำสั่งอยู่ค่ะ" "$(grun "$(_s gt7)" Notification)"
+gpay Notification "" '{}' "Some unrecognised English sentence"
+ck "an unclassifiable notification stays silent (never read aloud)" EMPTY "$(grun "$(_s gt8)" Notification)"
+gpay PermissionRequest Bash '{"command":"cargo test --lib -p ofb"}'
+S9="$(_s gt9)"
+ck "one prompt, two events: first speaks" "ขออนุญาตรัน cargo test" "$(grun "$S9" PermissionRequest)"
+gpay Notification "" '{}' "Claude needs your permission to use Bash"
+ck "…and the second event for the SAME prompt stays quiet" EMPTY "$(grun "$S9" Notification)"
+# Deduped on the class, not the wording — so a DIFFERENT kind of gate still gets through at once.
+gpay PreToolUse ExitPlanMode '{}'
+ck "a different gate class is not swallowed by it" "แผนพร้อมแล้ว" "$(grun "$S9" PreToolUse)"
+ck "gates: false silences it" EMPTY \
+   "$(gpay PermissionRequest Bash '{"command":"ls -la"}'; VOICE_CHATTINESS=terse grun "$(_s gt10)" PermissionRequest >/dev/null; \
+      sed -i.bak 's/    gates: true//' "$T/workspace.config.yaml" 2>/dev/null; \
+      printf '    gates: false\n' >> "$T/workspace.config.yaml"; grun "$(_s gt11)" PermissionRequest)"
+# The gate voice is INDEPENDENT of chattiness (it is a "whether", not a "how much") — restore the
+# config and prove that at terse it still speaks.
+sed -i.bak '/gates: false/d' "$T/workspace.config.yaml"
+gpay PermissionRequest Bash '{"command":"cargo build"}'
+ck "a gate speaks at terse too, unlike narration" "ขออนุญาตรัน cargo build ค่ะ" \
+   "$(VOICE_CHATTINESS=terse grun "$(_s gt12)" PermissionRequest)"
+
+echo "== tool-fact.py fixtures =="
+if python3 "$SRC/scripts/voice/tool-fact.py" --selftest >/dev/null 2>&1; then
+  echo "  ok   tool-fact fixtures green"; pass=$((pass+1))
+else
+  echo "  FAIL tool-fact fixtures (run scripts/voice/tool-fact.py --selftest)"; fail=$((fail+1))
+fi
 
 echo; echo "pass=$pass fail=$fail"
 exit $(( fail > 0 ))

@@ -126,6 +126,8 @@ case "$cmd" in
               'voice.autoplay.milestones|  · closing line|true' \
               'voice.autoplay.milestone_every_turn|    every turn|true' \
               'voice.autoplay.narrate|  · step narration|true' \
+              'voice.autoplay.thresholds|  · thresholds|true' \
+              'voice.autoplay.gates|  · gate voice|true' \
               'voice.notify_voice.enabled|slack voice note|false' \
               'voice.push_to_talk.enabled|push-to-talk|false'; do
       k="${kv%%|*}"; rest="${kv#*|}"; label="${rest%|*}"; def="${rest##*|}"
@@ -140,8 +142,9 @@ case "$cmd" in
       printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
         "$chat" "$c_dim" "$c_off"
     elif voice_cfg_bool voice.autoplay.narrate true; then
-      printf 'chattiness        %s %s(ack + closing line + a line per step while the turn runs)%s\n' \
-        "$chat" "$c_dim" "$c_off"
+      src="$(voice_narrate_source)"; [[ "$src" == "facts" ]] && src=fact
+      printf 'chattiness        %s %s(ack + closing line + one %s line per step, every %ss, %s max/turn)%s\n' \
+        "$chat" "$c_dim" "$src" "$(voice_narrate_gap)" "$(voice_narrate_cap)" "$c_off"
     else
       printf 'chattiness        %s %s← narrate is off, so nothing speaks mid-turn — the running\n' \
         "$chat" "$c_warn"
