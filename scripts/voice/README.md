@@ -467,6 +467,13 @@ On a turn that has run long, "still working, currently X" — where X is the las
 from the transcript. 90 s, then 3 min, then 5 min, capped at six; a fixed interval would speak
 thirteen times during a twenty-minute `dev-cycle` run and become the thing you mute.
 
+**`chattiness: max` tightens the schedule** to 45 s · 1 min · 90 s · then 2–5 min, ten beats, ~29 min
+of cover (`voice_heartbeat_gaps`, lib.sh) — that level's whole point is a run that keeps saying where
+it is, and this is the only channel that speaks *while* the work happens. Both schedules back off and
+both are capped. The **words are identical at every level**; only the cadence moves. And
+`voice.autoplay.heartbeat: false` still wins at `max` too: a chattiness level must never switch a
+channel back on, or "why is it quiet?" stops having one answer.
+
 No LLM call: the line is a template, because a heartbeat's whole value is *alive, and doing X*.
 The elapsed minutes are deliberately **not** spoken — they would make every heartbeat a unique
 string and turn a permanent cache hit into a synthesis every time.
@@ -558,25 +565,56 @@ a raw `OFB-1598` is read as one four-figure number.
 
 ## Chattiness — how much it says
 
-`voice.autoplay.chattiness: terse | balanced | chatty`, resolved by `voice_chattiness` (lib.sh),
+`voice.autoplay.chattiness: terse | balanced | chatty | max`, resolved by `voice_chattiness` (lib.sh),
 overridable per call with `VOICE_CHATTINESS` or `summarize.sh --chattiness`.
 
-**Scope: how much, never whether**, and only the **ack + closing line**. "Whether" has four switches
-already; a fifth that could also produce silence would give "why is it quiet?" five answers. The
-heartbeat stays a template and the Slack voice note stays one canonical sentence — in both, the
-repetition is what makes them free.
+**Scope: how much, never whether.** "Whether" has four switches already; a fifth that could also
+produce silence would give "why is it quiet?" five answers. `terse`…`chatty` reach the **ack +
+closing line** only; `max` also moves the **heartbeat's cadence** (never its words —
+`voice_heartbeat_gaps`). The Slack voice note stays one canonical sentence at every level, because its
+repetition is what makes it free.
 
 | level | sentences | ack cap | closing cap | personality allowed |
 |---|---|---|---|---|
 | `terse` | 1 | 90 | 120 | none — facts only. **The shipped prompt, byte for byte** |
 | `balanced` | ≤2 | 140 | 200 | + softener (`ให้นะคะ`) + 1–2 word reaction (`ได้ค่ะ`) + 2nd fact |
 | `chatty` | ≤3 | 200 | 280 | + 3rd fact + follow-through (what will be reported / what waits) |
+| `max` | ≤4 | 260 | 360 | + **step narration** — the order of the work, one status per step — + the tightened heartbeat |
 
 Three graded pieces, each picked for what it *cannot* do: a **softener** is 2–3 characters and cannot
 carry a false fact; a **reaction** states the outcome in itself, unlike a greeting, which costs
 characters and says nothing; **follow-through** is a fact about the next step, not a connective.
-Greetings, narration and evidence-free opinions are not on the ladder at all — same ruling as the ban
+Greetings, jokes and evidence-free opinions are not on the ladder at all — same ruling as the ban
 on quips (§9.2).
+
+### `max` — the only level that narrates
+
+The first three differ in **length**; `max` differs in **what it may talk about**. Narration is
+forbidden at every other level (there, the process is filler around the one fact that matters) and is
+the requested content here. Register: a flight engineer reporting to the person in charge, shape
+*[subject] [state] [figure]* — the prompt **describes** it rather than naming the character from the
+films, because naming it produces a Thai butler impression and the useful half of that voice is the
+status-report shape, not the accent.
+
+Three conflicts in the assembled prompt had to be resolved for the level to do anything. The first two
+were found by dumping the prompt (`VOICE_SHOW_PROMPT=1`), the third only by listening to
+`aiworks voice audition` — neither method would have caught the other's:
+
+| the shipped line | at `max` | why it mattered |
+|---|---|---|
+| report: *"do not describe your process, do not list what you did step by step"* | *"list the steps you actually took, in the order you took them — one status each"* (`NO_PROCESS`) | a prompt carrying both instructions is resolved by coin flip, differently every turn |
+| ack: *"state the concrete work… the first step — **and stop**"* | + *"and then the ORDER you will take it in, but only as far as the request itself pins that order down"* (`ACCEPT_SHAPE`) | measured: with "and stop" left in, the `max` ack came back **shorter** than `chatty`'s (85 vs 92 chars) and named no order — the concrete instruction beat the persona |
+| `_persona`'s reaction words `เรียบร้อยค่ะ` / `เจอแล้วค่ะ`, offered to **both** kinds | ack only: future tense pinned, completion words banned by name (`ACCEPT_SHAPE`) | those two words mean *finished* — fine on a report, a false claim on an ack. Measured: *"ได้ค่ะ ฉันจะไปเช็คการ rounding … **เรียบร้อยแล้ว** จะรายงานผลกลับให้ทราบค่ะ"*, a completed check that had not started. 3/3 clean after; the extra room is what surfaced it — one sentence has no space for both a future clause and a completion word |
+
+Both keep the clamp that makes narration safe: only steps **the text actually contains**. Permission
+to describe a process is exactly the permission a model would use to invent a plausible one. The
+`NO_PROCESS` swap holds under `--plain` too — bad news drops the *warm* register, not the detail, and
+"test แดง 3 ตัว, retry แล้วยังแดง" is the shape you want from an incident report.
+
+`chatty` keeps its wording untouched even though its follow-through clause has a milder version of the
+same tension: that text is measured, and adding a level is not licence to re-tune one nobody asked
+about. Verified mechanically — all six existing prompt variants (3 levels × ack/report), plus their
+`--plain` forms, are byte-identical to `HEAD`.
 
 ### `terse` is byte-identical, and that is checkable
 
@@ -592,8 +630,8 @@ one would throw the second away.
 
 ### Ceiling, not quota — and it is enforced, not requested
 
-The safety property of `chatty`. Three measured failures, each fixed by moving the rule out of the
-prompt and into the code:
+The safety property of `chatty` and `max`. Three measured failures, each fixed by moving the rule out
+of the prompt and into the code:
 
 | measured | fix |
 |---|---|
@@ -603,6 +641,19 @@ prompt and into the code:
 
 Result on a 467-char reply: terse 32 chars · balanced 57 · chatty 130, every fact real. On a 23-char
 input, `chatty` produces one sentence of ~35 characters.
+
+Re-measured at `max`, the level with the most room *and* explicit permission to narrate — the case
+where padding pressure is highest:
+
+| input | `max` output |
+|---|---|
+| *"แก้ typo ใน README แล้ว"* (23 chars) | one sentence, 33–38 chars, 3 runs of 3 — no invented step, no invented figure |
+| a 620-char reply naming 4 file changes | 310–329 chars, 4 statuses, every figure traceable to the input |
+| a 90-char request (`/dev-cycle …`) | ack 124–163 chars, naming the order — vs `chatty`'s 92 with no order |
+
+The material clamp is what holds the first row: at 23 characters in, the cap collapses to the 60-char
+floor and the sentence count derived from it is 1, so `max`'s four-sentence budget is never even
+offered. The level cannot pad what it was not given.
 
 ### The particle budget is enforced too
 
@@ -801,9 +852,9 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.autoplay.enabled` | `false` | master switch for local speech |
 | `voice.autoplay.ack` | `true` | the per-prompt acknowledgement |
 | `voice.autoplay.milestones` | `true` | the closing line on a finished turn |
-| `voice.autoplay.heartbeat` | `true` | "still working" on a long turn |
+| `voice.autoplay.heartbeat` | `true` | "still working" on a long turn. Vetoes the mid-turn line at every level, `max` included |
 | `voice.autoplay.milestone_every_turn` | `true` | false ⇒ only an explicit `VOICE:` tag speaks (was `milestone_backstop`, still read in its `false` position) |
-| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` — how MUCH the ack and closing line say, never whether they speak |
+| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also tightens the heartbeat's cadence and is the only level that narrates the steps |
 | `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; `aiworks voice mute` does not reach it |
 | `voice.push_to_talk.enabled` | `false` | hold-to-dictate |
 | `voice.push_to_talk.hotkey` | `right_cmd+right_alt` | the chord; baked into the Lua by `ptt install` |

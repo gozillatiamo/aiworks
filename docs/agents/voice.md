@@ -103,14 +103,15 @@ purpose.
 ```yaml
 voice:
   autoplay:
-    chattiness: balanced      # terse | balanced | chatty
+    chattiness: balanced      # terse | balanced | chatty | max
 ```
 
 **How much, never whether.** "Whether" already has four switches (`ack` · `milestones` ·
 `heartbeat` · `milestone_every_turn`); a fifth thing that could also produce silence would give
-"why is it quiet?" five possible answers and no way to tell which. It reaches the **ack and the
-closing line only** — the heartbeat stays a template and the Slack voice note stays one canonical
-sentence, because in both cases the repetition is what makes them free (they hit the audio cache).
+"why is it quiet?" five possible answers and no way to tell which. `terse`…`chatty` reach the **ack
+and the closing line only**; `max` also tightens the **heartbeat's cadence**, never its words. The
+Slack voice note stays one canonical sentence at every level, because its repetition is what makes
+it free (it hits the audio cache).
 
 The same finished turn, at each level:
 
@@ -124,14 +125,62 @@ balanced  เรียบร้อยค่ะ เอกสารแก้ไข
 chatty    เรียบร้อยค่ะ การแก้ mute ทำให้ local speech เงียบครบ 4 ทาง และ voice note upload
           ปกติ 23031 bytes เอกสารแก้ครบ 6 ไฟล์ รอคุณสั่งค่ะ
           + the third fact, + the follow-through (what will be reported, what waits for you)
+
+max       เรียบร้อยค่ะ แก้ 4 script เสร็จแล้ว ได้แก่ lib.sh เพิ่ม voice_heartbeat_gaps,
+          summarize.sh เพิ่ม cap 260 chars สำหรับ ack และ 360 สำหรับ report, heartbeat.sh อ่าน
+          cadence จาก chattiness เป็น 10 beats เริ่มที่ 45 วินาที, aiworks-voice.sh audition ครบ
+          4 ระดับ รอการตรวจสอบจากคุณค่ะ
+          + the STEPS, in the order they happened, one status each — and the mid-turn heartbeat
 ```
 
-**Ceiling, not quota.** One fact means one sentence even at `chatty`. This is the level's safety
+### `max`, and why it is a different kind of level
+
+The first three levels differ only in **length**. `max` differs in **what it is allowed to talk
+about**: it is the only level that may narrate the process, which every other level explicitly
+forbids — for them the process is filler around the one fact that matters.
+
+The register is the one from the films: a flight engineer reporting to the person in charge, in the
+shape *[subject] [state] [figure]* — "Structural integrity at 78 percent, sir". The prompt
+**describes** that register instead of naming the character, on purpose: naming it produces a Thai
+butler impression, and the useful half of that voice is the status-report shape, not the accent.
+
+It lands on three channels at once, which is what makes it feel continuous rather than merely long:
+
+| channel | at `max` |
+|---|---|
+| the **ack** | states the work *and the order it will be worked in* — the level replaces the shipped "…and stop" with the sequence |
+| the **heartbeat** | 10 beats from 45 s instead of 6 from 90 s. Same template, same near-free cache — only the cadence moves |
+| the **closing line** | up to 4 sentences: the steps taken, one status each, finishing on the outcome |
+
+**`max` needs `heartbeat: true` to be itself.** The mid-turn narration is most of what the level
+buys, and `voice.autoplay.heartbeat: false` still vetoes it — a chattiness level must never switch a
+channel back on, or "why is it quiet?" stops having one answer. `aiworks voice status` says so
+outright when the two disagree.
+
+**Three prompt conflicts had to be resolved for it to work at all**, and the room the level adds is
+what surfaced each one:
+
+1. the report's *"do not describe your process, do not list what you did step by step"* — inverted at
+   `max`. Left in, a prompt carrying both instructions is resolved by coin flip, differently every
+   turn.
+2. the ack's *"state the first step — **and stop**"* — replaced by the order of work. Left in, it was
+   the more concrete instruction and the model obeyed it over the persona: measured, the `max` ack
+   came back **shorter** than `chatty`'s (85 vs 92 characters) and named no order at all.
+3. the reaction words the persona offers (`เรียบร้อยค่ะ`, `เจอแล้วค่ะ`) mean *finished* — harmless on
+   a report, a **false claim** on an ack. Measured before the fix: *"ได้ค่ะ ฉันจะไปเช็คการ rounding …
+   **เรียบร้อยแล้ว** จะรายงานผลกลับให้ทราบค่ะ"* — a completed check that had not started. The ack at
+   `max` is now pinned to future tense with completion words banned outright; 3 runs of 3 clean after.
+
+The first two were found by dumping the assembled prompt (`VOICE_SHOW_PROMPT=1`), the third by
+listening to `aiworks voice audition`. Neither method would have caught the other's.
+
+**Ceiling, not quota.** One fact means one sentence even at `max`. This is the level's safety
 property, not a nicety: given room and nothing to fill it with, a model pads, and padding is one
 step from inventing. Measured — at a fixed 3-sentence budget, the one-line input *"แก้ typo ใน
 README แล้ว"* produced an invented next step in 4/4 runs and, once, an invented figure ("3 จุด").
 So the budget is computed from the material as well as the level, and the sentence count follows the
-budget.
+budget. Re-measured at `max` — the level with the most room *and* explicit permission to narrate —
+the same input produced one 33–38 character sentence in 3 runs of 3, with no invented step.
 
 **Bad news keeps the plain register at every level** — `prod`/`error` intent and `red`/`incident`
 group drop the softener and the reaction. Same ruling that keeps quips out: a warm turn of phrase
@@ -144,9 +193,12 @@ set-once preference nobody turns down before production breaks.
 aiworks voice audition "ช่วยเช็ค commission calculator ใน agent-webservice"
 ```
 
-Speaks the same request at all three levels with the character count printed. Cost scales with it —
-ack and closing lines never hit the cache, so at 100 turns/day on elevenlabs it is roughly
-**terse $48 · balanced $76 · chatty $105** per month. `tts.provider: openai` (voice `sage`) is
+Speaks the same request at all four levels with the character count printed — but not `max`'s
+heartbeat, which only exists inside a long turn and would be a demo of something you have not turned
+on. Cost scales with the level: ack and closing lines never hit the cache, so at 100 turns/day on
+elevenlabs it is roughly **terse $48 · balanced $76 · chatty $105 · max ~$150** per month (the first
+three measured; `max` extrapolated from its 620-character ceiling plus ~$12 of templated, partly
+cached heartbeat). `tts.provider: openai` (voice `sage`) is
 ~2.2× cheaper *and* measured best on Thai; `gemini` is ~6× cheaper but slowest and weakest of the
 four. Every vendor's voices were swept — see `scripts/voice/README.md` § Thai voice selection.
 

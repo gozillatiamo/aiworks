@@ -270,13 +270,20 @@ voice:
     chattiness: terse              # HOW MUCH it says when it speaks, never WHETHER (that is the
                                    #   four switches above): terse (1 sentence, facts only) |
                                    #   balanced (1-2, + a softener and a short reaction) | chatty
-                                   #   (2-3, + the follow-through). A CEILING, not a quota — one
-                                   #   fact still means one sentence, which is the safety property:
-                                   #   given room and nothing to fill it with, a model pads, and
-                                   #   padding is one step from inventing. Bad news drops the
-                                   #   softener at every level. Cost at 100 turns/day × 22 days on
-                                   #   elevenlabs: terse ~$48/mo · balanced ~$76 · chatty ~$105.
-                                   #   `aiworks voice audition "<a request>"` speaks all three.
+                                   #   (2-3, + the follow-through) | max (up to 4, the register of a
+                                   #   flight engineer reporting in: [subject] [state] [figure], the
+                                   #   ack states the ORDER of the work, the closing line lists the
+                                   #   STEPS, and the heartbeat moves to 10 beats from 45 s so a long
+                                   #   run keeps saying where it is — the only level that narrates
+                                   #   the process, and it needs `heartbeat: true` to be itself).
+                                   #   A CEILING, not a quota — one fact still means one sentence,
+                                   #   which is the safety property: given room and nothing to fill
+                                   #   it with, a model pads, and padding is one step from inventing.
+                                   #   Bad news drops the softener at every level. Cost at 100
+                                   #   turns/day × 22 days on elevenlabs: terse ~$48/mo · balanced
+                                   #   ~$76 · chatty ~$105 · max ~$150 (that last one extrapolated
+                                   #   from the character ceiling, not measured).
+                                   #   `aiworks voice audition "<a request>"` speaks all four.
   # A voice note attached to the Slack messages the workflow already sends. `aiworks voice mute`
   # deliberately does NOT reach it: that audio is a deliverable for the team — rendered on one
   # machine, heard on someone else's phone — so it is a standing decision made HERE, not a side

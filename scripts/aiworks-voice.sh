@@ -13,7 +13,7 @@
 #   aiworks voice mute [on|off]     silence / unsilence EVERY spoken output on this machine
 #   aiworks voice status            the gates, the mute, the queue, the cache, the cues
 #   aiworks voice say "ข้อความ"      speak a line now (blocks until spoken) — a live check
-#   aiworks voice audition "…"      speak the same request at all 3 chattiness levels, to compare
+#   aiworks voice audition "…"      speak the same request at all 4 chattiness levels, to compare
 #   aiworks voice cues [--force]    generate the sound-cue catalog
 #   aiworks voice normalize [-n]    level the ALREADY-cached audio to voice.tts.loudness (-n = dry run)
 #   aiworks voice test              speak one line and report the timings
@@ -132,8 +132,21 @@ case "$cmd" in
       if voice_cfg_bool "$k" "$def"; then printf '%-19s on %s✓%s\n' "$label" "$c_ok" "$c_off"
       else printf '%-19s off\n' "$label"; fi
     done
-    printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
-      "$(voice_chattiness)" "$c_dim" "$c_off"
+    # `max` reaches a third channel (the heartbeat's cadence), so the note has to say so — and if
+    # the heartbeat is OFF, say THAT, because the mid-turn narration is most of what `max` buys and
+    # a level that silently delivers half of itself is the kind of thing you debug for ten minutes.
+    chat="$(voice_chattiness)"
+    if [[ "$chat" != "max" ]]; then
+      printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
+        "$chat" "$c_dim" "$c_off"
+    elif voice_cfg_bool voice.autoplay.heartbeat true; then
+      printf 'chattiness        %s %s(ack + closing line + a 10-beat heartbeat from 45 s)%s\n' \
+        "$chat" "$c_dim" "$c_off"
+    else
+      printf 'chattiness        %s %s← heartbeat is off, so nothing speaks mid-turn — most of `max`\n' \
+        "$chat" "$c_warn"
+      printf '                  is the heartbeat. Set voice.autoplay.heartbeat: true%s\n' "$c_off"
+    fi
     printf 'tts               %s / %s\n' "$(voice_cfg voice.tts.provider elevenlabs)" \
       "$(voice_cfg "voice.tts.voice.$(voice_cfg voice.tts.provider elevenlabs)" '(provider default)')"
     printf 'stt               %s\n' "$(voice_cfg voice.stt.provider openai)"
@@ -239,8 +252,11 @@ case "$cmd" in
 
   audition)
     # Picking a chattiness level is decided BY EAR, not from a table of character counts — and it
-    # should not cost three config edits and three restarts to hear three options. This speaks the
-    # same request at all three, in order, announcing each one first.
+    # should not cost four config edits and four restarts to hear four options. This speaks the
+    # same request at all four, in order, announcing each one first.
+    #
+    # What it CANNOT audition is `max`'s heartbeat: that one only exists inside a long turn, and
+    # faking it here would be a demo of a thing you have not actually turned on.
     [[ $# -gt 0 ]] || die "usage: aiworks voice audition \"the prompt to react to\" [--kind ack|report]"
     . "$VOICE/lib.sh" 2>/dev/null || die "could not load $VOICE/lib.sh"
     set +e
@@ -255,7 +271,7 @@ case "$cmd" in
       printf '%smuted — unmute first, or you will audition three silences%s\n' "$c_warn" "$c_off"; exit 0
     fi
     printf '%s%s%s  (%s)\n\n' "$c_dim" "$text" "$c_off" "$kind"
-    for lvl in terse balanced chatty; do
+    for lvl in terse balanced chatty max; do
       line="$(VOICE_CHATTINESS="$lvl" "$VOICE/summarize.sh" --kind "$kind" --particle 'ค่ะ' "$text" 2>/dev/null)"
       if [[ -z "$line" ]]; then
         printf '  %-9s %s(the summarizer returned nothing)%s\n' "$lvl" "$c_warn" "$c_off"; continue

@@ -76,11 +76,13 @@ starting, this says what came out of it. `voice.autoplay.milestone_every_turn: f
 tag-only.
 
 **chattiness**:
-`voice.autoplay.chattiness: terse | balanced | chatty` — how MUCH the ack and closing line say,
+`voice.autoplay.chattiness: terse | balanced | chatty | max` — how MUCH the ack and closing line say,
 never whether they speak. `terse` is the length the feature shipped with; `balanced` adds a softener,
-a short reaction word and the second fact; `chatty` adds the third fact and the follow-through. The
-budget is a ceiling, not a quota, and bad news keeps the plain register at every level.
-`aiworks voice audition "…"` speaks all three.
+a short reaction word and the second fact; `chatty` adds the third fact and the follow-through; `max`
+adds the fourth, narrates the STEPS in the order they happen (the only level allowed to — the others
+forbid it) and tightens the heartbeat to 10 beats from 45 s, so a long run keeps saying where it is.
+The budget is a ceiling, not a quota, and bad news keeps the plain register at every level.
+`aiworks voice audition "…"` speaks all four.
 
 **`VOICE:` tag**:
 A `VOICE[group]: <one line>` line in a reply, which is how a turn writes its own closing line

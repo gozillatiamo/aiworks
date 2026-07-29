@@ -24,16 +24,24 @@
 # silent inside 20 s of anything else that spoke. A heartbeat that queues behind a real
 # milestone and plays late is worse than one that never plays.
 #
-# ── THE SCHEDULE BACKS OFF ─────────────────────────────────────────────────────────
+# ── THE SCHEDULE BACKS OFF, AND `chattiness: max` TIGHTENS IT ──────────────────────
 # 90 s, then 3 min, then 5 min, capped at 6 utterances. A fixed 90 s interval on a twenty-minute
 # dev-cycle run would speak thirteen times and become the thing you mute.
+#
+# At `voice.autoplay.chattiness: max` the schedule starts at 45 s and fits 10 beats into the same
+# half hour — that level's whole point is a run that keeps saying where it is, and this is the only
+# channel that speaks WHILE the work happens. The WORDS are identical at every level (still the
+# template, still no LLM call); only the cadence moves. See voice_heartbeat_gaps in lib.sh.
+#
+# `voice.autoplay.heartbeat: false` still wins at every level, `max` included — a chattiness level
+# must never switch a channel back on, or "why is it quiet?" stops having one answer.
 
 set -euo pipefail
 VOICE_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib.sh
 . "$VOICE_SELF_DIR/lib.sh"
 
-GAPS=(90 180 300 300 300 300)     # seconds to sleep BEFORE each beat
+GAPS=()                           # seconds to sleep BEFORE each beat — filled in after the gate
 SESSION="" MY_TURN="" TRANSCRIPT=""
 
 while [[ $# -gt 0 ]]; do
@@ -52,6 +60,11 @@ voice_cfg_bool voice.autoplay.enabled false || { vlog "heartbeat skipped: autopl
 voice_cfg_bool voice.autoplay.heartbeat true || { vlog "heartbeat skipped: voice.autoplay.heartbeat is false"; exit 0; }
 [[ -n "$SESSION" ]] || SESSION="$VOICE_ROOT"
 [[ -n "$MY_TURN" ]] || MY_TURN="$(voice_turn_get "$SESSION" turn)"
+
+# Read AFTER the gate: a machine where voice is off should not touch the config to decide how often
+# to say nothing.
+read -r -a GAPS <<< "$(voice_heartbeat_gaps)"
+vlog "heartbeat: chattiness=$(voice_chattiness) — ${#GAPS[@]} beats at ${GAPS[*]}s"
 
 # What the last tool call was, in a form worth saying out loud. Falls back to the tool's own
 # name — "ตอนนี้ Grep" is thin but true, and better than inventing detail.
