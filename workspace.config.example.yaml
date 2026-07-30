@@ -107,6 +107,10 @@ observability:
 tracker:
   provider: notion                 # notion | jira
   ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+)
+  base_url: ""                     # the board's web root, e.g. https://your-org.atlassian.net — used
+                                   #   to turn a bare ticket key into a link (stagehand opens
+                                   #   <base_url>/browse/<KEY>). A public hostname, not a credential;
+                                   #   the API token stays in scripts/tracker/.env.
   # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
   # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.
   # Declare WHATEVER your board uses — every key here is mirrored into the workflow. The
@@ -379,6 +383,140 @@ voice:
   cache:
     max_mb: 500                    # the synthesized-audio cache (LRU by access time). The key is
                                    #   provider|voice|model|cue|mix|text, so a repeated line is free.
+
+# ── stagehand: put what the assistant touches ON SCREEN ────────────────────────
+# Every tool call also shows its subject — an edited file in the editor, a fetched URL in a
+# browser tab — placed in whatever screen space is actually free, on whatever display, WITHOUT
+# taking the keyboard. Personal and off by default: it moves windows on one specific desk, so
+# like `voice` it belongs in the git-ignored workspace.config.local.yaml. Full doc:
+# docs/agents/stagehand.md.
+#
+# NOT built on Claude Code's `computer-use` MCP server, and the reasons are worth knowing before
+# anyone tries to "upgrade" it: computer-use HIDES every other visible app while it works, holds a
+# machine-wide lock until the session exits, is view-only for browsers and click-only for IDEs
+# (so it cannot be told to open a URL or a file — the two things wanted here), screenshots into
+# the model on every action, and requires Pro/Max — it is not offered on Team/Enterprise.
+# stagehand is plain `open` + the editor CLI + Accessibility placement: no lock, no hiding, no
+# screenshots, no plan tier.
+stagehand:
+  enabled: false                   # OFF for the team as shipped. Turn it on per PERSON in
+                                   #   workspace.config.local.yaml, never here.
+  placement: halves                # halves (default) | score | rectangle | off.
+                                   #   halves    → HALF a display, split along its long edge, on a
+                                   #               randomly chosen display: a landscape screen splits
+                                   #               left/right, a portrait screen top/bottom. Half a
+                                   #               screen is a shape you can actually read, which is
+                                   #               why this replaced `score` as the default — see below.
+                                   #               A role that already owns a half KEEPS it, so a
+                                   #               window never hops when a tab opens; randomness only
+                                   #               decides where each role goes the first time.
+                                   #   score     → the original placer: score a grid of nine slots per
+                                   #               display by how much each would overlap the windows
+                                   #               already there, take the cheapest. Its arithmetic was
+                                   #               fine and its OUTPUT SHAPES were not — on a desk where
+                                   #               every display is already covered, the cheapest slot
+                                   #               is whatever odd corner is least covered, so a browser
+                                   #               landed in a 1280x705 bottom-left quadrant of a 5K
+                                   #               display. Kept for anyone who prefers it.
+                                   #   rectangle → drive Rectangle's URL scheme instead. Honours
+                                   #               your Rectangle grid exactly, but its
+                                   #               execute-action takes no app-bundle-id, so the
+                                   #               target has to be focused first — it takes the
+                                   #               keyboard mid-turn and hands it back.
+                                   #   off       → open things, move nothing.
+  displays: external               # external (default) | all — which displays stagehand may use.
+                                   #   The BUILT-IN laptop screen is reserved by default: that is where
+                                   #   a person keeps what THEY are using (chat, whatever is open), so
+                                   #   stagehand stays on the external monitors. Detected mechanically
+                                   #   with CGDisplayIsBuiltin against each screen's NSScreenNumber —
+                                   #   never by display NAME, which would break on the next machine.
+                                   #   Reserved is not banned: a laptop with no external display has
+                                   #   only that screen, and a feature that refused to place anything
+                                   #   there would simply be dead, so the built-in is the last-resort
+                                   #   tier. `all` drops the reservation.
+  protected_half: left             # left | right | top | bottom | off — the half the PROTECTED window
+                                   #   (protect_process, i.e. your terminal) is shrunk to when it fills
+                                   #   an entire external display. A terminal maximized across a 5K
+                                   #   screen means that display can only ever be covered, never shared,
+                                   #   so the biggest monitor on the desk drops out of the pool; giving
+                                   #   up one side turns it into two usable halves and the terminal
+                                   #   keeps a half still larger than most laptop screens. Only fires at
+                                   #   >=90% coverage, NEVER on a window in native macOS fullscreen
+                                   #   (its own Space, not usefully resizable — AXFullScreen is checked),
+                                   #   and never on the reserved built-in display. `off` never resizes
+                                   #   anything of yours.
+  rectangle_action: right-half     # `placement: rectangle` only — any Rectangle action name.
+  editor: cursor                   # the editor CLI (must accept `--goto file:line`)
+  editor_process: Cursor           # its Accessibility process name, for placement. Cursor exposes
+                                   #   NO AppleScript dictionary (`count windows` → error -1708),
+                                   #   so its windows are only reachable by process name via
+                                   #   System Events. Renaming the app breaks placement, not opening.
+  browser: chrome                  # currently chrome only — the tab ring below is Chrome AppleScript
+  browser_process: Google Chrome   # its Accessibility process name
+  browser_account: ""              # WHICH ACCOUNT the tabs open under — your work email. This is a
+                                   #   correctness setting, not a preference: Chrome's `make new
+                                   #   window` inherits the LAST-USED profile, so a Jira or GitLab
+                                   #   URL opened while your personal profile was last active renders
+                                   #   a login wall instead of the ticket. Set it per person in
+                                   #   workspace.config.local.yaml. Resolved to a profile directory
+                                   #   through Chrome's own `Local State` metadata (no tokens read),
+                                   #   because the directory names are creation-order and mean
+                                   #   nothing portable — a machine can easily have the WORK account
+                                   #   in "Default" and a personal one in "Profile 1".
+  browser_profile: ""              # escape hatch: a raw profile DIRECTORY ("Default", "Profile 1"),
+                                   #   used only when browser_account is unset or unresolvable.
+  protect_process: iTerm2          # the window that must NEVER be covered — your terminal. Normally
+                                   #   whatever had the keyboard is protected automatically; this is
+                                   #   the fallback for when the app being placed IS the focused one
+                                   #   (a browser tab opening while you were reading a browser tab),
+                                   #   where protecting it would penalise its own display and push
+                                   #   the new window somewhere worse.
+  max_tabs: 8                   # the tab ring in stagehand's OWN window: past this the oldest
+                                   #   tab closes. Your own windows are never touched.
+  follow_max: 3                    # how many subjects one REPLY may put on screen. A reply listing
+                                   #   22 stale MRs must not open 22 tabs; the first few in reading
+                                   #   order are the headline, which is the right priority signal.
+  interact: true                   # after opening, WORK INSIDE the window instead of going static.
+                                   #   A focus phrase on a target (`SHOW: agent-db!555 ~signature_key`)
+                                   #   becomes a URL text fragment, which Chrome itself scrolls to and
+                                   #   highlights — no permission needed, and the default path. Where
+                                   #   that falls short is single-page apps: Jira and GitLab paint
+                                   #   their content AFTER navigation, and a text fragment resolves
+                                   #   against the first paint, so the phrase often is not in the DOM
+                                   #   yet. This key also allows the fallback of asking the rendered
+                                   #   page to scroll and flash the phrase itself, which needs Chrome's
+                                   #   View > Developer > "Allow JavaScript from Apple Events".
+                                   #   ⚠️ That Chrome setting is OFF by default and is a real security
+                                   #   boundary — with it on, ANY AppleScript on the machine can run
+                                   #   JavaScript in any of your logged-in tabs. stagehand NEVER turns
+                                   #   it on; it probes, caches the answer, and quietly does without.
+                                   #   In the editor a focus phrase is grepped for and becomes the
+                                   #   --goto line, which needs nothing extra.
+  debounce_seconds: 2              # per target. A multi-hunk refactor fires a dozen PostToolUse
+                                   #   events on one file in a second; without this the window
+                                   #   visibly jitters a dozen times.
+  url_hosts: "atlassian.net gitlab.com github.com slack.com signoz sonar figma.com mermaid.live localhost 127.0.0.1"
+                                   #   SECURITY BOUNDARY, not tidiness. A URL sniffed out of a tool
+                                   #   RESPONSE is a string from a file, a web page or a remote API,
+                                   #   i.e. attacker-influenceable: auto-opening it would turn an
+                                   #   injected link into a drive-by navigation on your logged-in
+                                   #   browser profile. Response URLs must match one of these
+                                   #   substrings; a WebFetch/WebSearch URL the model asked for
+                                   #   explicitly bypasses the list.
+  triggers:
+    code: true                     # Write / Edit / NotebookEdit → editor at the edited line
+    browser: true                  # WebFetch / WebSearch / allowlisted response URLs → browser tab
+    narration: true                # the Stop hook: show what the REPLY talked about, not only what a
+                                   #   tool touched. A turn's real subjects are often things the
+                                   #   assistant merely explained — a stale MR, a ticket spanning
+                                   #   three repos, a file. An explicit `SHOW: <target>` line in the
+                                   #   reply is exact and free; with no tag the prose is scanned in
+                                   #   reading order. Targets: a URL, `<repo>!<iid>` (resolved from
+                                   #   that repo's git remote — never assembled by hand, which is how
+                                   #   a 404 got produced), a ticket key, or a repo-relative path.
+                                   #   Read / Grep / Glob are deliberately NOT triggers: a turn
+                                   #   skims dozens of files, and mirroring those flips windows
+                                   #   faster than anyone can follow and buries the edit that mattered.
 
 # ── Deployed-env triage MCPs (read-only pg_triage + redis_triage) ──────────────
 # Whether THIS machine carries the read-only triage MCP servers, reconciled by `aiworks sync`

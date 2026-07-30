@@ -116,6 +116,24 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   played. Neither reaches the Slack voice note (that is `voice.notify_voice.enabled` in config,
   audio for the team) or dictation. The assistant's spoken
   name is **Sunmi (ซันมี่)** — answer to it.
+- `docs/agents/stagehand.md` — how the workspace SHOWS its work: a `PostToolUse` hook puts what a
+  tool just touched on screen (edited file → editor at that line; fetched URL → browser tab),
+  placed in whatever screen space is actually free on any display, without stealing the keyboard.
+  **Off by default, per-person (`stagehand.enabled` in the git-ignored
+  `workspace.config.local.yaml`), and ROOT WORKTREE ONLY** — a linked/Superset worktree shares the
+  same physical screen and is gated out mechanically. Deliberately NOT built on Claude Code's
+  `computer-use` MCP server: that hides every other app while it works, holds a machine-wide lock
+  until the session exits, is view-only for browsers and click-only for IDEs (so it cannot open a
+  URL or a file), and is Pro/Max only. `STAGEHAND=off` silences it for one command.
+  **The one thing that concerns you when writing a reply:** a `Stop` hook also puts what the reply
+  TALKED ABOUT on screen. Put a `SHOW: <target>` line in the reply (comma-separate up to
+  `follow_max`) and exactly those open — a URL, `<repo>!<iid>` (e.g. `agent-db!555`), a ticket key,
+  or a repo-relative path (`scripts/x.sh:42`); leave it out and the prose is scanned in reading
+  order instead, which guesses. Name what the reader should be LOOKING at, and never hand-assemble
+  a PR/MR URL — pass `<repo>!<iid>` and let the repo's git remote resolve it. Add a **focus phrase**
+  with `~` (`SHOW: agent-db!555 ~signature_key`) and it opens ON that phrase — scrolled to and
+  highlighted in the browser, the matching line in the editor. Use it whenever you name a symbol,
+  column or identifier: without it the reader lands at the top of a page and has to hunt.
 - `docs/agents/pii-provenance.md` — how personal data is kept inside the prod boundary
   **without** getting in the way of local/staging work. A value is redacted at egress (ticket
   / Slack) if and only if a sanctioned PRODUCTION read actually returned it — tracked by keyed
