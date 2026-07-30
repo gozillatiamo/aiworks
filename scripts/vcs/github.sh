@@ -48,6 +48,21 @@ vcs_find_prs() {
         | .url' 2>/dev/null || true
 }
 
+# vcs_list_prs -> one TSV line per OPEN PR in the repo of the current directory:
+#   number <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> title <TAB> url
+# Read-only. Same contract as the GitLab implementation; see the note there on why this exists
+# alongside the key-filtered vcs_find_prs.
+vcs_list_prs() {
+  gh pr list --state open --limit 100 \
+      --json number,isDraft,author,updatedAt,title,url 2>/dev/null \
+    | jq -r '.[] | [ (.number|tostring),
+                     (if .isDraft then "yes" else "no" end),
+                     (.author.login // "-"),
+                     ((.updatedAt // "")[0:10]),
+                     (.title // ""),
+                     (.url // "") ] | @tsv' 2>/dev/null || true
+}
+
 # vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
 vcs_pr_view() {
   local num="$1" json state sha

@@ -21,6 +21,7 @@ observability:
 tracker:
   provider: jira
   ticket_prefix: OFB
+  base_url: "https://bluepi.atlassian.net"
   statuses:
     to_do:   "TO DO"
     in_progress:   "IN PROGRESS"
@@ -98,6 +99,29 @@ voice:
     auto_send: true
   cache:
     max_mb: 500
+
+stagehand:
+  enabled: false
+  placement: halves
+  rectangle_action: right-half
+  editor: cursor
+  editor_process: Cursor
+  browser: chrome
+  browser_process: Google Chrome
+  browser_account: ""
+  browser_profile: ""
+  protect_process: iTerm2
+  protected_half: left
+  displays: external
+  max_tabs: 8
+  debounce_seconds: 2
+  follow_max: 3
+  interact: true
+  url_hosts: "atlassian.net gitlab.com github.com slack.com signoz sonar figma.com mermaid.live localhost 127.0.0.1"
+  triggers:
+    code: true
+    browser: true
+    narration: true
 
 triage:
   enabled: true
