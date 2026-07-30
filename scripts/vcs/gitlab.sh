@@ -54,6 +54,20 @@ vcs_find_prs() {
         | .web_url' 2>/dev/null || true
 }
 
+# vcs_list_prs -> one TSV line per OPEN MR in the repo of the current directory:
+#   iid <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> title <TAB> url
+# Read-only. The key-filtered vcs_find_prs answers "where is ticket X?"; this answers "what is
+# waiting?", which needs the whole open set and the fields a reviewer triages on.
+vcs_list_prs() {
+  glab api "projects/:fullpath/merge_requests?state=opened&per_page=100&order_by=updated_at" 2>/dev/null \
+    | jq -r '.[] | [ (.iid|tostring),
+                     (if .draft then "yes" else "no" end),
+                     (.author.username // "-"),
+                     ((.updated_at // "")[0:10]),
+                     (.title // ""),
+                     (.web_url // "") ] | @tsv' 2>/dev/null || true
+}
+
 # vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
 vcs_pr_view() {
   local num="$1" json state sha up
