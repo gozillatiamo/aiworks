@@ -14,11 +14,11 @@ scripts/stagehand/show.sh --dry-run --payload <hook-payload.json>
 
 # for real, with the placement decision printed to stderr
 STAGE_VERBOSE=1 scripts/stagehand/show.sh --tool Edit --file "$PWD/some/file.rs" -v
-STAGE_VERBOSE=1 scripts/stagehand/show.sh --url https://bluepi.atlassian.net/browse/OFB-1 -v
+STAGE_VERBOSE=1 scripts/stagehand/show.sh --url https://your-org.atlassian.net/browse/APP-1 -v
 
 # the follow path — what a REPLY would put on screen
-scripts/stagehand/follow.sh --dry-run --text 'ofb-k6-loadtests!14 and OFB-2179'
-scripts/stagehand/follow.sh --dry-run --text 'SHOW: agent-db!555 ~signature_key'   # focus phrase
+scripts/stagehand/follow.sh --dry-run --text 'my-repo!14 and APP-2179'
+scripts/stagehand/follow.sh --dry-run --text 'SHOW: my-repo!555 ~signature_key'   # focus phrase
 scripts/stagehand/show.sh --ident 'https://gitlab.com/a/b/-/merge_requests/14/diffs'  # tab identity
 scripts/stagehand/follow.sh --dry-run --transcript ~/.claude/projects/<slug>/<session>.jsonl
 

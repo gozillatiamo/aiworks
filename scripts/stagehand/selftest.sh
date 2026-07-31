@@ -26,7 +26,7 @@ PASS=0 FAIL=0
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/stagehand-selftest.XXXXXX")"
 cleanup() {
   [[ -n "${wt:-}" && -d "${wt:-}" ]] && git -C "$ROOT" worktree remove --force "$wt" >/dev/null 2>&1
-  rm -rf "$tmp" 2>/dev/null
+  rm -rf "$tmp" "$ROOT/.selftest-repo" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -40,23 +40,26 @@ payload() {   # payload <json> → path
   local f; f="$(mktemp "$tmp/p.XXXXXX")"; printf '%s' "$1" > "$f"; printf '%s' "$f"
 }
 
-# stagehand is OFF by default in the committed config, so every router case must force it on for
-# the duration of the test. STAGEHAND_TEST_CFG is not a feature — it exists only here.
-run_dry() { STAGEHAND= "$SHOW" --dry-run --payload "$1" 2>/dev/null; }
+# stagehand ships OFF, so the suite turns it on FOR ITSELF with STAGEHAND=on rather than requiring
+# whoever runs it to have opted in first. Exported so every helper below inherits it; the cases that
+# specifically test the kill switch set STAGEHAND=off explicitly and still win, since `off` is checked
+# first.
+export STAGEHAND=on
+run_dry() { "$SHOW" --dry-run --payload "$1" 2>/dev/null; }
 
 printf '\nGATES\n'
 
-enabled_here=0
-if grep -qE '^[[:space:]]+enabled:[[:space:]]*true' <(awk '/^stagehand:/{f=1} f&&/^[a-z]/&&!/^stagehand:/{f=0} f' "$ROOT/workspace.config.local.yaml" 2>/dev/null); then
-  enabled_here=1
-fi
-[[ "$enabled_here" == "1" ]] && ok "stagehand.enabled is true in this checkout's local config" \
-                             || bad "stagehand.enabled is true in this checkout's local config" "not enabled — router cases below will all no-op"
+# EVERY case below uses its own URL. The debounce is keyed by target, so a case that legitimately
+# routes leaves a stamp that silences the next case using the same URL — which is exactly how a
+# passing suite started reporting "the root worktree does not route".
+# The suite must not depend on anyone's personal config, so it asserts the OVERRIDE works instead.
+out="$(STAGEHAND=on "$SHOW" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/gate-on"}}')" 2>&1)"
+check "STAGEHAND=on runs even when the config ships the feature off" '"kind":"browser"' "$out"
 
-out="$(STAGEHAND=off "$SHOW" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/x"}}')" 2>&1)"
+out="$(STAGEHAND=off "$SHOW" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/gate-off"}}')" 2>&1)"
 [[ -z "$out" ]] && ok "STAGEHAND=off silences everything" || bad "STAGEHAND=off silences everything" "got: $out"
 
-out="$(SUPERSET_ROOT_PATH=/tmp/fake "$SHOW" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/x"}}')" 2>&1)"
+out="$(SUPERSET_ROOT_PATH=/tmp/fake "$SHOW" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/gate-superset"}}')" 2>&1)"
 [[ -z "$out" ]] && ok "SUPERSET_ROOT_PATH set silences everything" || bad "SUPERSET_ROOT_PATH set silences everything" "got: $out"
 
 # The real thing: a linked worktree must be silent even with the feature enabled and no env hints.
@@ -67,10 +70,10 @@ if git -C "$ROOT" worktree add --detach "$wt" HEAD >/dev/null 2>&1; then
   cp "$ROOT/workspace.config.local.yaml" "$wt/" 2>/dev/null
   cp "$ROOT/workspace.config.yaml" "$wt/" 2>/dev/null
   chmod +x "$wt/scripts/stagehand/show.sh" 2>/dev/null
-  out="$("$wt/scripts/stagehand/show.sh" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/x"}}')" 2>&1)"
+  out="$("$wt/scripts/stagehand/show.sh" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/gate-worktree"}}')" 2>&1)"
   [[ -z "$out" ]] && ok "a REAL linked git worktree is silent (root-worktree-only rule holds)" \
                   || bad "a REAL linked git worktree is silent" "got: $out"
-  out="$(cd "$ROOT" && "$SHOW" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/x"}}')" 2>&1)"
+  out="$(cd "$ROOT" && "$SHOW" --dry-run --payload "$(payload '{"tool_name":"WebFetch","tool_input":{"url":"https://gitlab.com/gate-root"}}')" 2>&1)"
   check "the root worktree itself still routes" '"kind":"browser"' "$out"
 else
   bad "a REAL linked git worktree is silent" "could not create a test worktree"
@@ -91,7 +94,7 @@ check "WebSearch routes to a search URL" 'google.com/search' \
   "$(run_dry "$(payload '{"tool_name":"WebSearch","tool_input":{"query":"rectangle url scheme"}}')")"
 
 check "an allowlisted host in a tool RESPONSE is opened" 'atlassian.net' \
-  "$(run_dry "$(payload '{"tool_name":"mcp__jira__getIssue","tool_response":{"text":"see https://bluepi.atlassian.net/browse/OFB-1234"}}')")"
+  "$(run_dry "$(payload '{"tool_name":"mcp__jira__getIssue","tool_response":{"text":"see https://example.atlassian.net/browse/APP-1234"}}')")"
 
 check "a NON-allowlisted host in a tool response is REFUSED" '"kind":"blocked"' \
   "$(run_dry "$(payload '{"tool_name":"Bash","tool_response":{"stdout":"visit https://evil.example.com/pwn"}}')")"
@@ -138,31 +141,55 @@ printf '\nFOLLOW (the screen follows what the reply TALKED ABOUT)\n'
 FOLLOW="$DIR/follow.sh"
 fdry() { "$FOLLOW" --dry-run --text "$1" 2>/dev/null; }
 
-out="$(fdry 'MR ค้างนานสุด ofb-k6-loadtests!14 และ agent-db!555 และ OFB-2179')"
-check "prose: <repo>!<iid> resolves through the repo's own git remote" \
-  'gitlab.com/bluepicode/qa/ofb-k6-loadtests/-/merge_requests/14' "$out"
-check "prose: a ticket key resolves against tracker.base_url" '/browse/OFB-2179' "$out"
+# `<repo>!<iid>` resolution reads the repo's OWN git remote, so the test brings its own repo rather
+# than naming one that happens to exist in somebody's workspace. The remote deliberately has a NESTED
+# group: hand-assembling such a URL is how a 404 was produced during development (the project lived
+# under a different group than the guess), so the nested path has to survive resolution intact.
+PREFIX="$(bash -c ". '$DIR/lib.sh'; stage_cfg tracker.ticket_prefix FM")"
+TBASE="$(bash -c ". '$DIR/lib.sh'; stage_cfg tracker.base_url")"
+fake="$ROOT/.selftest-repo"
+rm -rf "$fake"; mkdir -p "$fake"
+git -C "$fake" init -q 2>/dev/null
+git -C "$fake" remote add origin git@gitlab.com:outer-group/inner-group/thing.git 2>/dev/null
 
-# The remote for ofb-k6-loadtests lives under qa/, not ofb/. Hand-assembling that URL is exactly
-# how a 404 was produced during development, so assert the resolver does not guess a group.
-case "$out" in *'/ofb/ofb-k6-loadtests'*) bad "the repo group comes from the remote, not a guess" "resolved to ofb/ instead of qa/" ;;
-               *) ok "the repo group comes from the remote, not a guess" ;; esac
+out="$(fdry '.selftest-repo!14 is the one to look at')"
+check "prose: <repo>!<iid> resolves through the repo's own git remote" \
+  'https://gitlab.com/outer-group/inner-group/thing/-/merge_requests/14' "$out"
+case "$out" in *'/thing/-/merge_requests/14'*) ok "the nested group survives — the remote decides, not a guess" ;;
+               *) bad "the nested group survives resolution" "$out" ;; esac
 
 # Regression: ${u/://} rewrote the colon inside "https:" and produced https///host/…
 case "$out" in *'https///'*|*'https//'[^/]*) bad "scp-style remote converts to a well-formed https URL" "$out" ;;
                *) ok "scp-style remote converts to a well-formed https URL" ;; esac
+rm -rf "$fake"
 
-out="$(fdry 'noise OFB-9999 noise ofb-k6-loadtests!16
-SHOW: OFB-2179, scripts/stagehand/follow.sh')"
-check "an explicit SHOW tag wins over the prose" 'OFB-2179' "$out"
+# A ticket key needs tracker.base_url. Both branches are real behaviour worth asserting: with a base
+# it resolves, without one it must be DROPPED rather than turned into a broken URL.
+out="$(fdry "look at ${PREFIX}-2179 please")"
+if [[ -n "$TBASE" ]]; then
+  check "prose: a ticket key resolves against tracker.base_url" "/browse/${PREFIX}-2179" "$out"
+else
+  [[ -z "$out" ]] && ok "with no tracker.base_url a ticket key is dropped, not half-resolved" \
+                  || bad "a ticket key without tracker.base_url is dropped" "$out"
+fi
+
+out="$(fdry "noise ${PREFIX}-9999 noise
+SHOW: scripts/stagehand/follow.sh")"
 check "SHOW resolves a repo-relative path to the editor" $'follow.sh\tfile' "$out"
-case "$out" in *OFB-9999*) bad "a SHOW tag SUPPRESSES the prose scan" "OFB-9999 leaked in" ;;
+case "$out" in *"${PREFIX}-9999"*) bad "a SHOW tag SUPPRESSES the prose scan" "${PREFIX}-9999 leaked in" ;;
                *) ok "a SHOW tag SUPPRESSES the prose scan" ;; esac
 
-n="$(fdry 'SHOW: OFB-1, OFB-2, OFB-3, OFB-4, OFB-5' | wc -l | tr -d ' ')"
-[[ "$n" == "$(bash -c ". '$DIR/lib.sh'; stage_cfg_int stagehand.follow_max 3 1 10")" ]] \
-  && ok "the follow_max cap is enforced ($n opened)" \
-  || bad "the follow_max cap is enforced" "opened $n"
+cap="$(bash -c ". '$DIR/lib.sh'; stage_cfg_int stagehand.follow_max 3 1 10")"
+if [[ -n "$TBASE" ]]; then
+  n="$(fdry "SHOW: ${PREFIX}-1, ${PREFIX}-2, ${PREFIX}-3, ${PREFIX}-4, ${PREFIX}-5" | wc -l | tr -d ' ')"
+  [[ "$n" == "$cap" ]] && ok "the follow_max cap is enforced ($n opened)" \
+                       || bad "the follow_max cap is enforced" "opened $n, cap $cap"
+else
+  # No tracker.base_url means ticket keys cannot resolve, so cap the countable targets with paths.
+  n="$(fdry 'SHOW: scripts/stagehand/lib.sh, scripts/stagehand/show.sh, scripts/stagehand/place.js, scripts/stagehand/follow.sh, scripts/stagehand/README.md' | wc -l | tr -d ' ')"
+  [[ "$n" == "$cap" ]] && ok "the follow_max cap is enforced ($n opened)" \
+                       || bad "the follow_max cap is enforced" "opened $n, cap $cap"
+fi
 
 out="$(fdry 'this reply names nothing openable at all')"
 [[ -z "$out" ]] && ok "a reply naming nothing opens nothing" || bad "a reply naming nothing opens nothing" "$out"
@@ -170,12 +197,16 @@ out="$(fdry 'this reply names nothing openable at all')"
 out="$(fdry 'SHOW: no-such-repo-here!42, does/not/exist.rs')"
 [[ -z "$out" ]] && ok "unresolvable targets are dropped, not guessed at" || bad "unresolvable targets are dropped" "$out"
 
-out="$(STAGEHAND=off "$FOLLOW" --dry-run --text 'SHOW: OFB-2179' 2>&1)"
+out="$(STAGEHAND=off "$FOLLOW" --dry-run --text 'SHOW: scripts/stagehand/lib.sh' 2>&1)"
 [[ -z "$out" ]] && ok "STAGEHAND=off silences the follow path too" || bad "STAGEHAND=off silences the follow path" "$out"
 
 printf '\nINTERACT (open, then work inside the window)\n'
 
-out="$(fdry 'SHOW: agent-db!555 ~signature_key')"
+fake2="$ROOT/.selftest-repo"
+rm -rf "$fake2"; mkdir -p "$fake2"
+git -C "$fake2" init -q 2>/dev/null
+git -C "$fake2" remote add origin git@gitlab.com:outer-group/thing.git 2>/dev/null
+out="$(fdry 'SHOW: .selftest-repo!555 ~signature_key')"
 check "a focus phrase becomes a URL text fragment" '#:~:text=signature_key' "$out"
 # A phrase names an identifier, and an identifier lives in the diff. Measured on the real page:
 # innerText holds 3 occurrences and the highlighter reports hit:3 there.
@@ -185,9 +216,10 @@ check "a focus phrase on an MR targets the diff" '/-/merge_requests/555/diffs' "
 case "$out" in *signaturekey*) bad "an underscore survives markdown stripping" "snake_case was mangled" ;;
                *) ok "an underscore survives markdown stripping" ;; esac
 
-out="$(fdry 'SHOW: agent-db!555')"
+out="$(fdry 'SHOW: .selftest-repo!555')"
 case "$out" in *'#:~:text='*) bad "no phrase means no text fragment" "$out" ;;
                *) ok "no phrase means no text fragment" ;; esac
+rm -rf "$fake2"
 
 # Tab REUSE hinges on page identity: the same MR reached by a different sub-path is the same PAGE,
 # which is what stops the window turning into a graveyard of near-duplicate tabs.
@@ -195,8 +227,8 @@ i1="$("$SHOW" --ident 'https://gitlab.com/a/b/-/merge_requests/14')"
 i2="$("$SHOW" --ident 'https://gitlab.com/a/b/-/merge_requests/14/diffs#:~:text=x')"
 [[ -n "$i1" && "$i1" == "$i2" ]] && ok "an MR and its /diffs share one page identity ($i1)" \
                                  || bad "an MR and its /diffs share one page identity" "'$i1' vs '$i2'"
-i3="$("$SHOW" --ident 'https://x.atlassian.net/browse/OFB-2179?focusedId=9#frag')"
-[[ "$i3" == "https://x.atlassian.net/browse/OFB-2179" ]] && ok "a ticket identity drops query and fragment" \
+i3="$("$SHOW" --ident 'https://example.atlassian.net/browse/APP-2179?focusedId=9#frag')"
+[[ "$i3" == "https://example.atlassian.net/browse/APP-2179" ]] && ok "a ticket identity drops query and fragment" \
                                                          || bad "a ticket identity drops query and fragment" "$i3"
 i4="$("$SHOW" --ident 'https://gitlab.com/a/b/-/merge_requests/14')"
 i5="$("$SHOW" --ident 'https://gitlab.com/a/b/-/merge_requests/141')"

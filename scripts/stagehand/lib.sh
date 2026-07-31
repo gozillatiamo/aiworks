@@ -120,6 +120,11 @@ stage_cfg_int() {
 
 # ── the gate ──────────────────────────────────────────────────────────────────────
 # Every reason to stay quiet, in one place, cheapest check first. Silent exit 0 throughout.
+# STAGEHAND=off silences everything for one command; STAGEHAND=on forces the config switch ON for one
+# command. `on` exists so the feature can be tried, and its selftest can RUN, without first editing a
+# personal config file — a test suite that only passes on a machine where someone already opted in is
+# not a test suite a reviewer can use. It does NOT bypass the other gates: macOS and the
+# root-worktree rule still apply, because those protect correctness rather than preference.
 stage_gate_or_exit() {
   [[ "${STAGEHAND:-}" == "off" ]] && { slog "STAGEHAND=off"; exit 0; }
   [[ "$(uname -s)" == "Darwin" ]] || { slog "not macOS"; exit 0; }
@@ -129,7 +134,9 @@ stage_gate_or_exit() {
   [[ -z "${SUPERSET_ROOT_PATH:-}" ]]  || { slog "under Superset"; exit 0; }
   [[ -d "$STAGE_ROOT/.git" ]]         || { slog ".git is not a directory"; exit 0; }
 
-  stage_cfg_bool stagehand.enabled false || { slog "stagehand.enabled is false"; exit 0; }
+  if [[ "${STAGEHAND:-}" != "on" ]]; then
+    stage_cfg_bool stagehand.enabled false || { slog "stagehand.enabled is false"; exit 0; }
+  fi
   [[ "$(stage_cfg stagehand.placement halves)" != "off" ]] || { slog "placement: off"; exit 0; }
   return 0
 }
@@ -213,7 +220,7 @@ PY
 }
 
 # stage_chrome_profile_name → that profile's DISPLAY name, which Chrome appends to every window
-# title ("… - Google Chrome - Thiraphat (bluepi.co.th)"). That is the only way to tell from the
+# title ("… - Google Chrome - You (work-account)"). That is the only way to tell from the
 # outside which profile an existing window belongs to — Chrome's AppleScript dictionary exposes no
 # profile property at all — so it is how a remembered window is checked before being reused.
 stage_chrome_profile_name() {

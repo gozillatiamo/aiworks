@@ -57,7 +57,7 @@ done
 decide() {   # decide <kind> <target> [line]
   [[ "$dry" == "1" ]] || return 1
   printf '{"kind":"%s","tool":"%s","target":"%s","line":"%s","placement":"%s"}\n' \
-    "$1" "$tool" "$2" "${3:-}" "$(stage_cfg stagehand.placement auto)"
+    "$1" "$tool" "$2" "${3:-}" "$(stage_cfg stagehand.placement halves)"
   return 0
 }
 
