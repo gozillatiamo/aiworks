@@ -195,6 +195,30 @@ a Thai butler impression, and the useful half of that voice is the status-report
 The gate voice is the one channel that is **independent of `chattiness`** — a gate is a *whether*,
 not a *how much*, so it has its own key (`voice.autoplay.gates`) and speaks at `terse` too.
 
+### Anything above `terse` is the ROOT checkout's alone
+
+**A linked worktree always speaks `terse`, whatever the config says.** Not a convention — the clamp
+is in `voice_chattiness` (`scripts/voice/lib.sh`), keyed off the same `--git-common-dir` test the rest
+of the adapter uses, so it holds for every caller including the step narrator (which gates on
+`== max` and therefore goes quiet as a consequence, not as a second rule).
+
+Three facts make it necessary:
+
+- the config chain **deliberately** falls back to `<main clone>/workspace.config.local.yaml`, because
+  a git-ignored file does not travel into a worktree. So a worktree *inherits* the root's `max` — it
+  does not fall back to the shared file's `terse`;
+- a worktree session is usually the one **nobody is watching**: a background `dev-cycle`, a
+  slack-dispatch job. `max` is the level that narrates every step, so the checkout with the least of
+  your attention becomes the loudest thing in the room;
+- every worktree speaks through **one spool and one pair of speakers** (`VOICE_CACHE_HOME` is
+  machine-global on purpose). Two `max` sessions do not take turns — they queue, and the one you are
+  reading waits for the one you are not.
+
+`aiworks voice status` says so in the worktree, naming the level that was configured and the checkout
+that owns it — otherwise the row reads `terse` while the config file in front of you says `max`.
+`VOICE_CHATTINESS=<level>` still overrides inside a worktree: one command a human typed is
+per-invocation intent, not a preference leaking in through the config chain.
+
 ### The step narrator — what it speaks, and why it costs no model call
 
 `voice.autoplay.narrate_source: facts` (the default) reads the **tool call's own response** and says

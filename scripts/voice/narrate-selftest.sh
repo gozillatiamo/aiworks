@@ -203,6 +203,44 @@ for lvl in terse balanced chatty; do
      "$(VOICE_CHATTINESS=$lvl run "$(_s x-$lvl)" "$T/p-read.json")"
 done
 
+echo "== a LINKED WORKTREE is clamped to terse, whatever the root's config says =="
+# Two sessions on one machine share one spool and one pair of speakers, so `max` — the level that
+# narrates every step — belongs to the ROOT checkout alone. The clamp lives in voice_chattiness
+# (lib.sh) and is proved here against a REAL `git worktree`, not a simulated one: the whole point is
+# that the gate is mechanical (`--git-common-dir`), so a fake root variable would test nothing.
+WT_MAIN="$T/wtmain"; WT="$T/wt"
+mkdir -p "$WT_MAIN"
+# `worktree add` needs a repo with one commit; the CONTENT is irrelevant — only where the
+# worktree's --git-common-dir points. So the scripts and the config go in afterwards as UNTRACKED
+# files, which also keeps scripts/voice/.env out of a throwaway git object.
+git -C "$WT_MAIN" init -q >/dev/null 2>&1
+printf 'x\n' > "$WT_MAIN/.keep"
+git -C "$WT_MAIN" add .keep >/dev/null 2>&1
+git -C "$WT_MAIN" -c user.email=selftest@local -c user.name=selftest -c commit.gpgsign=false \
+  commit -qm init >/dev/null 2>&1
+git -C "$WT_MAIN" worktree add -q -b wt-probe "$WT" >/dev/null 2>&1
+if [[ ! -e "$WT/.git" ]]; then
+  echo "  FAIL could not create a linked worktree — the clamp is unproven"; fail=$((fail+1))
+else
+  for d in "$WT_MAIN" "$WT"; do
+    cp -R "$T/scripts" "$d/scripts"; cp "$T/workspace.config.yaml" "$d/"
+    rm -f "$d/scripts/voice/.env"
+  done
+  lvl() { bash -c '. "$1/scripts/voice/lib.sh" 2>/dev/null; voice_chattiness' _ "$1" 2>/dev/null; }
+  ck "the root checkout keeps its max" "max" "$(lvl "$WT_MAIN")"
+  ck "the linked worktree reads terse instead" "terse" "$(lvl "$WT")"
+  # The escape hatch stays open: one command a human typed is per-invocation intent, not a machine
+  # preference leaking in through the config chain — which is the thing being clamped.
+  ck "VOICE_CHATTINESS still overrides inside the worktree" "max" \
+     "$(VOICE_CHATTINESS=max lvl "$WT")"
+  # …and the consequence that matters: narrate.sh gates on `== max`, so the step narrator goes
+  # quiet in the worktree without a second rule to keep in sync.
+  nar() { cp "$3" "$T/live-wt.json"; "$1/scripts/voice/narrate.sh" --session "$2" --payload "$T/live-wt.json" 2>/dev/null; }
+  ck "the root checkout still narrates the step" "SPOKE[narration]: queue.sh อ่านแล้ว 3 บรรทัด" \
+     "$(nar "$WT_MAIN" "$(_s w1)" "$T/p-read.json")"
+  ck "the worktree narrates nothing at all" EMPTY "$(nar "$WT" "$(_s w2)" "$T/p-read.json")"
+fi
+
 echo "== the payload temp file is always cleaned up =="
 cp "$T/p-read.json" "$T/live.json"
 "$N" --session "$(_s g0)" --payload "$T/live.json" >/dev/null 2>&1

@@ -98,6 +98,11 @@
 #     # THROUGH the turn: one short line per step as it happens, plus a word when a step fails and
 #     # when something is waiting for you). Ceiling, not quota — one fact still means one sentence.
 #     # `aiworks voice audition "…"` compares all four.
+#     # THIS CHECKOUT ONLY, and the cost above is this checkout's: a linked worktree is clamped to
+#     # terse whatever you set here. This file is git-ignored, so it cannot travel into a worktree —
+#     # a worktree reads it from HERE (the main clone) and would otherwise inherit `max`, which is
+#     # the level that speaks per step, in the session you are least likely to be watching. Both
+#     # share one spool and one pair of speakers, so two `max` sessions queue instead of alternating.
 #     chattiness: balanced
 #     # The step narration, `max` only, and the biggest mid-turn voice there is. false ⇒ keep max's
 #     # ack + closing line, stop the per-step talking (~$90/mo of max's ~$165).
