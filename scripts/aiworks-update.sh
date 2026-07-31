@@ -21,6 +21,19 @@
 #   codegraph  codegraph upgrade — the per-repo code index CLI.
 #   plugins    claude plugin marketplace update, then `claude plugin update` for every plugin in
 #              .claude/settings.json enabledPlugins. Needs a Claude Code restart to take effect.
+#   skills     npx skills update -p — the third-party Agent Skills declared in skills-lock.json
+#              at the workspace ROOT (project scope only; see the note below on the other scopes).
+#              There is no binary to version-probe, so "updated" is derived from each skill's
+#              computedHash in the lock; -v lists the per-skill hash change. This is the ONE group
+#              that rewrites TRACKED files (skills-lock.json + .agents/skills/**) — it never
+#              commits: the changed paths are printed for you to review.
+#              A LOCALLY PATCHED skill is protected. The CLI rewrites every skill file on every run,
+#              so this group 3-way merges each rewritten file — ours (HEAD) + the upstream baseline
+#              committed under .agents/.skills-upstream/ + the new upstream copy — keeping BOTH the
+#              upstream change and the local patch. With no baseline yet the local version wins and
+#              the baseline is seeded (re-run to take upstream on top); on overlapping edits the
+#              local version is kept and the new upstream copy is parked at <path>.upstream.new —
+#              conflict markers are never written into a file an agent loads as instructions.
 #   mcp        docker compose pull the shared MCP images (.superset/mcp-compose.yml), then
 #              restart the stack via .superset/mcp-services.sh.
 #
@@ -31,6 +44,10 @@
 #   • repo dependencies. `npm update` / `cargo update` REWRITE a lockfile — that is a code change
 #     needing a branch, a test run and an MR per repo, not a maintenance chore. `--check-deps`
 #     reports what is outdated across every cloned repo and writes nothing.
+#   • per-repo and GLOBAL skills. Every clone carries its own TRACKED skills-lock.json (written by
+#     `aiworks add` step 6), so bumping 20-odd of them is an MR per repo for the same reason a
+#     dependency bump is — and the global scope (~/.agents/skills) is the person's own, outside
+#     this workspace. The `skills` group updates the ROOT lock only.
 #   • Docker Desktop — a self-updating GUI app; only its version is reported.
 #
 # Every step is best-effort: a single failure never aborts the run. The closing summary lists each
@@ -56,7 +73,7 @@ cd "$ROOT"
 # shellcheck source=/dev/null
 . "$ROOT/.superset/lib.sh"
 
-ALL_GROUPS="brew rust pnpm gcloud claude codegraph plugins mcp"
+ALL_GROUPS="brew rust pnpm gcloud claude codegraph plugins skills mcp"
 
 # ── args ─────────────────────────────────────────────────────────────────────────
 DRY=0 CHECK_DEPS=0 ONLY="" SKIP=""
@@ -240,6 +257,172 @@ if want plugins; then
       for key in $plugin_keys; do upgrade "claude plugin update $key" "" claude plugin update "$key"; done
       warn "plugins updated — RESTART Claude Code for the new versions to load."
     fi
+  fi
+fi
+
+# ── third-party Agent Skills (the `skills` CLI, ROOT project scope) ──────────────
+# The skills in skills-lock.json — installed with `npx skills add …` (aiworks add step 6 does the
+# same inside each repo). Nothing here has a binary to version-probe, so "updated" is DERIVED from
+# the per-skill computedHash the CLI writes into the lock: hashes read before and after, compared
+# by name. Same idea as the version probe above, one level down.
+skills_hashes() {  # → "<name>\t<hash>" per skill, sorted by name
+  [[ -f skills-lock.json ]] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.skills // {} | to_entries[] | "\(.key)\t\(.value.computedHash // "-")"' skills-lock.json 2>/dev/null | sort
+  else
+    # No jq: one digest of the whole lock under a sentinel name. Enough to say something moved,
+    # never WHICH skill — reported as such rather than guessed.
+    printf '(whole lock)\t%s\n' "$(shasum -a 256 skills-lock.json 2>/dev/null | cut -d' ' -f1)"
+  fi
+}
+
+# ── local patches vs a new upstream copy: 3-way merge, not a coin flip ───────────
+# The CLI re-downloads and REWRITES every skill file on every run, so a skill this workspace has
+# PATCHED (e.g. the LANGUAGE_DIRECTIVE block in diagnosing-bugs/SKILL.md) silently reverts to
+# upstream — and its lock hash, computed on UPSTREAM content, cannot move to signal that. Measured
+# on the first live run here: 35 local lines vanished under a "current" verdict.
+#
+# So keep a baseline mirror — the upstream copy as of the LAST update, committed under
+# .agents/.skills-upstream/. With it every rewritten file is a real 3-way merge: ours (HEAD,
+# patched) + base (old upstream) + theirs (new upstream), so an upstream change AND a local patch
+# both survive. Without it (first run, or a skill installed since) the LOCAL version wins — the
+# only choice that cannot destroy work — and the baseline is seeded for the next run.
+SK_BASE_DIR=".agents/.skills-upstream"
+
+sk_modified() {  # tracked files under .agents/skills that this run rewrote
+  git status --porcelain -- .agents/skills 2>/dev/null | awk '/^[ MARC]M/ { print substr($0, 4) }'
+}
+
+sk_reconcile() {  # → SK_MERGED / SK_KEPT / SK_CONFLICT, each a space-separated path list
+  SK_MERGED="" SK_KEPT="" SK_CONFLICT=""
+  local p base ours theirs merged
+  ours="$(mktemp -t aiworks-sk)"; theirs="$(mktemp -t aiworks-sk)"; merged="$(mktemp -t aiworks-sk)"
+  while IFS= read -r p; do
+    [[ -n "$p" && -f "$p" ]] || continue
+    base="$SK_BASE_DIR/${p#.agents/skills/}"
+    cp "$p" "$theirs"
+    git show "HEAD:$p" >"$ours" 2>/dev/null || continue   # not in HEAD → no local version to protect
+    if [[ ! -f "$base" ]]; then
+      git checkout -- "$p" && SK_KEPT="$SK_KEPT$p "
+      mkdir -p "$(dirname "$base")" && cp "$theirs" "$base"
+    elif git merge-file -p "$ours" "$base" "$theirs" >"$merged" 2>/dev/null; then
+      cat "$merged" >"$p"; cp "$theirs" "$base"; SK_MERGED="$SK_MERGED$p "
+    else
+      # Overlapping edits. Conflict markers must NEVER land in a skill file — an agent LOADS it as
+      # instructions and would read "<<<<<<<" as content. Keep ours, park the new upstream copy
+      # beside it, and leave the baseline OLD so the next run offers the same merge again.
+      git checkout -- "$p"; cp "$theirs" "$p.upstream.new"; SK_CONFLICT="$SK_CONFLICT$p "
+    fi
+  done < <(sk_modified)
+  rm -f "$ours" "$theirs" "$merged"
+}
+
+sk_seed_baseline() {  # <mark-file> — baseline the files the CLI actually WROTE this run
+  # -newer the mark, NOT every file: a patched file the CLI happened to skip keeps its old mtime,
+  # and baselining THAT would file our own patch as "what upstream says" — the next upstream change
+  # would then merge cleanly over it and delete the patch for good.
+  local mark="$1" p base n=0
+  while IFS= read -r p; do
+    base="$SK_BASE_DIR/${p#.agents/skills/}"
+    [[ -f "$base" ]] && continue
+    mkdir -p "$(dirname "$base")" && cp "$p" "$base" && n=$((n + 1))
+  done < <(find .agents/skills -type f -newer "$mark" ! -name '*.upstream.new' 2>/dev/null)
+  [[ "$n" -gt 0 ]] && log "seeded $n upstream baseline file(s) under $SK_BASE_DIR/"
+  return 0
+}
+
+if want skills; then
+  if [[ ! -f skills-lock.json ]]; then
+    log "no skills-lock.json at the workspace root — no third-party skills to update."
+    record "third-party skills" "skipped" "no lock" "-"
+  elif ! command -v npx >/dev/null 2>&1; then
+    warn "npx (Node) unavailable — update by hand: npx skills@latest update -p -y"
+    record "third-party skills" "skipped" "no npx" "-"
+  else
+    sk_before="$(mktemp -t aiworks-skills)"; sk_after="$(mktemp -t aiworks-skills)"
+    skills_hashes >"$sk_before"
+    sk_n="$(wc -l <"$sk_before" | tr -d ' ')"
+    if [[ "$DRY" == 1 ]]; then
+      conclude "would run: npx -y skills@latest update -p -y   ($sk_n skill(s) in the lock)"
+      record "third-party skills" "dry-run" "$sk_n skill(s)" "-"
+    else
+      # -p: project scope (this workspace), never the person's global scope. -y: skip the scope
+      # prompt, which would otherwise hang a non-interactive run.
+      sk_rc=0
+      sk_mark="$(mktemp -t aiworks-sk-mark)"   # every skill file the CLI writes lands NEWER than this
+      run_glance "npx skills update (project scope)" npx -y skills@latest update -p -y || sk_rc=$?
+      skills_hashes >"$sk_after"
+      # Reconcile BEFORE reporting: the patch rescue has to happen even when the CLI exited non-zero
+      # (it writes files as it goes), and the hash verdict below should describe the reconciled tree.
+      if [[ "$sk_rc" -lt 128 ]]; then
+        sk_reconcile
+        sk_seed_baseline "$sk_mark"
+        sk_nmerged="$(printf '%s' "$SK_MERGED"   | wc -w | tr -d ' ')"
+        sk_nkept="$(  printf '%s' "$SK_KEPT"     | wc -w | tr -d ' ')"
+        sk_nconf="$(  printf '%s' "$SK_CONFLICT" | wc -w | tr -d ' ')"
+        if [[ -n "$SK_MERGED$SK_KEPT$SK_CONFLICT" ]]; then
+          record "skills local patches" "reconciled" "$sk_nmerged merged" "$sk_nkept kept-local, $sk_nconf conflict"
+          [[ -n "$SK_MERGED" ]] && conclude "merged the new upstream INTO the local patch: $SK_MERGED"
+          if [[ -n "$SK_KEPT" ]]; then
+            warn "kept the LOCAL version (no upstream baseline existed yet): $SK_KEPT"
+            warn "  baseline seeded — re-run 'aiworks update --only skills' to take the upstream change on top of it."
+          fi
+          if [[ -n "$SK_CONFLICT" ]]; then
+            warn "CONFLICT — the local patch and upstream touch the same lines: $SK_CONFLICT"
+            warn "  local version kept; the new upstream copy sits beside it as <path>.upstream.new — merge by hand."
+          fi
+        fi
+      fi
+      rm -f "$sk_mark"
+      # moved = hash changed (or the skill is new to the lock); gone = dropped from the lock.
+      sk_moved="$(awk -F'\t' 'NR==FNR{b[$1]=$2;next} !($1 in b){print $1" (new)";next} b[$1]!=$2{print $1}' "$sk_before" "$sk_after" | tr '\n' ' ')"
+      sk_gone="$(awk -F'\t'  'NR==FNR{a[$1]=1;next} !($1 in a){print $1}' "$sk_after" "$sk_before" | tr '\n' ' ')"
+      sk_nmoved="$(printf '%s' "$sk_moved" | wc -w | tr -d ' ')"
+      if [[ "$sk_rc" -ge 128 ]]; then
+        # npx/node killed by a signal at launch (memory pressure, a security agent on this box) —
+        # a launch failure, not an update failure, and the tree is untouched. Same distinction
+        # `aiworks add` step 6 draws, so a crash never reads as "the skill cannot be updated".
+        warn "npx crashed (signal $((sk_rc - 128))) — nothing updated; retry: aiworks update --only skills"
+        record "third-party skills" "skipped" "npx crashed" "-"
+      elif [[ "$sk_rc" -ne 0 ]]; then
+        warn "skills update: exited $sk_rc — left as-is."
+        record "third-party skills" "FAILED" "$sk_n skill(s)" "-"
+      elif [[ -z "$sk_moved$sk_gone" ]]; then
+        record "third-party skills" "current" "$sk_n skill(s)" "$sk_n skill(s)"
+      else
+        record "third-party skills" "updated" "$sk_n skill(s)" "$sk_nmoved moved"
+        [[ -n "$sk_moved" ]] && conclude "skills moved: $sk_moved"
+        [[ -n "$sk_gone"  ]] && warn "no longer in the lock: $sk_gone"
+        # -v: the per-skill hash change behind that count.
+        awk -F'\t' 'NR==FNR{b[$1]=$2;next} { o = ($1 in b) ? substr(b[$1],1,8) : "absent"
+                                             if (o != substr($2,1,8)) printf "    %-24s %s  →  %s\n", $1, o, substr($2,1,8) }' \
+          "$sk_before" "$sk_after" | while IFS= read -r line; do log "$line"; done
+      fi
+      if [[ "$sk_rc" -lt 128 ]]; then
+        # Integrity: every skill in the lock must still be REACHABLE at .claude/skills/<name> — the
+        # CLI owns that entry (a symlink into .agents/skills/ here). A rewrite that drops or dangles
+        # it takes the skill out of every session with no error anywhere, so check rather than trust.
+        sk_broken=""
+        while IFS=$'\t' read -r sk_name _; do
+          [[ -z "$sk_name" || "$sk_name" == "(whole lock)" ]] && continue
+          [[ -e ".claude/skills/$sk_name" ]] || sk_broken+="$sk_name "
+        done <"$sk_after"
+        if [[ -n "$sk_broken" ]]; then
+          warn "unreachable under .claude/skills after the update: $sk_broken"
+          warn "  restore them from the lock: npx -y skills@latest experimental_install"
+          record "skills integrity" "FAILED" "$(printf '%s' "$sk_broken" | wc -w | tr -d ' ') missing" "-"
+        fi
+        # The lock, the skill files AND the baseline mirror are tracked here, so an update dirties the
+        # tree. It is never committed for you — a merged skill file is new content whose diff the
+        # author has to read, and the baseline bump belongs in the same commit as the merge it explains.
+        sk_dirty="$(git status --short -- skills-lock.json .agents/skills "$SK_BASE_DIR" 2>/dev/null)"
+        if [[ -n "$sk_dirty" ]]; then
+          warn "the skills update touched TRACKED files — review and commit them yourself:"
+          printf '%s\n' "$sk_dirty" | sed 's/^/        /'
+        fi
+      fi
+    fi
+    rm -f "$sk_before" "$sk_after"
   fi
 fi
 

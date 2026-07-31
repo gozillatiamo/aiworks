@@ -200,12 +200,44 @@ notify_send_file() {
 }
 
 # Resolve a channel #name (or pass an id through) to a channel id. Empty on failure.
+# Tries public_channel alone first — cheapest, and covers the case nearly every workspace is
+# in. Falls back to public_channel,private_channel only if that misses: a bot token
+# without groups:read gets missing_scope on the combined call, and even when the scope IS
+# present, combining types roughly doubles the channel count under the same limit=1000
+# page, which can push the target channel past the first page. Public-only avoids both
+# failure modes for a channel we already know is public; the combined call remains the
+# fallback for genuinely private channels.
 _slack_channel_id() {
-  local ch="$1"
+  local ch="$1" resp id
   case "$ch" in
-    \#*) curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel,private_channel" \
-           -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null \
-           | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1 ;;
+    \#*)
+      resp="$(curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel" \
+        -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null || true)"
+      id="$(printf '%s' "$resp" | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1)"
+      if [[ -z "$id" ]]; then
+        resp="$(curl -sS "https://slack.com/api/conversations.list?limit=1000&types=public_channel,private_channel" \
+          -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null || true)"
+        id="$(printf '%s' "$resp" | jq -r --arg n "${ch#\#}" '.channels[]? | select(.name==$n) | .id' 2>/dev/null | head -n1)"
+      fi
+      printf '%s' "$id" ;;
+    U*|W*)
+      # A USER id, not a channel. chat.postMessage accepts one and opens the IM for you, but
+      # the file-upload API does NOT — files.completeUploadExternal answers `invalid_arguments`
+      # for a U… channel_id, which is how a DM'd file upload fails. conversations.open resolves
+      # it to the IM's own D… id; opening an existing IM is idempotent and notifies nobody.
+      #
+      # ⚠ NEEDS THE `im:write` BOT SCOPE. Without it conversations.open answers missing_scope
+      #   (it asks for "channels:write,groups:write,mpim:write,im:write"), and this falls back
+      #   to the id as given — so a file upload to a DM still fails with invalid_arguments
+      #   until an admin adds im:write under the app's OAuth & Permissions and reinstalls.
+      #   That fallback is also what keeps a genuine channel whose id starts with U/W from
+      #   being mangled.
+      resp="$(curl -sS -X POST https://slack.com/api/conversations.open \
+        -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+        -H 'Content-Type: application/json; charset=utf-8' \
+        --data "$(jq -nc --arg u "$ch" '{users: $u}')" 2>/dev/null || true)"
+      id="$(printf '%s' "$resp" | jq -r '.channel.id // empty' 2>/dev/null || true)"
+      printf '%s' "${id:-$ch}" ;;
     *)   printf '%s' "$ch" ;;
   esac
 }
