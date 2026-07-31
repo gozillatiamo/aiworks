@@ -6,7 +6,7 @@
 #   1. Close the turn. That single timestamp is what lets a slow ack notice the answer already
 #      landed and stay quiet — speaking "กำลังไปดู pricing calculator" three seconds after
 #      the answer is on screen is worse than saying nothing at all. It is also what stops the
-#      heartbeat watcher. This half runs even when speech is switched off: it is bookkeeping,
+#      ack. This half runs even when speech is switched off: it is bookkeeping,
 #      and an ack that cannot tell whether the turn ended is worse than no ack.
 #   2. Hand the finished turn to scripts/voice/milestone.sh, DETACHED, which decides whether
 #      anything happened worth saying (it stays silent unless the reply carried a `VOICE:` tag

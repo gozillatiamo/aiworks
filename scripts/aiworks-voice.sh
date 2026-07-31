@@ -22,7 +22,7 @@
 #
 # MUTE IS GLOBAL AND TOTAL FOR THIS MACHINE'S SPEAKERS, AND IT IS AN OFF SWITCH. It is a file
 # (~/.cache/aiworks/voice/mute), so it applies to every clone and worktree at once, and it covers
-# ack, milestone, heartbeat, the identity prefix, the dictation cues and a direct `speak.sh` alike.
+# ack, milestone, narration, the identity prefix, the dictation cues and a direct `speak.sh` alike.
 # Muted, nothing is summarized and nothing is synthesized — speech costs ZERO while it is on,
 # rather than paying for audio that goes nowhere.
 #
@@ -106,17 +106,24 @@ case "$cmd" in
     printf 'language          %s' "$lang"
     [[ "$lang" == "th" ]] && printf ' %s✓%s\n' "$c_ok" "$c_off" \
                           || printf ' %s← voice is th-only, everything below is inert%s\n' "$c_warn" "$c_off"
-    # SECOND, above every config switch: mute now DISABLES the output half rather than turning it
+    # SECOND, above every config switch: mute DISABLES the output half rather than turning it
     # down, so it is the answer to "why is it silent?" more often than any of the flags below —
-    # and reading it last, after nine rows of `on ✓`, is how you waste ten minutes.
-    if voice_is_muted; then
-      printf 'mute              %sON — this machine says nothing, and synthesizes nothing%s\n' \
-        "$c_warn" "$c_off"
-      printf '                  %saiworks voice mute off · Slack voice notes + dictation unaffected%s\n' \
-        "$c_dim" "$c_off"
-    else
-      printf 'mute              off\n'
-    fi
+    # and reading it last, after nine rows of `on ✓`, is how you waste ten minutes. Both switches
+    # get their OWN row and the reason is named: "muted" that does not say WHICH mute sends you to
+    # the wrong one.
+    case "$(voice_mute_reason)" in
+      hand)
+        printf 'mute              %sON (by hand) — nothing spoken, summarized or synthesized%s\n' \
+          "$c_warn" "$c_off"
+        printf '                  %saiworks voice mute off · Slack voice notes + dictation unaffected%s\n' \
+          "$c_dim" "$c_off" ;;
+      os)
+        printf 'mute              %sON (system output is muted) — nothing spoken, summarized or synthesized%s\n' \
+          "$c_warn" "$c_off"
+        printf '                  %sunmute the machine · Slack voice notes + dictation unaffected%s\n' \
+          "$c_dim" "$c_off" ;;
+      *)  printf 'mute              off\n' ;;
+    esac
     # Short labels rather than the config path, so the value column stays aligned — a status
     # table that shifts by row is harder to read than the paths are to look up.
     # 'key|label|default' — the autoplay sub-switches default TRUE, so a missing key must not
@@ -125,16 +132,18 @@ case "$cmd" in
               'voice.autoplay.ack|  · ack per prompt|true' \
               'voice.autoplay.milestones|  · closing line|true' \
               'voice.autoplay.milestone_every_turn|    every turn|true' \
-              'voice.autoplay.heartbeat|  · heartbeat|true' \
+              'voice.autoplay.narrate|  · step narration|true' \
+              'voice.autoplay.thresholds|  · thresholds|true' \
+              'voice.autoplay.gates|  · gate voice|true' \
               'voice.notify_voice.enabled|slack voice note|false' \
               'voice.push_to_talk.enabled|push-to-talk|false'; do
       k="${kv%%|*}"; rest="${kv#*|}"; label="${rest%|*}"; def="${rest##*|}"
       if voice_cfg_bool "$k" "$def"; then printf '%-19s on %s✓%s\n' "$label" "$c_ok" "$c_off"
       else printf '%-19s off\n' "$label"; fi
     done
-    # `max` reaches a third channel (the heartbeat's cadence), so the note has to say so — and if
-    # the heartbeat is OFF, say THAT, because the mid-turn narration is most of what `max` buys and
-    # a level that silently delivers half of itself is the kind of thing you debug for ten minutes.
+    # `max` reaches a third channel (the step narrator), so the note has to say so — and if
+    # `narrate` is OFF, say THAT, because the mid-turn commentary is most of what `max` buys and a
+    # level that silently delivers half of itself is the kind of thing you debug for ten minutes.
     chat="$(voice_chattiness)"
     # A linked worktree is clamped to `terse` (see voice_chattiness). Say so HERE, naming the level
     # that was configured and the checkout that owns it — otherwise this row reads `terse` while the
@@ -148,13 +157,14 @@ case "$cmd" in
     elif [[ "$chat" != "max" ]]; then
       printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
         "$chat" "$c_dim" "$c_off"
-    elif voice_cfg_bool voice.autoplay.heartbeat true; then
-      printf 'chattiness        %s %s(ack + closing line + a 10-beat heartbeat from 45 s)%s\n' \
-        "$chat" "$c_dim" "$c_off"
+    elif voice_cfg_bool voice.autoplay.narrate true; then
+      src="$(voice_narrate_source)"; [[ "$src" == "facts" ]] && src=fact
+      printf 'chattiness        %s %s(ack + closing line + one %s line per step, every %ss, %s max/turn)%s\n' \
+        "$chat" "$c_dim" "$src" "$(voice_narrate_gap)" "$(voice_narrate_cap)" "$c_off"
     else
-      printf 'chattiness        %s %s← heartbeat is off, so nothing speaks mid-turn — most of `max`\n' \
+      printf 'chattiness        %s %s← narrate is off, so nothing speaks mid-turn — the running\n' \
         "$chat" "$c_warn"
-      printf '                  is the heartbeat. Set voice.autoplay.heartbeat: true%s\n' "$c_off"
+      printf '                  commentary is most of `max`. Set voice.autoplay.narrate: true%s\n' "$c_off"
     fi
     printf 'tts               %s / %s\n' "$(voice_cfg voice.tts.provider elevenlabs)" \
       "$(voice_cfg "voice.tts.voice.$(voice_cfg voice.tts.provider elevenlabs)" '(provider default)')"
@@ -264,8 +274,8 @@ case "$cmd" in
     # should not cost four config edits and four restarts to hear four options. This speaks the
     # same request at all four, in order, announcing each one first.
     #
-    # What it CANNOT audition is `max`'s heartbeat: that one only exists inside a long turn, and
-    # faking it here would be a demo of a thing you have not actually turned on.
+    # What it CANNOT audition is `max`'s step narration: that one only exists inside a running turn,
+    # and faking it here would be a demo of a thing you have not actually turned on.
     [[ $# -gt 0 ]] || die "usage: aiworks voice audition \"the prompt to react to\" [--kind ack|report]"
     . "$VOICE/lib.sh" 2>/dev/null || die "could not load $VOICE/lib.sh"
     set +e
@@ -277,7 +287,8 @@ case "$cmd" in
       esac
     done
     if voice_is_muted; then
-      printf '%smuted — unmute first, or you will audition three silences%s\n' "$c_warn" "$c_off"; exit 0
+      printf '%smuted (%s) — unmute first, or you will audition four silences%s\n' \
+        "$c_warn" "$(voice_mute_reason)" "$c_off"; exit 0
     fi
     printf '%s%s%s  (%s)\n\n' "$c_dim" "$text" "$c_off" "$kind"
     for lvl in terse balanced chatty max; do
@@ -586,7 +597,12 @@ case "$cmd" in
         "$c_warn" "$(voice_language)" "$c_off"; exit 0
     fi
     voice_cfg_bool voice.enabled false || { printf '%svoice.enabled is false%s\n' "$c_warn" "$c_off"; exit 0; }
-    if voice_is_muted; then printf '%smuted — run: aiworks voice mute off%s\n' "$c_warn" "$c_off"; exit 0; fi
+    if voice_is_muted; then
+      [[ "$(voice_mute_reason)" == os ]] \
+        && printf '%smuted — the system output is muted, unmute the machine%s\n' "$c_warn" "$c_off" \
+        || printf '%smuted — run: aiworks voice mute off%s\n' "$c_warn" "$c_off"
+      exit 0
+    fi
     t0="$(python3 -c 'import time;print(time.time())')"
     el() { python3 -c "import time;print(time.time()-$t0)"; }
     # Backgrounded, like the real hook does it — playing the cue synchronously would fold its
@@ -596,7 +612,7 @@ case "$cmd" in
     # A concrete request on purpose: given a vague one the summarizer has nothing to name and
     # will reach for a plausible file name, which reads as a hallucination in a smoke test.
     line="$("$VOICE/summarize.sh" --particle 'ครับ' \
-            "ช่วยเช็ค pricing calculator ใน your-app ให้หน่อย" 2>/dev/null)"
+            "ช่วยเช็ค pricing calculator ใน api-service ให้หน่อย" 2>/dev/null)"
     printf 'summarizer done   %.2fs  %s\n' "$(el)" "${line:-(failed)}"
     [[ -n "$line" ]] || die "the summarizer returned nothing — check voice.summarizer.provider and its key"
     "$VOICE/speak.sh" --sync --no-prefix "$line"

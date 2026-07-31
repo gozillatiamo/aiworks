@@ -339,31 +339,6 @@ stagehand:
                                    #   faster than anyone can follow and buries the edit that mattered.
 
 
-# ── Products & repos — THE PART EACH ORG CONFIGURES ────────────────────────────
-# A product groups the repos that ship together. Each product is ONE
-# mani.d/<id>.yaml file (GENERATED from this block by `aiworks` — don't hand-edit
-# mani.d). For each repo you only need a `url` (+ `kind`); aiworks derives the rest:
-#
-#   id / path  ← the repo NAME from the URL (last path segment, minus .git).  Override
-#                the clone dir with `path:`.
-#   desc       → a one-line repo responsibility — what this repo IS and owns, so the team (and
-#                the agents) can read the workspace's anatomy BEFORE anything is cloned. Optional
-#                but recommended. Flows verbatim into the generated mani.d/<product>.yaml `desc:`
-#                (what `mani list projects` shows). Omitted → defaults to "The <repo-name> repo.".
-#                (`description:` is accepted as an alias.)
-#   app_id     → MOBILE APP REPOS ONLY — the application / bundle id of the app this repo builds
-#                (Android applicationId / iOS bundle identifier, e.g. com.acme.app). The QA /
-#                automation skills read it from here as the app-under-test id, and the test-suite repo's
-#                config/capabilities.js should match it. Omit for non-mobile repos.
-#   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
-#                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
-#                It selects one of two role/gate ARCHETYPES:
-#                  test-suite   → qa-runner builds the test suite (E2E / API / load), no code
-#                                 review, provides the cross-repo test-suite (QA) gate. The ONE
-#                                 special kind name.
-#                  <any other>  → a code repo: developer builds (TDD), code-reviewer reviews,
-#                                 guard+perf gates on (tune per repo via green / guardian_focus)
-#
 # ── Voice (scripts/voice/) — spoken acknowledgements, milestones, dictation ────
 # A `th`-ONLY FEATURE, OFF BY DEFAULT, and per-person. The gate lives in scripts/voice/lib.sh:
 # with any other `language` every voice command exits 0 SILENTLY (run it with -v to hear why),
@@ -418,14 +393,57 @@ voice:
   # Local speech. `enabled` is the master switch; the three below are independently useful — the
   # per-prompt acks are the first thing to tire of, while the milestones are the reason to turn
   # any of this on, so one flag for all three would force an all-or-nothing choice.
-  # To go quiet for a while use `aiworks voice mute on` instead of editing this: it applies
-  # machine-wide at once and DISABLES what the machine says (nothing summarized, nothing
-  # synthesized, so it then costs nothing) without touching `notify_voice` or dictation.
+  # To go quiet for a while, do not edit this — mute. `aiworks voice mute on` applies machine-wide
+  # at once, and MUTING THE SYSTEM OUTPUT does the same thing (it is read live from macOS): either
+  # one DISABLES what the machine says — nothing summarized, nothing synthesized, no cue and no
+  # sound effect played, so it then costs nothing — without touching `notify_voice` or dictation.
   autoplay:
     enabled: false
     ack: true                      # a spoken acknowledgement for every prompt
     milestones: true               # the closing line — what the finished turn actually produced
-    heartbeat: true                # "still working, currently X" on a turn that has run long
+    narrate: true                  # the RUNNING COMMENTARY, chattiness: max ONLY (inert elsewhere):
+                                   #   one short line per step, spoken WHILE the work happens, built
+                                   #   from the tool's OWN response — "cargo test ผ่าน 42",
+                                   #   "queue.sh อ่านแล้ว 260 บรรทัด" — so there is no summarizer
+                                   #   call on this path at all. `false` keeps max's ack + closing
+                                   #   line without the mid-turn talking; it is the level's main
+                                   #   cost lever (see chattiness below).
+    narrate_source: facts          # facts (default) | prose. What a narrated line is MADE of.
+                                   #   facts → the tool call's response: the file and its line
+                                   #     count, matches found, tests passed, exit status. A subject
+                                   #     and a FIGURE, 3–8 words, which is how the character this
+                                   #     level imitates actually talks ("The armour is now at 92%").
+                                   #   prose → the assistant's own sentence from just before the
+                                   #     tool call. Free and true, but an INTENTION rather than a
+                                   #     result. Each is the other's fallback, so a step with no
+                                   #     figure still speaks and a step with no prose still speaks.
+    narrate_gap: 4                  # seconds between narrated lines (1–60). The FREQUENCY dial, and
+                                   #   the one that decides whether this feels present or absent:
+                                   #   at the first version's 9 s a burst of ten tool calls in
+                                   #   twenty seconds could say two things. A spoken fact line is
+                                   #   ~2–3 s, so 4 leaves air. Also the queue's drain floor.
+    narrate_max_per_turn: 25       # the per-TURN ceiling (1–200), i.e. the COST ceiling — every line
+                                   #   is TTS spend, and a 200-tool-call turn must not be able to
+                                   #   buy 200 lines. When it bites, the log says so (`-v`) rather
+                                   #   than going quietly silent.
+    thresholds: true               # speak up UNBIDDEN when something crosses a line, the way the
+                                   #   films' AI does ("you've been awake for nearly seventy-two
+                                   #   hours"). Three: a step FAILED (red cue, and it bypasses the
+                                   #   rate floor — a failure is worth interrupting for); the SAME
+                                   #   step failed TWICE (the second one is the news); and the turn
+                                   #   passing long_turn_seconds. Each is SINGLE-SHOT per turn and
+                                   #   fires only on a step that actually ran — that is what makes
+                                   #   it a threshold and not the deleted heartbeat, which fired on
+                                   #   a clock whether or not anything had happened.
+    long_turn_seconds: 300         # (30–3600) when a still-running turn is worth mentioning ONCE,
+                                   #   and once more at 3×. Only read when thresholds is true.
+    gates: true                    # speak when the run STOPS AND WAITS FOR YOU: a permission
+                                   #   prompt ("ขออนุญาตรัน cargo test ค่ะ"), a plan up for approval,
+                                   #   an auto-mode DENIAL (invisible otherwise — it never becomes a
+                                   #   prompt), an idle prompt. Independent of chattiness on purpose:
+                                   #   a gate is a WHETHER, not a HOW MUCH. It never reads the
+                                   #   notification's own English text aloud — an event it cannot
+                                   #   classify stays silent.
     milestone_every_turn: true     # true → EVERY finished turn speaks its result (the half you
                                    #   cannot get from glancing at the screen; a version that spoke
                                    #   only on a declared event announced the START of the work and
@@ -434,21 +452,33 @@ voice:
                                    #   cue; without one the reply is summarized (~$0.01/turn).
                                    #   false → the conservative mode: only a TAGGED turn speaks.
     chattiness: terse              # HOW MUCH it says when it speaks, never WHETHER (that is the
-                                   #   four switches above): terse (1 sentence, facts only) |
+                                   #   switches above): terse (1 sentence, facts only) |
                                    #   balanced (1-2, + a softener and a short reaction) | chatty
-                                   #   (2-3, + the follow-through) | max (up to 4, the register of a
-                                   #   flight engineer reporting in: [subject] [state] [figure], the
-                                   #   ack states the ORDER of the work, the closing line lists the
-                                   #   STEPS, and the heartbeat moves to 10 beats from 45 s so a long
-                                   #   run keeps saying where it is — the only level that narrates
-                                   #   the process, and it needs `heartbeat: true` to be itself).
+                                   #   (2-3, + the follow-through) | max (the register of a ship's
+                                   #   AI: every sentence is [subject] [state] [figure] and stays
+                                   #   under ~45 characters, and it TALKS THROUGH the turn — one
+                                   #   short line per step as it happens, plus the thresholds and
+                                   #   gates above. The only level that narrates the process, and it
+                                   #   needs `narrate: true` to be itself).
+                                   #   `max`'s ack + closing line are SHORTER than chatty's, which
+                                   #   looks wrong on a ladder until you see what the ladder grades:
+                                   #   how much of what happens the machine tells you, not how many
+                                   #   characters per utterance. At max the mid-turn narrator carries
+                                   #   that, so the bookends shrink. Measured on the films: the
+                                   #   longest line in three of them is four short statuses,
+                                   #   ~135 characters.
                                    #   A CEILING, not a quota — one fact still means one sentence,
                                    #   which is the safety property: given room and nothing to fill
                                    #   it with, a model pads, and padding is one step from inventing.
                                    #   Bad news drops the softener at every level. Cost at 100
                                    #   turns/day × 22 days on elevenlabs: terse ~$48/mo · balanced
-                                   #   ~$76 · chatty ~$105 · max ~$150 (that last one extrapolated
-                                   #   from the character ceiling, not measured).
+                                   #   ~$76 · chatty ~$105 · max ~$165 typical and up to ~$295 if
+                                   #   every turn hits narrate_max_per_turn (extrapolated, not
+                                   #   measured: ~$75 of ack + closing line now that both shrank,
+                                   #   plus ~$90 of narration at ~10 lines a turn). `narrate: false`
+                                   #   removes the second half. Fact lines repeat across turns
+                                   #   ("cargo test ผ่าน 42"), and a repeated line is a CACHE hit and
+                                   #   therefore free — which prose, unique every time, never was.
                                    #   `aiworks voice audition "<a request>"` speaks all four.
                                    #   ROOT CHECKOUT ONLY: a linked worktree is clamped to terse
                                    #   whatever this says. It has to be — layer 2 of the config
@@ -456,12 +486,11 @@ voice:
                                    #   git-ignored file does not travel into a worktree), so a
                                    #   worktree INHERITS max rather than falling back to terse;
                                    #   that session is usually the unwatched one (a background
-                                   #   dev-cycle, a slack-dispatch job) and max is what tightens
-                                   #   the heartbeat to 10 beats from 45 s; and both checkouts
-                                   #   share one spool and one pair of speakers, so two max
-                                   #   sessions queue instead of taking turns. Enforced in
-                                   #   voice_chattiness (scripts/voice/lib.sh), so the heartbeat
-                                   #   cadence relaxes there too — it is keyed off the level.
+                                   #   dev-cycle, a slack-dispatch job); and both checkouts share
+                                   #   one spool and one pair of speakers, so two max sessions
+                                   #   queue instead of taking turns. Enforced in
+                                   #   voice_chattiness (scripts/voice/lib.sh), so the step
+                                   #   narrator goes quiet there too — it gates on `== max`.
   # A voice note attached to the Slack messages the workflow already sends. `aiworks voice mute`
   # deliberately does NOT reach it: that audio is a deliverable for the team — rendered on one
   # machine, heard on someone else's phone — so it is a standing decision made HERE, not a side
@@ -491,8 +520,6 @@ voice:
   cache:
     max_mb: 500                    # the synthesized-audio cache (LRU by access time). The key is
                                    #   provider|voice|model|cue|mix|text, so a repeated line is free.
-
-
 # After editing this block run `scripts/aiworks sync` to clone + onboard. That (like `add` /
 # `remove`) also REGENERATES the dev-cycle.js CONFIG `REPOS` block from this file — the workflow
 # can't read the FS at runtime, so `scripts/aiworks config` keeps its mirror in sync for you.

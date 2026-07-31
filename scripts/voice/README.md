@@ -10,7 +10,7 @@ something lands, and push-to-talk dictation. Same shape as the other adapters �
 directly by a skill or agent that could just as well go through the entry script.
 
 **Status: complete and in use.** The core, cues, the per-prompt acknowledgement, the closing
-line, the long-turn heartbeat, Slack voice notes and push-to-talk dictation are all built.
+line, the per-step narration, Slack voice notes and push-to-talk dictation are all built.
 Dictation still needs four **manual** steps before it works — `aiworks voice ptt install`
 prints them, and `aiworks voice ptt doctor` says which one is missing.
 
@@ -27,7 +27,7 @@ voice.enabled            ⇒ voice runs   false              ⇒ exit 0, prints 
 voice.autoplay.enabled   ⇒ speech runs  false              ⇒ the hooks do nothing
 ```
 
-Under `autoplay` the three kinds switch independently — `ack`, `milestones`, `heartbeat` —
+Under `autoplay` the three kinds switch independently — `ack`, `milestones`, `narrate` —
 because they wear out at different rates. A spoken line for every prompt is the first thing to
 tire of; a line when an MR lands is the reason to turn any of this on.
 
@@ -307,24 +307,56 @@ gemini   →   … ทำไม null check ที่ chart 3 ทำให้ pay
 
 ```bash
 aiworks voice mute on       # this machine says nothing — and pays for nothing
-aiworks voice mute off
+aiworks voice mute off      # reports it if the SYSTEM output is still muted, which also silences
 aiworks voice mute          # report (bare form never toggles — a mute you can't see the
-                            # state of is how you stay muted for a day without knowing)
+                            # state of is how you stay muted for a day without knowing).
+                            # Prints `muted (system output)` when that is what is holding it
 ```
 
-One file, `~/.cache/aiworks/voice/mute`. Present ⇒ silent, absent ⇒ speech.
+**Two switches, one meaning.** `voice_is_muted` in `lib.sh` is true if EITHER holds:
+
+| | how | state | function |
+|---|---|---|---|
+| by hand | `aiworks voice mute on\|off` | one file, `~/.cache/aiworks/voice/mute` | file test |
+| by the OS | the mute key / menu-bar slider / Control Centre | macOS holds it | `voice_os_muted` |
+
+`voice_mute_reason` prints which one — `hand` \| `os` \| empty. Every status line uses it: "muted"
+that does not say *which* mute sends you to unmute the wrong one.
 
 - **An off switch, not a volume knob.** Muted, nothing is summarized and nothing is
-  synthesized — ack, milestone, heartbeat, identity prefix, dictation cues and a direct
-  `speak.sh` alike. So speech costs **zero** while it is on, instead of paying for an LLM call
-  and a TTS call per turn to render audio nobody hears.
-- **Global.** Machine-wide, so every clone and worktree goes quiet at once.
+  synthesized — ack, closing line, narration, gate voice, identity prefix, cues, sound effects,
+  dictation cues and a direct `speak.sh` alike. So speech costs **zero** while it is on, instead
+  of paying for an LLM call and a TTS call per turn to render audio nobody hears.
+- **Global.** The hand mute is machine-wide, so every clone and worktree goes quiet at once. The
+  OS mute is the machine's own state, so it needs nothing of ours.
 - **Checked at every producer**, before it spends: `ack.sh` before the summarizer,
-  `milestone.sh` before the summarizer, `speak.sh` before synthesis, `identity.sh` before the
-  prefix synth — and once more at drain, so anything queued before you muted does not slip out.
+  `milestone.sh` before the summarizer, `narrate.sh` and `gate.sh` first thing, `speak.sh` before
+  synthesis, `identity.sh` before the prefix synth, `sfx.sh play` before `afplay`, the
+  `UserPromptSubmit` hook before the inline `ack` cue — and once more at drain, so anything queued
+  before you muted does not slip out.
 - **Drops, not defers.** Unmuting must not fire a backlog of everything you chose not to hear.
 - **Drop the `.sh` and it is `aiworks voice mute`**, on purpose: this is the one thing a person
   does with the feature by hand.
+
+### Reading the OS mute
+
+`osascript -e 'output muted of (get volume settings)'`, ~120 ms measured. Affordable because every
+producer runs DETACHED (nohup'd out of the hook), so it is never on the user's turn — and it buys
+back a whole LLM + TTS round-trip. Two details that are not incidental:
+
+- **Memoized for one second, not for the process.** `queue.sh`'s drain asks once per job while it
+  plays a backlog; a mute pressed mid-drain has to stop the rest of it, and a per-process memo
+  would carry a stale "not muted" through the whole queue.
+- **`output muted` only, never `output volume == 0`.** macOS reports volume 0 for HDMI / AirPlay /
+  optical output, where the external device owns the volume — treating 0 as silence would kill the
+  feature for anyone on a monitor's speakers. When the field cannot be read at all (not macOS) the
+  answer is *not muted*: failing open keeps a working feature working. `VOICE_OS_MUTED=1|0` forces
+  it, which is how `narrate-selftest.sh` covers all of this with no audio device.
+
+The inline `ack` cue is the one output that used to escape mute entirely: it never went through
+`speak.sh` or `queue.sh`, so a muted machine still went "bong" on every prompt. The hook now does
+the check inside the background subshell that plays it — the hook returns as fast as before and the
+cue lands ~130 ms in rather than ~10 ms, still inside the 400 ms that makes it read as *heard you*.
 
 ### What mute is NOT about
 
@@ -339,14 +371,21 @@ Two things it deliberately does not touch, because neither one is this machine t
 diagnostic, and one that went silent while muted would hide the report you ran it for. It prints
 `mute ON` instead.
 
-**A file, not a config key**, because mute is a "for the next twenty minutes" decision — config
-would mean editing it to go quiet and forgetting to edit it back. The two switches in the table
-above are the reverse: standing decisions, so they live in config and nowhere else.
+`sfx.sh generate` is exempt on the same grounds: it is a setup step you ran on purpose and its
+output is a *file*, not a sound. `sfx.sh play` is not exempt — a cue is output — and it prints
+`muted (<reason>)` rather than doing nothing, because silence with no reason reads as a broken
+cue file.
 
-**There is no automatic call detection**, by decision. An earlier version `pgrep`'d for
-Zoom/Teams/Webex and was removed: Google Meet is a browser tab with no process to find, so
-auto-detect would cover some calls and silently miss others. One switch you actually reach for
-beats a guess that is right most of the time.
+**The hand mute is a file, not a config key**, because it is a "for the next twenty minutes"
+decision — config would mean editing it to go quiet and forgetting to edit it back. The two
+switches in the table above are the reverse: standing decisions, so they live in config and nowhere
+else. The OS mute is neither: it is the machine's own state, already in the place people reach for.
+
+**There is no automatic call detection**, by decision — and honouring the OS mute is why it is no
+longer missed. An earlier version `pgrep`'d for Zoom/Teams/Webex and was removed: Google Meet is a
+browser tab with no process to find, so auto-detect would cover some calls and silently miss
+others. Muting the machine before a call is the switch people already reach for by habit, and it
+now costs nothing.
 
 ## The acknowledgement (phase 2)
 
@@ -367,7 +406,7 @@ It stays quiet when speaking would be worse than silence:
 | a session-management command | `/clear`, `/compact`, `/model` … an explicit list, not a guess: `/dev-cycle APP-1952` still gets an ack |
 | the turn already ended | the answer is on screen; "กำลังไปดู X" after it is worse than nothing |
 | a newer prompt arrived | this ack would describe the previous request |
-| the machine is muted | `aiworks voice mute on` — checked before anything is spent |
+| the machine is muted | `aiworks voice mute on`, **or** the system output is muted — checked before anything is spent |
 | the summarizer returned nothing | speak nothing rather than a canned "รับทราบครับ" — filler on every failure is what this feature must not become |
 
 **It states the task, it does not read your words back.** The summarizer is told it is ACCEPTING
@@ -461,31 +500,24 @@ scripts/voice/milestone.sh -v --say '[ship] APP-1952 merged แล้วคร�
 scripts/voice/milestone.sh -v --text "<a reply>"                        # test classification
 ```
 
-## Heartbeat
+## Mid-turn speech: there used to be a heartbeat, and it was removed
 
-On a turn that has run long, "still working, currently X" — where X is the last tool call read
-from the transcript. 90 s, then 3 min, then 5 min, capped at six; a fixed interval would speak
-thirteen times during a twenty-minute `dev-cycle` run and become the thing you mute.
+`heartbeat.sh` was a background sleeper spawned per turn that said *"ยังทำงานอยู่ครับ ตอนนี้ X"* on a
+clock — 90 s, then 3 min, then 5 min, capped at six. **Deleted, not defaulted off.** In use it read as
+an odd, disembodied interruption, and the reason is structural rather than a matter of tuning: a clock
+fires whether or not anything happened, so it narrates a 3-second step never and a 90-second step
+twice, and it can only name whichever tool it happens to catch — never why that tool.
 
-**`chattiness: max` tightens the schedule** to 45 s · 1 min · 90 s · then 2–5 min, ten beats, ~29 min
-of cover (`voice_heartbeat_gaps`, lib.sh) — that level's whole point is a run that keeps saying where
-it is, and this is the only channel that speaks *while* the work happens. Both schedules back off and
-both are capped. The **words are identical at every level**; only the cadence moves. And
-`voice.autoplay.heartbeat: false` still wins at `max` too: a chattiness level must never switch a
-channel back on, or "why is it quiet?" stops having one answer.
-
-No LLM call: the line is a template, because a heartbeat's whole value is *alive, and doing X*.
-The elapsed minutes are deliberately **not** spoken — they would make every heartbeat a unique
-string and turn a permanent cache hit into a synthesis every time.
-
-Queued as an `ack`, not a milestone: it is the most droppable thing here, so it should inherit
-exactly the ack rules (stale at 30 s, superseded by a newer one, silent inside 20 s of anything
-else). The watcher exits the moment the turn closes or a newer prompt arrives.
+Mid-turn speech is now the **step narrator** (below): `chattiness: max` only, one short line per step,
+spoken because the WORK moved — plus the **thresholds** (a step failed, it failed again, the turn is
+long) and the **gate voice** (something is waiting for you), which are events for the same reason. At
+every other level nothing is spoken between the ack and the closing line except a gate, which is
+level-independent because "this is waiting for you" is not a matter of talkativeness.
 
 ## Slack voice notes
 
 ```bash
-scripts/voice/notify-voice.sh --review APP-1952 --title "…" --channel "#your-channel"
+scripts/voice/notify-voice.sh --review APP-1952 --title "…" --channel "#dev-acme"
 ```
 
 `notify-voice.sh` is `scripts/notify/send.sh` **plus a voice note** — one Slack message carrying
@@ -570,29 +602,34 @@ overridable per call with `VOICE_CHATTINESS` or `summarize.sh --chattiness`.
 
 **Scope: how much, never whether.** "Whether" has four switches already; a fifth that could also
 produce silence would give "why is it quiet?" five answers. `terse`…`chatty` reach the **ack +
-closing line** only; `max` also moves the **heartbeat's cadence** (never its words —
-`voice_heartbeat_gaps`). The Slack voice note stays one canonical sentence at every level, because its
-repetition is what makes it free.
+closing line** only; `max` also turns on the **step narrator** (`narrate.sh`), which is the only
+mid-turn voice the feature has. The Slack voice note stays one canonical sentence at every level,
+because its repetition is what makes it free.
 
 | level | sentences | ack cap | closing cap | personality allowed |
 |---|---|---|---|---|
 | `terse` | 1 | 90 | 120 | none — facts only. **The shipped prompt, byte for byte** |
 | `balanced` | ≤2 | 140 | 200 | + softener (`ให้นะคะ`) + 1–2 word reaction (`ได้ค่ะ`) + 2nd fact |
 | `chatty` | ≤3 | 200 | 280 | + 3rd fact + follow-through (what will be reported / what waits) |
-| `max` | ≤4 | 260 | 360 | + **step narration** — the order of the work, one status per step — + the tightened heartbeat |
+| `max` | ≤4 | 260 | 360 | + **step narration** — the order of the work, one status per step — + a spoken line per step *during* the turn |
 
 **The ladder above `terse` is the ROOT checkout's alone.** `voice_chattiness` clamps a linked worktree
 to `terse` whatever the config resolves to, off the same `VOICE_MAIN_CLONE` (`--git-common-dir`) test
 layer 2 of the config chain uses — and it has to, because that layer *deliberately* reads
 `<main clone>/workspace.config.local.yaml`, so a worktree inherits the root's `max` instead of falling
 back to the shared `terse`. The worktree session is usually the unwatched one (a background
-`dev-cycle`, a slack-dispatch job), `max` is the level that tightens the heartbeat to 10 beats from
-45 s, and both checkouts share one spool and one pair of speakers — so two `max` sessions queue rather
-than take turns. Since `voice_heartbeat_gaps` keys the cadence off the level, the worktree's heartbeat
-relaxes as a consequence rather than as a second rule to keep in sync. `VOICE_CHATTINESS` is **not**
-clamped: a human typing one audition or one test is per-invocation intent, not a machine preference.
-`aiworks voice status` prints the configured level and the owning checkout when the two disagree.
-Owner: `scripts/voice/chattiness-selftest.sh` (a real `git worktree`, not a simulated root).
+`dev-cycle`, a slack-dispatch job) and `max` is the level that speaks per STEP; both checkouts share
+one spool and one pair of speakers, so two `max` sessions queue rather than take turns. Since
+`narrate.sh` gates on `== max`, the step narrator switches off in a worktree as a consequence rather
+than as a second rule to keep in sync. `VOICE_CHATTINESS` is **not** clamped — a human typing one
+audition or one test is per-invocation intent, not a machine preference. `aiworks voice status` prints
+the configured level and the owning checkout when the two disagree. Owner:
+`scripts/voice/chattiness-selftest.sh` — **10 cases** against a real `git worktree` rather than a
+hand-set `VOICE_MAIN_CLONE` (which would prove only that an `if` works, and would keep passing after
+the detection itself broke), including the case that keeps the suite honest: the worktree's **raw**
+value is asserted to still be the root's `max`, so the clamp case cannot pass for the wrong reason —
+an absent value rather than a clamped one. The end-to-end consequence (a real payload through
+`narrate.sh`, silent in the worktree) stays in `narrate-selftest.sh`, which already has the harness.
 
 Three graded pieces, each picked for what it *cannot* do: a **softener** is 2–3 characters and cannot
 carry a false fact; a **reaction** states the outcome in itself, unlike a greeting, which costs
@@ -640,6 +677,86 @@ sentence phrase still carries its own verb agreement (`ONE short Thai sentence *
 level specified as "unchanged" really is. The word `single` in *"the single most important number"*
 is likewise kept only at `terse` — at three sentences there is room for two figures and pinning it to
 one would throw the second away.
+
+### The step narrator (`narrate.sh`) — `max` only
+
+`PostToolUse` and `PostToolUseFailure` → `narrate.sh`, detached, one temp file carrying the hook
+payload (the response can be a whole file's contents, so argv is not an option and the reader deletes
+the file — including before an `exec`, which the `EXIT` trap never sees).
+
+**`narrate_source: facts` (default)** builds the line from the tool's own response via
+`tool-fact.py` — subject, state, figure:
+
+| step | spoken |
+|---|---|
+| `Read queue.sh` | `queue.sh อ่านแล้ว 260 บรรทัด` |
+| `Bash cargo test` green / red | `cargo test ผ่าน 42` / `cargo test ตก 3 ผ่าน 39` |
+| `Grep voice_cfg` | `voice_cfg เจอ 14 แห่ง` |
+| `Edit narrate.sh` | `narrate.sh แก้แล้ว 12 บรรทัด` |
+| `Glob **/*.sh` | `เจอ 42 ไฟล์` |
+| `Agent Explore` | `agent Explore ตอบแล้ว` |
+| `WebFetch` | `ดึง code.claude.com แล้ว` |
+| `mcp__pg_triage__execute_sql` | `pg triage execute sql ตอบ 5 แถว` |
+| `TodoWrite`, `ToolSearch`, `TaskList`, … | *nothing* — `SKIP_TOOLS`, because a line per bookkeeping call is a metronome |
+
+Test figures are read out of the runner's OWN summary line — cargo (`test result: ok. 42 passed`),
+jest (`Tests: 3 failed, 42 passed`), mocha/cypress (`42 passing`), pytest — so a figure is spoken only
+when a runner printed it. A failure is decided **before** the success templates run, so
+`{"is_error": true}` says `gone.txt อ่านไม่ได้` rather than counting the error envelope as one line of
+content (measured: it did, once).
+
+**`narrate_source: prose`** is the earlier mechanism, now the fallback in both directions: the
+assistant's own line from before the call ("อ่าน `queue.sh` ก่อน แล้วค่อยแก้ cadence"). Text and
+`tool_use` never share one assistant message — measured, 0 of 2 534 in a real session — so "the last
+text block in the file" is exactly the line that introduced the step that just ran. It is free and
+true, but it is an **intention**, and only ~1 call in 5 has one in front of it.
+
+| rule | value | why |
+|---|---|---|
+| dedupe by hash | — | never the same line twice in a row. With `prose` one block introduces several calls (314 blocks / 1 523 calls ≈ 1 per 5, measured); with `facts` it catches three Reads of one file |
+| producer rate floor | `narrate_gap`, 4 s | tool calls fire several per second; a fact line takes 2–3 s to speak. Was 9 s, which let a ten-call burst say two things |
+| queue rate floor | the same key | counts utterances from other kinds and other worktrees, which the producer cannot see. Two floors, ONE number — when they disagreed (7 vs 9) the shorter was dead code |
+| per-turn cap | `narrate_max_per_turn`, 25 | the cost ceiling. Logged when it bites (`-v`), never silent |
+| queue staleness | 12 s | a fact about a step that finished three steps ago describes the wrong moment |
+| char cap | 60 facts / 90 prose / 110 threshold | ~4 s of Thai speech for a step; a threshold line prefixes the fact and its tail is the informative half |
+
+### Thresholds and the gate voice
+
+Two channels that speak **outside** the per-step cadence, both `milestone` kind (never dropped by the
+queue):
+
+| channel | trigger | line | switch |
+|---|---|---|---|
+| threshold: red | a step failed (`PostToolUseFailure`, or a runner that printed failures) | `cargo test ล้ม` + red cue. **Bypasses the rate floor and the cap** | `voice.autoplay.thresholds` |
+| threshold: repeat | the same step failed again | `… ล้ม ซ้ำรอบ 2`, counted so the third is not called the second | ″ |
+| threshold: long turn | turn older than `long_turn_seconds` (300) | `ผ่านมา 11 นาทีแล้ว ยังทำอยู่ ล่าสุด <fact>` — single-shot per turn, once more at 3× | ″ |
+| gate | `PermissionRequest` · `PermissionDenied` · `PreToolUse(ExitPlanMode)` · `Notification` | `ขออนุญาตรัน cargo test ค่ะ` · `git push ถูก block ค่ะ` (red) · `แผนพร้อมแล้ว ขออนุมัติค่ะ` · `รอคำสั่งอยู่ค่ะ` | `voice.autoplay.gates` |
+
+`gate.sh` is **independent of `chattiness`** (a gate is a *whether*), never reads a notification's
+English text aloud (unclassifiable ⇒ silent), and dedupes on the gate **class** for 20 s — one waiting
+prompt arrives as both `PermissionRequest` and `Notification`, wording it differently, so a text hash
+would let the machine ask twice.
+
+The long-turn threshold is deliberately **not** the deleted heartbeat: a heartbeat fires on elapsed
+time whether or not anything happened, and repeats; this fires once per turn, only on a step that
+really ran, and names that step.
+
+Written prose is not speakable prose, so the trim strips fences, table rows, heading marks, list
+markers and link URLs, and keeps **backtick contents** (an identifier is usually the most informative
+word in the line). Only the first sentence survives — **unless it carries nothing**: measured on this
+workspace's own transcript, a plain "first chunk" rule produced `both: 0` (7 chars) and
+`Memory เก็บแล้ว ทีนี้ max` with its point amputated, because an em dash is used mid-sentence
+constantly here. So chunks accumulate to ~25 characters before the cap trims the tail — a too-short
+line is the worse failure, since a long one is merely cut while a thin one says nothing.
+
+It stays quiet once the turn has **ended** (the closing line owns the end), on a `VOICE[...]` tag
+block (same reason), and at every level except `max`.
+
+Regression suite: `scripts/voice/narrate-selftest.sh` — **40 cases** over the narrator, both sources,
+the thresholds and the gate voice, in a throwaway tree with its own config and a stubbed `speak.sh`, so
+it costs nothing; it also runs `tool-fact.py --selftest` (22 fixtures). Session ids are **run-scoped**
+on purpose: narration state is machine-global and keyed by session, so fixed ids leaked the previous
+run's dedupe state into the next one, which is how the suite first went red on its own second run.
 
 ### Ceiling, not quota — and it is enforced, not requested
 
@@ -693,7 +810,7 @@ the key addresses what the audio actually contains.
 | written | said | why |
 |---|---|---|
 | `APP-1598` | `APP หนึ่ง ห้า เก้า แปด` | an identifier is not a quantity; every engine read it as *หนึ่งพันห้าร้อยเก้าสิบแปด* |
-| `feature/APP-1598-add-search` | `feature APP หนึ่ง ห้า เก้า แปด add search` | a path read verbatim is "slash" and "dash" between every word |
+| `feature/APP-1598-add-cashback` | `feature APP หนึ่ง ห้า เก้า แปด add cashback` | a path read verbatim is "slash" and "dash" between every word |
 | `MR` · `PR` | `merge request` · `pull request` | read verbatim, `MR` is the honorific *Mr.* |
 | `142` · `12 เคส` · `21 ใบ` | `หนึ่งร้อยสี่สิบสอง` · `สิบสอง เคส` · `ยี่สิบเอ็ด ใบ` | a quantity is still spoken in a *language*, and the vendors disagree on which |
 | `8%` · `60%` | `แปด เปอร์เซ็นต์` | read verbatim the sign comes out as English "percent" |
@@ -865,10 +982,16 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.autoplay.enabled` | `false` | master switch for local speech |
 | `voice.autoplay.ack` | `true` | the per-prompt acknowledgement |
 | `voice.autoplay.milestones` | `true` | the closing line on a finished turn |
-| `voice.autoplay.heartbeat` | `true` | "still working" on a long turn. Vetoes the mid-turn line at every level, `max` included |
+| `voice.autoplay.narrate` | `true` | the `max` step narrator: one short line per tool call. Inert at every other level |
+| `voice.autoplay.narrate_source` | `facts` | `facts` (the tool's own response — a subject and a figure) \| `prose` (the assistant's sentence before the call — an intention). Each is the other's fallback |
+| `voice.autoplay.narrate_gap` | `4` | seconds between narrated lines (1–60) — the frequency dial, used by BOTH the producer and the queue |
+| `voice.autoplay.narrate_max_per_turn` | `25` | lines per turn (1–200) — the cost ceiling |
+| `voice.autoplay.thresholds` | `true` | speak unbidden on a failed step (red, bypasses the floor), a repeat failure, and a long turn |
+| `voice.autoplay.long_turn_seconds` | `300` | when a still-running turn is worth saying once (30–3600), and once more at 3× |
+| `voice.autoplay.gates` | `true` | speak when something WAITS for you: permission prompt, plan approval, auto-mode denial, idle. Independent of `chattiness` |
 | `voice.autoplay.milestone_every_turn` | `true` | false ⇒ only an explicit `VOICE:` tag speaks (was `milestone_backstop`, still read in its `false` position) |
-| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also tightens the heartbeat's cadence and is the only level that narrates the steps. **ROOT CHECKOUT ONLY** — a linked worktree is clamped to `terse` (it inherits this key from the root's local config, shares one spool, and is usually the session nobody is watching) |
-| `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; `aiworks voice mute` does not reach it |
+| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the step narrator + thresholds and is the only level that narrates the process; its ack/closing line are SHORTER than `chatty`'s on purpose. **ROOT CHECKOUT ONLY** — a linked worktree is clamped to `terse` (it inherits this key from the root's local config, shares one spool, and is usually the session nobody is watching) |
+| `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; neither mute (by hand or by the OS) reaches it |
 | `voice.push_to_talk.enabled` | `false` | hold-to-dictate |
 | `voice.push_to_talk.hotkey` | `right_cmd+right_alt` | the chord; baked into the Lua by `ptt install` |
 | `voice.push_to_talk.mic` | `default` | `default` follows System Settings → Sound → Input; or a device NAME substring. Never an index |

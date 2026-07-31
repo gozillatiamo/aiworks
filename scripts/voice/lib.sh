@@ -12,7 +12,7 @@
 #   voice_normalize_text       whitespace-normalize the spoken text (part of the cache key)
 #   voice_spoken_form TEXT     rewrite written text into what should be SAID (ids, MR/PR)
 #   voice_chattiness           terse | balanced | chatty | max — how MUCH it says when it speaks
-#   voice_heartbeat_gaps       the mid-turn cadence for that level (the only channel `max` adds)
+#   voice_narrate_get / _set   what the `max` step narrator last said, per session (dedupe + rate)
 #   voice_focus_set / _is_focused   which worktree the user is currently prompting in
 #   voice_is_muted             one machine-global file: muted ⇒ the feature spends NOTHING
 #
@@ -128,6 +128,18 @@ voice_cfg_bool() {   # true only for true/yes/1/on
   esac
 }
 
+# voice_cfg_int <dotted.path> <default> [min] [max] — a NUMERIC setting, clamped.
+# Clamped rather than trusted: these numbers are seconds and counts that decide how often the
+# machine talks and how much it spends. A typo'd `narrate_gap: 0` is an unbounded queue and a
+# `400` is silence, and neither should be reachable by dropping a digit in a personal config.
+voice_cfg_int() {
+  local v; v="$(voice_cfg "$1" "$2")"
+  [[ "$v" =~ ^-?[0-9]+$ ]] || { vlog "cfg $1: '$v' is not a number — using $2"; v="$2"; }
+  if [[ -n "${3:-}" ]] && (( v < $3 )); then v="$3"; fi
+  if [[ -n "${4:-}" ]] && (( v > $4 )); then v="$4"; fi
+  printf '%s' "$v"
+}
+
 # The workspace output language, same precedence as everything else. VOICE_LANGUAGE is an
 # override for TESTS and for a caller that already resolved it (the language hook) — it is
 # not a way to opt a machine in or out; the config is.
@@ -147,7 +159,7 @@ voice_language() {
 
 # ── chattiness ────────────────────────────────────────────────────────────────────
 # How much it says when it speaks — NOT whether it speaks. "When" already has four switches
-# (autoplay.ack / .milestones / .heartbeat / .milestone_every_turn); a fifth thing that could also
+# (autoplay.ack / .milestones / .milestone_every_turn / .narrate); a fifth thing that could also
 # produce silence would give "why is it quiet?" five possible answers and no way to tell which.
 #
 #   terse      one sentence, facts only, no softener and no reaction word. Byte-for-byte the
@@ -158,14 +170,16 @@ voice_language() {
 #              what is waiting for you).
 #   max        up to four, in the register of a flight engineer reporting to the person in charge:
 #              every sentence is [subject] [state] [figure] addressed to them, the STEPS are named
-#              in the order they happen, and the heartbeat tightens so a long run keeps saying
-#              where it is. The one level that narrates the process rather than only the outcome.
+#              in the order they happen — AND a running narration mid-turn: one line per step,
+#              spoken as the work happens (narrate.sh). The one level that narrates the process
+#              rather than only the outcome.
 #
-# `terse`…`chatty` reach ack.sh and milestone.sh ONLY. `max` additionally reaches the heartbeat's
-# SCHEDULE (voice_heartbeat_gaps below) — never its words. The Slack voice note stays one canonical
-# sentence per event at every level (its repetition is what makes it free — it hits the audio cache
-# — and that audio is the team's, not this machine's), and the identity prefix is an identifier
-# with nothing to lengthen.
+# `terse`…`chatty` reach ack.sh and milestone.sh ONLY — so at those levels nothing at all is spoken
+# between the ack and the closing line. `max` additionally turns on narrate.sh, the step narrator,
+# which is now the ONLY mid-turn voice there is (the timed heartbeat that used to fill that space was
+# removed). The Slack voice note stays one canonical sentence per event at every level (its repetition
+# is what makes it free — it hits the audio cache — and that audio is the team's, not this
+# machine's), and the identity prefix is an identifier with nothing to lengthen.
 #
 # An unreadable value falls back to `terse` rather than aborting: a typo in a personal config file
 # must not take speech down, and falling back to the DOCUMENTED default is more predictable than
@@ -181,18 +195,16 @@ voice_language() {
 #     (layer 2 above), because a git-ignored file does not travel into a worktree — so a worktree
 #     INHERITS the root's `max` rather than defaulting to the shared file's `terse`;
 #   · a worktree session is usually one nobody is watching: a background dev-cycle, a
-#     slack-dispatch job. `max` is the level that tightens the heartbeat (10 beats from 45 s
-#     instead of 6 from 90 s), so the worktree with the least of your attention becomes the
-#     loudest thing in the room — and it beats for a run you are not even reading;
+#     slack-dispatch job. `max` is the level that narrates every STEP, so the worktree with the
+#     least of your attention becomes the loudest thing in the room;
 #   · every worktree speaks through ONE spool and ONE pair of speakers (VOICE_CACHE_HOME is
 #     machine-global on purpose). Two `max` sessions do not take turns — they queue behind each
 #     other, and the one you are actually reading waits for the one you are not.
 #
 # So the level is a ROOT-WORKTREE setting and this is its enforcement point, not a convention to
-# remember: every caller goes through this function — ack.sh · milestone.sh · summarize.sh's
-# fallback · `aiworks voice status` · voice_heartbeat_gaps below, which keys the cadence off it, so
-# the worktree's heartbeat relaxes to the ordinary schedule as a CONSEQUENCE of the clamp rather
-# than as a second rule to keep in sync.
+# remember: every caller (ack.sh · milestone.sh · narrate.sh · summarize.sh's fallback · `aiworks
+# voice status`) goes through this function, and narrate.sh gates on `== max`, so the clamp turns
+# the step narrator off in a worktree as a consequence rather than as a second rule.
 #
 # Mechanical, same as everywhere else in this file: VOICE_MAIN_CLONE is non-empty exactly when
 # `--git-common-dir` points somewhere other than here, i.e. this is a linked worktree.
@@ -216,28 +228,124 @@ voice_chattiness() {
   printf '%s' "$v"
 }
 
-# ── the heartbeat cadence, keyed by chattiness ─────────────────────────────────────
-# `max` is the only level that reaches the heartbeat, and it reaches the SCHEDULE, not the words:
-# same template, same near-free audio cache, just sooner and more often. That IS the level's whole
-# point — a run you are not watching keeps telling you where it is, instead of going quiet between
-# "starting" and "done" — and it is still "how much", never "whether": `autoplay.heartbeat: false`
-# vetoes every level alike, and `max` does not override it (a level that could switch a channel back
-# on would make "why is it quiet?" unanswerable, which is the rule the whole ladder is built on).
+# ── the `max` register knobs (all inert at every other level) ──────────────────────
+# Set by research, not by taste: JARVIS's lines in the Iron Man films are 3–8 words, spoken as a
+# figure CHANGES, several within a few seconds during a burst. Length was the wrong dial — the
+# first `max` raised it (4 long sentences, a 360-char ceiling) and came out sounding like a status
+# report read aloud. These four dials are the right ones: shorter, more often, made of facts.
 #
-# The words stay a template even here. Routing ten beats through the summarizer would cost more per
-# long turn than the ack and the closing line together, for prose nobody listens to closely — and
-# the summarizer's input mid-turn is a tool call, not a result, so it has nothing to summarize.
+# `facts` reads the tool's own response (scripts/voice/tool-fact.py) and says the FIGURE — "queue.sh
+# อ่านแล้ว 260 บรรทัด", "cargo test ผ่าน 42". `prose` is the previous mechanism, the assistant's own
+# pre-tool sentence, which is an INTENTION — kept because it is free and because the two are worth
+# comparing by ear, not because it is the default.
+voice_narrate_source() {
+  local v; v="$(printf '%s' "${VOICE_NARRATE_SOURCE:-$(voice_cfg voice.autoplay.narrate_source facts)}" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in facts|prose) printf '%s' "$v" ;; *) vlog "narrate_source: '$v' is not facts|prose — using facts"; printf 'facts' ;; esac
+}
+
+# Seconds between narrated lines. 4 s, down from the first version's 9: at 9 s a burst of ten tool
+# calls in twenty seconds could say two things, which is the opposite of the character being
+# imitated. A spoken fact line is ~2-3 s, so 4 s still leaves air and still bounds the queue.
+voice_narrate_gap() { voice_cfg_int voice.autoplay.narrate_gap 4 1 60; }
+
+# The per-TURN ceiling, and the cost dial. Every narrated line is TTS spend; a runaway turn with
+# 200 tool calls must not be able to spend 200 lines' worth. When it bites, narrate.sh SAYS so in
+# its log rather than going quietly silent — a silent cap reads as a broken feature.
+voice_narrate_cap() { voice_cfg_int voice.autoplay.narrate_max_per_turn 25 1 200; }
+
+# When a turn passing this many seconds is worth mentioning ONCE (and once more at 3×). The
+# heartbeat's mistake was repeating on a clock; this is a threshold crossing, single-shot per turn
+# (see voice_threshold_fire), and it only ever fires on a step that actually ran.
+voice_long_turn_seconds() { voice_cfg_int voice.autoplay.long_turn_seconds 300 30 3600; }
+
+# ── narration state (the `max` step narrator) ─────────────────────────────────────
+# WHY THE FIRST ATTEMPT AT `max` WAS WRONG, since this replaces it: it tightened a timed HEARTBEAT
+# (45 s, ten beats) — a background sleeper that said "still working, currently <last tool>". A clock
+# fires whether or not anything happened, so it narrates a 3-second step never and a 90-second step
+# twice, and it can only name the tool it happens to catch, never why. That is a liveness ping, and
+# `max` is not asking for liveness: it is asking to be TOLD WHAT IS HAPPENING, which is a property of
+# the WORK, not of elapsed time. The heartbeat has since been DELETED outright rather than left off:
+# in use it read as an odd, disembodied interruption, and nothing wants it back.
 #
-#   terse|balanced|chatty   90 s, 3 min, then 5 min × 4 — 6 beats, ~24 min of cover
-#   max                     45 s, 1 min, 90 s, then 2–5 min — 10 beats, ~29 min of cover
+# So `max` is event-driven: every tool call is a step, and the narrator speaks THE ASSISTANT'S OWN
+# PROSE — the line it writes before reaching for a tool ("อ่าน queue ก่อน แล้วค่อยแก้ cadence"),
+# which is already exactly "what I am doing and what I am about to do". It costs no summarizer call,
+# it cannot drift from the truth, and it needs no model of its own.
 #
-# BOTH schedules back off and both are capped, at every level. A fixed short interval across a
-# twenty-minute dev-cycle speaks thirteen times and becomes the thing you mute.
-voice_heartbeat_gaps() {
-  case "$(voice_chattiness)" in
-    max) printf '45 60 90 120 180 180 240 240 300 300' ;;
-    *)   printf '90 180 300 300 300 300' ;;
-  esac
+# This file is that channel's whole memory, because every PostToolUse hook is a FRESH process:
+#   hash   what was last spoken. One prose block introduces SEVERAL tool calls (measured on a real
+#          session: 314 prose blocks against 1 523 tool calls, ~1 per 5), so without this the same
+#          sentence would be spoken five times in a row.
+#   ts     when. Tool calls fire several per second while a spoken line takes seconds, so the
+#          narrator needs a floor between utterances or it queues faster than it can drain.
+voice_narrate_file() { printf '%s/nar-%s.json' "$VOICE_TURN_DIR" "$(voice_sha "${1:-default}")"; }
+
+#   n      how many lines this TURN has already spoken — the per-turn cost ceiling. Reset by
+#          `nturn` below rather than by a cleanup pass, because nothing runs between turns.
+#   nturn  the turn `n` belongs to (the turn's start timestamp). A counter with no turn stamp
+#          would carry one long turn's total into the next one and mute it.
+#   fail   the hash of the last FAILED step, so a command that fails twice can be told from two
+#          different commands failing once (the second failure is the news, not the first).
+#   thr    space-separated names of the single-shot thresholds already announced this turn.
+#
+# NUMERIC FIELDS are ts / n / nturn: they default to 0, so a caller can do arithmetic on the
+# result of a first-ever read without testing for the empty string.
+voice_narrate_file() { printf '%s/nar-%s.json' "$VOICE_TURN_DIR" "$(voice_sha "${1:-default}")"; }
+
+_voice_narrate_numeric() { case "$1" in ts|n|nturn|gatets|failn) return 0 ;; *) return 1 ;; esac; }
+
+voice_narrate_get() {   # SESSION FIELD(hash|ts|n|nturn|fail|thr) → value ("" / 0 when unknown)
+  local f v; f="$(voice_narrate_file "$1")"
+  [[ -f "$f" ]] || { _voice_narrate_numeric "$2" && printf 0; return 0; }
+  v="$(jq -r --arg k "$2" '.[$k] // empty' "$f" 2>/dev/null || true)"
+  if _voice_narrate_numeric "$2"; then [[ "$v" =~ ^[0-9]+$ ]] || v=0; fi
+  printf '%s' "$v"
+}
+
+# MERGES rather than replaces (the first version wrote a fresh {hash, ts} object): the counters
+# and the threshold list live in the same file, and a setter that dropped them would re-arm every
+# single-shot threshold on the next narrated step.
+voice_narrate_put() {   # SESSION FIELD VALUE — a string/number field, timestamp untouched
+  voice_mkdirs
+  local f; f="$(voice_narrate_file "$1")"
+  if [[ -f "$f" ]]; then
+    jq --arg k "$2" --arg v "$3" '.[$k] = $v' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  else
+    jq -n --arg k "$2" --arg v "$3" '{($k): $v}' > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  fi
+}
+
+voice_narrate_set() {   # SESSION HASH [TURN] — records what was said and WHEN, bumping the count
+  voice_mkdirs
+  local f turn; f="$(voice_narrate_file "$1")"; turn="${3:-0}"
+  if [[ -f "$f" ]]; then
+    jq --arg h "$2" --argjson t "$(voice_now)" --arg turn "$turn" '
+      . as $o
+      | (if ($o.nturn // "0") == $turn then (($o.n // "0") | tonumber) else 0 end) as $n
+      | $o + {hash: $h, ts: $t, n: (($n + 1) | tostring), nturn: $turn}
+    ' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  else
+    jq -n --arg h "$2" --argjson t "$(voice_now)" --arg turn "$turn" \
+      '{hash: $h, ts: $t, n: "1", nturn: $turn}' > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  fi
+}
+
+# How many lines this turn has spoken — 0 once the turn stamp moves on, without a reset pass.
+voice_narrate_count() {   # SESSION TURN → number
+  local n turn
+  n="$(voice_narrate_get "$1" n)"; turn="$(voice_narrate_get "$1" nturn)"
+  [[ "$turn" == "$2" ]] && printf '%s' "$n" || printf 0
+}
+
+# A single-shot threshold: true (and ARMS it) the first time it is asked for in this turn, false
+# after. This is what separates a threshold from the deleted heartbeat — the same condition
+# staying true does NOT keep speaking, because a repeated "still slow" is a clock in disguise.
+voice_threshold_fire() {   # SESSION TURN NAME → 0 = speak now, 1 = already announced
+  local key="$2:$3" seen
+  seen="$(voice_narrate_get "$1" thr)"
+  case " $seen " in *" $key "*) return 1 ;; esac
+  voice_narrate_put "$1" thr "$(printf '%s %s' "$seen" "$key" | sed -E 's/^ +//')"
+  return 0
 }
 
 # ── the gate ──────────────────────────────────────────────────────────────────────
@@ -646,18 +754,30 @@ voice_stt_hint() {
 }
 
 # ── mute ──────────────────────────────────────────────────────────────────────────
-# One file, machine-global: present ⇒ silence, absent ⇒ speech. `aiworks voice mute on|off`.
+# TWO MUTES, ONE MEANING: silence is an OFF SWITCH, never a volume knob.
 #
-# MUTE IS AN OFF SWITCH FOR THIS MACHINE'S SPEAKERS, NOT A VOLUME KNOB. Muted, everything the
-# laptop was going to SAY is DISABLED rather than merely silenced: nothing is summarized, nothing
-# is synthesized, no cue is played. So a muted machine spends nothing on speech, which is the
-# point — the alternative was paying an LLM call and a TTS call per turn to render audio into
-# muted speakers.
+#   BY HAND   one file, machine-global: present ⇒ silence, absent ⇒ speech.
+#             `aiworks voice mute on|off`.
+#   BY THE OS  the system output is muted (the F10 key, the menu-bar slider, Control Centre).
+#             Read live from macOS, not remembered.
 #
-# It covers ack, milestone, heartbeat, the identity prefix and a direct speak.sh alike. A person
-# who mutes by hand means "stop", not "a bit less".
+# EITHER ONE DISABLES EVERY OUTPUT, rather than merely silencing it: nothing is summarized,
+# nothing is synthesized, no cue and no sound effect is played. So a muted machine spends
+# NOTHING on speech — which is the whole point. The alternative, and what this used to do for
+# the OS half, was paying an LLM call plus a TTS call per turn to render audio into speakers
+# that are off.
 #
-# TWO THINGS IT DELIBERATELY DOES NOT COVER, because neither is this machine talking:
+# It covers ack, milestone, narration, the gate voice, the identity prefix, the `ack` cue the
+# UserPromptSubmit hook plays inline, `sfx.sh play` and a direct speak.sh alike. A person who
+# mutes — by either switch — means "stop", not "a bit less".
+#
+# WHY THE OS FLAG AND NOT A VOLUME THRESHOLD: `output muted` is an explicit human action, and it
+# is the one field that means it. `output volume: 0` is NOT the same signal — macOS reports 0 for
+# HDMI / AirPlay / optical output, where the external device owns the volume, so treating 0 as
+# silence would quietly kill the feature for anyone on a monitor's speakers. Muted is muted;
+# quiet is not.
+#
+# TWO THINGS NEITHER MUTE COVERS, because neither is this machine talking:
 #
 #   The SLACK VOICE NOTE. That audio is a deliverable for the team, rendered here and heard on
 #   someone else's phone, so it is not a question about the state of my speakers. Its one switch is
@@ -669,20 +789,69 @@ voice_stt_hint() {
 #   background spend to save, and a mute that stopped you from dictating would be the switch
 #   breaking a feature you just explicitly asked for. Only its cues go quiet.
 #
-# A FILE, not a config key: this is a "for the next twenty minutes" decision. Putting it in
-# workspace.config.local.yaml would mean editing config to go quiet — and forgetting to edit it
-# back. Machine-global, so every worktree goes quiet at once rather than one clone at a time.
+# THE HAND MUTE IS A FILE, not a config key: it is a "for the next twenty minutes" decision, and
+# putting it in workspace.config.local.yaml would mean editing config to go quiet — then forgetting
+# to edit it back. Machine-global, so every worktree goes quiet at once rather than one clone at a
+# time. The OS mute needs no state of ours at all: the system already holds it.
 #
 # THERE IS NO AUTOMATIC CALL DETECTION, by decision. An earlier version pgrep'd for
 # Zoom/Teams/Webex; it was removed because it cannot be made honest — Google Meet is a browser
 # TAB with no process to find, so the auto-detect would cover some calls and silently miss
-# others, which is worse than covering none and having one switch you actually reach for.
+# others, which is worse than covering none and having one switch you actually reach for. Muting
+# the machine before a call, which people already do out of habit, is now that switch.
 VOICE_MUTE_FILE="$VOICE_CACHE_HOME/mute"
 
-voice_is_muted() {
-  [[ -f "$VOICE_MUTE_FILE" ]] || return 1
-  vlog "muted ($VOICE_MUTE_FILE — 'aiworks voice mute off' to undo)"
+# Is the SYSTEM output muted? macOS only, read live.
+#
+# COST: one osascript, ~120 ms measured. That is affordable because every producer of speech runs
+# DETACHED (nohup'd out of the hook), so the 120 ms is never on the user's turn — and it buys back
+# a whole LLM + TTS round-trip. The one inline caller, the `ack` cue in
+# .claude/hooks/voice-ack.sh, does the check inside its own background subshell for the same reason.
+#
+# Memoized for ONE SECOND, not for the process: queue.sh's drain calls this once per job while it
+# plays a backlog, and a mute pressed mid-drain has to stop the rest of it. A per-process memo
+# would carry a stale "not muted" through the whole queue.
+#
+# `VOICE_OS_MUTED=1|0` forces the answer — the selftest uses it so the suite needs no audio device
+# and no macOS, and it is the escape hatch if a machine ever reports this field wrongly.
+#
+# NOT muted is the answer when we cannot tell (no osascript, i.e. not macOS; or the call fails).
+# Failing open keeps a working feature working; failing closed would make voice silently dead on a
+# machine that never had a mute to begin with.
+_VOICE_OS_MUTE_VAL=""
+_VOICE_OS_MUTE_AT=0
+voice_os_muted() {
+  if [[ -n "${VOICE_OS_MUTED:-}" ]]; then
+    [[ "$VOICE_OS_MUTED" == "1" ]] && return 0 || return 1
+  fi
+  command -v osascript >/dev/null 2>&1 || return 1
+  local now; now="$(date +%s)"
+  if [[ -z "$_VOICE_OS_MUTE_VAL" ]] || (( now - _VOICE_OS_MUTE_AT >= 1 )); then
+    _VOICE_OS_MUTE_VAL="$(osascript -e 'output muted of (get volume settings)' 2>/dev/null)"
+    [[ "$_VOICE_OS_MUTE_VAL" == "true" ]] || _VOICE_OS_MUTE_VAL="false"
+    _VOICE_OS_MUTE_AT="$now"
+  fi
+  [[ "$_VOICE_OS_MUTE_VAL" == "true" ]]
+}
+
+# Which switch is holding it: `hand` | `os` | `` (not muted). For status output and logs — the
+# answer to "why is it silent?" has to name the switch, or you go looking for the wrong one.
+voice_mute_reason() {
+  [[ -f "$VOICE_MUTE_FILE" ]] && { printf 'hand'; return 0; }
+  voice_os_muted && { printf 'os'; return 0; }
   return 0
+}
+
+voice_is_muted() {
+  if [[ -f "$VOICE_MUTE_FILE" ]]; then
+    vlog "muted ($VOICE_MUTE_FILE — 'aiworks voice mute off' to undo)"
+    return 0
+  fi
+  if voice_os_muted; then
+    vlog "muted (system output is muted — unmute the machine to hear anything)"
+    return 0
+  fi
+  return 1
 }
 
 voice_now() { date +%s; }

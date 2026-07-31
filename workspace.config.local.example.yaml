@@ -48,6 +48,7 @@
 #   prod: true
 #   enabled: false
 
+
 # Let the workspace TALK — a spoken acknowledgement per prompt, a line when something actually
 # happens, a voice note on the Slack messages it already sends, and hold-to-dictate.
 #
@@ -55,16 +56,20 @@
 # other `language` every voice command exits 0 silently (run it with -v to hear why). Run
 # `aiworks voice setup` first, then `aiworks voice test`.
 #
-# COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn now speaks a closing
-# line, and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
-# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$150/mo (that last
-# one extrapolated from its character ceiling, not measured). (An earlier note here said $14–24 —
-# that was from when milestones almost never spoke.) `tts.provider: gemini` is ~6× cheaper for 3 %
-# fewer surviving English terms.
+# COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn speaks a closing line,
+# and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
+# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$165/mo typical,
+# up to ~$295 if every turn hits `narrate_max_per_turn` (max is extrapolated, not measured — ~$75 of
+# ack + closing line, plus ~$90 of step narration at ~10 short lines a turn). (Earlier notes here
+# said $14–24, then $230: the first was from when milestones almost never spoke, the second from
+# before max's ack and closing line were shortened to the register they now use.)
+# `tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
 #
-# To go quiet for a while, do NOT edit this back: `aiworks voice mute on` disables what the machine
-# SAYS, machine-wide, and it then costs nothing at all. It does not touch `notify_voice` (audio for
-# the team — config only) or dictation. `aiworks voice status` prints every switch, in order.
+# To go quiet for a while, do NOT edit this back: MUTE THE MACHINE. `aiworks voice mute on` and the
+# system output mute (the mute key / Control Centre, read live) both DISABLE what the machine SAYS,
+# machine-wide — nothing summarized, nothing synthesized, no cue, no sound effect — so it then costs
+# nothing at all. Neither touches `notify_voice` (audio for the team — config only) or dictation.
+# `aiworks voice status` prints every switch, in order, and names which mute is holding it.
 # Full doc: docs/agents/voice.md · reference: scripts/voice/README.md
 # voice:
 #   enabled: true
@@ -78,21 +83,29 @@
 #     # what makes them one level. Change it and run `aiworks voice normalize` to re-level the cache.
 #     loudness: -16
 #   autoplay:
-#     enabled: true       # local speech; `ack`, `milestones`, `heartbeat` switch independently
+#     enabled: true       # local speech; `ack`, `milestones`, `narrate` switch independently
 #     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
-#     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (up to 4, and
-#     # the only level that narrates the STEPS — the ack states the order of the work, the closing
-#     # line lists what it did, and the heartbeat goes to 10 beats from 45 s so a long run keeps
-#     # saying where it is; it needs `heartbeat: true` below to be itself). Ceiling, not quota —
-#     # one fact still means one sentence. `aiworks voice audition "…"` compares all four.
+#     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (the ship's-AI
+#     # register — every sentence is [subject] [state] [figure] under ~45 characters, and it talks
+#     # THROUGH the turn: one short line per step as it happens, plus a word when a step fails and
+#     # when something is waiting for you). Ceiling, not quota — one fact still means one sentence.
+#     # `aiworks voice audition "…"` compares all four.
 #     # THIS CHECKOUT ONLY, and the cost above is this checkout's: a linked worktree is clamped to
 #     # terse whatever you set here. This file is git-ignored, so it cannot travel into a worktree —
 #     # a worktree reads it from HERE (the main clone) and would otherwise inherit `max`, which is
-#     # the level that tightens the heartbeat, in the session you are least likely to be watching.
-#     # Both share one spool and one pair of speakers, so two `max` sessions queue instead of
-#     # alternating.
+#     # the level that speaks per step, in the session you are least likely to be watching. Both
+#     # share one spool and one pair of speakers, so two `max` sessions queue instead of alternating.
 #     chattiness: balanced
-#     heartbeat: true     # the mid-turn line. Most of what `max` buys, and this still vetoes it
+#     # The step narration, `max` only, and the biggest mid-turn voice there is. false ⇒ keep max's
+#     # ack + closing line, stop the per-step talking (~$90/mo of max's ~$165).
+#     narrate: true
+#     # What a narrated line is MADE of: facts (the tool's own response — "cargo test ผ่าน 42") or
+#     # prose (the assistant's sentence before the call, an intention). Each falls back to the other.
+#     narrate_source: facts
+#     narrate_gap: 4               # seconds between narrated lines — the frequency dial
+#     narrate_max_per_turn: 25     # per-turn ceiling, i.e. the cost ceiling
+#     thresholds: true             # speak unbidden on a failed step, a second failure, a long turn
+#     gates: true                  # speak when something WAITS for you (permission, plan, denial)
 #   notify_voice:
 #     enabled: true       # attach a voice note to the review-request / ship messages
 #   push_to_talk:
@@ -102,7 +115,6 @@
 #     # side-specific chord collides with no existing shortcut.
 #     hotkey: "left_cmd+right_cmd"
 #     mic: default        # follows System Settings → Sound → Input; or a device NAME. Never an index
-
 # stagehand — put what the assistant touches ON SCREEN, on this desk only. Personal for the same
 # reason voice is: it moves windows on YOUR monitors. Root worktree only, and enforced
 # mechanically (a linked / Superset worktree shares the same physical screen and would fight the

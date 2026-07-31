@@ -68,7 +68,6 @@ YAML
 # Each probe is its own bash, so nothing carries over between cases.
 lvl()  { bash -c '. "$1/scripts/voice/lib.sh" 2>/dev/null; voice_chattiness' _ "$1" 2>/dev/null; }
 rawv() { bash -c '. "$1/scripts/voice/lib.sh" 2>/dev/null; voice_cfg voice.autoplay.chattiness terse' _ "$1" 2>/dev/null; }
-gaps() { bash -c '. "$1/scripts/voice/lib.sh" 2>/dev/null; voice_heartbeat_gaps' _ "$1" 2>/dev/null; }
 
 pass=0; fail=0
 ck() { # ck <label> <expected exactly> <actual>
@@ -94,10 +93,14 @@ done
 setlocal terse
 ck "root terse ⇒ worktree terse (nothing to clamp)" terse "$(lvl "$WT")"
 
-echo "== the heartbeat cadence follows, because it is keyed off the level =="
+echo '== the step narrator follows, because it gates on `== max` =='
+# The CONSEQUENCE case: narrate.sh is the only mid-turn voice, and it is not a second rule — it asks
+# voice_chattiness the same question everything else does. Proved end to end (a real payload through
+# a real narrate.sh, against a stubbed speak.sh) in narrate-selftest.sh; asserted here at the level
+# the clamp actually decides, so a break points at the clamp rather than at the narrator.
 setlocal max
-ck "root gets max's 10-beat schedule" "45 60 90 120 180 180 240 240 300 300" "$(gaps "$MAIN")"
-ck "the worktree gets the ordinary 6-beat one" "90 180 300 300 300 300" "$(gaps "$WT")"
+ck "the root resolves the level narrate.sh requires" max "$(lvl "$MAIN")"
+ck "the worktree does not, so the narrator is off there" terse "$(lvl "$WT")"
 
 echo "== VOICE_CHATTINESS is NOT clamped =="
 # One command a human typed (an audition, a test) is per-invocation intent — not a machine

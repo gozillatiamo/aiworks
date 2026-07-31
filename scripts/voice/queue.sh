@@ -4,7 +4,7 @@
 # speaking at once take turns instead of talking over each other.
 #
 # Usage:
-#   queue.sh enqueue --kind ack|milestone|manual --audio FILE [--prefix FILE]
+#   queue.sh enqueue --kind ack|narration|milestone|manual --audio FILE [--prefix FILE]
 #                    [--session ID] [--text TEXT]
 #   queue.sh drain [--background]      play everything queued; a no-op if someone else is playing
 #   queue.sh status                    what is queued, who spoke last, muted?
@@ -24,6 +24,14 @@
 #   milestone/manual  otherwise never dropped, and always first in line
 #   ack               dropped when older than 30 s · only the NEWEST per session survives ·
 #                     dropped inside 20 s of the last utterance (silence discipline)
+#   narration         the `max` step narrator. Dropped HARDER than an ack on both axes — 12 s
+#                     stale, 7 s gap — and last in line. It is the only kind whose content goes
+#                     off after seconds rather than minutes: "กำลังอ่าน X" arriving once X is done
+#                     and two steps have passed describes the wrong moment, and a queue of them
+#                     played back-to-back is a monologue about the past. The tighter GAP is not a
+#                     contradiction of the ack's 20 s: an ack answers a prompt and there is one
+#                     per turn, while narration is the running commentary and 20 s of silence
+#                     between steps would drop most of it.
 #
 # IDENTITY PREFIX
 #   Never for the FOCUSED session — the worktree you are currently prompting in attaches no
@@ -41,6 +49,13 @@ voice_mkdirs
 
 ACK_MAX_AGE=30      # an ack older than this is stale — the answer has moved on
 SILENCE_GAP=20      # no two utterances closer than this, for acks
+NARRATION_MAX_AGE=12  # a step narration older than this is about a step that already finished
+# The drain floor for narration, from the same config key the ENQUEUE floor uses
+# (voice.autoplay.narrate_gap, 4 s). Two floors, one number on purpose: the enqueue side stops the
+# narrator from queuing faster than it drains, and this side stops a burst that is already IN the
+# queue from being read as one long paragraph. When they disagreed (7 here, 9 there), the shorter
+# one was dead code and the cadence was silently the longer one.
+NARRATION_GAP="$(voice_narrate_gap)"
 PREFIX_GAP=60       # silence long enough that "which worktree?" is a real question again
 
 # The session identity a job belongs to. Claude Code exports no stable session id to a hook's
@@ -63,7 +78,7 @@ cmd_enqueue() {
   done
   [[ -n "$audio" ]] || vdie "enqueue: --audio is required"
   [[ -f "$audio" ]] || vdie "enqueue: no such audio file: $audio"
-  case "$kind" in ack|milestone|manual) ;; *) vdie "enqueue: --kind must be ack|milestone|manual" ;; esac
+  case "$kind" in ack|narration|milestone|manual) ;; *) vdie "enqueue: --kind must be ack|narration|milestone|manual" ;; esac
   [[ -n "$session" ]] || session="$(voice_session_id)"
 
   local now job
@@ -116,30 +131,36 @@ _last_spoken_field() {   # session | ts
   jq -r --arg f "$1" '.[$f] // "" | tostring' "$VOICE_LAST_SPOKEN" 2>/dev/null || printf ''
 }
 
-_prune_acks() {
-  local now seen="" j sess ts
+# The droppable kinds share one rule — newest-per-session survives, anything older than the kind's
+# own budget goes — so they share one implementation. Parameterized rather than copied: an ack and a
+# narration differ only in how fast their content goes off, and two near-identical loops would drift.
+_prune_droppable() {   # KIND MAX_AGE
+  local kind="$1" max_age="$2" now seen="" j sess ts
   now="$(voice_now)"
-  # Reverse name order = newest first (the name starts with the epoch), so the first ack seen
+  # Reverse name order = newest first (the name starts with the epoch), so the first job seen
   # for a session is the one to keep.
-  for j in $(ls -1r "$VOICE_SPOOL_DIR"/*-ack.json 2>/dev/null || true); do
+  for j in $(ls -1r "$VOICE_SPOOL_DIR"/*-"$kind".json 2>/dev/null || true); do
     [[ -f "$j" ]] || continue
     sess="$(jq -r '.session // ""' "$j" 2>/dev/null || printf '')"
     ts="$(jq -r '.ts // 0' "$j" 2>/dev/null || printf 0)"
     case " $seen " in
-      *" $sess "*) vlog "drop ack: superseded ($(basename "$j"))"; rm -f "$j"; continue ;;
+      *" $sess "*) vlog "drop $kind: superseded ($(basename "$j"))"; rm -f "$j"; continue ;;
     esac
     seen="$seen $sess"
-    if (( now - ts > ACK_MAX_AGE )); then
-      vlog "drop ack: ${ACK_MAX_AGE}s stale ($(basename "$j"))"
+    if (( now - ts > max_age )); then
+      vlog "drop $kind: ${max_age}s stale ($(basename "$j"))"
       rm -f "$j"
     fi
   done
 }
 
-# Jobs to play, in priority then chronological order.
+# Jobs to play, in priority then chronological order. Narration is LAST: a result outranks a
+# description of the work that produced it, and by the time a milestone is queued the steps it
+# summarizes are over.
 _ordered_jobs() {
   ls -1 "$VOICE_SPOOL_DIR"/*-milestone.json "$VOICE_SPOOL_DIR"/*-manual.json 2>/dev/null || true
   ls -1 "$VOICE_SPOOL_DIR"/*-ack.json 2>/dev/null || true
+  ls -1 "$VOICE_SPOOL_DIR"/*-narration.json 2>/dev/null || true
 }
 
 _play() {   # FILE — afplay is synchronous, which is exactly what serialising needs
@@ -150,7 +171,8 @@ _play() {   # FILE — afplay is synchronous, which is exactly what serialising 
 cmd_drain_locked() {
   local pass=0
   while :; do
-    _prune_acks
+    _prune_droppable ack "$ACK_MAX_AGE"
+    _prune_droppable narration "$NARRATION_MAX_AGE"
     local jobs; jobs="$(_ordered_jobs)"
     [[ -n "$jobs" ]] || break
     pass=$((pass + 1))
@@ -191,6 +213,15 @@ cmd_drain_locked() {
           vlog "drop ack: only ${gap}s since the last utterance (silence discipline)"
           continue
         fi
+      elif [[ "$kind" == "narration" ]]; then
+        # Its own floor: the running commentary is supposed to run, so it needs air between lines
+        # rather than an ack's near-silence. narrate.sh already applies a floor of its own before
+        # spending anything on synthesis; this one also counts utterances from OTHER kinds and
+        # other worktrees, which the producer cannot see.
+        if (( last_ts > 0 && gap < NARRATION_GAP )); then
+          vlog "drop narration: only ${gap}s since the last utterance"
+          continue
+        fi
       fi
 
       if [[ -n "$prefix" && -f "$prefix" ]] \
@@ -221,8 +252,11 @@ cmd_status() {
     printf '  %-28s %s\n' "$(basename "$j")" "$(jq -r '.text // ""' "$j" | cut -c1-60)"
   done
   printf 'last spoke %s at %s\n' "$(_last_spoken_field session)" "$(_last_spoken_field ts)"
-  if [[ -f "$VOICE_MUTE_FILE" ]]; then printf 'mute       ON (queue.sh mute off to unmute)\n'
-  else printf 'mute       off\n'; fi
+  case "$(voice_mute_reason)" in
+    hand) printf 'mute       ON by hand (queue.sh mute off to unmute)\n' ;;
+    os)   printf 'mute       ON — system output is muted (unmute the machine)\n' ;;
+    *)    printf 'mute       off\n' ;;
+  esac
   if python3 - "$VOICE_LOCK" <<'PY'
 import fcntl, os, sys
 fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o600)
@@ -236,15 +270,28 @@ PY
 
 cmd_purge() { rm -f "$VOICE_SPOOL_DIR"/*.json 2>/dev/null || true; vlog "spool purged"; }
 
-# See the rationale on voice_is_muted in lib.sh (a file, machine-global, silences every kind).
+# See the rationale on voice_is_muted in lib.sh (two switches — this file, and the system output
+# mute — either of which silences every kind and spends nothing).
+#
+# `on`/`off` own the FILE only: the OS mute is the system's state, not ours to toggle. But `off`
+# reports it, because "I turned the mute off and it is still silent" is otherwise a bug hunt.
 cmd_mute() {
   voice_mkdirs
   case "${1:-status}" in
     on)     : > "$VOICE_MUTE_FILE"
             printf 'voice muted — nothing spoken, summarized or synthesized on this machine\n'
             printf '  (Slack voice notes and dictation are unaffected — neither is this machine talking)\n' ;;
-    off)    rm -f "$VOICE_MUTE_FILE"; printf 'voice unmuted\n' ;;
-    status) [[ -f "$VOICE_MUTE_FILE" ]] && printf 'muted\n' || printf 'not muted\n' ;;
+    off)    rm -f "$VOICE_MUTE_FILE"
+            if voice_os_muted; then
+              printf 'voice unmuted — but the SYSTEM output is still muted, so nothing will be spoken or synthesized\n'
+            else
+              printf 'voice unmuted\n'
+            fi ;;
+    status) case "$(voice_mute_reason)" in
+              hand) printf 'muted\n' ;;
+              os)   printf 'muted (system output)\n' ;;
+              *)    printf 'not muted\n' ;;
+            esac ;;
     *)      vdie "mute: use on|off|status" ;;
   esac
 }

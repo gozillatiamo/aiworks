@@ -23,19 +23,39 @@ and `-v` on any voice command explains why it stayed quiet.
 
 ## Mute is an off switch, not a volume knob
 
+**Muting the machine is enough.** There are two mutes and they mean the same thing:
+
+| | how | state lives |
+|---|---|---|
+| by hand | `aiworks voice mute on` / `off` | one file, `~/.cache/aiworks/voice/mute` |
+| by the OS | the mute key, the menu-bar slider, Control Centre | macOS, read live |
+
 ```bash
 aiworks voice mute on      # the output half is DISABLED machine-wide — and costs nothing
-aiworks voice mute off
+aiworks voice mute off     # says so if the SYSTEM output is still muted (else you hunt a bug)
 aiworks voice status       # every switch that decides whether you hear anything, in order
 ```
 
-Muted, nothing is summarized and nothing is synthesized: no ack, no milestone, no heartbeat, no
-identity prefix, no dictation cue. The point is the bill — the alternative was paying for an LLM
-call and a TTS call per turn to render audio into muted speakers.
+Either one, nothing is summarized and nothing is synthesized: no ack, no closing line, no
+narration, no gate voice, no identity prefix, no cue, no sound effect, no dictation cue. The point
+is the bill — the alternative was paying for an LLM call and a TTS call per turn to render audio
+into speakers that are off.
 
-One file (`~/.cache/aiworks/voice/mute`), so every clone and worktree goes quiet at once. There is
-deliberately no automatic call detection: Google Meet is a browser tab with no process to find, so
-an auto-detect would cover some calls and silently miss others.
+The hand mute is a file, so every clone and worktree goes quiet at once; the OS mute needs no state
+of ours, because the system already holds it. The one output that used to escape both was the `ack`
+cue the `UserPromptSubmit` hook plays inline — it now does the check inside its own background
+subshell, so the hook still returns instantly and the cue lands ~130 ms in instead of ~10 ms.
+
+**`output muted`, never a volume threshold.** `output volume: 0` is not the same signal: macOS
+reports 0 for HDMI / AirPlay / optical output, where the external device owns the volume — so
+treating 0 as silence would quietly kill the feature for anyone using a monitor's speakers. Muted
+is muted; quiet is not. When the flag cannot be read at all (not macOS), the answer is *not muted*:
+failing open keeps a working feature working. `VOICE_OS_MUTED=1|0` forces it, which is how the
+selftest covers this with no audio device.
+
+**There is still no automatic call detection**, and now there is less need for one: Google Meet is a
+browser tab with no process to find, so an auto-detect would cover some calls and silently miss
+others. Muting the machine before a call — which people do by habit — is that switch.
 
 **Two things it does not touch, because neither is this machine talking:**
 
@@ -107,11 +127,12 @@ voice:
 ```
 
 **How much, never whether.** "Whether" already has four switches (`ack` · `milestones` ·
-`heartbeat` · `milestone_every_turn`); a fifth thing that could also produce silence would give
+`milestone_every_turn` · `narrate`); a fifth thing that could also produce silence would give
 "why is it quiet?" five possible answers and no way to tell which. `terse`…`chatty` reach the **ack
-and the closing line only**; `max` also tightens the **heartbeat's cadence**, never its words. The
-Slack voice note stays one canonical sentence at every level, because its repetition is what makes
-it free (it hits the audio cache).
+and the closing line only** — so at those levels nothing at all is spoken between them; `max`
+additionally turns on the **step narrator** (`narrate`), which is the only mid-turn voice the feature
+has. The Slack voice note stays one canonical sentence at every level, because its repetition is what
+makes it free (it hits the audio cache).
 
 The same finished turn, at each level:
 
@@ -126,11 +147,11 @@ chatty    เรียบร้อยค่ะ การแก้ mute ทำใ
           ปกติ 23031 bytes เอกสารแก้ครบ 6 ไฟล์ รอคุณสั่งค่ะ
           + the third fact, + the follow-through (what will be reported, what waits for you)
 
-max       เรียบร้อยค่ะ แก้ 4 script เสร็จแล้ว ได้แก่ lib.sh เพิ่ม voice_heartbeat_gaps,
-          summarize.sh เพิ่ม cap 260 chars สำหรับ ack และ 360 สำหรับ report, heartbeat.sh อ่าน
-          cadence จาก chattiness เป็น 10 beats เริ่มที่ 45 วินาที, aiworks-voice.sh audition ครบ
-          4 ระดับ รอการตรวจสอบจากคุณค่ะ
-          + the STEPS, in the order they happened, one status each — and the mid-turn heartbeat
+max       เรียบร้อยค่ะ แก้ 4 script เสร็จแล้ว ได้แก่ lib.sh เพิ่ม narration state,
+          summarize.sh เพิ่ม cap 260 chars สำหรับ ack และ 360 สำหรับ report, queue.sh เพิ่ม kind
+          narration, aiworks-voice.sh audition ครบ 4 ระดับ รอการตรวจสอบจากคุณค่ะ
+          + the STEPS, in the order they happened, one status each — and it talked through the
+          turn while the work happened
 ```
 
 ### `max`, and why it is a different kind of level
@@ -139,32 +160,47 @@ The first three levels differ only in **length**. `max` differs in **what it is 
 about**: it is the only level that may narrate the process, which every other level explicitly
 forbids — for them the process is filler around the one fact that matters.
 
-The register is the one from the films: a flight engineer reporting to the person in charge, in the
-shape *[subject] [state] [figure]* — "Structural integrity at 78 percent, sir". The prompt
-**describes** that register instead of naming the character, on purpose: naming it produces a Thai
-butler impression, and the useful half of that voice is the status-report shape, not the accent.
+The register is the one from the films, and it was **researched rather than guessed** — the actual
+JARVIS dialogue across the Iron Man films, because the first `max` was built from an impression of it
+and got the central property backwards. What the transcripts show:
 
-It lands on three channels at once, which is what makes it feel continuous rather than merely long:
+| what he does | example |
+|---|---|
+| lines are **3–8 words**, never paragraphs | *"Thirteen, sir." · "18,000 feet." · "The armour is now at 92%."* |
+| every line is a **state and a figure**, never an intention | *"Power: fifteen percent. Recommend you descend and re-charge, Sir."* |
+| **unbidden warnings**, naming the consequence *to the person* | *"Might I remind you, if the suit loses power, so does your heart."* |
+| **asks before the big step**, naming it | *"Shall I begin machining the parts?" · "The House Party Protocol, sir?"* |
+| **contradicts flatly**, fact first | *"Actually, sir, it's in Miami."* |
+| **dry wit**: rare, one clause, riding on a real answer | *"Am I to include the Belgium waffle stands?"* |
+| in a crisis the register **collapses** to imperatives | *"Power critical, set course for home immediately."* |
+| he **never narrates his own effort** | there is no *"I'm now searching through…"* in three films |
+
+The correction that mattered: **the density comes from frequency, not from length.** The first `max`
+raised the sentence budget (4 sentences, a 260/360-character ceiling) and produced a status report
+read aloud — correct facts, wrong character. `max`'s ack and closing line are now **shorter than
+`chatty`'s** (150/190), each sentence under ~45 characters, and the continuity comes from the four
+channels below instead.
+
+The prompt **describes** the register instead of naming the character, on purpose: naming it produces
+a Thai butler impression, and the useful half of that voice is the status-report shape, not the accent.
 
 | channel | at `max` |
 |---|---|
-| the **ack** | states the work *and the order it will be worked in* — the level replaces the shipped "…and stop" with the sequence |
-| the **heartbeat** | 10 beats from 45 s instead of 6 from 90 s. Same template, same near-free cache — only the cadence moves |
-| the **closing line** | up to 4 sentences: the steps taken, one status each, finishing on the outcome |
+| the **ack** | states the work *and the order it will be worked in* — future tense, completion words banned |
+| the **step narrator** | one short line per step, spoken *while* the turn runs, built from the tool's own response (`narrate.sh`, on `PostToolUse`) |
+| the **thresholds** | speaks up unbidden when a step fails, when the same step fails again, or when the turn runs long — single-shot, never on a clock |
+| the **gate voice** | says when something is **waiting for you**: a permission prompt, a plan up for approval, an auto-mode denial, an idle prompt (`gate.sh`) |
+| the **closing line** | up to 4 short statuses: the steps taken, then what is now waiting for the user |
 
-**`max` needs `heartbeat: true` to be itself.** The mid-turn narration is most of what the level
-buys, and `voice.autoplay.heartbeat: false` still vetoes it — a chattiness level must never switch a
-channel back on, or "why is it quiet?" stops having one answer. `aiworks voice status` says so
-outright when the two disagree.
+The gate voice is the one channel that is **independent of `chattiness`** — a gate is a *whether*,
+not a *how much*, so it has its own key (`voice.autoplay.gates`) and speaks at `terse` too.
 
 ### Anything above `terse` is the ROOT checkout's alone
 
 **A linked worktree always speaks `terse`, whatever the config says.** Not a convention — the clamp
 is in `voice_chattiness` (`scripts/voice/lib.sh`), keyed off the same `--git-common-dir` test the rest
-of the adapter already uses, so it holds for every caller: `ack.sh`, `milestone.sh`, `summarize.sh`'s
-fallback, `aiworks voice status`, and `voice_heartbeat_gaps` — which keys the cadence off the level,
-so the worktree's heartbeat relaxes to the ordinary schedule as a *consequence* of the clamp rather
-than as a second rule to keep in sync.
+of the adapter uses, so it holds for every caller including the step narrator (which gates on
+`== max` and therefore goes quiet as a consequence, not as a second rule).
 
 Three facts make it necessary:
 
@@ -172,20 +208,117 @@ Three facts make it necessary:
   a git-ignored file does not travel into a worktree. So a worktree *inherits* the root's `max` — it
   does not fall back to the shared file's `terse`;
 - a worktree session is usually the one **nobody is watching**: a background `dev-cycle`, a
-  slack-dispatch job. `max` is the level that tightens the heartbeat (10 beats from 45 s instead of 6
-  from 90 s), so the checkout with the least of your attention becomes the loudest thing in the room —
-  and it keeps beating for a run nobody is reading;
+  slack-dispatch job. `max` is the level that narrates every step, so the checkout with the least of
+  your attention becomes the loudest thing in the room;
 - every worktree speaks through **one spool and one pair of speakers** (`VOICE_CACHE_HOME` is
   machine-global on purpose). Two `max` sessions do not take turns — they queue, and the one you are
   reading waits for the one you are not.
 
 `aiworks voice status` says so in the worktree, naming the level that was configured and the checkout
-that owns it — otherwise the row reads `terse` while the config file in front of you says `max`, and
-the config file looks broken. `VOICE_CHATTINESS=<level>` still overrides inside a worktree: one
-command a human typed is per-invocation intent, not a preference leaking in through the config chain.
+that owns it — otherwise the row reads `terse` while the config file in front of you says `max`.
+`VOICE_CHATTINESS=<level>` still overrides inside a worktree: one command a human typed is
+per-invocation intent, not a preference leaking in through the config chain.
 
 Proved against a real `git worktree`, not a simulated one — the whole point is that the gate is
-mechanical, so a faked root variable would test nothing: `scripts/voice/chattiness-selftest.sh`.
+mechanical, so a faked root variable would test nothing: `scripts/voice/chattiness-selftest.sh`
+(10 cases, free to run — it only resolves config).
+
+### The step narrator — what it speaks, and why it costs no model call
+
+`voice.autoplay.narrate_source: facts` (the default) reads the **tool call's own response** and says
+the figure in it:
+
+| step | spoken |
+|---|---|
+| `Read queue.sh` | *queue.sh อ่านแล้ว 260 บรรทัด* |
+| `cargo test --lib` (green) | *cargo test ผ่าน 42* |
+| `cargo test --lib` (red) | *cargo test ตก 3 ผ่าน 39* — as a threshold, see below |
+| `Grep voice_cfg` | *voice_cfg เจอ 14 แห่ง* |
+| `Edit narrate.sh` | *narrate.sh แก้แล้ว 12 บรรทัด* |
+| `mcp__pg_triage__execute_sql` | *pg triage execute sql ตอบ 5 แถว* |
+
+That is the JARVIS shape — subject, state, figure — and it is a **template, not a model call**: the
+figures come out of `tool_response`, so nothing can be invented and nothing can drift. Tools whose
+completion carries no news (`TodoWrite`, `ToolSearch`, `TaskList`, …) are silent by list, because
+speaking those turns the narrator into the metronome the heartbeat was disliked for. Owner:
+`scripts/voice/tool-fact.py` (22 fixtures, `--selftest`).
+
+`narrate_source: prose` is the previous mechanism, kept as an alternative and as the fallback: the
+assistant's own sentence from just before the tool call — *"อ่าน `queue.sh` ก่อน แล้วค่อยแก้ cadence"*.
+It is free and true, but it is an **intention**, which is the one thing the films' AI never voices.
+Each source falls back to the other, so a step with no figure still speaks (via the prose) and a step
+with no prose still speaks (via the fact) — measured on a real session, only ~1 tool call in 5 has a
+prose block in front of it, which is why `facts` fills the gaps far better than the reverse.
+
+### Thresholds — speaking up unbidden (`voice.autoplay.thresholds`)
+
+| threshold | what it says | rules |
+|---|---|---|
+| a step **failed** | *cargo test ล้ม* | red cue, `milestone` kind (never dropped), and it **bypasses the rate floor and the per-turn cap** — a failure is the one thing worth interrupting for. Fed by the `PostToolUseFailure` hook event, so it does not have to guess from output text |
+| the **same** step failed again | *cargo test ล้ม ซ้ำรอบ 2* | counted, not flagged: the third attempt is more news than the second |
+| the turn is **running long** | *ผ่านมา 11 นาทีแล้ว ยังทำอยู่ ล่าสุด …* | single-shot per turn (and once more at 3× `long_turn_seconds`), and only on a step that actually ran |
+
+The long-turn line is the one to be careful about, because it looks like the deleted heartbeat and is
+not: a heartbeat fires on elapsed time **whether or not anything happened** and repeats; this fires
+once, on a real step, and names that step.
+
+### The gate voice — what is waiting for you (`voice.autoplay.gates`)
+
+The most recognisable thing the character does is not narration at all: *"Shall I begin machining the
+parts?"* — he names the big step and waits. Every gate in this workspace already existed and every one
+of them was **silent**, so stepping away from the screen meant coming back to find nothing had
+happened.
+
+| event | spoken |
+|---|---|
+| `PermissionRequest` | *ขออนุญาตรัน cargo test ค่ะ* · *ขออนุญาตใช้ Write กับ main.rs ค่ะ* |
+| `PermissionDenied` | *git push ถูก block ค่ะ* (red) |
+| `PreToolUse(ExitPlanMode)` | *แผนพร้อมแล้ว ขออนุมัติค่ะ* |
+| `Notification` | classified: permission → *ขออนุญาตทำงานต่อค่ะ* · idle → *รอคำสั่งอยู่ค่ะ* · agent done → *agent ทำเสร็จแล้วค่ะ* |
+
+`PermissionDenied` earns its place on its own: an auto-mode denial never becomes a prompt at all — the
+model simply gets a refusal and reroutes, and [eight of them in one
+ticket](../../CLAUDE.md) went unnoticed until the transcript was read back afterwards.
+
+Two properties worth knowing: it **never reads the notification's own text aloud** (those messages are
+English and this is a Thai voice — an event it cannot classify stays silent), and it dedupes on the
+gate **class** rather than the wording, because one waiting prompt arrives as two events that word it
+differently and would otherwise ask twice.
+
+**Under Cursor, only part of this crosses.** The generated mirror can express `PreToolUse` and
+`PostToolUse`, so the step narrator and the plan gate work there; `PermissionRequest`,
+`PermissionDenied`, `Notification` and `PostToolUseFailure` have no Cursor equivalent and
+`aiworks cursor` drops them (it says so at `scripts/aiworks-cursor.sh`). In Cursor you therefore get
+the narration but not the permission/denial voice — same class of gap as workflows not crossing.
+
+**Why it is not a timer, and why the first version of `max` was wrong.** That version tightened a
+timed **heartbeat** instead — a background sleeper that said *"still working, currently X"* every 45 s,
+ten beats. A clock fires whether or not anything happened, so it narrates a 3-second step never and a
+90-second step twice, and it can only ever name the tool it happens to catch, never *why*. `max` is
+not asking for liveness, it is asking to be told what is happening; that is a property of the **work**,
+so the narrator hooks the step.
+
+**That heartbeat has since been deleted outright**, not merely switched off: in use it read as an odd,
+disembodied interruption, and once the narrator exists there is nothing a clock adds. Mid-turn speech
+is therefore `max`-only and event-driven.
+
+**Three rules keep it from becoming noise**, and each exists because the naive version fails:
+
+| rule | why |
+|---|---|
+| **dedupe** by hash | the same line is never spoken twice in a row. With `prose` this is essential — one block introduces ~5 tool calls (314 prose blocks against 1 523 tool calls, measured) — and with `facts` it catches three Reads of one file |
+| **rate floor** of `narrate_gap` (4 s), in the producer *and* the queue | tool calls fire several per second while a spoken line takes 2–3 s; without a floor the queue takes on work faster than it can drain. 4 s, down from the first version's 9: at 9 s a burst of ten calls in twenty seconds could say two things, which is the opposite of the character. One config key feeds both floors — when they disagreed (7 and 9), the shorter one was dead code |
+| **per-turn cap** of `narrate_max_per_turn` (25) | the cost ceiling: every line is TTS spend and a 200-call turn must not buy 200 lines. When it bites, `-v` says so — a silent cap reads as a broken feature |
+| **staleness** of 12 s, its own queue kind | a fact about a step that finished three steps ago describes the wrong moment. This is the only kind whose content goes off in **seconds** — hence harder drop rules than an ack, and last place in line behind results. Thresholds and gates are `milestone` instead, and are never dropped |
+
+It also stays quiet once the turn has **ended**: the closing line owns the end of a turn, and a step
+narration landing after the result describes work the user has already been told about.
+
+**`max` needs `narrate: true` to be itself** — the running commentary is most of what the level buys,
+and `voice.autoplay.narrate: false` keeps the ack and closing line while stopping the mid-turn
+talking. `aiworks voice status` says so outright when the two disagree, and prints the cadence it will
+actually use. Regression suite: `scripts/voice/narrate-selftest.sh` (40 cases over the narrator, the
+thresholds and the gate voice, in a throwaway tree with stubbed synthesis — costs nothing).
 
 **Three prompt conflicts had to be resolved for it to work at all**, and the room the level adds is
 what surfaced each one:
@@ -220,15 +353,20 @@ set-once preference nobody turns down before production breaks.
 **Pick by ear, not from the table:**
 
 ```bash
-aiworks voice audition "ช่วยเช็ค pricing calculator ใน your-app"
+aiworks voice audition "ช่วยเช็ค pricing calculator ใน api-service"
 ```
 
-Speaks the same request at all four levels with the character count printed — but not `max`'s
-heartbeat, which only exists inside a long turn and would be a demo of something you have not turned
-on. Cost scales with the level: ack and closing lines never hit the cache, so at 100 turns/day on
-elevenlabs it is roughly **terse $48 · balanced $76 · chatty $105 · max ~$150** per month (the first
-three measured; `max` extrapolated from its 620-character ceiling plus ~$12 of templated, partly
-cached heartbeat). `tts.provider: openai` (voice `sage`) is
+Speaks the same request at all four levels with the character count printed — but not `max`'s step
+narration, which only exists inside a running turn and would be a demo of something you have not
+turned on. Cost scales with the level: every line here is unique text, so none of it hits the cache.
+At 100 turns/day on elevenlabs it is roughly **terse $48 · balanced $76 · chatty $105 · max ~$165**
+per month — the first three measured; `max` extrapolated as ~$75 for its ack + closing line (now
+shorter than `chatty`'s) plus ~$90 for the mid-turn channels (~10 short lines × ~40 chars on an
+average turn, so ~$0.04 a turn). The **worst case is ~$295**, if every turn spends its full
+`narrate_max_per_turn`; `narrate: false` removes that half entirely. One genuine saving came with the
+`facts` source: a fact line repeats across turns (*"cargo test ผ่าน 42"*) and a repeated line is a
+**cache hit, therefore free**, which prose — unique every time — never was.
+`tts.provider: openai` (voice `sage`) is
 ~2.2× cheaper *and* measured best on Thai; `gemini` is ~6× cheaper but slowest and weakest of the
 four. Every vendor's voices were swept — see `scripts/voice/README.md` § Thai voice selection.
 
@@ -240,7 +378,7 @@ was wrong out loud.
 **Identifiers are spelled, quantities are read as numbers — both in Thai.** `APP-1598` is read
 digit by digit, because every engine otherwise reads it as one four-figure number that nobody can
 map back to a ticket; a branch gets the same treatment plus its separators, so
-`feature/APP-1598-add-search` is spoken as *"feature APP หนึ่ง ห้า เก้า แปด add search"*. An
+`feature/APP-1598-add-cashback` is spoken as *"feature APP หนึ่ง ห้า เก้า แปด add cashback"*. An
 ordinary quantity stays a quantity but becomes a Thai **word** — `บรรทัด 142` is *"บรรทัด
 หนึ่งร้อยสี่สิบสอง"*, `8%` is *"แปด เปอร์เซ็นต์"* — because a numeral is still spoken in some
 language and the vendors disagree on which: ElevenLabs reads them in **English** mid-Thai-sentence
