@@ -613,6 +613,19 @@ because its repetition is what makes it free.
 | `chatty` | ≤3 | 200 | 280 | + 3rd fact + follow-through (what will be reported / what waits) |
 | `max` | ≤4 | 260 | 360 | + **step narration** — the order of the work, one status per step — + a spoken line per step *during* the turn |
 
+**The ladder above `terse` is the ROOT checkout's alone.** `voice_chattiness` clamps a linked worktree
+to `terse` whatever the config resolves to, off the same `VOICE_MAIN_CLONE` (`--git-common-dir`) test
+layer 2 of the config chain uses — and it has to, because that layer *deliberately* reads
+`<main clone>/workspace.config.local.yaml`, so a worktree inherits the root's `max` instead of falling
+back to the shared `terse`. The worktree session is usually the unwatched one (a background
+`dev-cycle`, a slack-dispatch job) and `max` is the level that speaks per STEP; both checkouts share
+one spool and one pair of speakers, so two `max` sessions queue rather than take turns. Since
+`narrate.sh` gates on `== max`, the step narrator switches off in a worktree as a consequence rather
+than as a second rule to keep in sync. `VOICE_CHATTINESS` is **not** clamped — a human typing one
+audition or one test is per-invocation intent, not a machine preference. `aiworks voice status` prints
+the configured level and the owning checkout when the two disagree; proved against a real
+`git worktree` in `narrate-selftest.sh` (§"a LINKED WORKTREE is clamped").
+
 Three graded pieces, each picked for what it *cannot* do: a **softener** is 2–3 characters and cannot
 carry a false fact; a **reaction** states the outcome in itself, unlike a greeting, which costs
 characters and says nothing; **follow-through** is a fact about the next step, not a connective.
@@ -972,7 +985,7 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.autoplay.long_turn_seconds` | `300` | when a still-running turn is worth saying once (30–3600), and once more at 3× |
 | `voice.autoplay.gates` | `true` | speak when something WAITS for you: permission prompt, plan approval, auto-mode denial, idle. Independent of `chattiness` |
 | `voice.autoplay.milestone_every_turn` | `true` | false ⇒ only an explicit `VOICE:` tag speaks (was `milestone_backstop`, still read in its `false` position) |
-| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the step narrator + thresholds and is the only level that narrates the process; its ack/closing line are SHORTER than `chatty`'s on purpose |
+| `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the step narrator + thresholds and is the only level that narrates the process; its ack/closing line are SHORTER than `chatty`'s on purpose. **ROOT CHECKOUT ONLY** — a linked worktree is clamped to `terse` (it inherits this key from the root's local config, shares one spool, and is usually the session nobody is watching) |
 | `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; neither mute (by hand or by the OS) reaches it |
 | `voice.push_to_talk.enabled` | `false` | hold-to-dictate |
 | `voice.push_to_talk.hotkey` | `right_cmd+right_alt` | the chord; baked into the Lua by `ptt install` |
