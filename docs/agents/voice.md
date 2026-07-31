@@ -219,6 +219,10 @@ that owns it — otherwise the row reads `terse` while the config file in front 
 `VOICE_CHATTINESS=<level>` still overrides inside a worktree: one command a human typed is
 per-invocation intent, not a preference leaking in through the config chain.
 
+Proved against a real `git worktree`, not a simulated one — the whole point is that the gate is
+mechanical, so a faked root variable would test nothing: `scripts/voice/chattiness-selftest.sh`
+(10 cases, free to run — it only resolves config).
+
 ### The step narrator — what it speaks, and why it costs no model call
 
 `voice.autoplay.narrate_source: facts` (the default) reads the **tool call's own response** and says

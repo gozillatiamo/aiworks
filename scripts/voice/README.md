@@ -623,8 +623,13 @@ one spool and one pair of speakers, so two `max` sessions queue rather than take
 `narrate.sh` gates on `== max`, the step narrator switches off in a worktree as a consequence rather
 than as a second rule to keep in sync. `VOICE_CHATTINESS` is **not** clamped — a human typing one
 audition or one test is per-invocation intent, not a machine preference. `aiworks voice status` prints
-the configured level and the owning checkout when the two disagree; proved against a real
-`git worktree` in `narrate-selftest.sh` (§"a LINKED WORKTREE is clamped").
+the configured level and the owning checkout when the two disagree. Owner:
+`scripts/voice/chattiness-selftest.sh` — **10 cases** against a real `git worktree` rather than a
+hand-set `VOICE_MAIN_CLONE` (which would prove only that an `if` works, and would keep passing after
+the detection itself broke), including the case that keeps the suite honest: the worktree's **raw**
+value is asserted to still be the root's `max`, so the clamp case cannot pass for the wrong reason —
+an absent value rather than a clamped one. The end-to-end consequence (a real payload through
+`narrate.sh`, silent in the worktree) stays in `narrate-selftest.sh`, which already has the harness.
 
 Three graded pieces, each picked for what it *cannot* do: a **softener** is 2–3 characters and cannot
 carry a false fact; a **reaction** states the outcome in itself, unlike a greeting, which costs
