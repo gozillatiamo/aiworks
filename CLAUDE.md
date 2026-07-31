@@ -116,8 +116,9 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   workspace root — branch/commit/PR in that primary clone (the coding-lifecycle skills
   consult this to redirect submodule'd changes to the right repo).
 - Provider adapters: `scripts/vcs/` (PR/MR via `github`|`gitlab`),
-  `scripts/tracker/` (tickets via `notion`|`jira`), and `scripts/notify/` (chat via
-  `slack`). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack
+  `scripts/tracker/` (tickets via `notion`|`jira`), `scripts/notify/` (chat via
+  `slack`), and `scripts/observability/` (traces/logs via `signoz`). **Always go
+  through the adapters — never call `gh`/`glab`/Notion/Jira/Slack/the SigNoz API
   directly.**
 - **Test environment:** automated runs target **local** by default; staging is an
   explicit, QA-reserved opt-in (`CYPRESS_ENV=staging`). Defer to each repo's default —

@@ -47,6 +47,18 @@ language: en                       # en (default) | th
                                    #   checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files)
                                    #   are ALWAYS English. Numerals/dates stay Arabic. Default en = no change.
 
+# ── Observability (the traces/logs the perf + triage agents read) ──────────────
+# Where the performance-engineer and performance-triage agents get ground truth about a
+# RUNNING environment. Read through the observability adapter (scripts/observability/),
+# provider-agnostic like vcs/tracker/notify.
+observability:
+  enabled: false                   # true → those agents may pull traces + logs when they
+                                   #   root-cause a deployed-env incident. false → they work
+                                   #   from code, tests and the diff only.
+  provider: signoz                 # signoz (the only provider today)
+  base_url: ""                     # your instance root, e.g. https://signoz.your-org.com — the
+                                   #   API key lives in scripts/observability/.env, never here.
+
 # ── Version control ──────────────────────────────────────────────────────────
 vcs:
   provider: github                 # github | gitlab  (auto-detected from the repo URL/origin if omitted)
