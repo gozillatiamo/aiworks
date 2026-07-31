@@ -22,8 +22,8 @@
 // with +y DOWN and the origin at the main screen's TOP-left. So an AX top edge is
 //     axTop = mainFrameHeight - (nsOriginY + nsHeight)
 // Validated against live windows on this machine before this file was written: the built-in
-// display (ns y=0 h=982, main h=1440) predicts axTop=458 and Slack sat at y=491; the portrait
-// DELL (ns y=-287 h=1920) predicts axTop=-193 and Cursor sat at y=-163. Both consistent. Get
+// display (ns y=0 h=982, main h=1440) predicts axTop=458 and Slack sat at y=491; a portrait
+// external (ns y=-287 h=1920) predicts axTop=-193 and Cursor sat at y=-163. Both consistent. Get
 // this backwards and windows land off-screen on a negative-origin display, which is precisely
 // the multi-monitor case this feature exists for.
 //
@@ -188,14 +188,14 @@ function readDisplays(gap) {
   if (!screens || screens.count === 0) return [];
   var mainH = $.NSScreen.screens.objectAtIndex(0).frame.size.height;
   // Index 0 of NSScreen.screens is the screen with the menu bar on macOS, which is also the
-  // one AX treats as the coordinate origin. Verified on this machine (Odyssey, origin 0,0).
+  // one AX treats as the coordinate origin. Verified against a real layout (the menu-bar screen at origin 0,0).
   var out = [];
   for (var i = 0; i < screens.count; i++) {
     var s = screens.objectAtIndex(i);
     var vf = s.visibleFrame;
     // BUILT-IN vs EXTERNAL, detected mechanically. CGDisplayIsBuiltin against the screen's
     // NSScreenNumber is the real signal; matching a display NAME would break on the next machine,
-    // which is the whole point of not hard-coding "Odyssey" or "Color LCD" anywhere.
+    // which is the whole point of not hard-coding a monitor model or "Color LCD" anywhere.
     var builtin = false, name = '';
     try { builtin = $.CGDisplayIsBuiltin(s.deviceDescription.objectForKey('NSScreenNumber').intValue) === 1; }
     catch (e) { /* unknown → treated as external, i.e. usable */ }

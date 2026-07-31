@@ -5,7 +5,7 @@
 # Usage: follow.sh --transcript <path> [--text "…"] [--dry-run] [-v]
 #
 # WHY THIS EXISTS SEPARATELY FROM show.sh: show.sh is driven by PostToolUse, so it shows what a
-# tool TOUCHED. But a reply that says "MR !14 has been stuck 37 days and OFB-2179 spans three
+# tool TOUCHED. But a reply that says "MR !14 has been stuck 37 days and APP-2179 spans three
 # repos" touched neither — the interesting subjects of a turn are frequently things the assistant
 # only TALKED about. The Stop hook is the one place with the finished reply in hand, so that is
 # where the screen gets pointed at what was just said.
@@ -19,12 +19,12 @@
 # TARGETS a tag or the prose may name:
 #   https://…                      → browser tab
 #   <repo>!<iid>  /  <repo>#<n>    → that repo's MR/PR, resolved from its git remote
-#   OFB-1234                       → the tracker ticket
+#   APP-1234                       → the tracker ticket
 #   path/to/file.rs[:42]           → the editor, at that line
 #
 # `<repo>!<iid>` is resolved through `git remote get-url`, never by assembling a URL from parts.
-# Hand-assembling one is how a "https://gitlab.com/bluepicode/ofb/ofb-k6-loadtests/-/merge_requests/14"
-# came out 404 — the project actually lives under `qa/`, not `ofb/`. The remote knows; guessing does not.
+# Hand-assembling one is how a "https://gitlab.com/your-group/wrong-subgroup/thing/-/merge_requests/14"
+# came out 404 — the project lives under a different subgroup than the guess. The remote knows; guessing does not.
 #
 # Opening is delegated to show.sh, so the account-correct browser window, the tab ring, the
 # debounce and the placement are all the same code paths as the tool-driven route.
@@ -64,7 +64,7 @@ MAX="$(stage_cfg_int stagehand.follow_max 3 1 10)"
 tracker_url="$(stage_cfg tracker.base_url)"
 tracker_url="${tracker_url%/}"
 provider="$(stage_cfg vcs.provider gitlab)"
-prefix="$(stage_cfg tracker.ticket_prefix OFB)"
+prefix="$(stage_cfg tracker.ticket_prefix APP)"
 
 # repo_web <repo-dir> → the repo's web base URL, from its own git remote. Empty when unknown.
 repo_web() {
@@ -95,7 +95,7 @@ urlenc() { printf '%s' "$1" | jq -sRr @uri 2>/dev/null; }
 
 # resolve <token> → TAB-separated "url <URL> [phrase]" | "file <PATH> [phrase]" | "" (unresolvable)
 #
-# A target may carry a FOCUS PHRASE after "~": `agent-db!555 ~signature_key`. That is what turns
+# A target may carry a FOCUS PHRASE after "~": `my-repo!555 ~signature_key`. That is what turns
 # "open the thing" into "look at the part I am talking about":
 #   • in the browser it becomes a URL text fragment (#:~:text=…), which Chrome itself scrolls to
 #     AND highlights — no extra permission, no injected JavaScript;
