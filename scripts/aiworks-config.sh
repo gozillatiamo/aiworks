@@ -67,6 +67,11 @@
 #   order ⇒ no spurious diff); any user-added top-level keys (esp. `settings`) are PRESERVED. A
 #   `settings` block is seeded ONLY on first create, never overwritten on regen.
 #
+# ALSO CHECKS — that workspace.config.example.yaml still documents every key of
+#   workspace.config.yaml (section 0). That template is what `aiworks add` copies for a NEW org,
+#   so a key only ever added HERE is a key no other org can discover. Advisory (a warning, never
+#   a failure) and one-directional: keys the example documents but this workspace omits are fine.
+#
 # Idempotent and safe: it replaces only the region between the AIWORKS:CONFIG markers in
 # dev-cycle.js, validates the result with `node --check` (when node is present), and restores
 # the file untouched on a genuine syntax error. A node --check KILLED BY A SIGNAL (exit >=128,
@@ -130,6 +135,96 @@ WC_LOCAL="$ROOT/workspace.config.local.yaml"
 if [[ -f "$WC_LOCAL" && "$QUIET" -ne 1 ]]; then
   warn "workspace.config.local.yaml present — a RUNTIME-only personal override (chat/agents/skills); this committed mirror is regenerated from workspace.config.yaml (shared) only."
 fi
+
+# ── 0. drift guard: every key here must be DOCUMENTED in workspace.config.example.yaml ──
+# WHY: `aiworks add` bootstraps a NEW org by COPYING workspace.config.example.yaml
+# (aiworks-add.sh), and every doc points a newcomer at that file — so a key that only ever
+# landed in THIS workspace's config is a key no other org can discover. Six whole blocks had
+# drifted that way before this check existed (observability, review, diagrams, artifacts,
+# voice, triage): each feature was configured here and shipped, and the template still
+# described a workspace without them.
+#
+# ADVISORY, never fatal — a missing example entry breaks nothing that runs; it only costs the
+# next org the knowledge. And ONE-DIRECTIONAL on purpose: the example may document keys this
+# workspace omits (`design`, `image_generation` here) — an omitted optional block just takes
+# its default, which is not drift.
+CONFIG_EXAMPLE="$ROOT/workspace.config.example.yaml"
+
+# Dotted key paths of the nested maps, one per line. Follows the same 2-space indent contract
+# aiworks-sync.sh relies on; comment lines and list items (`- url:`) are skipped, so the
+# products[] subtree contributes only the `products` key itself.
+config_key_paths() {   # <yaml-file>
+  awk '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    !/^[ ]*[A-Za-z_][A-Za-z0-9_]*[ ]*:/ { next }
+    {
+      ind = match($0, /[^ ]/) - 1
+      key = $0; sub(/^ */, "", key); sub(/[ ]*:.*$/, "", key)
+      d = int(ind / 2); stack[d] = key
+      path = stack[0]
+      for (i = 1; i <= d; i++) path = path "." stack[i]
+      print path
+    }' "$1"
+}
+
+config_drift_check() {
+  [[ -f "$CONFIG_EXAMPLE" ]] || return 0
+  local ex_paths; ex_paths="$(config_key_paths "$CONFIG_EXAMPLE")"
+  local missing=() p leaf ancestor covered
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    # An ancestor is already reported ⇒ its whole subtree goes with it. Reporting the children
+    # too would bury the one line that matters ("`voice` is undocumented") under 20 of its keys.
+    covered=
+    for ancestor in ${missing[@]+"${missing[@]}"}; do
+      case "$p" in "$ancestor".*) covered=1; break ;; esac
+    done
+    [[ -n "$covered" ]] && continue
+    printf '%s\n' "$ex_paths" | grep -qxF "$p" && continue
+    # A key the example only COMMENTS OUT — or names in its prose, like the optional
+    # tracker.statuses.* — IS documented: the example's job is to explain a key, not to set it.
+    # Hence the leaf name matched anywhere in the file, which is deliberately lenient: a guard
+    # that cries wolf gets ignored, and the block-level miss above is the one that actually hurts.
+    leaf="${p##*.}"
+    grep -qE "(^|[^A-Za-z0-9_])${leaf}([^A-Za-z0-9_]|\$)" "$CONFIG_EXAMPLE" && continue
+    missing+=("$p")
+  done < <(config_key_paths "$WC" | grep -v '^products')
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    [[ "$QUIET" -eq 1 ]] || ok "workspace.config.example.yaml documents every key in $(basename "$WC")"
+    return 0
+  fi
+  # STDERR on purpose: `aiworks sync` runs this script with stdout to /dev/null unless -v, so a
+  # warning printed like the other lines would be silently dropped in the one flow most likely
+  # to run right after someone edits the config.
+  warn "workspace.config.example.yaml does NOT document: ${missing[*]}" >&2
+  warn "  a new org bootstraps its config by COPYING that file, so an undocumented key is one nobody else can find — add each one there too (default OFF / neutral value, with the comment that explains it)." >&2
+}
+config_drift_check
+
+# ── 0b. comment guard: the LIVE config files carry NO comments ──────────────────────────
+# The counterpart of the drift guard above: the example TEMPLATE is where an explanation
+# belongs, and the live file is data. `.claude/hooks/dev-wrapper/pretool-config-comment-guard.sh`
+# blocks an agent from writing one; this catches the other way in — a hand edit in an editor,
+# or a config copied wholesale from the template before the copy path learned to strip.
+# ADVISORY like the drift guard: nothing about a comment breaks a run, and `aiworks sync` must
+# not fail over a formatting rule. It prints the one command that fixes it.
+# Rationale: docs/adr/0006-config-carries-no-comments.md
+config_comment_check() {
+  local scanner="$ROOT/scripts/lib/yaml_comments.py" f hits dirty=0
+  [[ -f "$scanner" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  for f in "$WC" "$WC_LOCAL"; do
+    [[ -f "$f" ]] || continue
+    hits="$(python3 "$scanner" --check "$f" 2>&1)" && continue
+    dirty=1
+    warn "$(basename "$f") carries $(printf '%s\n' "$hits" | grep -c .) YAML comment line(s) — the live config is data, not documentation:" >&2
+    printf '%s\n' "$hits" | head -5 >&2
+    warn "  move the explanation to $(basename "${f%.yaml}").example.yaml (or docs/) and strip the file: python3 scripts/lib/yaml_comments.py --write $(basename "$f")" >&2
+  done
+  [[ "$dirty" -eq 1 || "$QUIET" -eq 1 ]] || ok "the live config files carry no comments"
+}
+config_comment_check
 
 START_RE='>>> AIWORKS:CONFIG START'
 END_RE='<<< AIWORKS:CONFIG END'

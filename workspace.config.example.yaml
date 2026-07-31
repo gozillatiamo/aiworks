@@ -28,6 +28,17 @@
 # It overrides this file for everything read at RUNTIME (chat, agents, interactive skills); the
 # committed workflow mirror is always regenerated from THIS shared file only, so your prefs never
 # leak into git. See workspace.config.local.example.yaml.
+#
+# THIS FILE IS THE DOCUMENTATION; THE LIVE CONFIG IS DATA. Every comment you see here is
+# deliberate, and the live `workspace.config.yaml` carries NONE of them — no header, no section
+# divider, no trailing note, no tombstone for a removed key. Reason: CLAUDE.md `@`-injects the
+# live config into EVERY session, so a comment there is re-read on every turn forever, while a
+# comment here is read once by whoever sets the workspace up. The bootstrap copy strips them for
+# you (`aiworks add`), a PreToolUse hook blocks an agent from adding one, and `aiworks config`
+# warns if one arrives by hand. Clean a file with:
+#   python3 scripts/lib/yaml_comments.py --write workspace.config.yaml
+# So: explain a key HERE (and put measurements / design rationale in docs/ or the owning script's
+# README) — never in the file the workspace actually runs on. See docs/adr/0006-config-carries-no-comments.md.
 # ─────────────────────────────────────────────────────────────────────────────
 
 org:
