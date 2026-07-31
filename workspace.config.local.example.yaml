@@ -96,3 +96,15 @@
 #     # side-specific chord collides with no existing shortcut.
 #     hotkey: "left_cmd+right_cmd"
 #     mic: default        # follows System Settings → Sound → Input; or a device NAME. Never an index
+
+# stagehand — put what the assistant touches ON SCREEN, on this desk only. Personal for the same
+# reason voice is: it moves windows on YOUR monitors. Root worktree only, and enforced
+# mechanically (a linked / Superset worktree shares the same physical screen and would fight the
+# root session for it), so this key does nothing in a worktree even when set. Full doc:
+# docs/agents/stagehand.md; every key is documented in workspace.config.example.yaml.
+# stagehand:
+#   enabled: true
+#   # auto = score every slot on every display by real overlap and take the cheapest — nothing
+#   # pinned to a monitor, no focus stolen. `rectangle` honours your Rectangle grid exactly but
+#   # must focus the target app first (Rectangle's execute-action takes no app-bundle-id).
+#   placement: auto
