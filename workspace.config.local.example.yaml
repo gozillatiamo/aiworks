@@ -85,6 +85,12 @@
 #     # line lists what it did, and the heartbeat goes to 10 beats from 45 s so a long run keeps
 #     # saying where it is; it needs `heartbeat: true` below to be itself). Ceiling, not quota —
 #     # one fact still means one sentence. `aiworks voice audition "…"` compares all four.
+#     # THIS CHECKOUT ONLY, and the cost above is this checkout's: a linked worktree is clamped to
+#     # terse whatever you set here. This file is git-ignored, so it cannot travel into a worktree —
+#     # a worktree reads it from HERE (the main clone) and would otherwise inherit `max`, which is
+#     # the level that tightens the heartbeat, in the session you are least likely to be watching.
+#     # Both share one spool and one pair of speakers, so two `max` sessions queue instead of
+#     # alternating.
 #     chattiness: balanced
 #     heartbeat: true     # the mid-turn line. Most of what `max` buys, and this still vetoes it
 #   notify_voice:

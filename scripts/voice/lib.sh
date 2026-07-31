@@ -173,14 +173,47 @@ voice_language() {
 #
 # VOICE_CHATTINESS overrides it, for `aiworks voice audition` and for tests — not as a way to set a
 # machine's preference, which is the config's job.
+#
+# ── ANYTHING ABOVE `terse` IS THE ROOT WORKTREE'S ALONE ───────────────────────────
+# A linked worktree speaks `terse`, whatever the config says. Three facts collide otherwise:
+#
+#   · the config chain deliberately falls back to <main clone>/workspace.config.local.yaml
+#     (layer 2 above), because a git-ignored file does not travel into a worktree — so a worktree
+#     INHERITS the root's `max` rather than defaulting to the shared file's `terse`;
+#   · a worktree session is usually one nobody is watching: a background dev-cycle, a
+#     slack-dispatch job. `max` is the level that tightens the heartbeat (10 beats from 45 s
+#     instead of 6 from 90 s), so the worktree with the least of your attention becomes the
+#     loudest thing in the room — and it beats for a run you are not even reading;
+#   · every worktree speaks through ONE spool and ONE pair of speakers (VOICE_CACHE_HOME is
+#     machine-global on purpose). Two `max` sessions do not take turns — they queue behind each
+#     other, and the one you are actually reading waits for the one you are not.
+#
+# So the level is a ROOT-WORKTREE setting and this is its enforcement point, not a convention to
+# remember: every caller goes through this function — ack.sh · milestone.sh · summarize.sh's
+# fallback · `aiworks voice status` · voice_heartbeat_gaps below, which keys the cadence off it, so
+# the worktree's heartbeat relaxes to the ordinary schedule as a CONSEQUENCE of the clamp rather
+# than as a second rule to keep in sync.
+#
+# Mechanical, same as everywhere else in this file: VOICE_MAIN_CLONE is non-empty exactly when
+# `--git-common-dir` points somewhere other than here, i.e. this is a linked worktree.
+#
+# The clamp does NOT apply to VOICE_CHATTINESS. That one is a human typing one command (an
+# audition, a test), which is per-invocation intent — not a machine preference leaking through the
+# config chain, which is the thing being fixed.
 voice_chattiness() {
-  local v
-  v="${VOICE_CHATTINESS:-$(voice_cfg voice.autoplay.chattiness terse)}"
+  local v from_env=0
+  if [[ -n "${VOICE_CHATTINESS:-}" ]]; then v="$VOICE_CHATTINESS"; from_env=1
+  else v="$(voice_cfg voice.autoplay.chattiness terse)"; fi
   v="$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')"
   case "$v" in
-    terse|balanced|chatty|max) printf '%s' "$v" ;;
-    *) vlog "chattiness: '$v' is not terse|balanced|chatty|max — using terse"; printf 'terse' ;;
+    terse|balanced|chatty|max) ;;
+    *) vlog "chattiness: '$v' is not terse|balanced|chatty|max — using terse"; v=terse ;;
   esac
+  if [[ "$from_env" == 0 && -n "$VOICE_MAIN_CLONE" && "$v" != "terse" ]]; then
+    vlog "chattiness: '$v' is the root worktree's setting — this is a linked worktree, so terse (main=$VOICE_MAIN_CLONE)"
+    v=terse
+  fi
+  printf '%s' "$v"
 }
 
 # ── the heartbeat cadence, keyed by chattiness ─────────────────────────────────────

@@ -136,7 +136,16 @@ case "$cmd" in
     # the heartbeat is OFF, say THAT, because the mid-turn narration is most of what `max` buys and
     # a level that silently delivers half of itself is the kind of thing you debug for ten minutes.
     chat="$(voice_chattiness)"
-    if [[ "$chat" != "max" ]]; then
+    # A linked worktree is clamped to `terse` (see voice_chattiness). Say so HERE, naming the level
+    # that was configured and the checkout that owns it — otherwise this row reads `terse` while the
+    # config file in front of you says `max`, and the config file looks broken.
+    raw="$(printf '%s' "$(voice_cfg voice.autoplay.chattiness terse)" | tr '[:upper:]' '[:lower:]')"
+    if [[ -n "$VOICE_MAIN_CLONE" && "$raw" != "$chat" ]]; then
+      printf 'chattiness        %s %s← %s is the root checkout'\''s setting; a linked worktree always\n' \
+        "$chat" "$c_warn" "$raw"
+      printf '                  speaks terse (one spool, one pair of speakers)%s\n' "$c_off"
+      printf '                  %sroot: %s%s\n' "$c_dim" "$VOICE_MAIN_CLONE" "$c_off"
+    elif [[ "$chat" != "max" ]]; then
       printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
         "$chat" "$c_dim" "$c_off"
     elif voice_cfg_bool voice.autoplay.heartbeat true; then

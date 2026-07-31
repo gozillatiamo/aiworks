@@ -439,6 +439,18 @@ voice:
                                    #   ~$76 · chatty ~$105 · max ~$150 (that last one extrapolated
                                    #   from the character ceiling, not measured).
                                    #   `aiworks voice audition "<a request>"` speaks all four.
+                                   #   ROOT CHECKOUT ONLY: a linked worktree is clamped to terse
+                                   #   whatever this says. It has to be — layer 2 of the config
+                                   #   chain reads <main clone>/workspace.config.local.yaml (a
+                                   #   git-ignored file does not travel into a worktree), so a
+                                   #   worktree INHERITS max rather than falling back to terse;
+                                   #   that session is usually the unwatched one (a background
+                                   #   dev-cycle, a slack-dispatch job) and max is what tightens
+                                   #   the heartbeat to 10 beats from 45 s; and both checkouts
+                                   #   share one spool and one pair of speakers, so two max
+                                   #   sessions queue instead of taking turns. Enforced in
+                                   #   voice_chattiness (scripts/voice/lib.sh), so the heartbeat
+                                   #   cadence relaxes there too — it is keyed off the level.
   # A voice note attached to the Slack messages the workflow already sends. `aiworks voice mute`
   # deliberately does NOT reach it: that audio is a deliverable for the team — rendered on one
   # machine, heard on someone else's phone — so it is a standing decision made HERE, not a side

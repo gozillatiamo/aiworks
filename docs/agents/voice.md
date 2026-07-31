@@ -157,6 +157,36 @@ buys, and `voice.autoplay.heartbeat: false` still vetoes it — a chattiness lev
 channel back on, or "why is it quiet?" stops having one answer. `aiworks voice status` says so
 outright when the two disagree.
 
+### Anything above `terse` is the ROOT checkout's alone
+
+**A linked worktree always speaks `terse`, whatever the config says.** Not a convention — the clamp
+is in `voice_chattiness` (`scripts/voice/lib.sh`), keyed off the same `--git-common-dir` test the rest
+of the adapter already uses, so it holds for every caller: `ack.sh`, `milestone.sh`, `summarize.sh`'s
+fallback, `aiworks voice status`, and `voice_heartbeat_gaps` — which keys the cadence off the level,
+so the worktree's heartbeat relaxes to the ordinary schedule as a *consequence* of the clamp rather
+than as a second rule to keep in sync.
+
+Three facts make it necessary:
+
+- the config chain **deliberately** falls back to `<main clone>/workspace.config.local.yaml`, because
+  a git-ignored file does not travel into a worktree. So a worktree *inherits* the root's `max` — it
+  does not fall back to the shared file's `terse`;
+- a worktree session is usually the one **nobody is watching**: a background `dev-cycle`, a
+  slack-dispatch job. `max` is the level that tightens the heartbeat (10 beats from 45 s instead of 6
+  from 90 s), so the checkout with the least of your attention becomes the loudest thing in the room —
+  and it keeps beating for a run nobody is reading;
+- every worktree speaks through **one spool and one pair of speakers** (`VOICE_CACHE_HOME` is
+  machine-global on purpose). Two `max` sessions do not take turns — they queue, and the one you are
+  reading waits for the one you are not.
+
+`aiworks voice status` says so in the worktree, naming the level that was configured and the checkout
+that owns it — otherwise the row reads `terse` while the config file in front of you says `max`, and
+the config file looks broken. `VOICE_CHATTINESS=<level>` still overrides inside a worktree: one
+command a human typed is per-invocation intent, not a preference leaking in through the config chain.
+
+Proved against a real `git worktree`, not a simulated one — the whole point is that the gate is
+mechanical, so a faked root variable would test nothing: `scripts/voice/chattiness-selftest.sh`.
+
 **Three prompt conflicts had to be resolved for it to work at all**, and the room the level adds is
 what surfaced each one:
 
