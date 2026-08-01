@@ -66,11 +66,13 @@
 #
 # COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn speaks a closing line,
 # and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
-# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$165/mo typical,
-# up to ~$295 if every turn hits `narrate_max_per_turn` (max is extrapolated, not measured — ~$75 of
-# ack + closing line, plus ~$90 of step narration at ~10 short lines a turn). (Earlier notes here
-# said $14–24, then $230: the first was from when milestones almost never spoke, the second from
-# before max's ack and closing line were shortened to the register they now use.)
+# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$210/mo (max is
+# extrapolated, not measured — ~$75 of ack + closing line, plus ~$135 of step narration at ~10 steps
+# a turn, each announced twice: as it starts and with its result). A step's two lines cost well under
+# double, because the before-line is the shorter and far more repetitive one and a repeat is a cache
+# hit. (Earlier notes here said $14–24, then $230: the first was from when milestones almost never
+# spoke, the second from before max's ack and closing line were shortened to the register they now
+# use.)
 # `tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
 #
 # To go quiet for a while, do NOT edit this back: MUTE THE MACHINE. `aiworks voice mute on` and the
@@ -95,8 +97,9 @@
 #     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
 #     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (the ship's-AI
 #     # register — every sentence is [subject] [state] [figure] under ~45 characters, and it talks
-#     # THROUGH the turn: one short line per step as it happens, plus a word when a step fails and
-#     # when something is waiting for you). Ceiling, not quota — one fact still means one sentence.
+#     # THROUGH the turn: every step announced as it starts and again with its result, plus a word
+#     # when a step fails and when something is waiting for you). Ceiling, not quota — one fact
+#     # still means one sentence.
 #     # `aiworks voice audition "…"` compares all four.
 #     # THIS CHECKOUT ONLY, and the cost above is this checkout's: a linked worktree is clamped to
 #     # terse whatever you set here. This file is git-ignored, so it cannot travel into a worktree —
@@ -105,13 +108,18 @@
 #     # share one spool and one pair of speakers, so two `max` sessions queue instead of alternating.
 #     chattiness: balanced
 #     # The step narration, `max` only, and the biggest mid-turn voice there is. false ⇒ keep max's
-#     # ack + closing line, stop the per-step talking (~$90/mo of max's ~$165).
+#     # ack + closing line, stop the per-step talking (~$135/mo of max's ~$210).
 #     narrate: true
-#     # What a narrated line is MADE of: facts (the tool's own response — "cargo test ผ่าน 42") or
-#     # prose (the assistant's sentence before the call, an intention). Each falls back to the other.
+#     # The BEFORE half of each step's pair ("รัน cargo test" → "cargo test ผ่าน 42"). false ⇒ results
+#     # only, which leaves every wait unexplained: a long run and a wedged one sound the same.
+#     narrate_intent: true
+#     # What a narrated line is MADE of: facts (the call's own payload — "cargo test ผ่าน 42") or
+#     # prose (the assistant's sentence before the call). Each falls back to the other.
 #     narrate_source: facts
-#     narrate_gap: 4               # seconds between narrated lines — the frequency dial
-#     narrate_max_per_turn: 25     # per-turn ceiling, i.e. the cost ceiling
+#     narrate_gap: 0               # 0 = no floor, which is what "every action" needs. A number here
+#                                  # drops one half of every pair, since the two arrive ~1 s apart
+#     narrate_max_per_turn: 0      # 0 = no ceiling. A number bounds a turn's spend, but the turn then
+#                                  # goes silent from that line on
 #     thresholds: true             # speak unbidden on a failed step, a second failure, a long turn
 #     gates: true                  # speak when something WAITS for you (permission, plan, denial)
 #   notify_voice:

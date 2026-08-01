@@ -1,29 +1,33 @@
 #!/usr/bin/env python3
-"""One tool call in, one spoken Thai FACT out — the `max` narrator's source of lines.
+"""One tool call in, one spoken Thai line out — the `max` narrator's source of lines.
 
-    echo '<PostToolUse JSON>' | tool-fact.py            # → "info\tqueue.sh อ่านแล้ว 260 บรรทัด"
+    echo '<PostToolUse JSON>'  | tool-fact.py                        # the RESULT of a step
+    echo '<PreToolUse JSON>'   | tool-fact.py --event PreToolUse     # what the step is ABOUT to do
     tool-fact.py --selftest
 
 Output is `<severity>\\t<line>`, severity `info` | `bad`, or NOTHING when the call is not worth
 saying out loud. `bad` is what makes narrate.sh reach for the red cue and skip the rate floor.
 
-WHY FACTS AND NOT THE ASSISTANT'S PROSE (which is what this replaces):
+TWO LINES PER STEP, WHICH IS WHAT `max` MEANS. A step has two moments worth hearing and they
+answer different questions — "what is it doing right now?" and "how did it go?":
 
-The narrator used to speak the sentence the assistant writes before a tool call — free, and true,
-but it is an INTENTION ("อ่าน queue ก่อน แล้วค่อยแก้ cadence"). Research into how JARVIS actually
-talks in the Iron Man films says intentions are the one thing he never voices: every line is a
-state and a figure, spoken as it changes —
+    รัน cargo test          →  cargo test ผ่าน 42
+    อ่าน queue.sh           →  queue.sh อ่านแล้ว 260 บรรทัด
+    แก้ narrate.sh          →  narrate.sh แก้แล้ว 12 บรรทัด
 
-    "The armour is now at 92%."      "18,000 feet. 10,000 feet. 6,000 feet."
-    "Thirteen, sir."                 "1974 Stark Expo model scan complete, sir."
-    "Power: fifteen percent. Recommend you descend and re-charge, Sir."
+The result alone leaves every wait unexplained: a 90-second `cargo test` is 90 seconds of silence
+followed by a verdict, and the person listening cannot tell a long step from a wedged one. The
+intent line is what turns that silence into a wait you can place. It is also the cheaper half —
+the PreToolUse payload has no `tool_response`, the line is shorter, and short lines repeat, which
+means the audio cache answers most of them for free.
 
-Short (3–8 words), frequent, and always NEW information. A tool call plus its response is exactly
-that: `tool_response` carries the figures — lines read, matches found, tests passed, exit status —
-and a template turns them into one sentence with no model call, so this channel costs zero tokens
-and cannot invent anything. If a figure is not in the payload it does not get said.
+An intent is spoken as `[verb] [subject]` and a result as `[subject] [state] [figure]` — verb-first
+against subject-first, and only the result carries `แล้ว` and a number. That contrast is the whole
+reason a pair does not sound like the same sentence twice; keep it if you add a tool.
 
-FORM: `[subject] [state] [figure]` — the file/command first, the Thai verb, then the number.
+Both halves are TEMPLATES over the payload's own fields — no model call, so the channel costs zero
+tokens and cannot invent anything. If a figure is not in the payload it does not get said.
+
 Identifiers, commands, paths and numerals stay Latin/Arabic (the workspace's English spine).
 """
 
@@ -35,6 +39,9 @@ import re
 import sys
 
 MAX_CHARS = 60          # ~4 s of Thai speech. JARVIS's lines are 3–8 words; so are these.
+INTENT_CHARS = 34       # the intent half is deliberately HALF that: a pair has to fit inside the
+                        # step it describes, and the informative word (the file, the command) is
+                        # already there by character 34.
 
 # Tools whose completion carries no news. Speaking these would turn the narrator into a
 # metronome — the thing the deleted heartbeat was disliked for.
@@ -230,6 +237,62 @@ def _bad_line(name: str, inp: dict):
     return ("bad", f"{name} ล้ม")
 
 
+# ── the intent half: what the step is about to do, from tool_input alone ───────────────
+# Nothing here may look at `tool_response` — there is none yet. Which is also why an intent is
+# always `info`: a call that has not run cannot have failed.
+
+def _intent_line(name: str, inp: dict):
+    if name == "Bash":
+        return f"รัน {_cmd_head(inp.get('command', '') or '') or 'คำสั่ง'}"
+    if name == "Read":
+        f = _base(inp.get("file_path", "") or "")
+        return f"อ่าน {f}" if f else "อ่านไฟล์"
+    if name == "Edit":
+        f = _base(inp.get("file_path", "") or "")
+        return f"แก้ {f}" if f else "แก้ไฟล์"
+    if name in ("Write", "NotebookEdit"):
+        f = _base(inp.get("file_path", "") or "")
+        return f"เขียน {f}" if f else "เขียนไฟล์"
+    if name == "Grep":
+        pat = (inp.get("pattern", "") or "")[:22]
+        return f"ค้น {pat}" if pat else "ค้นในโค้ด"
+    if name == "Glob":
+        # The result line does not speak the pattern either ("เจอ 2 ไฟล์"): `**/*.sh` read aloud is
+        # punctuation, not words. The extension is the only speakable part of a glob.
+        m = re.search(r"\.([A-Za-z0-9]{1,6})$", inp.get("pattern", "") or "")
+        return f"หาไฟล์ .{m.group(1)}" if m else "หาไฟล์"
+    if name in ("Agent", "Task"):
+        who = inp.get("subagent_type", inp.get("description", "")) or ""
+        return f"เรียก agent {who}"[:INTENT_CHARS] if who else "เรียก agent"
+    if name == "WebSearch":
+        q = (inp.get("query", "") or "")[:24]
+        return f"ค้นเว็บ {q}" if q else "ค้นเว็บ"
+    if name == "WebFetch":
+        url = inp.get("url", "") or ""
+        host = re.sub(r"^https?://", "", url).split("/")[0][:26]
+        return f"ดึง {host}" if host else "ดึงหน้าเว็บ"
+    if name == "Skill":
+        s = inp.get("skill", "") or ""
+        return f"เรียก skill {s}" if s else "เรียก skill"
+    if name.startswith("mcp__"):
+        parts = name.split("__")
+        server = parts[1] if len(parts) > 2 else (parts[-1] if parts else name)
+        return f"ถาม {server} {parts[-1]}".replace("_", " ")
+    return f"เรียก {name}" if name else ""
+
+
+def intent(payload: dict):
+    """(severity, line) or None — the PreToolUse half. Always `info`."""
+    name = payload.get("tool_name", "") or ""
+    inp = payload.get("tool_input") or {}
+    if not isinstance(inp, dict):
+        inp = {}
+    if not name or name in SKIP_TOOLS:
+        return None
+    line = re.sub(r"\s+", " ", _intent_line(name, inp)).strip()
+    return ("info", line[:INTENT_CHARS]) if line else None
+
+
 def fact(payload: dict):
     """(severity, line) or None."""
     name = payload.get("tool_name", "") or ""
@@ -238,6 +301,12 @@ def fact(payload: dict):
     event = payload.get("hook_event_name", "PostToolUse") or "PostToolUse"
     if not isinstance(inp, dict):
         inp = {}
+
+    # Dispatched HERE rather than in main(), so no caller can hand a PreToolUse payload to the
+    # result templates: they would read a response that does not exist yet and say "อ่านแล้ว 0
+    # บรรทัด" — a figure about nothing, in the past tense, before the work happened.
+    if event == "PreToolUse":
+        return intent(payload)
 
     if name in SKIP_TOOLS:
         return None
@@ -334,6 +403,44 @@ def _selftest() -> int:
          ("bad", "pg triage ล้ม")),
     ]
 
+    # The intent half. Same payload shape minus the response, `--event PreToolUse`.
+    def q(name, inp):
+        return {"tool_name": name, "tool_input": inp, "hook_event_name": "PreToolUse"}
+
+    intent_cases = [
+        ("bash names the command", q("Bash", {"command": "cargo test --lib -p ofb"}),
+         ("info", "รัน cargo test")),
+        ("read names the file", q("Read", {"file_path": "/a/b/queue.sh"}),
+         ("info", "อ่าน queue.sh")),
+        ("edit says แก้", q("Edit", {"file_path": "x/narrate.sh", "new_string": "a"}),
+         ("info", "แก้ narrate.sh")),
+        ("write says เขียน", q("Write", {"file_path": "x/new.py", "content": "a"}),
+         ("info", "เขียน new.py")),
+        ("grep names the pattern", q("Grep", {"pattern": "voice_cfg"}),
+         ("info", "ค้น voice_cfg")),
+        ("glob speaks the extension, not the glob", q("Glob", {"pattern": "**/*.sh"}),
+         ("info", "หาไฟล์ .sh")),
+        ("agent names who", q("Agent", {"subagent_type": "Explore"}),
+         ("info", "เรียก agent Explore")),
+        ("websearch names the query", q("WebSearch", {"query": "JARVIS lines"}),
+         ("info", "ค้นเว็บ JARVIS lines")),
+        ("webfetch names the host", q("WebFetch", {"url": "https://code.claude.com/docs/en/hooks"}),
+         ("info", "ดึง code.claude.com")),
+        ("mcp names server and op", q("mcp__pg_triage__execute_sql", {}),
+         ("info", "ถาม pg triage execute sql")),
+        ("skill names the skill", q("Skill", {"skill": "caveman:caveman"}),
+         ("info", "เรียก skill caveman:caveman")),
+        ("the skip list is silent before the call too", q("TodoWrite", {}), None),
+        ("an unknown tool still announces itself", q("SomeNewTool", {}),
+         ("info", "เรียก SomeNewTool")),
+        # An intent can never be `bad`: the call has not run. Proved with the payload shape that
+        # WOULD look like a failure to the result path.
+        ("a PreToolUse payload never comes back bad",
+         {"tool_name": "Read", "tool_input": {"file_path": "/x/gone.txt"},
+          "tool_response": {"is_error": True}, "hook_event_name": "PreToolUse"},
+         ("info", "อ่าน gone.txt")),
+    ]
+
     bad = 0
     for name, payload, want in cases:
         got = fact(payload)
@@ -345,7 +452,21 @@ def _selftest() -> int:
         if got and len(got[1]) > MAX_CHARS:
             bad += 1
             print(f"FAIL {name}: over the {MAX_CHARS}-char ceiling")
-    print(f"\n{len(cases)} cases, {bad} failed")
+
+    for name, payload, want in intent_cases:
+        # Through fact(), not intent(): the event dispatch is part of what is under test.
+        got = fact(payload)
+        if got != want:
+            bad += 1
+            print(f"FAIL intent: {name}\n  got  {got!r}\n  want {want!r}")
+        else:
+            print(f"ok   intent: {name}")
+        if got and len(got[1]) > INTENT_CHARS:
+            bad += 1
+            print(f"FAIL intent: {name}: over the {INTENT_CHARS}-char ceiling")
+
+    total = len(cases) + len(intent_cases)
+    print(f"\n{total} cases, {bad} failed")
     return 1 if bad else 0
 
 
