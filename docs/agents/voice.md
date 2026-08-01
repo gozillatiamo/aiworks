@@ -189,7 +189,7 @@ a Thai butler impression, and the useful half of that voice is the status-report
 | the **ack** | states the work *and the order it will be worked in* — future tense, completion words banned |
 | the **step narrator** | one short line per step, spoken *while* the turn runs, built from the tool's own response (`narrate.sh`, on `PostToolUse`) |
 | the **thresholds** | speaks up unbidden when a step fails, when the same step fails again, or when the turn runs long — single-shot, never on a clock |
-| the **gate voice** | says when something is **waiting for you**: a permission prompt, a plan up for approval, an auto-mode denial, an idle prompt (`gate.sh`) |
+| the **gate voice** | says when something is **blocked on you**: a permission prompt, a plan up for approval, an auto-mode denial (`gate.sh`). Plain idle is not a gate |
 | the **closing line** | up to 4 short statuses: the steps taken, then what is now waiting for the user |
 
 The gate voice is the one channel that is **independent of `chattiness`** — a gate is a *whether*,
@@ -274,7 +274,15 @@ happened.
 | `PermissionRequest` | *ขออนุญาตรัน cargo test ค่ะ* · *ขออนุญาตใช้ Write กับ main.rs ค่ะ* |
 | `PermissionDenied` | *git push ถูก block ค่ะ* (red) |
 | `PreToolUse(ExitPlanMode)` | *แผนพร้อมแล้ว ขออนุมัติค่ะ* |
-| `Notification` | classified: permission → *ขออนุญาตทำงานต่อค่ะ* · idle → *รอคำสั่งอยู่ค่ะ* · agent done → *agent ทำเสร็จแล้วค่ะ* |
+| `Notification` | classified: permission → *ขออนุญาตทำงานต่อค่ะ* · agent done → *agent ทำเสร็จแล้วค่ะ*. An idle notification is deliberately unclassified — see below |
+
+**Idle is not a gate, and there is deliberately no class for it.** Claude Code sends a
+*"waiting for your input"* notification when a finished turn sits untouched, and speaking it
+(*รอคำสั่งอยู่ค่ะ*) was the one line here that fired while somebody was **thinking**. Nothing is
+blocked, nothing needs a decision, the turn already ended and the closing line already said what
+happened — the only new information is that the person has not typed yet, which is the one fact they
+cannot fail to know. Every other class names something that will not move until a human acts. The
+notification falls through to the unclassifiable branch and stays silent.
 
 `PermissionDenied` earns its place on its own: an auto-mode denial never becomes a prompt at all — the
 model simply gets a refusal and reroutes, and [eight of them in one

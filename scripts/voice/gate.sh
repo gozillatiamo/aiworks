@@ -14,7 +14,7 @@
 #     "Shall I render, utilizing proposed specifications?"      "Shall I take over?"
 #
 # Every gate in this workspace was already there — a permission prompt, a plan waiting for approval,
-# an auto-mode denial, an idle prompt — and every one of them was SILENT. The person who stepped away
+# an auto-mode denial — and every one of them was SILENT. The person who stepped away
 # from the screen learned about them by coming back and finding nothing had happened. That is the
 # half of "talks like JARVIS" that no amount of narration fixes: the narrator says what happened, and
 # this says what is waiting for YOU.
@@ -23,7 +23,7 @@
 #   PermissionRequest            a tool call needs a decision      → "ขออนุญาตรัน <cmd> ค่ะ"
 #   PermissionDenied             auto-mode refused it              → "<cmd> ถูก block ค่ะ"  (red)
 #   PreToolUse(ExitPlanMode)     a plan is up for approval         → "แผนพร้อมแล้ว ขออนุมัติค่ะ"
-#   Notification                 permission / idle / agent state   → classified from the message
+#   Notification                 permission / agent state          → classified from the message
 #
 # PermissionDenied earns its place on its own: an auto-mode denial is INVISIBLE — it never becomes a
 # prompt, the model simply gets a refusal and reroutes. Eight of them in one ticket went unnoticed
@@ -125,8 +125,14 @@ case "$EVENT" in
     m="$(printf '%s' "$MESSAGE" | tr '[:upper:]' '[:lower:]')"
     case "$m" in
       *permission*|*approve*|*allow*) LINE="ขออนุญาตทำงานต่อค่ะ"; CLASS=perm ;;
-      *waiting*|*idle*|*input*)       LINE="รอคำสั่งอยู่ค่ะ";      CLASS=idle ;;
       *completed*|*finished*|*done*)  LINE="agent ทำเสร็จแล้วค่ะ";  CLASS=agent ;;
+      # NO `idle` CLASS — deliberately, and do not put one back. "Claude is waiting for your input"
+      # is not a gate: nothing is blocked and nothing needs a decision. The turn ENDED, the closing
+      # line already said what happened, and the only new information in "รอคำสั่งอยู่ค่ะ" is that
+      # the person has not typed yet — which they know, because they are the one not typing. It is
+      # the one line here that fires while someone is THINKING, so it reads as nagging rather than
+      # as the assistant getting out of the way. Every other class names something that will not
+      # move until a human acts.
       *) vlog "gate: notification not classifiable — staying quiet: ${MESSAGE:0:60}"; exit 0 ;;
     esac
     ;;
