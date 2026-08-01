@@ -988,7 +988,7 @@ the identity prefix most. Block style only — the reader does not parse flow st
 | `voice.autoplay.narrate_max_per_turn` | `25` | lines per turn (1–200) — the cost ceiling |
 | `voice.autoplay.thresholds` | `true` | speak unbidden on a failed step (red, bypasses the floor), a repeat failure, and a long turn |
 | `voice.autoplay.long_turn_seconds` | `300` | when a still-running turn is worth saying once (30–3600), and once more at 3× |
-| `voice.autoplay.gates` | `true` | speak when something WAITS for you: permission prompt, plan approval, auto-mode denial, idle. Independent of `chattiness` |
+| `voice.autoplay.gates` | `true` | speak when something is BLOCKED on you: permission prompt, plan approval, auto-mode denial. Never plain idle — that is not a gate. Independent of `chattiness` |
 | `voice.autoplay.milestone_every_turn` | `true` | false ⇒ only an explicit `VOICE:` tag speaks (was `milestone_backstop`, still read in its `false` position) |
 | `voice.autoplay.chattiness` | `terse` | `terse` \| `balanced` \| `chatty` \| `max` — how MUCH the ack and closing line say, never whether they speak. `max` also turns on the step narrator + thresholds and is the only level that narrates the process; its ack/closing line are SHORTER than `chatty`'s on purpose. **ROOT CHECKOUT ONLY** — a linked worktree is clamped to `terse` (it inherits this key from the root's local config, shares one spool, and is usually the session nobody is watching) |
 | `voice.notify_voice.enabled` | `false` | a voice note on the Slack post — the ONLY switch for it; neither mute (by hand or by the OS) reaches it |

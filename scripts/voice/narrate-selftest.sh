@@ -265,8 +265,10 @@ gpay PreToolUse Bash '{"command":"ls"}'
 ck "PreToolUse for anything else is not a gate" EMPTY "$(grun "$(_s gt5)" PreToolUse)"
 gpay Notification "" '{}' "Claude needs your permission to use Bash"
 ck "a permission notification is classified" "ขออนุญาตทำงานต่อค่ะ" "$(grun "$(_s gt6)" Notification)"
+# An idle notification is NOT a gate — nothing is blocked, the turn already ended, and the only
+# news in it is that the user has not typed. Asserted as silence so it cannot come back by accident.
 gpay Notification "" '{}' "Claude is waiting for your input"
-ck "an idle notification is classified" "รอคำสั่งอยู่ค่ะ" "$(grun "$(_s gt7)" Notification)"
+ck "an idle notification says nothing" EMPTY "$(grun "$(_s gt7)" Notification)"
 gpay Notification "" '{}' "Some unrecognised English sentence"
 ck "an unclassifiable notification stays silent (never read aloud)" EMPTY "$(grun "$(_s gt8)" Notification)"
 gpay PermissionRequest Bash '{"command":"cargo test --lib -p my-crate"}'

@@ -440,7 +440,8 @@ voice:
     gates: true                    # speak when the run STOPS AND WAITS FOR YOU: a permission
                                    #   prompt ("ขออนุญาตรัน cargo test ค่ะ"), a plan up for approval,
                                    #   an auto-mode DENIAL (invisible otherwise — it never becomes a
-                                   #   prompt), an idle prompt. Independent of chattiness on purpose:
+                                   #   prompt). NOT plain idle — nothing is blocked when you simply
+                                   #   have not typed yet. Independent of chattiness on purpose:
                                    #   a gate is a WHETHER, not a HOW MUCH. It never reads the
                                    #   notification's own English text aloud — an event it cannot
                                    #   classify stays silent.
