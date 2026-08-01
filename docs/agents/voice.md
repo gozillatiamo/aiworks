@@ -187,7 +187,7 @@ a Thai butler impression, and the useful half of that voice is the status-report
 | channel | at `max` |
 |---|---|
 | the **ack** | states the work *and the order it will be worked in* — future tense, completion words banned |
-| the **step narrator** | one short line per step, spoken *while* the turn runs, built from the tool's own response (`narrate.sh`, on `PostToolUse`) |
+| the **step narrator** | **every step twice** — one short line as it starts, one with its result — spoken *while* the turn runs and built from the tool call's own payload (`narrate.sh`, on `PreToolUse` + `PostToolUse`) |
 | the **thresholds** | speaks up unbidden when a step fails, when the same step fails again, or when the turn runs long — single-shot, never on a clock |
 | the **gate voice** | says when something is **blocked on you**: a permission prompt, a plan up for approval, an auto-mode denial (`gate.sh`). Plain idle is not a gate |
 | the **closing line** | up to 4 short statuses: the steps taken, then what is now waiting for the user |
@@ -225,30 +225,41 @@ mechanical, so a faked root variable would test nothing: `scripts/voice/chattine
 
 ### The step narrator — what it speaks, and why it costs no model call
 
-`voice.autoplay.narrate_source: facts` (the default) reads the **tool call's own response** and says
-the figure in it:
+`voice.autoplay.narrate_source: facts` (the default) reads the **tool call's own payload** — both
+before it runs and after — and says what it is doing, then the figure it came back with:
 
-| step | spoken |
-|---|---|
-| `Read queue.sh` | *queue.sh อ่านแล้ว 260 บรรทัด* |
-| `cargo test --lib` (green) | *cargo test ผ่าน 42* |
-| `cargo test --lib` (red) | *cargo test ตก 3 ผ่าน 39* — as a threshold, see below |
-| `Grep voice_cfg` | *voice_cfg เจอ 14 แห่ง* |
-| `Edit narrate.sh` | *narrate.sh แก้แล้ว 12 บรรทัด* |
-| `mcp__pg_triage__execute_sql` | *pg triage execute sql ตอบ 5 แถว* |
+| step | before | after |
+|---|---|---|
+| `Read queue.sh` | *อ่าน queue.sh* | *queue.sh อ่านแล้ว 260 บรรทัด* |
+| `cargo test --lib` (green) | *รัน cargo test* | *cargo test ผ่าน 42* |
+| `cargo test --lib` (red) | *รัน cargo test* | *cargo test ตก 3 ผ่าน 39* — as a threshold, see below |
+| `Grep voice_cfg` | *ค้น voice_cfg* | *voice_cfg เจอ 14 แห่ง* |
+| `Edit narrate.sh` | *แก้ narrate.sh* | *narrate.sh แก้แล้ว 12 บรรทัด* |
+| `mcp__pg_triage__execute_sql` | *ถาม pg triage execute sql* | *pg triage execute sql ตอบ 5 แถว* |
 
-That is the JARVIS shape — subject, state, figure — and it is a **template, not a model call**: the
-figures come out of `tool_response`, so nothing can be invented and nothing can drift. Tools whose
-completion carries no news (`TodoWrite`, `ToolSearch`, `TaskList`, …) are silent by list, because
-speaking those turns the narrator into the metronome the heartbeat was disliked for. Owner:
-`scripts/voice/tool-fact.py` (22 fixtures, `--selftest`).
+The right-hand column is the JARVIS shape — subject, state, figure. The left-hand one is **not**, and
+that is deliberate: the films' AI never voices an intention, but the films' AI is also talking to
+someone who is *looking at the same screen*. `max` is the level for someone who is not, and to them a
+result-only narrator is silent for exactly as long as the work takes — a 90-second `cargo test` and a
+wedged command sound identical until one of them ends. The before-line places the wait; the result
+closes it. Its own switch is `voice.autoplay.narrate_intent` (`false` = results only).
+
+Note the two forms: an intent is **verb first and carries no number**, a result is **subject first,
+with `แล้ว` and a figure**. That contrast is what stops a pair from sounding like the same sentence
+twice; keep it if you add a tool.
+
+Both halves are **templates, not model calls**: every word comes out of `tool_input` / `tool_response`,
+so nothing can be invented and nothing can drift. Tools whose call carries no news (`TodoWrite`,
+`ToolSearch`, `TaskList`, …) are silent by list on both sides, because speaking those turns the
+narrator into the metronome the heartbeat was disliked for. Owner: `scripts/voice/tool-fact.py`
+(36 fixtures, `--selftest`).
 
 `narrate_source: prose` is the previous mechanism, kept as an alternative and as the fallback: the
 assistant's own sentence from just before the tool call — *"อ่าน `queue.sh` ก่อน แล้วค่อยแก้ cadence"*.
-It is free and true, but it is an **intention**, which is the one thing the films' AI never voices.
-Each source falls back to the other, so a step with no figure still speaks (via the prose) and a step
-with no prose still speaks (via the fact) — measured on a real session, only ~1 tool call in 5 has a
-prose block in front of it, which is why `facts` fills the gaps far better than the reverse.
+Free and true, but one sentence stands in front of about five tool calls. Each source falls back to
+the other, so a step with no figure still speaks (via the prose) and a step with no prose still speaks
+(via the fact) — measured on a real session, only ~1 tool call in 5 has a prose block in front of it,
+which is why `facts` fills the gaps far better than the reverse.
 
 ### Thresholds — speaking up unbidden (`voice.autoplay.thresholds`)
 
@@ -310,23 +321,34 @@ so the narrator hooks the step.
 disembodied interruption, and once the narrator exists there is nothing a clock adds. Mid-turn speech
 is therefore `max`-only and event-driven.
 
-**Three rules keep it from becoming noise**, and each exists because the naive version fails:
+**What keeps it from becoming noise** — and note *where* each rule lives, because that is the part
+that took a second pass to get right:
 
 | rule | why |
 |---|---|
 | **dedupe** by hash | the same line is never spoken twice in a row. With `prose` this is essential — one block introduces ~5 tool calls (314 prose blocks against 1 523 tool calls, measured) — and with `facts` it catches three Reads of one file |
-| **rate floor** of `narrate_gap` (4 s), in the producer *and* the queue | tool calls fire several per second while a spoken line takes 2–3 s; without a floor the queue takes on work faster than it can drain. 4 s, down from the first version's 9: at 9 s a burst of ten calls in twenty seconds could say two things, which is the opposite of the character. One config key feeds both floors — when they disagreed (7 and 9), the shorter one was dead code |
-| **per-turn cap** of `narrate_max_per_turn` (25) | the cost ceiling: every line is TTS spend and a 200-call turn must not buy 200 lines. When it bites, `-v` says so — a silent cap reads as a broken feature |
-| **staleness** of 12 s, its own queue kind | a fact about a step that finished three steps ago describes the wrong moment. This is the only kind whose content goes off in **seconds** — hence harder drop rules than an ack, and last place in line behind results. Thresholds and gates are `milestone` instead, and are never dropped |
+| **staleness** of 12 s, and a **depth of 3** per session, in the queue | a line about a step that finished three steps ago describes the wrong moment. Load-shedding belongs on the **playback** side: only there is it knowable how far behind the voice actually is. Dropping is oldest-first, which degrades in the right direction — a result is self-contained, so the intent half is the one you can afford to lose. This is the only kind whose content goes off in **seconds**, hence harder drop rules than an ack and last place in line. Thresholds and gates are `milestone` instead, and are never dropped |
+| **rate floor** of `narrate_gap` — **0, off** | it went 9 → 4 → 0. A floor drops one half of every pair, because a step's two lines arrive about a second apart, and a level whose promise is *tell me every action* cannot have a rate limiter in front of it. Set a number to buy quiet; at `max` a number means *skip some actions*. One config key still feeds the producer's floor and the queue's — when they disagreed (7 and 9), the shorter one was dead code |
+| **per-turn cap** of `narrate_max_per_turn` — **0, off** | a number bounds a turn's TTS spend, but a ceiling is a cliff, not a throttle: the turn goes silent from line N onwards, which is exactly the *why did it stop talking?* that `max` exists to answer. When a number is set and it bites, `-v` says so — a silent cap reads as a broken feature |
+
+**The old defaults were the reason `max` skipped actions**, and none of the three was visible from the
+outside: a 4-second floor in front of a channel whose lines arrive in pairs, a 25-line ceiling that
+made every long turn go quiet halfway, and — the biggest one — a queue that superseded narration down
+to the **newest job per session**, so a burst of five steps queued five lines and played one. The
+first two are now off by default and the third is a depth-3 backlog. Speech is still real time,
+though: when steps arrive faster than a line can be spoken, the oldest queued lines are dropped, and
+no policy can change that. What changed is *which* lines get lost and whether the drop is honest.
 
 It also stays quiet once the turn has **ended**: the closing line owns the end of a turn, and a step
 narration landing after the result describes work the user has already been told about.
 
 **`max` needs `narrate: true` to be itself** — the running commentary is most of what the level buys,
 and `voice.autoplay.narrate: false` keeps the ack and closing line while stopping the mid-turn
-talking. `aiworks voice status` says so outright when the two disagree, and prints the cadence it will
-actually use. Regression suite: `scripts/voice/narrate-selftest.sh` (40 cases over the narrator, the
-thresholds and the gate voice, in a throwaway tree with stubbed synthesis — costs nothing).
+talking. `aiworks voice status` says so outright when the two disagree, and prints the shape it will
+actually use — including a throttle, if one is set, since either throttle silently drops part of what
+this level promises. Regression suite: `scripts/voice/narrate-selftest.sh` (70 cases over the narrator,
+the pair, the throttles, the queue's drop rules, the real hook, the thresholds and the gate voice, in
+a throwaway tree with stubbed synthesis — costs nothing).
 
 **Three prompt conflicts had to be resolved for it to work at all**, and the room the level adds is
 what surfaced each one:
@@ -367,13 +389,16 @@ aiworks voice audition "ช่วยเช็ค pricing calculator ใน api-s
 Speaks the same request at all four levels with the character count printed — but not `max`'s step
 narration, which only exists inside a running turn and would be a demo of something you have not
 turned on. Cost scales with the level: every line here is unique text, so none of it hits the cache.
-At 100 turns/day on elevenlabs it is roughly **terse $48 · balanced $76 · chatty $105 · max ~$165**
+At 100 turns/day on elevenlabs it is roughly **terse $48 · balanced $76 · chatty $105 · max ~$210**
 per month — the first three measured; `max` extrapolated as ~$75 for its ack + closing line (now
-shorter than `chatty`'s) plus ~$90 for the mid-turn channels (~10 short lines × ~40 chars on an
-average turn, so ~$0.04 a turn). The **worst case is ~$295**, if every turn spends its full
-`narrate_max_per_turn`; `narrate: false` removes that half entirely. One genuine saving came with the
-`facts` source: a fact line repeats across turns (*"cargo test ผ่าน 42"*) and a repeated line is a
-**cache hit, therefore free**, which prose — unique every time — never was.
+shorter than `chatty`'s) plus ~$135 for the mid-turn channels (~10 steps × 2 lines on an average
+turn). A step's pair costs well under double a single line: the before-half is about half the
+characters *and* the more repetitive half. There is no worst case to quote any more, because
+`narrate_max_per_turn` is 0 (off) by default — set a number and that number is the ceiling;
+`narrate_intent: false` drops the before-halves; `narrate: false` removes the channel entirely. The
+one genuine saving came with the `facts` source: a fact line repeats across turns (*"cargo test ผ่าน
+42"*, *"รัน cargo test"*) and a repeated line is a **cache hit, therefore free**, which prose — unique
+every time — never was.
 `tts.provider: openai` (voice `sage`) is
 ~2.2× cheaper *and* measured best on Thai; `gemini` is ~6× cheaper but slowest and weakest of the
 four. Every vendor's voices were swept — see `scripts/voice/README.md` § Thai voice selection.

@@ -159,8 +159,19 @@ case "$cmd" in
         "$chat" "$c_dim" "$c_off"
     elif voice_cfg_bool voice.autoplay.narrate true; then
       src="$(voice_narrate_source)"; [[ "$src" == "facts" ]] && src=fact
-      printf 'chattiness        %s %s(ack + closing line + one %s line per step, every %ss, %s max/turn)%s\n' \
-        "$chat" "$c_dim" "$src" "$(voice_narrate_gap)" "$(voice_narrate_cap)" "$c_off"
+      if voice_cfg_bool voice.autoplay.narrate_intent true; then
+        shape="every step twice — one $src line before it, one after"
+      else
+        shape="one $src line per step, after it only (narrate_intent is off)"
+      fi
+      # The two throttles are 0 = off as shipped, and a `0s apart, 0 max/turn` row read as broken.
+      # Named only when a number is actually set — where they matter, since either one silently
+      # drops part of what this level promises to say.
+      g="$(voice_narrate_gap)"; ncap="$(voice_narrate_cap)"; thr=""
+      (( g > 0 ))    && thr="$thr · ≥${g}s apart"
+      (( ncap > 0 )) && thr="$thr · ≤$ncap lines/turn"
+      printf 'chattiness        %s %s(ack + closing line + %s%s)%s\n' \
+        "$chat" "$c_dim" "$shape" "$thr" "$c_off"
     else
       printf 'chattiness        %s %s← narrate is off, so nothing speaks mid-turn — the running\n' \
         "$chat" "$c_warn"

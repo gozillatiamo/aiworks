@@ -1,30 +1,37 @@
 #!/usr/bin/env bash
 #
-# The step narrator — one short spoken FACT per step, while the turn runs.
-# `voice.autoplay.chattiness: max` only. Runs DETACHED, spawned by
-# .claude/hooks/voice-narrate.sh on PostToolUse and PostToolUseFailure.
+# The step narrator — two short spoken lines per step, while the turn runs: what the step is about
+# to do, then how it went. `voice.autoplay.chattiness: max` only. Runs DETACHED, spawned by
+# .claude/hooks/voice-narrate.sh on PreToolUse, PostToolUse and PostToolUseFailure.
 #
 # Usage:
 #   narrate.sh [-v] --session ID --transcript PATH [--payload FILE] [--event NAME]
 #
 # ── WHAT IT SPEAKS ─────────────────────────────────────────────────────────────────
-# `voice.autoplay.narrate_source: facts` (the default) — the tool call's OWN response, turned into
-# one line by scripts/voice/tool-fact.py:
+# `voice.autoplay.narrate_source: facts` (the default) — the tool call's own payload, turned into
+# one line by scripts/voice/tool-fact.py. Both moments of a step, as a pair:
 #
-#     queue.sh อ่านแล้ว 260 บรรทัด        cargo test ผ่าน 42        เจอ 14 แห่ง
+#     รัน cargo test    →  cargo test ผ่าน 42
+#     อ่าน queue.sh     →  queue.sh อ่านแล้ว 260 บรรทัด
 #
-# Short (3–8 words), a subject and a figure, and NEW information every time. That form is not a
-# style choice: it is what JARVIS actually does in the Iron Man films — "The armour is now at 92%",
-# "18,000 feet. 10,000 feet. 6,000 feet", "Thirteen, sir." He never narrates an intention, and the
-# density that makes him feel present comes from FREQUENCY, not from length. The first `max` got
-# that backwards and made the sentences longer.
+# Short (3–8 words), a subject and a figure, and NEW information every time. That form is what
+# JARVIS actually does in the Iron Man films — "The armour is now at 92%", "18,000 feet. 10,000
+# feet. 6,000 feet", "Thirteen, sir." The density that makes him feel present comes from FREQUENCY,
+# not from length; the first `max` got that backwards and made the sentences longer.
+#
+# WHY THE INTENT HALF EXISTS, given that the film character speaks results and not intentions: a
+# result-only narrator is silent for exactly as long as the work takes, and that silence is
+# unreadable — a 90-second test run and a wedged command sound identical until one of them ends.
+# `max` is the level asked for by someone who is NOT watching the screen, so the pair is the point:
+# the intent line places the wait, the result line closes it. It has its own switch
+# (voice.autoplay.narrate_intent) for anyone who wants the results alone.
 #
 # `narrate_source: prose` is the previous mechanism, kept: the assistant's own sentence from just
-# before the tool call. Free, true, and an intention rather than a result — which is why it is now
-# the fallback (used whenever a step yields no speakable fact) rather than the source.
+# before the tool call. Free and true, and the fallback whenever a step yields no speakable fact.
 #
 # Either way there is NO summarizer call on this path, so the whole channel costs zero tokens; the
-# only spend is the TTS for a line that is deliberately tiny.
+# only spend is the TTS for a line that is deliberately tiny — and an intent line is short and
+# repetitive enough that the audio cache answers most of them for nothing.
 #
 # ── THRESHOLDS (voice.autoplay.thresholds) ─────────────────────────────────────────
 # JARVIS also speaks up unbidden when something crosses a line, and always names the consequence:
@@ -44,15 +51,18 @@
 # happens to catch. Steps are the unit `max` is about, so the hook fires on the step. That heartbeat
 # is DELETED, not defaulted off.
 #
-# ── THE FOUR RULES THAT KEEP IT FROM BECOMING NOISE ────────────────────────────────
+# ── WHAT KEEPS IT FROM BECOMING NOISE ──────────────────────────────────────────────
 #   dedupe   the same line is never spoken twice in a row (hash, per session). With `prose` this
 #            matters most — one block introduces ~5 tool calls — but facts repeat too (three Reads
 #            of the same file), and a repeated line is also a free CACHE hit when it is spoken.
-#   rate     voice.autoplay.narrate_gap seconds between lines (4 by default).
-#   cap      voice.autoplay.narrate_max_per_turn lines per turn (25). The cost ceiling. When it
-#            bites it is LOGGED, never silent.
-#   stale    the queue drops a narration that waited too long — a fact about a step that finished
-#            three steps ago is worse than silence. Hence its own queue kind.
+#   stale    the queue drops a narration that waited too long, and drops the OLDEST first when a
+#            session is already several deep. This is the load-shedding that matters, and it is on
+#            the PLAYBACK side on purpose: it can see how far behind the voice actually is, which a
+#            producer counting its own lines cannot.
+#   rate     voice.autoplay.narrate_gap seconds between lines — 0, off, by default. A floor here
+#            would eat one half of every pair, since the two halves arrive a second apart.
+#   cap      voice.autoplay.narrate_max_per_turn lines per turn — 0, off, by default. Set a number
+#            to bound a turn's TTS spend; when it bites it is LOGGED, never silent.
 #
 # It stays quiet once the turn has ENDED: the closing line owns the end of a turn.
 
@@ -64,6 +74,7 @@ VOICE_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAX_CHARS=60       # ~4 s of Thai speech. A JARVIS line is 3-8 words; so is this one
 MIN_CHARS=12       # below this there is no sentence, only a fragment
 PROSE_CHARS=90     # the prose fallback is a written sentence, so it gets a little more room
+INTENT_CHARS=34    # the intent half is half a result's length — a pair has to fit in one step
 
 SESSION="" TRANSCRIPT="" PAYLOAD="" EVENT="PostToolUse"
 while [[ $# -gt 0 ]]; do
@@ -88,6 +99,14 @@ voice_cfg_bool voice.autoplay.enabled false || { vlog "narrate skipped: autoplay
 # loudest thing this feature does, and the ack/closing-line lengths are worth keeping on their own.
 voice_cfg_bool voice.autoplay.narrate true || { vlog "narrate skipped: voice.autoplay.narrate is false"; exit 0; }
 [[ "$(voice_chattiness)" == "max" ]] || { vlog "narrate skipped: chattiness is $(voice_chattiness), not max"; exit 0; }
+# The BEFORE half of the pair, on its own switch: it doubles the number of spoken lines, so someone
+# who wants the running commentary but not the intents can drop it without leaving `max`.
+INTENT=0
+if [[ "$EVENT" == "PreToolUse" ]]; then
+  voice_cfg_bool voice.autoplay.narrate_intent true \
+    || { vlog "narrate skipped: voice.autoplay.narrate_intent is false"; exit 0; }
+  INTENT=1
+fi
 voice_is_muted && { vlog "narrate: muted — nothing synthesized"; exit 0; }
 [[ -n "$SESSION" ]] || SESSION="$VOICE_ROOT"
 voice_require jq
@@ -182,14 +201,18 @@ fi
 [[ -n "$LINE" ]] || { vlog "narrate: nothing to say (no fact, no usable prose)"; exit 0; }
 CHAR_CAP="$MAX_CHARS"
 [[ "$SRC" == "prose" ]] && CHAR_CAP="$PROSE_CHARS"
+[[ "$INTENT" -eq 1 && "$SRC" == "fact" ]] && CHAR_CAP="$INTENT_CHARS"
 URGENT_CHARS=110   # a threshold line prefixes the fact ("ผ่านมา 11 นาที… ล่าสุด <fact>"), and the
                    # tail is the informative half — the step cap would cut exactly that off
 
 # ── thresholds: what speaks even when the floor says no ────────────────────────────
 # URGENT skips the rate floor AND the per-turn cap. Only a failure and the long-turn crossing get
 # it, both of which are things the user would rather hear late than not at all.
+# Never on the intent half: a threshold is a statement about what HAS happened. "ผ่านมา 11 นาทีแล้ว
+# … ล่าสุด รัน cargo test" would name as the latest news a step that has not run yet, and a call
+# that has not run cannot have failed. The result half of the same step carries both.
 URGENT=0 CUE=""
-if voice_cfg_bool voice.autoplay.thresholds true; then
+if [[ "$INTENT" -eq 0 ]] && voice_cfg_bool voice.autoplay.thresholds true; then
   if [[ "$SEV" == "bad" ]]; then
     URGENT=1 CUE=red
     # The SAME step failing twice is a different event from two steps failing once: say so, because
@@ -219,12 +242,15 @@ if voice_cfg_bool voice.autoplay.thresholds true; then
 fi
 
 # ── the floors, checked after the line exists so a red can bypass them ─────────────
+# Both are OFF by default at `max` (0 = no floor, 0 = no ceiling) — the level's whole promise is
+# that every action is spoken, and a floor drops half of every pair. They stay implemented because
+# a number in the config is the way to buy quiet or bound TTS spend without leaving `max`.
 if [[ "$URGENT" -eq 0 ]]; then
-  if [[ "$LAST_TS" -gt 0 ]] && (( NOW - LAST_TS < GAP )); then
+  if (( GAP > 0 )) && [[ "$LAST_TS" -gt 0 ]] && (( NOW - LAST_TS < GAP )); then
     vlog "narrate: $((NOW - LAST_TS))s since the last line, floor is ${GAP}s — skipping"
     exit 0
   fi
-  if (( SPOKEN >= CAP )); then
+  if (( CAP > 0 && SPOKEN >= CAP )); then
     # Said out loud in the log, not swallowed: a cap that hides itself looks like a dead feature.
     vlog "narrate: per-turn cap reached ($SPOKEN/$CAP lines) — staying quiet for the rest of this turn"
     exit 0
@@ -256,7 +282,9 @@ fi
 # Recorded BEFORE speaking, not after: two PostToolUse hooks can land in the same second, and the
 # loser of that race must see the winner's hash rather than both queuing the same sentence.
 voice_narrate_set "$SESSION" "$HASH" "$TURN"
-vlog "narrate[$SRC${CUE:+/$CUE}] $((SPOKEN + 1))/$CAP: $LINE"
+CAPTXT="$CAP"; (( CAP > 0 )) || CAPTXT="no cap"
+HALF=after; [[ "$INTENT" -eq 1 ]] && HALF=before
+vlog "narrate[$SRC/$HALF${CUE:+/$CUE}] $((SPOKEN + 1))/$CAPTXT: $LINE"
 
 # A normal step is --kind narration: its own queue class, dropped harder than an ack, and no cue —
 # a sound before every step would be a metronome. A threshold is a MILESTONE: never dropped, and it
