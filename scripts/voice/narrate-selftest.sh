@@ -64,7 +64,8 @@ kind=""; cue=""
 while [[ $# -gt 0 ]]; do
   case "$1" in --kind) kind="$2"; shift 2 ;; --cue) cue="$2"; shift 2 ;; -*) shift ;; *) break ;; esac
 done
-printf 'SPOKE[%s%s]: %s\n' "$kind" "${cue:+/$cue}" "$*" | tee -a "${VOICE_CACHE_HOME}/spoke.log"
+printf 'SPOKE[%s%s]: %s\n' "$kind" "${cue:+/$cue}" "$*" \
+  | tee -a "${VOICE_SPOKE_LOG:-${VOICE_CACHE_HOME}/spoke.log}"
 STUB
 chmod +x "$T/scripts/voice/speak.sh"
 # Stub the summarizer as well. narrate.sh never calls it (a fact line is a template, and prose is
@@ -354,6 +355,12 @@ ck "a gate speaks at terse too, unlike narration" "ขออนุญาตร�
    "$(VOICE_CHATTINESS=terse grun "$(_s gt12)" PermissionRequest)"
 
 echo "== mute: EVERY output is off, and nothing is spent =="
+# WHY THE STUB'S LOG IS PER-CASE (VOICE_SPOKE_LOG): the ack case below runs the real hook, which forks
+# ack.sh in the background, and that straggler lands in the log SECONDS later. A hook case that
+# truncated one shared log and then waited for "any line" read the previous case's ack instead of its
+# own narration — flaky, and it failed in the convincing direction (2 of 6 runs, with the ack's text
+# right there in the diff).
+#
 # The stub speak.sh is the proxy for spend: it is what a real run would pay an LLM and a TTS call
 # for, so silence here means the producer exited before either one.
 : > "$T/cache/mute"
@@ -410,21 +417,32 @@ echo "== the REAL hook, on the event that sits in front of the tool =="
 # PreToolUse wiring that dropped the event name would leave every case above green and the feature
 # silent — or worse, feed a response-less payload to the result templates.
 nhook="$SRC/.claude/hooks/voice-narrate.sh"
-hnar() { # hnar <session> <event> <tool_input-json> <tool_name> — returns once the line lands
-  : > "$T/cache/spoke.log"
+HK="$T/hk.log"     # this block's own log — see VOICE_SPOKE_LOG above
+hnar() { # hnar <session> <event> <tool_name> <tool_input-json> — fires the real hook, does not wait
   printf '{"session_id":"%s","hook_event_name":"%s","tool_name":"%s","tool_input":%s}' \
-    "$1" "$2" "$4" "$3" | CLAUDE_PROJECT_DIR="$T" bash "$nhook" > "$T/hook.out" 2>&1
-  local i=0; while [[ ! -s "$T/cache/spoke.log" && $i -lt 60 ]]; do sleep 0.05; i=$((i+1)); done
+    "$1" "$2" "$3" "$4" \
+    | VOICE_SPOKE_LOG="$HK" CLAUDE_PROJECT_DIR="$T" bash "$nhook" > "$T/hook.out" 2>&1
 }
-hnar "$(_s hk1)" PreToolUse '{"command":"cargo build --release"}' Bash
+hkwait() { # hkwait <substring> — until the forked narrator's line lands, or 3 s
+  local i=0; while ! grep -qF -- "$1" "$HK" 2>/dev/null && (( i < 60 )); do sleep 0.05; i=$((i+1)); done
+}
+: > "$HK"
+hnar "$(_s hk1)" PreToolUse Bash '{"command":"cargo build --release"}'
+hkwait "cargo build"
 ck "the hook narrates what the step is about to do" "SPOKE[narration]: รัน cargo build" \
-   "$(cat "$T/cache/spoke.log" 2>/dev/null)"
+   "$(cat "$HK" 2>/dev/null)"
 # A PreToolUse hook's stdout can reach the MODEL. A narration echoed back would become part of the
 # conversation it describes — and a non-empty stdout on this event is one step from steering the run.
 ck "…and prints nothing at all on stdout" EMPTY "$(cat "$T/hook.out" 2>/dev/null)"
-hnar "$(_s hk2)" PreToolUse '{}' TodoWrite
-ck "a bookkeeping tool is silent before the call too" EMPTY "$(cat "$T/cache/spoke.log" 2>/dev/null)"
-rm -f "$T/cache/spoke.log"
+# Silence is proved by a SENTINEL, not by sleeping: fire the quiet tool, then a tool that must speak,
+# and wait for the sentinel's line. A `sleep 1` here would be both slower and a coin flip on a loaded
+# machine, which is how the case above was flaky in the first place.
+: > "$HK"
+hnar "$(_s hk2)" PreToolUse TodoWrite '{}'
+hnar "$(_s hk3)" PreToolUse Bash '{"command":"git status"}'
+hkwait "git status"
+ck "a bookkeeping tool is silent before the call too" 1 "$(wc -l < "$HK" | tr -d ' ')"
+ck "…and the line that DID land is the other tool's" "รัน git status" "$(cat "$HK" 2>/dev/null)"
 
 echo "== the queue keeps a BACKLOG of narrations, and drops the OLDEST first =="
 # The rule that actually made `max` skip actions: narration used to be superseded down to the NEWEST
