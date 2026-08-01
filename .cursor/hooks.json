@@ -84,6 +84,10 @@
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh'",
         "timeout": 10,
         "matcher": "ExitPlanMode"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
+        "timeout": 10
       }
     ],
     "postToolUse": [
@@ -108,6 +112,14 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-show.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-follow.sh'",
         "timeout": 10
       }
     ],
@@ -155,6 +167,10 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-milestone.sh'",
+        "timeout": 10
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stagehand-follow.sh'",
         "timeout": 10
       }
     ]

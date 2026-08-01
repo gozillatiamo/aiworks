@@ -1,35 +1,49 @@
 #!/usr/bin/env bash
 #
-# PostToolUse / PostToolUseFailure hook — the `max` step narration.
+# PreToolUse / PostToolUse / PostToolUseFailure hook — the `max` step narration, both halves of it.
 #
 # ONE JOB, AND A HARD LATENCY BUDGET: hand the event to scripts/voice/narrate.sh in a DETACHED
-# process and return. This hook fires after EVERY tool call, so it is the most frequently-executed
-# thing in the workspace: whatever it spends is spent hundreds of times a turn. So it reads three
-# config values, spills the payload to a temp file, forks, and exits. No transcript parsing, no
-# synthesis, no network — all of that happens in narrate.sh, off the critical path.
+# process and return. This hook fires before AND after every tool call, so it is the most
+# frequently-executed thing in the workspace: whatever it spends is spent hundreds of times a turn.
+# So it reads four config values, spills the payload to a temp file, forks, and exits. No transcript
+# parsing, no synthesis, no network — all of that happens in narrate.sh, off the critical path.
 #
-# WHY THE PAYLOAD GOES TO A FILE: what the narrator speaks now comes from the tool's OWN response
+# WHY THE PAYLOAD GOES TO A FILE: the after-half's line comes from the tool's OWN response
 # (`tool_response` — "cargo test ผ่าน 42", "queue.sh อ่านแล้ว 260 บรรทัด"), and that response can be
 # a whole file's contents. An argv-sized copy of it would hit ARG_MAX on the first big Read; a temp
 # file costs one write and the reader deletes it.
 #
-# WHY PostToolUse RATHER THAN PreToolUse: a PreToolUse hook sits between the model and its tool,
-# where a slow or wedged hook delays real work and a non-zero exit can block the call outright.
-# Narration is the least important thing here; it does not belong in that position. And the facts it
-# speaks only exist AFTER the call.
+# ── THE PreToolUse SIDE, WHICH THIS FILE ONCE ARGUED AGAINST ────────────────────────────────
+# The objection was real and is worth keeping: a PreToolUse hook sits BETWEEN the model and its
+# tool, where a slow hook delays real work and a non-zero exit BLOCKS the call outright. Narration
+# is the least important thing in the workspace and must never be able to do either. What makes the
+# position safe is not a promise, it is the shape of this script:
+#
+#   • it exits 0 on every path, including every gate and every failure to read anything;
+#   • `set +e` right after the source, so no single non-zero test can become a blocking exit;
+#   • it prints NOTHING on stdout — a PreToolUse hook's stdout can reach the model, and a narration
+#     echoed back would become part of the conversation it is describing;
+#   • the work is `nohup … &`, so the hook's own runtime is four config reads and one small write.
+#     The PreToolUse payload has no `tool_response`, which makes it the CHEAPER of the two calls.
+#
+# MEASURED on this machine, since a latency claim is worth a number: ~68 ms per call at `max`, and
+# ~26 ms for anyone the feature is off for (a non-`th` workspace exits after ONE config read — the
+# gates are ordered cheapest-first for exactly that reason). ~26 ms of that floor is bash starting up
+# and sourcing lib.sh, so the marginal cost of this being a hook at all is most of it.
+#
+# And the reason to accept that at all: a result-only narrator is silent for exactly as long as the
+# work takes. `max` is the level for someone who is not watching the screen, and to them a 90-second
+# test run and a wedged command sound identical. The before-line is what places the wait.
 #
 # PostToolUseFailure is wired to the same script: a failed step is the one thing worth interrupting
 # for (narrate.sh's `red` threshold), and the failure event is how it learns that cheaply instead of
 # guessing from output text.
 #
-# It prints NOTHING on stdout. A PostToolUse hook's stdout can reach the model's context, and a
-# narration echoed back would become part of the conversation it is describing.
+# Inert unless `language: th` AND voice.enabled AND voice.autoplay.enabled AND chattiness == max
+# (and, for the before-half alone, voice.autoplay.narrate_intent) — the gates live in
+# scripts/voice/lib.sh and narrate.sh, so this file is safe to ship committed for the whole team.
 #
-# Inert unless `language: th` AND voice.enabled AND voice.autoplay.enabled AND chattiness == max —
-# the gates live in scripts/voice/lib.sh and narrate.sh, so this file is safe to ship committed for
-# the whole team.
-#
-# Wired in .claude/settings.json under PostToolUse and PostToolUseFailure, matcher "*".
+# Wired in .claude/settings.json under PreToolUse, PostToolUse and PostToolUseFailure, matcher "*".
 
 set -uo pipefail
 

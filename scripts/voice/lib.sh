@@ -234,24 +234,36 @@ voice_chattiness() {
 # first `max` raised it (4 long sentences, a 360-char ceiling) and came out sounding like a status
 # report read aloud. These four dials are the right ones: shorter, more often, made of facts.
 #
-# `facts` reads the tool's own response (scripts/voice/tool-fact.py) and says the FIGURE — "queue.sh
-# อ่านแล้ว 260 บรรทัด", "cargo test ผ่าน 42". `prose` is the previous mechanism, the assistant's own
-# pre-tool sentence, which is an INTENTION — kept because it is free and because the two are worth
-# comparing by ear, not because it is the default.
+# `facts` reads the tool's own payload (scripts/voice/tool-fact.py) and speaks BOTH of a step's
+# moments — "รัน cargo test" before it, "cargo test ผ่าน 42" after. `prose` is the previous
+# mechanism, the assistant's own pre-tool sentence: kept as the fallback for a step whose payload
+# carries no speakable figure, and because the two are worth comparing by ear.
 voice_narrate_source() {
   local v; v="$(printf '%s' "${VOICE_NARRATE_SOURCE:-$(voice_cfg voice.autoplay.narrate_source facts)}" | tr '[:upper:]' '[:lower:]')"
   case "$v" in facts|prose) printf '%s' "$v" ;; *) vlog "narrate_source: '$v' is not facts|prose — using facts"; printf 'facts' ;; esac
 }
 
-# Seconds between narrated lines. 4 s, down from the first version's 9: at 9 s a burst of ten tool
-# calls in twenty seconds could say two things, which is the opposite of the character being
-# imitated. A spoken fact line is ~2-3 s, so 4 s still leaves air and still bounds the queue.
-voice_narrate_gap() { voice_cfg_int voice.autoplay.narrate_gap 4 1 60; }
+# Seconds between narrated lines, and **0 = no floor**, which is now the default. It went 9 → 4 → 0
+# for one reason each time, and the last step is the one worth remembering: at `max` the two lines a
+# step produces (what it is about to do, then how it went) arrive within a second of each other, so
+# ANY floor eats one half of every pair — usually the result, since it arrives second. A level whose
+# whole promise is "tell me every action" cannot have a rate limiter in front of it.
+#
+# What keeps this from becoming a monologue is not a clock but the QUEUE: a narration is dropped when
+# it goes stale or when the session is already several deep (queue.sh), so falling behind costs the
+# OLDEST lines rather than delaying the newest. Set a number here to put the floor back — it still
+# works, and the suite proves it — but at `max` a number means "skip some actions".
+voice_narrate_gap() { voice_cfg_int voice.autoplay.narrate_gap 0 0 60; }
 
-# The per-TURN ceiling, and the cost dial. Every narrated line is TTS spend; a runaway turn with
-# 200 tool calls must not be able to spend 200 lines' worth. When it bites, narrate.sh SAYS so in
-# its log rather than going quietly silent — a silent cap reads as a broken feature.
-voice_narrate_cap() { voice_cfg_int voice.autoplay.narrate_max_per_turn 25 1 200; }
+# The per-TURN ceiling, and the cost dial: **0 = no ceiling**, the default. Every narrated line is
+# TTS spend, so a number here is the way to bound a turn's cost — but a ceiling is a cliff, not a
+# throttle: the turn goes silent from line N onwards, which is exactly the "why did it stop talking?"
+# that `max` is supposed to answer. Two things make 0 affordable: an intent line is ~2 words and
+# highly repetitive, so the audio cache answers most of them for nothing, and the queue's own drops
+# bound how much can ever be PLAYED however much is produced.
+# When a number IS set and it bites, narrate.sh SAYS so in its log rather than going quietly silent —
+# a silent cap reads as a broken feature.
+voice_narrate_cap() { voice_cfg_int voice.autoplay.narrate_max_per_turn 0 0 500; }
 
 # When a turn passing this many seconds is worth mentioning ONCE (and once more at 3×). The
 # heartbeat's mistake was repeating on a clock; this is a threshold crossing, single-shot per turn

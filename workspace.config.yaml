@@ -79,9 +79,10 @@ voice:
     ack: true
     milestones: true
     narrate: true
+    narrate_intent: true
     narrate_source: facts
-    narrate_gap: 4
-    narrate_max_per_turn: 25
+    narrate_gap: 0
+    narrate_max_per_turn: 0
     thresholds: true
     long_turn_seconds: 300
     gates: true

@@ -24,14 +24,16 @@
 #   milestone/manual  otherwise never dropped, and always first in line
 #   ack               dropped when older than 30 s · only the NEWEST per session survives ·
 #                     dropped inside 20 s of the last utterance (silence discipline)
-#   narration         the `max` step narrator. Dropped HARDER than an ack on both axes — 12 s
-#                     stale, 7 s gap — and last in line. It is the only kind whose content goes
-#                     off after seconds rather than minutes: "กำลังอ่าน X" arriving once X is done
-#                     and two steps have passed describes the wrong moment, and a queue of them
-#                     played back-to-back is a monologue about the past. The tighter GAP is not a
-#                     contradiction of the ack's 20 s: an ack answers a prompt and there is one
-#                     per turn, while narration is the running commentary and 20 s of silence
-#                     between steps would drop most of it.
+#   narration         the `max` step narrator (two lines per step: intent, then result). Dropped on
+#                     AGE — 12 s stale — and on DEPTH: at most 3 queued per session, oldest first.
+#                     Last in line. It is the only kind whose content goes off after seconds rather
+#                     than minutes: "รัน cargo test" arriving once cargo has finished and two steps
+#                     have passed describes the wrong moment, and a queue of them played back-to-back
+#                     is a monologue about the past. Unlike an ack it gets a BACKLOG rather than
+#                     supersede-to-newest: an ack has one right answer per turn, while a commentary
+#                     that keeps only its newest line says one thing per burst — which is what used
+#                     to make `max` skip actions. No gap floor by default (voice.autoplay.narrate_gap
+#                     is 0): a floor would drop half of every pair.
 #
 # IDENTITY PREFIX
 #   Never for the FOCUSED session — the worktree you are currently prompting in attaches no
@@ -50,11 +52,16 @@ voice_mkdirs
 ACK_MAX_AGE=30      # an ack older than this is stale — the answer has moved on
 SILENCE_GAP=20      # no two utterances closer than this, for acks
 NARRATION_MAX_AGE=12  # a step narration older than this is about a step that already finished
+NARRATION_DEPTH=3     # how far behind the voice may fall before it starts dropping the OLDEST line
+                      # for that session. 3 ≈ 8 s of speech, which is about as much past as a
+                      # "running" commentary can describe and still be running. 1 was the old rule
+                      # and it meant a burst of five steps spoke once — see _prune_droppable.
 # The drain floor for narration, from the same config key the ENQUEUE floor uses
-# (voice.autoplay.narrate_gap, 4 s). Two floors, one number on purpose: the enqueue side stops the
-# narrator from queuing faster than it drains, and this side stops a burst that is already IN the
-# queue from being read as one long paragraph. When they disagreed (7 here, 9 there), the shorter
-# one was dead code and the cadence was silently the longer one.
+# (voice.autoplay.narrate_gap — 0, off, by default at `max`). Two floors, one number on purpose: the
+# enqueue side stops the narrator from queuing faster than it drains, and this side stops a burst
+# that is already IN the queue from being read as one long paragraph. When they disagreed (7 here,
+# 9 there), the shorter one was dead code and the cadence was silently the longer one. With the key
+# at 0 neither applies and the DEPTH above is what bounds the backlog.
 NARRATION_GAP="$(voice_narrate_gap)"
 PREFIX_GAP=60       # silence long enough that "which worktree?" is a real question again
 
@@ -131,26 +138,46 @@ _last_spoken_field() {   # session | ts
   jq -r --arg f "$1" '.[$f] // "" | tostring' "$VOICE_LAST_SPOKEN" 2>/dev/null || printf ''
 }
 
-# The droppable kinds share one rule — newest-per-session survives, anything older than the kind's
-# own budget goes — so they share one implementation. Parameterized rather than copied: an ack and a
-# narration differ only in how fast their content goes off, and two near-identical loops would drift.
-_prune_droppable() {   # KIND MAX_AGE
-  local kind="$1" max_age="$2" now seen="" j sess ts
+# The droppable kinds share one rule — the newest DEPTH per session survive, anything older than the
+# kind's own budget goes — so they share one implementation. Parameterized rather than copied: an ack
+# and a narration differ only in depth and in how fast their content goes off, and two near-identical
+# loops would drift.
+#
+# WHY NARRATION HAS A DEPTH AND AN ACK DOES NOT. An ack answers a prompt: there is one right answer
+# per turn and a second one is simply wrong, so depth 1 (supersede) is the rule. A narration is a
+# RUNNING COMMENTARY, and depth 1 was silently the reason `max` did not narrate every action: five
+# tool calls inside one spoken line's worth of time queued five jobs and played the last one. A
+# backlog is now allowed, and load-shedding drops the OLDEST rather than everything-but-newest —
+# which degrades in the right direction, since a step's result is self-contained and its intent line
+# is the half you can lose.
+#
+# It is deliberately SMALL. Speech is real time: when steps arrive faster than ~3 s apart, no policy
+# can say all of them and still be talking about the present. Depth bounds how far behind the voice
+# is allowed to fall; MAX_AGE bounds it in seconds. Both are honest about the drop instead of
+# queueing a monologue about the past.
+_prune_droppable() {   # KIND MAX_AGE [DEPTH=1]
+  local kind="$1" max_age="$2" depth="${3:-1}" now kept="" j sess ts tok n
   now="$(voice_now)"
-  # Reverse name order = newest first (the name starts with the epoch), so the first job seen
-  # for a session is the one to keep.
+  # Reverse name order = newest first (the name starts with the epoch), so the jobs a session gets
+  # to keep are seen before the ones it has to lose.
   for j in $(ls -1r "$VOICE_SPOOL_DIR"/*-"$kind".json 2>/dev/null || true); do
     [[ -f "$j" ]] || continue
     sess="$(jq -r '.session // ""' "$j" 2>/dev/null || printf '')"
     ts="$(jq -r '.ts // 0' "$j" 2>/dev/null || printf 0)"
-    case " $seen " in
-      *" $sess "*) vlog "drop $kind: superseded ($(basename "$j"))"; rm -f "$j"; continue ;;
-    esac
-    seen="$seen $sess"
+    # Counted by HASH of the session, not by the session string: the session id is a worktree PATH,
+    # and a substring match on paths would let ~/w/app and ~/w/app-2 share a budget.
+    tok="$(voice_sha "$sess")"
+    n="$(printf '%s\n' "$kept" | grep -Fxc -- "$tok" 2>/dev/null || true)"
+    [[ "$n" =~ ^[0-9]+$ ]] || n=0
+    if (( n >= depth )); then
+      vlog "drop $kind: $depth already queued for this session ($(basename "$j"))"
+      rm -f "$j"; continue
+    fi
     if (( now - ts > max_age )); then
       vlog "drop $kind: ${max_age}s stale ($(basename "$j"))"
-      rm -f "$j"
+      rm -f "$j"; continue
     fi
+    kept="$kept$tok"$'\n'
   done
 }
 
@@ -172,7 +199,7 @@ cmd_drain_locked() {
   local pass=0
   while :; do
     _prune_droppable ack "$ACK_MAX_AGE"
-    _prune_droppable narration "$NARRATION_MAX_AGE"
+    _prune_droppable narration "$NARRATION_MAX_AGE" "$NARRATION_DEPTH"
     local jobs; jobs="$(_ordered_jobs)"
     [[ -n "$jobs" ]] || break
     pass=$((pass + 1))
@@ -214,11 +241,10 @@ cmd_drain_locked() {
           continue
         fi
       elif [[ "$kind" == "narration" ]]; then
-        # Its own floor: the running commentary is supposed to run, so it needs air between lines
-        # rather than an ack's near-silence. narrate.sh already applies a floor of its own before
-        # spending anything on synthesis; this one also counts utterances from OTHER kinds and
+        # Its own floor, and OFF at `max` by default (the key is 0): the running commentary is
+        # supposed to run. When a number is set, this side counts utterances from OTHER kinds and
         # other worktrees, which the producer cannot see.
-        if (( last_ts > 0 && gap < NARRATION_GAP )); then
+        if (( NARRATION_GAP > 0 && last_ts > 0 && gap < NARRATION_GAP )); then
           vlog "drop narration: only ${gap}s since the last utterance"
           continue
         fi
