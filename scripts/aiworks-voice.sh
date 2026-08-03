@@ -162,7 +162,8 @@ case "$cmd" in
       # often one arrives — which is the whole point of the setting and so belongs in the row.
       src="$(voice_narrate_source)"
       case "$src" in
-        insight) shape="a conclusion each time something is worked out" ;;
+        say)     shape="a conclusion, each time one is named (SAY[…]) — silence otherwise" ;;
+        insight) shape="a named conclusion, or a summarized guess at an untagged block" ;;
         prose)   shape="the assistant's own sentence from before each step" ;;
         *)       if voice_cfg_bool voice.autoplay.narrate_intent true; then
                    shape="every step twice — one fact line before it, one after"
