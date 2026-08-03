@@ -104,6 +104,9 @@ mk() { # mk <file> <json-lines...>
   local f="$1"; shift; : > "$f"; for l in "$@"; do printf '%s\n' "$l" >> "$f"; done
 }
 txt() { jq -cn --arg t "$1" '{type:"assistant",message:{content:[{type:"text",text:$t}]}}'; }
+# Same, with the ISO timestamp a real transcript record carries — the SAY lookback is bounded by it.
+txtat() { jq -cn --arg t "$1" --arg ts "$2" \
+  '{type:"assistant",timestamp:$ts,message:{content:[{type:"text",text:$t}]}}'; }
 tool() { jq -cn --arg n "$1" --arg p "$2" '{type:"assistant",message:{content:[{type:"tool_use",name:$n,input:{file_path:$p}}]}}'; }
 
 PROSE='อ่าน `queue.sh` ก่อน แล้วค่อยแก้ cadence — ตรงนี้คือจุดที่ drop rule อยู่
@@ -227,6 +230,20 @@ ck "a tag several blocks back is still spoken, not lost" \
 # a lost line boundary would speak the tag plus every following line of prose with it.
 ck "…and only the tagged line, not the rest of the block" 0 \
    "$(run "$(_s s1c)" "$T/p-read.json" "$T/t-say-buried.jsonl" | grep -c 'ต่อไปดู queue' || true)"
+# THE TURN BOUNDARY. A tag in the final block of a reply is never spoken during its own turn (no tool
+# call follows it), so an unbounded lookback found it on the NEXT turn's first tool call and spoke it
+# there — measured live, iblk came back holding the previous turn's closing tag before this turn had
+# named anything. Bounded by the record's own ISO timestamp.
+TB="$(_s tb1)"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_turn_start "$TB" ) >/dev/null 2>&1
+mk "$T/t-say-oldturn.jsonl" \
+   "$(txtat 'SAY[green]: บรรทัดจาก turn ก่อนหน้า ไม่ควรถูกพูดค่ะ' '2020-01-01T00:00:00.000Z')"
+ck "a tag from a PREVIOUS turn is never spoken" EMPTY \
+   "$(run "$TB" "$T/p-read.json" "$T/t-say-oldturn.jsonl")"
+mk "$T/t-say-thisturn.jsonl" \
+   "$(txtat 'SAY[green]: บรรทัดจาก turn นี้ ต้องถูกพูดค่ะ' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)")"
+ck "…and one from THIS turn still is" "SPOKE[milestone/green]: บรรทัดจาก turn นี้" \
+   "$(run "$(_s tb2)" "$T/p-read.json" "$T/t-say-thisturn.jsonl")"
 ck "a bare SAY: gets no cue — a sound per conclusion is a metronome again" \
    "SPOKE[milestone]: เจอว่า INNER JOIN" "$(run "$(_s s2)" "$T/p-read.json" "$T/t-say-bare.jsonl")"
 ck "…and none of that called the summarizer" 0 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"

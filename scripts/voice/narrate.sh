@@ -238,9 +238,22 @@ _say_group() { printf '%s' "$1"; }
 # blocks costs one jq call and the `iblk` dedupe already stops a tag being spoken twice, so the only
 # thing this changes is whether a named line can be LOST.
 SAY_LOOKBACK=5
+# BOUNDED TO THIS TURN, which the first version was not, and the live run caught that at once: a `SAY`
+# tag in the FINAL block of a reply is never spoken during its own turn (no tool call follows it, and
+# the closing line owns the end of a turn), so the lookback found it on the NEXT turn's first tool call
+# and spoke it there. Measured: iblk came back holding the hash of the previous turn's closing tag
+# before this turn had named anything. A line about work the user has already been told about,
+# delivered just after they typed something else, is the "monologue about the past" this channel exists
+# to avoid.
+#
+# Transcript records carry an ISO timestamp, so the bound is exact rather than a guess at depth.
+# Fractional seconds are stripped (fromdateiso8601 rejects them) and the conversion is wrapped in
+# try/catch, so one malformed record cannot silence the channel.
 _recent_prose() {
-  jq -rs --argjson n "$SAY_LOOKBACK" '
-    [.[] | select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text]
+  jq -rs --argjson n "$SAY_LOOKBACK" --argjson t0 "${TURN:-0}" '
+    [.[] | select(.type=="assistant")
+         | select(((((.timestamp // "") | sub("\\.[0-9]+Z$"; "Z")) | (try fromdateiso8601 catch 0)) // 0) >= $t0)
+         | .message.content[]? | select(.type=="text") | .text]
     | .[-$n:] | reverse | .[]
     | gsub("\n"; "")' "$TRANSCRIPT" 2>/dev/null || printf ''
 }
