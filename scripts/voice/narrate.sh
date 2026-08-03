@@ -231,12 +231,31 @@ MIN_BLOCK=45
 # one. The assistant does know. So the tag is the primary path and the summarizer is the fallback:
 # no tag ⇒ a stricter judgement that errs toward silence.
 _say_group() { printf '%s' "$1"; }
+# The last FEW blocks, newest first — not just the last one. A hook fires between tool calls, and the
+# assistant writes prose between them too, so a tag can stop being "the last block" before any hook
+# gets a transcript with it flushed in: measured live, a tagged block was overtaken by four later
+# plain blocks and never spoken, while the same tag one turn earlier worked. Scanning back a few
+# blocks costs one jq call and the `iblk` dedupe already stops a tag being spoken twice, so the only
+# thing this changes is whether a named line can be LOST.
+SAY_LOOKBACK=5
+_recent_prose() {
+  jq -rs --argjson n "$SAY_LOOKBACK" '
+    [.[] | select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text]
+    | .[-$n:] | reverse | .[]
+    | gsub("\n"; "")' "$TRANSCRIPT" 2>/dev/null || printf ''
+}
+
 _try_say() {
   [[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || return 1
   local block line hash
-  block="$(_last_prose)"
-  [[ -n "$block" ]] || return 1
-  line="$(printf '%s\n' "$block" | grep -m1 -E '(^|[[:space:]>*_`-])SAY(\[[a-z-]+\])?:[[:space:]]*.' || true)"
+  # Newest block first, so the most recent unclaimed tag wins.
+  line=""
+  while IFS= read -r block; do
+    [[ -n "$block" ]] || continue
+    line="$(printf '%s\n' "${block//$'\001'/$'\n'}" \
+            | grep -m1 -E '(^|[[:space:]>*_`-])SAY(\[[a-z-]+\])?:[[:space:]]*.' || true)"
+    [[ -n "$line" ]] && break
+  done < <(_recent_prose)
   [[ -n "$line" ]] || return 1
   local text
   text="$(printf '%s' "$line" | sed -E 's/^.*SAY(\[[a-z-]+\])?:[[:space:]]*//')"

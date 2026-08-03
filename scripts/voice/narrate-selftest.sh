@@ -214,6 +214,19 @@ ck "a tagged line is spoken VERBATIM, as a milestone with its group's cue" \
 # 1, leaving LINE set — so the tag was spoken a SECOND time as a plain 60-char narration. Found by
 # running it twice by hand against a real transcript, which is what a suite is supposed to do for you.
 ck "the same tag never speaks twice" EMPTY "$(run "$SY" "$T/p-grep.json" "$T/t-say.jsonl")"
+# A tag stops being "the last block" as soon as the assistant writes more prose, and a hook only sees
+# a FLUSHED transcript — measured live: a tagged block was overtaken by four later plain blocks and
+# never spoken at all, while the same tag one turn earlier worked. So the scan goes back a few blocks.
+mk "$T/t-say-buried.jsonl" \
+   "$(txt 'SAY[green]: ยืนยันแล้วว่า supersede rule เป็นต้นเหตุ ไม่ใช่ rate floor ค่ะ')" \
+   "$(txt 'ต่อไปดู queue.sh')" "$(txt 'แล้วเช็ค settings.json')" "$(txt 'แล้วรัน suite')"
+ck "a tag several blocks back is still spoken, not lost" \
+   "SPOKE[milestone/green]: ยืนยันแล้วว่า supersede rule" \
+   "$(run "$(_s s1b)" "$T/p-read.json" "$T/t-say-buried.jsonl")"
+# And the line must be the TAG's line only — the block is flattened to survive one-block-per-read, so
+# a lost line boundary would speak the tag plus every following line of prose with it.
+ck "…and only the tagged line, not the rest of the block" 0 \
+   "$(run "$(_s s1c)" "$T/p-read.json" "$T/t-say-buried.jsonl" | grep -c 'ต่อไปดู queue' || true)"
 ck "a bare SAY: gets no cue — a sound per conclusion is a metronome again" \
    "SPOKE[milestone]: เจอว่า INNER JOIN" "$(run "$(_s s2)" "$T/p-read.json" "$T/t-say-bare.jsonl")"
 ck "…and none of that called the summarizer" 0 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
