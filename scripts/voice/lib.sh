@@ -234,15 +234,16 @@ voice_chattiness() {
 # first `max` raised it (4 long sentences, a 360-char ceiling) and came out sounding like a status
 # report read aloud. These four dials are the right ones: shorter, more often, made of facts.
 #
-# `insight` (the default) speaks one line per thing WORKED OUT — the assistant's own reasoning block
-# put through the summarizer's `insight` kind, and refused when the block only announces a step.
-# `facts` is the step metronome: two lines per tool call from scripts/voice/tool-fact.py ("รัน cargo
-# test" then "cargo test ผ่าน 42"), free of tokens and too much to listen to, which is why it is no
-# longer the default. `prose` speaks the assistant's pre-tool sentence verbatim — the cheapest, and
-# the one that judges nothing.
+# `say` (the default) speaks ONLY a line the assistant named itself — `SAY[group]: …` in its own
+# prose, verbatim, no model call, nothing invented, silence when there is no tag. `insight` adds a
+# summarizer fallback that GUESSES at an untagged block; measured on 12 real blocks it refused a
+# genuine finding, spoke a status line, and spoke a claim the next block retracted, so it is opt-in
+# rather than the default. `facts` is the step metronome: two lines per tool call from
+# scripts/voice/tool-fact.py ("รัน cargo test" then "cargo test ผ่าน 42"), free of tokens and too much
+# to listen to. `prose` speaks the assistant's pre-tool sentence verbatim and judges nothing.
 voice_narrate_source() {
-  local v; v="$(printf '%s' "${VOICE_NARRATE_SOURCE:-$(voice_cfg voice.autoplay.narrate_source insight)}" | tr '[:upper:]' '[:lower:]')"
-  case "$v" in insight|facts|prose) printf '%s' "$v" ;; *) vlog "narrate_source: '$v' is not insight|facts|prose — using insight"; printf 'insight' ;; esac
+  local v; v="$(printf '%s' "${VOICE_NARRATE_SOURCE:-$(voice_cfg voice.autoplay.narrate_source say)}" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in say|insight|facts|prose) printf '%s' "$v" ;; *) vlog "narrate_source: '$v' is not say|insight|facts|prose — using say"; printf 'say' ;; esac
 }
 
 # Seconds between narrated lines, and **0 = no floor**, which is now the default. It went 9 → 4 → 0

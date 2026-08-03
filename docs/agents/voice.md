@@ -223,13 +223,18 @@ Proved against a real `git worktree`, not a simulated one — the whole point is
 mechanical, so a faked root variable would test nothing: `scripts/voice/chattiness-selftest.sh`
 (10 cases, free to run — it only resolves config).
 
-### The mid-turn narrator — a conclusion, not a commentary on the machinery
+### The mid-turn narrator — a conclusion, named by the assistant
 
-`voice.autoplay.narrate_source: insight` (the default) speaks **one line per thing worked out**,
-built from the assistant's own reasoning block by the summarizer's `insight` kind:
+`voice.autoplay.narrate_source: say` (the default) speaks **only a line the assistant named itself**,
+with a `SAY[group]:` line in its own prose — spoken verbatim, mid-turn, while the work continues:
 
-> *root cause คือ submodule pointer ค้างที่ OG-631 เพราะ teardown.sql พัง จะ bump แล้วรัน scoped test
-> ใหม่ค่ะ*
+```
+SAY[red]: root cause คือ submodule pointer ค้างที่ OG-631 เพราะ teardown.sql พัง จะ bump แล้วรัน scoped test ใหม่ค่ะ
+```
+
+Same groups as the closing line's `VOICE[…]`, same free-and-exact economics, and a bare `SAY:` speaks
+without a cue. **No tag ⇒ silence** — which is the right sound for a stretch of work that has not
+concluded anything yet.
 
 **The unit is a conclusion, not a tool call**, and that correction is the entire history of this
 channel. The version before it narrated every step in both directions — *รัน cd*, *อ่าน queue.sh*,
@@ -238,9 +243,23 @@ person it was built for, in one sentence: *not every command you will run and ev
 command*. Nobody listening wants to be told which command is running. They want what a colleague
 would say out loud: **what you found, why, and what you are doing about it.**
 
-So the source is the assistant's prose — roughly one block per five tool calls (measured: 314 blocks
-against 1 523 calls) — and the summarizer's hardest job is **refusing**, because most blocks announce
-a step rather than settle anything. Two gates, cheap one first:
+**Why the tag rather than a summarizer**, which is what this was built as first. Run over 12 of this
+workspace's own mid-turn blocks, a model asked *"is this a conclusion?"* was wrong in both directions:
+
+| block | verdict | should have been |
+|---|---|---|
+| *"the refusal lost to the prompt's own tail — and it invented a completion that was never in the input"* | `NONE` | spoken — that was the finding of the hour |
+| *"Local commit + push were already done…"* | spoken as *"การ commit และ push เสร็จสิ้นแล้ว"* | `NONE` — status, not a conclusion (3/3 even after the prompt explicitly banned it) |
+| *"voice_tts_gender is called in three places and defined nowhere"* | spoken | `NONE` — **the next block retracted it** (*"Correction: it is defined"*), and nothing can take spoken audio back |
+| *"Now the cost lines and docs"*, *"PR #60 is up"*, … | `NONE` ✓ | correct |
+
+A model cannot know that a later block corrects an earlier one, and it cannot know which of five true
+statements was the point. The assistant does. So the judgement moved to the assistant and the default
+became "speak only what was named".
+
+`narrate_source: insight` keeps the summarizer as a **fallback** for anyone who would rather have a
+guess than silence: the tag still wins when present, and an untagged block gets judged. Its hardest
+job is refusing, so two gates, cheap one first:
 
 | gate | what it rejects | cost |
 |---|---|---|
@@ -258,7 +277,7 @@ and a refusal buried in the middle loses to the imperative at the end. With the 
 persona dropped: 3/3 refusals on two different mechanical blocks, 3/3 conclusions on a real finding,
 and no invented next step on a finding that named none.
 
-**It never falls back to the step sources.** A block with no conclusion is silence — falling back to
+**Neither falls back to the step sources.** A block with no conclusion is silence — falling back to
 `facts` would return *รัน cd* to the channel one silence at a time.
 
 Two other sources remain, and both cost nothing:

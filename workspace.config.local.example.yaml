@@ -109,12 +109,13 @@
 #     # The mid-turn narration, `max` only, and the biggest mid-turn voice there is. false ⇒ keep
 #     # max's ack + closing line, stop the talking in between (~$60/mo of max's ~$135).
 #     narrate: true
-#     # What a narrated line is ABOUT. insight (default) = a CONCLUSION each time something is worked
-#     # out, from the assistant's own reasoning ("root cause คือ X เพราะ Y จะแก้ Z") — mostly silent,
-#     # since a block that only announces a step is refused. facts = the old step metronome, two lines
+#     # What a line is ABOUT. say (default) = only what the assistant NAMED with a `SAY[group]: …`
+#     # line in its own prose ("root cause คือ X เพราะ Y จะแก้ Z") — verbatim, zero tokens, and silence
+#     # when nothing was named. insight = the same plus a summarizer guess at an untagged block
+#     # (measured wrong in both directions, hence opt-in). facts = the old step metronome, two lines
 #     # per tool call ("รัน cargo test" → "cargo test ผ่าน 42"): zero tokens, and too much to listen
-#     # to. prose = the assistant's pre-call sentence verbatim, cheapest and judges nothing.
-#     narrate_source: insight
+#     # to. prose = the assistant's pre-call sentence verbatim, judges nothing.
+#     narrate_source: say
 #     # `facts` only: the BEFORE half of its step pair. Inert under insight.
 #     narrate_intent: true
 #     narrate_gap: 0               # 0 = no floor, which is what "every action" needs. A number here
