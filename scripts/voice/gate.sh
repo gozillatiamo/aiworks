@@ -23,6 +23,8 @@
 #   PermissionRequest            a tool call needs a decision      → "ขออนุญาตรัน <cmd> ค่ะ"
 #   PermissionDenied             auto-mode refused it              → "<cmd> ถูก block ค่ะ"  (red)
 #   PreToolUse(ExitPlanMode)     a plan is up for approval         → "แผนพร้อมแล้ว ขออนุมัติค่ะ"
+#
+# The particle above is illustrative, not literal: it is the VOICE's (ครับ on a male one) — see $P.
 #   Notification                 permission / agent state          → classified from the message
 #
 # PermissionDenied earns its place on its own: an auto-mode denial is INVISIBLE — it never becomes a
@@ -44,6 +46,8 @@ set -euo pipefail
 VOICE_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib.sh
 . "$VOICE_SELF_DIR/lib.sh"
+# shellcheck source=./variety.sh
+. "$VOICE_SELF_DIR/variety.sh"   # variety_particle — every line below ends in the voice's own particle
 
 DEDUPE_WINDOW=20   # seconds — one prompt can arrive as two events (see below)
 
@@ -97,19 +101,27 @@ if parts:
   [[ -n "$path" ]] && printf '%s' "$(basename "$path")"
 }
 
+# THE PARTICLE IS THE VOICE'S, NOT A LITERAL. All eight lines below used to end in a hardcoded "ค่ะ",
+# which is correct only for a female voice — on a male one every gate said the wrong gender, which is
+# the exact defect this feature's docs call out ("a male voice saying ได้เลยค่ะ was a real bug in the
+# demo round"). It survived because the machine it was written on happens to be female. Derived the
+# same way every other caller does it; voice_tts_gender lives in the PROVIDER file, hence the load.
+command -v voice_tts_gender >/dev/null 2>&1 || voice_load_tts_provider
+P="$(variety_particle "$(voice_tts_gender)")"
+
 LINE="" CUE=attention CLASS=""
 case "$EVENT" in
   PermissionRequest)
     T="$(_target)"
-    if [[ "$TOOL" == "Bash" && -n "$T" ]]; then LINE="ขออนุญาตรัน $T ค่ะ"
-    elif [[ -n "$TOOL" && -n "$T" ]];   then LINE="ขออนุญาตใช้ $TOOL กับ $T ค่ะ"
-    elif [[ -n "$TOOL" ]];              then LINE="ขออนุญาตใช้ $TOOL ค่ะ"
-    else                                     LINE="รออนุญาตอยู่ค่ะ"; fi
+    if [[ "$TOOL" == "Bash" && -n "$T" ]]; then LINE="ขออนุญาตรัน $T $P"
+    elif [[ -n "$TOOL" && -n "$T" ]];   then LINE="ขออนุญาตใช้ $TOOL กับ $T $P"
+    elif [[ -n "$TOOL" ]];              then LINE="ขออนุญาตใช้ $TOOL $P"
+    else                                     LINE="รออนุญาตอยู่$P"; fi
     CLASS=perm
     ;;
   PermissionDenied)
     T="$(_target)"
-    LINE="${T:-$TOOL} ถูก block ค่ะ"
+    LINE="${T:-$TOOL} ถูก block $P"
     CUE=red
     CLASS=denied
     ;;
@@ -117,15 +129,15 @@ case "$EVENT" in
     # Wired for ExitPlanMode only, but a matcher is a string in a settings file — check anyway
     # rather than announcing a plan gate for whatever tool a future edit points at this hook.
     [[ "$TOOL" == "ExitPlanMode" ]] || { vlog "gate: PreToolUse for $TOOL is not a gate"; exit 0; }
-    LINE="แผนพร้อมแล้ว ขออนุมัติค่ะ"
+    LINE="แผนพร้อมแล้ว ขออนุมัติ$P"
     CLASS=plan
     ;;
   Notification)
     # Classified, never read aloud (the message is English). Unknown ⇒ silence.
     m="$(printf '%s' "$MESSAGE" | tr '[:upper:]' '[:lower:]')"
     case "$m" in
-      *permission*|*approve*|*allow*) LINE="ขออนุญาตทำงานต่อค่ะ"; CLASS=perm ;;
-      *completed*|*finished*|*done*)  LINE="agent ทำเสร็จแล้วค่ะ";  CLASS=agent ;;
+      *permission*|*approve*|*allow*) LINE="ขออนุญาตทำงานต่อ$P"; CLASS=perm ;;
+      *completed*|*finished*|*done*)  LINE="agent ทำเสร็จแล้ว$P";  CLASS=agent ;;
       # NO `idle` CLASS — deliberately, and do not put one back. "Claude is waiting for your input"
       # is not a gate: nothing is blocked and nothing needs a decision. The turn ENDED, the closing
       # line already said what happened, and the only new information in "รอคำสั่งอยู่ค่ะ" is that
