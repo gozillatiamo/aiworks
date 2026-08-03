@@ -244,6 +244,25 @@ mk "$T/t-say-thisturn.jsonl" \
    "$(txtat 'SAY[green]: บรรทัดจาก turn นี้ ต้องถูกพูดค่ะ' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)")"
 ck "…and one from THIS turn still is" "SPOKE[milestone/green]: บรรทัดจาก turn นี้" \
    "$(run "$(_s tb2)" "$T/p-read.json" "$T/t-say-thisturn.jsonl")"
+# A tag inside FENCED CODE is being quoted, not named. Discussing this channel means pasting its own
+# logs into a reply, and without this the scanner grepped a `SAY[...]:` string out of a code block and
+# spoke it — measured: iblk held a fragment of a probe's own output.
+mk "$T/t-say-fenced.jsonl" "$(txtat 'ผลการทดสอบ:
+
+```
+TURN=0 → SAY[ship]: บรรทัดที่ยกมาอ้าง ไม่ควรถูกพูดค่ะ
+```
+
+จบรายงาน' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)")"
+ck "a tag inside a code fence is quoted, not spoken" EMPTY \
+   "$(run "$(_s fn1)" "$T/p-read.json" "$T/t-say-fenced.jsonl")"
+mk "$T/t-say-both.jsonl" "$(txtat 'SAY[green]: บรรทัดที่ตั้งชื่อไว้จริงค่ะ
+
+```
+SAY[red]: บรรทัดในกรอบโค้ด
+```' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)")"
+ck "…and a real tag in the same block still wins" "SPOKE[milestone/green]: บรรทัดที่ตั้งชื่อไว้จริง" \
+   "$(run "$(_s fn2)" "$T/p-read.json" "$T/t-say-both.jsonl")"
 ck "a bare SAY: gets no cue — a sound per conclusion is a metronome again" \
    "SPOKE[milestone]: เจอว่า INNER JOIN" "$(run "$(_s s2)" "$T/p-read.json" "$T/t-say-bare.jsonl")"
 ck "…and none of that called the summarizer" 0 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
