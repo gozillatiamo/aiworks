@@ -519,6 +519,16 @@ workspace and a per-repo-only path would leave voice dead in every worktree.
 
 ⚠ Never read, print, `grep` (without `-q`) or `bash -x` a real `.env` — see `CLAUDE.md`.
 
+## Turned a flag on and the machine stayed quiet?
+
+Check the flag's **value**, not the wiring. `enabled: ture` resolves to false, which is exactly
+what a deliberate `false` looks like, so `aiworks voice status` says `off` — truthfully, and without
+naming the typo. That is how `stagehand.enabled` stayed off for weeks. Both readers now log it
+(`VOICE_VERBOSE=1` / `STAGE_VERBOSE=1`), and `aiworks config` reports it unprompted with the file,
+the key and the value. A value in neither the truthy (`true`/`yes`/`1`/`on`) nor the falsy
+(`false`/`no`/`0`/`off`) set resolves to the key's **documented default** rather than to an invented
+`false`. `voice_cfg_int` has always defended itself this way; `voice_cfg_bool` now does too.
+
 ## Where the rest lives
 
 - `scripts/voice/README.md` — the reference: every key, every provider, every measured number

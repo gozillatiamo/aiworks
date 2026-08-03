@@ -83,6 +83,8 @@
 #   aiworks config [options]
 #
 #   --config <file>     workspace.config.yaml to read   (default: <workspace>/workspace.config.yaml)
+#   --config-local <f>  the personal override to CHECK   (default: <workspace>/workspace.config.local.yaml)
+#                       Read by the advisory guards only — never baked into the generated mirror.
 #   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/dev-cycle.js)
 #   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/prd.js)
 #   --workspace <file>  <name>.code-workspace to (re)generate (default: <workspace>/<basename>.code-workspace)
@@ -101,11 +103,12 @@ warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────
-WC="" TARGET="" PRD_TARGET="" WS_TARGET="" DRY=0 QUIET=0
+WC="" WC_LOCAL="" TARGET="" PRD_TARGET="" WS_TARGET="" DRY=0 QUIET=0
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)     WC="${2:-}"; shift 2 ;;
+    --config)       WC="${2:-}"; shift 2 ;;
+    --config-local) WC_LOCAL="${2:-}"; shift 2 ;;
     --target)     TARGET="${2:-}"; shift 2 ;;
     --prd-target) PRD_TARGET="${2:-}"; shift 2 ;;
     --workspace)  WS_TARGET="${2:-}"; shift 2 ;;
@@ -131,7 +134,10 @@ WS_NAME="$(basename "$ROOT")"
 
 # Personal, git-ignored override — read at RUNTIME by chat/agents/skills, NOT baked into this
 # committed mirror (so no personal pref leaks into a tracked file). Just surface that it exists.
-WC_LOCAL="$ROOT/workspace.config.local.yaml"
+# --config-local exists so the checks that read this file are TESTABLE against a fixture. It is
+# not a way to point a real run at another machine's overrides: nothing here is baked into the
+# generated mirror either way.
+[[ -n "$WC_LOCAL" ]] || WC_LOCAL="$ROOT/workspace.config.local.yaml"
 if [[ -f "$WC_LOCAL" && "$QUIET" -ne 1 ]]; then
   warn "workspace.config.local.yaml present — a RUNTIME-only personal override (chat/agents/skills); this committed mirror is regenerated from workspace.config.yaml (shared) only."
 fi
@@ -225,6 +231,70 @@ config_comment_check() {
   [[ "$dirty" -eq 1 || "$QUIET" -eq 1 ]] || ok "the live config files carry no comments"
 }
 config_comment_check
+
+# ── 0c. value guard: a key documented as a BOOLEAN carries a boolean ────────────────────
+# The drift guard checks that every key is DOCUMENTED; the comment guard, that the file is data.
+# Neither has ever looked at a VALUE — and a value held the quietest failure this workspace has
+# had: `stagehand.enabled: ture` in a personal config read as OFF for weeks. Every `*_cfg_bool`
+# reader resolves "not truthy" to false, so a typo and a deliberate opt-out are the same thing to
+# every surface that reports state. The readers now log it (voice_cfg_bool / stage_cfg_bool), but
+# a reader's log needs VERBOSE=1 to be seen; THIS is the surface someone actually reads.
+#
+# Which keys are boolean is LEARNED from the templates, not listed here, so a new flag is covered
+# the day it is documented — which the drift guard above already requires. Learning uses the
+# STRICT literals true/false only: `narrate_gap: 0` is a count, and admitting 0/1 as boolean would
+# flag every number in the file. Validation is lenient (yes/on/off/1/0 all pass) because those are
+# legal YAML booleans a teammate may well write; only a value in NEITHER set is reported.
+# ADVISORY like both siblings — a typo'd flag breaks no run, it just silently means "off".
+config_key_values() {   # <yaml-file> → "path<TAB>value", one per line
+  awk '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    /^[[:space:]]*-/ { next }
+    !/^[ ]*[A-Za-z_][A-Za-z0-9_]*[ ]*:/ { next }
+    {
+      ind  = match($0, /[^ ]/) - 1
+      line = $0; sub(/^ */, "", line)
+      key  = line; sub(/[ ]*:.*$/, "", key)
+      val  = line; sub(/^[^:]*:[ \t]*/, "", val)
+      sub(/[ \t]+#.*$/, "", val); gsub(/^[ \t]+|[ \t]+$/, "", val)
+      gsub(/^["'\'']|["'\'']$/, "", val)
+      d = int(ind / 2); stack[d] = key
+      for (i = d + 1; i <= 20; i++) stack[i] = ""
+      path = stack[0]
+      for (i = 1; i <= d; i++) path = path "." stack[i]
+      printf "%s\t%s\n", path, val
+    }' "$1"
+}
+
+config_bool_check() {
+  local tmpl bools f path val lower bad=()
+  bools="$(
+    for tmpl in "$CONFIG_EXAMPLE" "$ROOT/workspace.config.local.example.yaml"; do
+      [[ -f "$tmpl" ]] && config_key_values "$tmpl"
+    done | awk -F'\t' 'tolower($2) == "true" || tolower($2) == "false" { print $1 }' | sort -u
+  )"
+  [[ -n "$bools" ]] || return 0
+  for f in "$WC" "$WC_LOCAL"; do
+    [[ -f "$f" ]] || continue
+    while IFS=$'\t' read -r path val; do
+      [[ -n "$val" ]] || continue
+      printf '%s\n' "$bools" | grep -qxF "$path" || continue
+      lower="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')"
+      case "$lower" in true|yes|1|on|false|no|0|off) continue ;; esac
+      bad+=("$(basename "$f")  $path: $val")
+    done < <(config_key_values "$f")
+  done
+  if [[ ${#bad[@]} -eq 0 ]]; then
+    [[ "$QUIET" -eq 1 ]] || ok "every boolean flag in the live config carries a boolean"
+    return 0
+  fi
+  # STDERR for the same reason as the two guards above: `aiworks sync` drops this script's stdout.
+  warn "a flag documented as a boolean carries a value that is neither — it reads as OFF:" >&2
+  printf '      %s\n' "${bad[@]}" >&2
+  warn "  every *_cfg_bool reader resolves anything but true/yes/1/on to false, so a typo here is indistinguishable from opting out. Fix the value." >&2
+}
+config_bool_check
 
 START_RE='>>> AIWORKS:CONFIG START'
 END_RE='<<< AIWORKS:CONFIG END'

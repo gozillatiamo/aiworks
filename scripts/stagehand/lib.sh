@@ -102,10 +102,18 @@ stage_cfg() {
   printf '%s' "$def"
 }
 
+# A value that is neither truthy NOR falsy is a TYPO, not an opt-out. It used to be
+# indistinguishable from one — `stagehand.enabled: ture` in a personal config resolved to false in
+# silence, so the whole feature was off for weeks and no surface said why. Same defence
+# stage_cfg_int has always had: say so, and fall back to the DOCUMENTED default.
 stage_cfg_bool() {
-  case "$(stage_cfg "$1" "${2:-false}" | tr '[:upper:]' '[:lower:]')" in
-    true|yes|1|on) return 0 ;; *) return 1 ;;
+  local v; v="$(stage_cfg "$1" "${2:-false}" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in
+    true|yes|1|on)     return 0 ;;
+    false|no|0|off|'') return 1 ;;
   esac
+  slog "cfg $1: '$v' is not a boolean — using ${2:-false}"
+  case "${2:-false}" in true|yes|1|on) return 0 ;; *) return 1 ;; esac
 }
 
 # Clamped, for the same reason voice clamps: these are seconds and counts that decide how often
