@@ -467,5 +467,31 @@ else
   printf '\n  (run with --live to also move a real window and put it back)\n'
 fi
 
+printf '\nCONFIG READER\n'
+
+# `stagehand.enabled: ture` sat in a personal config for weeks. Every reader resolved it to false,
+# which is exactly what a deliberate `false` looks like, so every surface honestly reported "off"
+# and nothing named the typo. These cases pin the two halves of the fix: a value in NEITHER the
+# truthy nor the falsy set must SAY so, and must resolve to the documented DEFAULT rather than to
+# an invented false — while a legitimately falsy spelling stays silent, or the warning is noise.
+# stage_cfg is overridden per case so the reader is tested without a config file on disk.
+cfgbool() {  # cfgbool <value> <default> → "<TRUE|FALSE> <warned|silent>"
+  local out rc
+  out="$(STAGE_VERBOSE=1 bash -c ". '$DIR/lib.sh'
+    stage_cfg() { printf '%s' '$1'; }
+    stage_cfg_bool stagehand.enabled '$2'" 2>&1 >/dev/null)"
+  STAGE_VERBOSE=0 bash -c ". '$DIR/lib.sh'
+    stage_cfg() { printf '%s' '$1'; }
+    stage_cfg_bool stagehand.enabled '$2'" >/dev/null 2>&1 && rc=TRUE || rc=FALSE
+  case "$out" in *"is not a boolean"*) printf '%s warned' "$rc" ;; *) printf '%s silent' "$rc" ;; esac
+}
+
+check "a typo'd boolean is NAMED, not silently read as off" 'warned' "$(cfgbool ture false)"
+check "a typo'd boolean with an off default still resolves off"  'FALSE' "$(cfgbool ture false)"
+check "a typo'd boolean falls back to the DOCUMENTED default, not to false" 'TRUE' "$(cfgbool ture true)"
+check "a legitimate 'off' is falsy and stays SILENT"     'FALSE silent' "$(cfgbool off true)"
+check "a legitimate 'on' is truthy and stays SILENT"     'TRUE silent'  "$(cfgbool on false)"
+check "an absent value is falsy and stays SILENT"        'FALSE silent' "$(cfgbool '' false)"
+
 printf '\n%s passed, %s failed\n\n' "$PASS" "$FAIL"
 [[ "$FAIL" == "0" ]]

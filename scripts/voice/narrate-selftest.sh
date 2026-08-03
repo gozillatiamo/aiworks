@@ -688,6 +688,30 @@ ck "a missing particle is appended"              "เช่นกันค่ะ
 ck "…in the pinned gender"                       "จากคุณครับ"      "$(pin ครับ 'รอการตรวจสอบจากคุณ')"
 ck "an empty line stays empty, never just a particle" EMPTY       "$(pin ค่ะ '')"
 
+echo '== a boolean that is neither true nor false is a TYPO, not an opt-out =='
+# The quietest bug this adapter has had was not in the adapter: `enabled: ture` in a personal
+# config resolved to false, which is indistinguishable from a deliberate `false`, so every surface
+# honestly reported "off" and nothing named the typo. Two halves are pinned here — the reader SAYS
+# so, and it falls back to the DOCUMENTED default rather than to an invented false — plus the other
+# side of the coin: a legitimately falsy spelling must stay silent, or the warning is just noise.
+# voice_cfg is overridden per case so the reader is exercised without a config file on disk.
+vbool() {  # vbool <value> <default> → "<TRUE|FALSE> <warned|silent>"
+  local out rc
+  out="$(VOICE_VERBOSE=1 bash -c ". '$T/scripts/voice/lib.sh'
+    voice_cfg() { printf '%s' '$1'; }
+    voice_cfg_bool voice.enabled '$2'" 2>&1 >/dev/null)"
+  VOICE_VERBOSE=0 bash -c ". '$T/scripts/voice/lib.sh'
+    voice_cfg() { printf '%s' '$1'; }
+    voice_cfg_bool voice.enabled '$2'" >/dev/null 2>&1 && rc=TRUE || rc=FALSE
+  case "$out" in *"is not a boolean"*) printf '%s warned' "$rc" ;; *) printf '%s silent' "$rc" ;; esac
+}
+ck "a typo'd boolean is NAMED, not silently read as off"                    "warned"       "$(vbool ture false)"
+ck "a typo'd boolean with an off default still resolves off"                "FALSE"        "$(vbool ture false)"
+ck "a typo'd boolean falls back to the DOCUMENTED default, not to false"    "TRUE"         "$(vbool ture true)"
+ck "a legitimate 'off' is falsy and stays SILENT"                           "FALSE silent" "$(vbool off true)"
+ck "a legitimate 'on' is truthy and stays SILENT"                           "TRUE silent"  "$(vbool on false)"
+ck "an absent value is falsy and stays SILENT"                              "FALSE silent" "$(vbool '' false)"
+
 echo "== tool-fact.py fixtures =="
 if python3 "$SRC/scripts/voice/tool-fact.py" --selftest >/dev/null 2>&1; then
   echo "  ok   tool-fact fixtures green"; pass=$((pass+1))
