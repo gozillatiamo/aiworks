@@ -258,8 +258,15 @@ cmd_drain_locked() {
       vlog "play $kind [$sess]: $(basename "$audio")"
       _play "$audio"
 
-      jq -n --arg s "$sess" --argjson ts "$(voice_now)" '{session: $s, ts: $ts}' \
-        > "$VOICE_LAST_SPOKEN.tmp" && mv "$VOICE_LAST_SPOKEN.tmp" "$VOICE_LAST_SPOKEN"
+      # ONE call to voice_tmp, held in a variable. Calling it twice — once in the redirect and once
+      # in the mv — creates TWO temp files: jq fills the first, and the second, still empty, is what
+      # gets moved over the target. Measured immediately after writing it that way: last-spoken.json
+      # was 0 bytes with an 84-byte orphan temp sitting beside it. Every mktemp caller has to bind
+      # the name first; the redirect and the mv must name the same file.
+      local lastf; lastf="$(voice_tmp "$VOICE_LAST_SPOKEN")"
+      jq -n --arg s "$sess" --argjson ts "$(voice_now)" '{session: $s, ts: $ts}' > "$lastf" \
+        && mv "$lastf" "$VOICE_LAST_SPOKEN"
+      rm -f "$lastf"
     done <<< "$jobs"
   done
   # With the lock still held and nothing waiting to be said — the one safe moment to evict.

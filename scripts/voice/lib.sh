@@ -320,29 +320,55 @@ voice_narrate_get() {   # SESSION FIELD(hash|ts|n|nturn|fail|thr) → value ("" 
 # MERGES rather than replaces (the first version wrote a fresh {hash, ts} object): the counters
 # and the threshold list live in the same file, and a setter that dropped them would re-arm every
 # single-shot threshold on the next narrated step.
+# ── a temp file NO OTHER PROCESS SHARES ────────────────────────────────────────────
+# Every state writer here is "jq into a temp, then mv" — correct, because a reader must never see a
+# half-written file. The temp used to be "$f.tmp", which is a FIXED path, and that was a real
+# corruption bug rather than a theoretical one: several narrate.sh processes are alive at the same
+# moment (one per hook event, and a parallel tool block spawns several inside the same second), so
+# they all opened the same "$f.tmp" with `>` — one truncating what another was still writing, and
+# whichever `mv` landed last published the wreckage.
+#
+# MEASURED, on a live turn: the narration state file came out ZERO BYTES. Everything downstream then
+# fails silently in the most confusing way possible — `voice_narrate_get` returns empty for every
+# field, so the dedupe never matches, and the same spoken line goes out once per hook event. The
+# symptom looks like "the dedupe is broken"; the cause is two writers sharing one temp name.
+#
+# `mktemp`, NOT "$1.$$.tmp" — which was the first fix and was still wrong. `$$` is the PID of the
+# shell, and a background `&` subshell inherits it unchanged (BASHPID is the per-subshell one, and it
+# does not exist in the bash 3.2 macOS ships). So 24 writers forked from one shell shared a temp name
+# again and the suite caught a 0-byte file with the "fix" in place. mktemp is unique by construction,
+# on any shell, and it creates the file so nothing else can claim the name between check and write.
+voice_tmp() { mktemp "$1.XXXXXX" 2>/dev/null || printf '%s.%s.tmp' "$1" "$$"; }
+
 voice_narrate_put() {   # SESSION FIELD VALUE — a string/number field, timestamp untouched
   voice_mkdirs
-  local f; f="$(voice_narrate_file "$1")"
-  if [[ -f "$f" ]]; then
-    jq --arg k "$2" --arg v "$3" '.[$k] = $v' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  local f t; f="$(voice_narrate_file "$1")"; t="$(voice_tmp "$f")"
+  # `-s` and the jq exit status TOGETHER, not `-f`: an existing but unparseable file (0 bytes is the
+  # one that actually happened) makes the merge jq fail, and with `-f` the else-branch was never
+  # reached — so `&& mv` never ran and the state stayed broken for the rest of the session. Falling
+  # through to a fresh write means the next put REPAIRS it.
+  if [[ -s "$f" ]] && jq --arg k "$2" --arg v "$3" '.[$k] = $v' "$f" > "$t" 2>/dev/null; then
+    mv "$t" "$f"
   else
-    jq -n --arg k "$2" --arg v "$3" '{($k): $v}' > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+    jq -n --arg k "$2" --arg v "$3" '{($k): $v}' > "$t" 2>/dev/null && mv "$t" "$f"
   fi
+  rm -f "$t"
 }
 
 voice_narrate_set() {   # SESSION HASH [TURN] — records what was said and WHEN, bumping the count
   voice_mkdirs
-  local f turn; f="$(voice_narrate_file "$1")"; turn="${3:-0}"
-  if [[ -f "$f" ]]; then
-    jq --arg h "$2" --argjson t "$(voice_now)" --arg turn "$turn" '
+  local f turn t; f="$(voice_narrate_file "$1")"; turn="${3:-0}"; t="$(voice_tmp "$f")"
+  if [[ -s "$f" ]] && jq --arg h "$2" --argjson now "$(voice_now)" --arg turn "$turn" '
       . as $o
       | (if ($o.nturn // "0") == $turn then (($o.n // "0") | tonumber) else 0 end) as $n
-      | $o + {hash: $h, ts: $t, n: (($n + 1) | tostring), nturn: $turn}
-    ' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+      | $o + {hash: $h, ts: $now, n: (($n + 1) | tostring), nturn: $turn}
+    ' "$f" > "$t" 2>/dev/null; then
+    mv "$t" "$f"
   else
-    jq -n --arg h "$2" --argjson t "$(voice_now)" --arg turn "$turn" \
-      '{hash: $h, ts: $t, n: "1", nturn: $turn}' > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+    jq -n --arg h "$2" --argjson tt "$(voice_now)" --arg turn "$turn" \
+      '{hash: $h, ts: $tt, n: "1", nturn: $turn}' > "$t" 2>/dev/null && mv "$t" "$f"
   fi
+  rm -f "$t"
 }
 
 # How many lines this turn has spoken — 0 once the turn stamp moves on, without a reset pass.
@@ -441,18 +467,20 @@ voice_turn_file() { printf '%s/%s.json' "$VOICE_TURN_DIR" "$(voice_sha "${1:-def
 
 voice_turn_start() {   # SESSION_ID
   voice_mkdirs
-  local f; f="$(voice_turn_file "$1")"
-  jq -n --argjson t "$(voice_now)" '{turn: $t, ended: 0}' > "$f.tmp" && mv "$f.tmp" "$f"
+  local f t; f="$(voice_turn_file "$1")"; t="$(voice_tmp "$f")"
+  jq -n --argjson now "$(voice_now)" '{turn: $now, ended: 0}' > "$t" && mv "$t" "$f"
+  rm -f "$t"
 }
 
 voice_turn_end() {   # SESSION_ID
   voice_mkdirs
-  local f; f="$(voice_turn_file "$1")"
-  if [[ -f "$f" ]]; then
-    jq --argjson e "$(voice_now)" '.ended = $e' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  local f t; f="$(voice_turn_file "$1")"; t="$(voice_tmp "$f")"
+  if [[ -s "$f" ]] && jq --argjson e "$(voice_now)" '.ended = $e' "$f" > "$t" 2>/dev/null; then
+    mv "$t" "$f"
   else
-    jq -n --argjson e "$(voice_now)" '{turn: 0, ended: $e}' > "$f.tmp" && mv "$f.tmp" "$f"
+    jq -n --argjson e "$(voice_now)" '{turn: 0, ended: $e}' > "$t" && mv "$t" "$f"
   fi
+  rm -f "$t"
 }
 
 voice_turn_get() {   # SESSION_ID FIELD → number (0 when unknown)
@@ -628,8 +656,9 @@ VOICE_FOCUS_FILE="$VOICE_CACHE_HOME/focused"
 
 voice_focus_set() {   # [SESSION] — defaults to this checkout
   voice_mkdirs
-  printf '%s' "${1:-$VOICE_ROOT}" > "$VOICE_FOCUS_FILE.tmp" 2>/dev/null \
-    && mv "$VOICE_FOCUS_FILE.tmp" "$VOICE_FOCUS_FILE"
+  local t; t="$(voice_tmp "$VOICE_FOCUS_FILE")"
+  printf '%s' "${1:-$VOICE_ROOT}" > "$t" 2>/dev/null && mv "$t" "$VOICE_FOCUS_FILE"
+  rm -f "$t"
 }
 
 voice_focus_get() { [[ -f "$VOICE_FOCUS_FILE" ]] && cat "$VOICE_FOCUS_FILE" 2>/dev/null || printf ''; }
