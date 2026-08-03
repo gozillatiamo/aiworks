@@ -117,7 +117,10 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   ONLY thing spoken mid-turn: no tag ⇒ silence, which is correct for a stretch of work that has not
   concluded anything yet. Do NOT tag a step you are about to take ("อ่าน queue.sh ก่อน"), a status
   ("commit แล้ว"), or a claim you may retract two blocks later — a summarizer was tried for this
-  decision and got all three wrong, which is why the judgement is yours. **A muted machine costs nothing** — `aiworks voice mute on`
+  decision and got all three wrong, which is why the judgement is yours. **It must sit MID-turn, with a tool call still to come:** a tag in the FINAL block of a
+  reply is spoken by nobody — its own turn has no tool call left to trigger a hook, and the next
+  turn's lookback is bounded to that turn. The closing line (`VOICE[…]`) is the mechanism for the
+  end of a turn; these two do not substitute for each other. **A muted machine costs nothing** — `aiworks voice mute on`
   *or* simply muting the system output (read live from macOS) **disables** everything this machine
   says out loud, machine-wide: nothing summarized, nothing synthesized, no cue and no sound effect
   played. Neither reaches the Slack voice note (that is `voice.notify_voice.enabled` in config,
