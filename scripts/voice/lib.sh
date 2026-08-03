@@ -122,10 +122,19 @@ voice_cfg() {
   printf '%s' "$def"
 }
 
-voice_cfg_bool() {   # true only for true/yes/1/on
-  case "$(voice_cfg "$1" "${2:-false}" | tr '[:upper:]' '[:lower:]')" in
-    true|yes|1|on) return 0 ;; *) return 1 ;;
+# voice_cfg_bool <dotted.path> [default] — true only for true/yes/1/on.
+# A value that is neither truthy NOR falsy is a TYPO, not an opt-out, and used to be
+# indistinguishable from one: `enabled: ture` resolved to false in silence, so the feature was
+# simply off and nothing anywhere said why. Same defence voice_cfg_int has always had — say so
+# and fall back to the DOCUMENTED default rather than inventing `false`.
+voice_cfg_bool() {
+  local v; v="$(voice_cfg "$1" "${2:-false}" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in
+    true|yes|1|on)     return 0 ;;
+    false|no|0|off|'') return 1 ;;
   esac
+  vlog "cfg $1: '$v' is not a boolean — using ${2:-false}"
+  case "${2:-false}" in true|yes|1|on) return 0 ;; *) return 1 ;; esac
 }
 
 # voice_cfg_int <dotted.path> <default> [min] [max] — a NUMERIC setting, clamped.

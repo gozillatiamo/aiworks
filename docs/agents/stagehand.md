@@ -298,6 +298,23 @@ stagehand:
 
 `STAGEHAND=off` in the environment silences everything without touching config.
 
+### If you turned it on and nothing happens, check the value first
+
+`enabled: ture` in a personal config kept this feature off for weeks. Every `*_cfg_bool` reader
+resolves "not truthy" to false, so a typo and a deliberate `false` are the same thing to every
+surface that reports state — the status line honestly said off, and nothing said why. Two guards
+close that now, and the second is the one to reach for:
+
+```bash
+STAGE_VERBOSE=1 …    # the reader logs `cfg stagehand.enabled: 'ture' is not a boolean`
+aiworks config       # names the file, the key and the value, unprompted
+```
+
+A value in neither the truthy (`true`/`yes`/`1`/`on`) nor the falsy (`false`/`no`/`0`/`off`) set
+now resolves to the key's **documented default** rather than to an invented `false`. Which keys are
+booleans is learned from `workspace.config.example.yaml`, so a new flag is covered the day it is
+documented. Tested by `scripts/aiworks-config-selftest.sh`.
+
 ## Requirements
 
 macOS, and three TCC grants **for the terminal that runs Claude Code** (not for Cursor or Chrome —
