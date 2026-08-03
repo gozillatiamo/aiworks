@@ -444,7 +444,35 @@ _clean() {   # one line, no quotes, no stray markdown — the model occasionally
     | sed -E 's/^(Sunmi|ซันมี่|Assistant|AI)[[:space:]]*[:：][[:space:]]*//' \
     | sed -E 's/[。．｡]+$//' \
     | sed -E 's/[.。．｡]+[[:space:]]*(ค่ะ|ครับ|คะ|นะคะ|นะครับ)$/\1/' \
-    | sed -E 's/  +/ /g'
+    | sed -E 's/  +/ /g' \
+    | _pin_particle
+}
+
+# The particle is pinned to the VOICE's gender, and the prompt says so — but a prompt is a request.
+# HEARD on a live end-to-end run: "ได้ค่ะ … รอผลการตรวจสอบครับ" from a female voice with --particle ค่ะ,
+# i.e. both genders in one sentence. Reproduced at roughly 1 in 5, so it is a model slip rather than a
+# systematic fault — which is exactly the kind of thing to make deterministic at the end of the pipe
+# instead of arguing about in the prompt. Only the FINAL particle is touched, and the นะ softener is
+# preserved rather than flattened, because "นะคะ" and "ค่ะ" are different registers.
+_pin_particle() {
+  case "$PARTICLE" in
+    ครับ) sed -E 's/นะคะ$/นะครับ/; s/(ค่ะ|คะ)$/ครับ/' ;;
+    *)    sed -E 's/นะครับ$/นะคะ/; s/ครับ$/ค่ะ/' ;;
+  esac | _add_particle
+}
+
+# A MISSING particle, which is the other half of the same slip and just as audible: heard twice in a
+# row on the report kind — "…รอการตรวจสอบจากคุณ", "เคสผ่านหมด 107 เช่นกัน" — both ending flat. Thai without
+# a closing particle sounds clipped, the prompt already asks for one, and appending it is deterministic
+# where asking is not. Only when the line ends with no particle at all, and never to an empty line.
+# awk, not sed: BSD sed does not take the `/re/! { ... }` block form this needs, and it fails with
+# "bad flag in substitute command" rather than quietly doing the wrong thing — the second time this
+# codebase has been bitten by a BSD-vs-GNU sed difference.
+_add_particle() {
+  awk -v p="$PARTICLE" '
+    /^[[:space:]]*$/           { print; next }
+    /(ค่ะ|ครับ|คะ)$/            { print; next }
+    { sub(/[[:space:]]+$/, ""); print $0 p }'
 }
 # The particle rule ("end the sentence with ค่ะ") plus a model that had already ended its sentence
 # produces "…หาวิธีแก้ไข. ค่ะ" — measured, and a spoken full stop before the particle is a stumble in
