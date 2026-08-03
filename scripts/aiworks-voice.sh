@@ -629,7 +629,15 @@ case "$cmd" in
     printf 'cue started       %.2fs\n' "$(el)"
     # A concrete request on purpose: given a vague one the summarizer has nothing to name and
     # will reach for a plausible file name, which reads as a hallucination in a smoke test.
-    line="$("$VOICE/summarize.sh" --particle 'ครับ' \
+    #
+    # The particle is DERIVED from the voice, like every other caller does it (ack.sh, milestone.sh,
+    # notify-voice.sh, narrate.sh). It used to be hardcoded to 'ครับ', so the one command whose whole
+    # job is "prove you can hear it" spoke the wrong gender on a female voice — which is what this
+    # feature calls a real bug, coming out of its own smoke test. Heard, not read: the line came back
+    # "ได้ค่ะ … ก่อนครับ", both genders in one sentence.
+    . "$VOICE/variety.sh" 2>/dev/null
+    voice_load_tts_provider
+    line="$("$VOICE/summarize.sh" --particle "$(variety_particle "$(voice_tts_gender)")" \
             "ช่วยเช็ค commission calculator ใน agent-webservice ให้หน่อย" 2>/dev/null)"
     printf 'summarizer done   %.2fs  %s\n' "$(el)" "${line:-(failed)}"
     [[ -n "$line" ]] || die "the summarizer returned nothing — check voice.summarizer.provider and its key"

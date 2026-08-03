@@ -653,6 +653,28 @@ ck "…and the newest is among them" "n5.mp3" "$(cat "$T/cache/played" 2>/dev/nu
 ck "the OLDEST is the one dropped" 0 "$(grep -c 'n1.mp3' "$T/cache/played" 2>/dev/null || true)"
 rm -f "$T/cache/played"
 
+echo "== the particle is PINNED to the voice, not requested from the model =="
+# HEARD on a live run, not caught by any test: "ได้ค่ะ … รอผลการตรวจสอบครับ" — both genders in one
+# sentence, from a female voice with --particle ค่ะ. Roughly 1 in 5, so a model slip rather than a
+# systematic fault, which is why it is now fixed at the end of the pipe instead of in the prompt.
+# The REAL summarize.sh is used here (the suite's stub does not clean anything), with no network:
+# _pin_particle is a pure text function, extracted and fed by hand.
+pin() { # pin <particle> <line>
+  bash -c 'PARTICLE="$1"
+    . /dev/stdin <<< "$(sed -n "/^_pin_particle() {/,/^}/p; /^_add_particle() {/,/^}/p" "$2")"
+    printf "%s\n" "$3" | _pin_particle' _ "$1" "$SRC/scripts/voice/summarize.sh" "$2"
+}
+ck "a male ending on a female voice is corrected" "ตรวจสอบแล้วค่ะ" "$(pin ค่ะ 'ตรวจสอบแล้วครับ')"
+ck "…and the reverse"                            "ตรวจสอบแล้วครับ" "$(pin ครับ 'ตรวจสอบแล้วค่ะ')"
+ck "the นะ softener survives, not flattened"      "รอผลนะคะ"       "$(pin ค่ะ 'รอผลนะครับ')"
+ck "a correct ending is left alone"              "เรียบร้อยค่ะ"    "$(pin ค่ะ 'เรียบร้อยค่ะ')"
+ck "a particle mid-sentence is not touched"      "ได้ค่ะ จะไปดูค่ะ" "$(pin ค่ะ 'ได้ค่ะ จะไปดูครับ')"
+# The other half of the same slip: NO particle at all. Heard twice in a row on the report kind
+# ("…รอการตรวจสอบจากคุณ", "เคสผ่านหมด 107 เช่นกัน"), and Thai without a closing particle sounds clipped.
+ck "a missing particle is appended"              "เช่นกันค่ะ"      "$(pin ค่ะ 'เคสผ่านหมด 107 เช่นกัน')"
+ck "…in the pinned gender"                       "จากคุณครับ"      "$(pin ครับ 'รอการตรวจสอบจากคุณ')"
+ck "an empty line stays empty, never just a particle" EMPTY       "$(pin ค่ะ '')"
+
 echo "== tool-fact.py fixtures =="
 if python3 "$SRC/scripts/voice/tool-fact.py" --selftest >/dev/null 2>&1; then
   echo "  ok   tool-fact fixtures green"; pass=$((pass+1))

@@ -424,7 +424,16 @@ day, and the voice when an alternate is configured. What never varies: no invent
 quip lands the third time, grates on the fiftieth, and will eventually fire during an incident.
 
 The Thai sentence-final particle is pinned to the voice's gender (`ครับ` male / `ค่ะ` female)
-— a male voice saying "ได้เลยค่ะ" was a real bug in the demo round.
+— a male voice saying "ได้เลยค่ะ" was a real bug in the demo round. The prompt asks for it, and
+**the end of the pipe enforces it** — asking was measured to fail about 1 in 5 ("ได้ค่ะ … รอผลการตรวจสอบ
+**ครับ**", both genders in one sentence, heard on a live run). `_pin_particle` corrects a
+wrong-gender ending and `_add_particle` supplies a missing one, preserving the `นะ` softener
+(`นะคะ`/`นะครับ` are a different register from bare `ค่ะ`/`ครับ`). Both are awk/sed on the final line, so
+they cost nothing and cannot be talked out of it.
+
+`aiworks voice test` used to hardcode `--particle 'ครับ'`, so the one command whose job is *prove you
+can hear it* spoke the wrong gender on a female voice. It now derives the particle from the voice like
+every other caller.
 
 ```bash
 scripts/voice/ack.sh -v "the prompt"        # run the whole chain by hand, with reasoning
