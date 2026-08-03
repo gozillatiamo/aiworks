@@ -355,6 +355,11 @@ a sentence invented to fill this line is worse than saying nothing.
 NEVER narrate mechanics. Which command you ran, which file you opened, how many lines it had, which
 tool you used: none of that belongs here, even when the text below is mostly about it. Say what it
 MEANT.
+NEVER report STATUS. \"เสร็จแล้ว\", \"commit และ push เสร็จสิ้นแล้ว\", \"กำลังทำอยู่\", \"ผ่านหมด\" on their own are
+not conclusions — they are the state of the work, which the person can see. Measured: \"Local commit
+and push were already done\" came back as \"การ commit และ push เสร็จสิ้นแล้ว\", which is exactly the
+line this kind exists to avoid. If the only thing the text says is that something happened or is
+happening, that is NONE.
 Present or immediate-past tense, the finding first. Keep any number, name, verdict or cause that the
 text actually contains.
 Style: ${SEED:-state the finding, then the next move}.
@@ -438,8 +443,13 @@ _clean() {   # one line, no quotes, no stray markdown — the model occasionally
     | sed -E 's/^[[:space:]]*//; s/[[:space:]]+$//; s/^["'"'"'`]+//; s/["'"'"'`]+$//' \
     | sed -E 's/^(Sunmi|ซันมี่|Assistant|AI)[[:space:]]*[:：][[:space:]]*//' \
     | sed -E 's/[。．｡]+$//' \
+    | sed -E 's/[.。．｡]+[[:space:]]*(ค่ะ|ครับ|คะ|นะคะ|นะครับ)$/\1/' \
     | sed -E 's/  +/ /g'
 }
+# The particle rule ("end the sentence with ค่ะ") plus a model that had already ended its sentence
+# produces "…หาวิธีแก้ไข. ค่ะ" — measured, and a spoken full stop before the particle is a stumble in
+# the middle of the last word. Stripped above rather than argued about in the prompt, because the
+# prompt already carries the instruction it is obeying.
 
 case "$PROVIDER" in
   openai)

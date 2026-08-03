@@ -8,11 +8,11 @@
 #   narrate.sh [-v] --session ID --transcript PATH [--payload FILE] [--event NAME]
 #
 # ── WHAT IT SPEAKS ─────────────────────────────────────────────────────────────────
-# `voice.autoplay.narrate_source: insight` (the default) — one line per thing WORKED OUT, from the
-# assistant's own reasoning block, via the summarizer's `insight` kind:
+# `voice.autoplay.narrate_source: say` (the default) — one line per thing WORKED OUT, named by the
+# assistant itself with a `SAY[group]:` line in its own prose:
 #
-#     "root cause คือ submodule pointer ค้างที่ APP-631 เพราะ teardown.sql พัง
-#      จะ bump แล้วรัน scoped test ใหม่ค่ะ"
+#     SAY[red]: root cause คือ submodule pointer ค้างที่ APP-631 เพราะ teardown.sql พัง
+#               จะ bump แล้วรัน scoped test ใหม่ค่ะ
 #
 # THE UNIT IS A CONCLUSION, NOT A TOOL CALL, and that correction is the whole history of this file.
 # The previous version narrated every step in both directions — "รัน cd", "อ่าน queue.sh",
@@ -21,9 +21,18 @@
 # it MEANT. A step is a unit of machinery; a finding, its cause and the next move are what a
 # colleague would say out loud.
 #
-# Most blocks are NOT a conclusion (they announce a step), so this source is mostly silent by
-# design — see _try_insight for the two gates, and note that it never falls back to the step
-# sources: falling back would put "รัน cd" back in the channel one silence at a time.
+# WHY THE TAG AND NOT A SUMMARIZER, which is what this file tried first. Run over 12 of this
+# workspace's own mid-turn blocks, a summarizer asked "is this a conclusion?" got it wrong in both
+# directions: it REFUSED a genuine finding ("the refusal lost to the prompt's own tail — and it
+# invented a completion that was never in the input"), it SPOKE a status line it should have refused
+# ("การ commit และ push เสร็จสิ้นแล้ว", 3/3 even after the prompt banned exactly that), and — worst — it
+# spoke a claim that the NEXT block RETRACTED ("voice_tts_gender is defined nowhere" … "Correction:
+# it *is* defined"), with no way to take it back. A model cannot know that a later block corrects an
+# earlier one, and it cannot know which of five true statements was the point. The assistant does.
+#
+# So the default speaks ONLY what was named: no tag ⇒ silence, which is the honest sound of a stretch
+# of work with nothing concluded yet. `narrate_source: insight` adds the summarizer as a fallback for
+# anyone who would rather have a guess than silence; it is opt-in on the measurements above.
 #
 # `narrate_source: facts` is the previous mechanism, kept whole and now opt-in: two lines per step
 # from tool-fact.py, the JARVIS-metronome register ("The armour is now at 92%"), with the before-half
@@ -34,9 +43,8 @@
 # the tool call, verbatim and truncated. No summarizer call, and no judgement about whether the
 # sentence was worth saying.
 #
-# COST: `insight` is the only source that spends tokens, and less than the step pair it replaced —
-# one cheap-model call per substantive block (~1 block per 5 tool calls, and most are refused)
-# against two TTS lines per step.
+# COST: `say` spends NO tokens at all — the line is already written. Only `insight`'s fallback calls
+# a model, one cheap call per substantive untagged block.
 #
 # ── THRESHOLDS (voice.autoplay.thresholds) ─────────────────────────────────────────
 # JARVIS also speaks up unbidden when something crosses a line, and always names the consequence:
@@ -84,6 +92,7 @@ PROSE_CHARS=90     # the prose fallback is a written sentence, so it gets a litt
 INTENT_CHARS=34    # the intent half is half a result's length — a pair has to fit in one step
 INSIGHT_CHARS=170  # a conclusion needs room for a because-clause and the next move. The summarizer
                    # is already capped at 160, so this only stops a runaway from being cut mid-word
+SAY_CHARS=190      # a line the assistant wrote itself is verbatim — same ceiling as a closing line
 
 SESSION="" TRANSCRIPT="" PAYLOAD="" EVENT="PostToolUse"
 while [[ $# -gt 0 ]]; do
@@ -207,7 +216,51 @@ _last_prose() {
 #      nothing produces a plausible invented sentence instead, while a token to emit does not.
 # Deduped on the BLOCK's hash rather than the spoken line, because the same block is seen again by
 # every tool call that follows it and the summarizer would paraphrase it differently each time.
-MIN_BLOCK=100
+MIN_BLOCK=45
+# ── the free, exact path: the assistant names its own mid-turn line ────────────────
+# `SAY[group]: <one line>` anywhere in a block is spoken VERBATIM — no summarizer call, nothing
+# invented, and the group picks the cue exactly as `VOICE[group]:` does for the closing line.
+#
+# WHY THIS EXISTS, measured on a real session rather than reasoned about: run over 12 of this
+# workspace's own mid-turn blocks, the summarizer path refused a genuine finding ("the refusal lost
+# to the prompt's own tail — and it invented a completion that was never in the input"), spoke a
+# status line it should have refused ("การ commit และ push เสร็จสิ้นแล้ว"), and — worst — spoke a claim
+# that the NEXT block retracted ("voice_tts_gender is defined nowhere" … "Correction: it *is*
+# defined"), with no way to take it back. A model judging "is this a conclusion?" on compressed
+# prose gets it wrong in both directions, and it cannot know that a later block corrects an earlier
+# one. The assistant does know. So the tag is the primary path and the summarizer is the fallback:
+# no tag ⇒ a stricter judgement that errs toward silence.
+_say_group() { printf '%s' "$1"; }
+_try_say() {
+  [[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || return 1
+  local block line hash
+  block="$(_last_prose)"
+  [[ -n "$block" ]] || return 1
+  line="$(printf '%s\n' "$block" | grep -m1 -E '(^|[[:space:]>*_`-])SAY(\[[a-z-]+\])?:[[:space:]]*.' || true)"
+  [[ -n "$line" ]] || return 1
+  local text
+  text="$(printf '%s' "$line" | sed -E 's/^.*SAY(\[[a-z-]+\])?:[[:space:]]*//')"
+  # Deduped on the LINE, not the block: a block can be re-seen by every tool call that follows it,
+  # and the same tag must be spoken once.
+  #
+  # NOTHING IS ASSIGNED TO $LINE UNTIL THIS HAS PASSED. The first version set LINE and SAY_GROUP up
+  # front and then `return 1`, which left LINE populated for the rest of the script: the caller saw a
+  # non-empty line with no SRC, took the 60-char step cap, and spoke the tag a SECOND time as a plain
+  # truncated narration. Caught by running it twice against a real transcript, not by the suite —
+  # which is why there is now a case for exactly this.
+  hash="$(voice_sha "$(voice_normalize_text "$text")")"
+  if [[ "$hash" == "$(voice_narrate_get "$SESSION" iblk)" ]]; then
+    vlog "say: this tag already spoke"
+    return 1
+  fi
+  voice_narrate_put "$SESSION" iblk "$hash"
+  SAY_GROUP="$(printf '%s' "$line" | sed -nE 's/.*SAY\[([a-z-]+)\]:.*/\1/p')"
+  LINE="$text"
+  SRC=say
+  vlog "say: explicit tag${SAY_GROUP:+ [$SAY_GROUP]} — no summarizer call, nothing invented"
+  return 0
+}
+
 _try_insight() {
   [[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || return 1
   local block clean hash out
@@ -268,7 +321,8 @@ _try_prose() {
 # response carries no figure (SKIP_TOOLS), `prose` on the four-in-five calls with no sentence of
 # their own in front of them.
 case "$SOURCE" in
-  insight) _try_insight || true ;;
+  say)     _try_say || true ;;
+  insight) _try_say || _try_insight || true ;;
   facts)   _try_fact || _try_prose || true ;;
   *)       _try_prose || _try_fact || true ;;
 esac
@@ -276,6 +330,7 @@ esac
 CHAR_CAP="$MAX_CHARS"
 [[ "$SRC" == "prose" ]] && CHAR_CAP="$PROSE_CHARS"
 [[ "$SRC" == "insight" ]] && CHAR_CAP="$INSIGHT_CHARS"
+[[ "$SRC" == "say" ]] && CHAR_CAP="$SAY_CHARS"
 [[ "$INTENT" -eq 1 && "$SRC" == "fact" ]] && CHAR_CAP="$INTENT_CHARS"
 URGENT_CHARS=110   # a threshold line prefixes the fact ("ผ่านมา 11 นาที… ล่าสุด <fact>"), and the
                    # tail is the informative half — the step cap would cut exactly that off
@@ -370,5 +425,21 @@ vlog "narrate[$SRC/$HALF${CUE:+/$CUE}] $((SPOKEN + 1))/$CAPTXT: $LINE"
 cleanup
 if [[ "$URGENT" -eq 1 ]]; then
   exec "$VOICE_SELF_DIR/speak.sh" --kind milestone ${CUE:+--cue "$CUE"} "$LINE"
+fi
+# A tagged line the assistant wrote on purpose is a MILESTONE, not a narration: it was named because
+# it matters, so it must not be dropped by the queue's depth or staleness rules the way a summarized
+# guess can be. Its group picks the cue, mapped the same way the closing line maps `VOICE[group]`;
+# a bare `SAY:` gets no cue, because a sound before every conclusion is a metronome again.
+if [[ "$SRC" == "say" ]]; then
+  case "${SAY_GROUP:-}" in
+    green)     SAY_CUE=green     SAY_MIX=tail  SAY_VOL=0.40 ;;
+    red)       SAY_CUE=red       SAY_MIX=under SAY_VOL=0.15 ;;
+    ship)      SAY_CUE=ship      SAY_MIX=sting SAY_VOL=0.50 ;;
+    needs-you) SAY_CUE=attention SAY_MIX=tail  SAY_VOL=0.40 ;;
+    incident)  SAY_CUE=incident  SAY_MIX=under SAY_VOL=0.15 ;;
+    *)         SAY_CUE="" ;;
+  esac
+  exec "$VOICE_SELF_DIR/speak.sh" --kind milestone \
+    ${SAY_CUE:+--cue "$SAY_CUE" --mix "$SAY_MIX" --cue-volume "$SAY_VOL"} "$LINE"
 fi
 exec "$VOICE_SELF_DIR/speak.sh" --kind narration "$LINE"

@@ -67,8 +67,16 @@ cfgset() { # cfgset <key> <value> — the throwaway config is the only way to re
 cat > "$T/scripts/voice/speak.sh" <<'STUB'
 #!/usr/bin/env bash
 kind=""; cue=""
+# --mix / --cue-volume take a VALUE and must be consumed as a pair. When they were swallowed by the
+# generic `-*) shift` they left their operands in $*, and a cue'd line came out as
+# "SPOKE[milestone/red]: under --cue-volume 0.15 ต้นเหตุ…" — the stub inventing an argument bug the
+# real speak.sh does not have.
 while [[ $# -gt 0 ]]; do
-  case "$1" in --kind) kind="$2"; shift 2 ;; --cue) cue="$2"; shift 2 ;; -*) shift ;; *) break ;; esac
+  case "$1" in
+    --kind) kind="$2"; shift 2 ;; --cue) cue="$2"; shift 2 ;;
+    --mix|--cue-volume|--mood|--provider|--voice|--out) shift 2 ;;
+    -*) shift ;; *) break ;;
+  esac
 done
 printf 'SPOKE[%s%s]: %s\n' "$kind" "${cue:+/$cue}" "$*" \
   | tee -a "${VOICE_SPOKE_LOG:-${VOICE_CACHE_HOME}/spoke.log}"
@@ -186,14 +194,39 @@ ck "the identical line is not spoken twice" EMPTY "$(run "$(_s d1)" "$T/p-read.j
 why="$(cp "$T/p-read.json" "$T/live.json"; "$N" -v --session "$(_s d1)" --payload "$T/live.json" 2>&1 >/dev/null | tail -1)"
 ck "…and says why with -v" "narrate:" "$why"
 
-echo "== the DEFAULT source is insight: a conclusion per block, not a line per step =="
+echo '== the DEFAULT source is say: only a line the assistant named itself =='
+cp "$T/workspace.config.yaml" "$T/cfg0.keep"
+sed -i.sed '/narrate_source:/d' "$T/workspace.config.yaml"
+ck "no key at all ⇒ say" "say" "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_source )"
+cp "$T/cfg0.keep" "$T/workspace.config.yaml"
+mk "$T/t-say.jsonl" "$(txt 'ยืนยันแล้ว
+
+SAY[red]: ต้นเหตุคือ queue supersede เหลือ job ใหม่สุดอันเดียว จะเปลี่ยนเป็น backlog ลึกสามค่ะ
+
+ต่อไปจะเขียนเทสต์')" "$(tool Read /a/b/queue.sh)"
+mk "$T/t-say-bare.jsonl" "$(txt 'SAY: เจอว่า INNER JOIN ตัด affiliate player ออกทั้งหมดค่ะ')"
+cfgset narrate_source say
+: > "$T/cache/summarized.log"
+SY="$(_s s1)"
+ck "a tagged line is spoken VERBATIM, as a milestone with its group's cue" \
+   "SPOKE[milestone/red]: ต้นเหตุคือ queue supersede" "$(run "$SY" "$T/p-read.json" "$T/t-say.jsonl")"
+# The bug this case exists for: the first version assigned $LINE before the dedupe check and returned
+# 1, leaving LINE set — so the tag was spoken a SECOND time as a plain 60-char narration. Found by
+# running it twice by hand against a real transcript, which is what a suite is supposed to do for you.
+ck "the same tag never speaks twice" EMPTY "$(run "$SY" "$T/p-grep.json" "$T/t-say.jsonl")"
+ck "a bare SAY: gets no cue — a sound per conclusion is a metronome again" \
+   "SPOKE[milestone]: เจอว่า INNER JOIN" "$(run "$(_s s2)" "$T/p-read.json" "$T/t-say-bare.jsonl")"
+ck "…and none of that called the summarizer" 0 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
+# No tag ⇒ silence, and NOT a fall-through to the step fact: that is the whole point of the default.
+ck "an untagged block is silent under the default" EMPTY \
+   "$(run "$(_s s3)" "$T/p-green.json" "$T/t-prose.jsonl")"
+cfgset narrate_source facts
+
+echo "== narrate_source: insight adds the summarizer as a FALLBACK to the tag =="
 # What the shipped config resolves to, with the key absent. A wrong default here is invisible to
 # every other case in this file, because they all set the key.
 cp "$T/workspace.config.yaml" "$T/cfg.keep"
-sed -i.sed '/narrate_source:/d' "$T/workspace.config.yaml"
-ck "no key at all ⇒ insight" "insight" \
-   "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_source )"
-ck "…and an unknown value falls back to it too" "insight" \
+ck "an unknown value falls back to the default" "say" \
    "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; VOICE_NARRATE_SOURCE=steps voice_narrate_source )"
 cp "$T/cfg.keep" "$T/workspace.config.yaml"
 CONC='เจอแล้ว ต้นเหตุคือ queue.sh supersede narration เหลือ job ใหม่สุดต่อ session อันเดียว burst ห้า step
@@ -231,6 +264,11 @@ ck "a refused block does not fall through to the step fact" EMPTY \
    "$(VOICE_TEST_SUMMARY=NONE run "$(_s n4)" "$T/p-green.json" "$T/t-conclusion.jsonl")"
 ck "a VOICE-tagged block is still never narrated mid-turn" EMPTY \
    "$(run "$(_s n5)" "$T/p-read.json" "$T/t-tag.jsonl")"
+# The tag outranks the guess even here: exact beats summarized, and it spends nothing.
+: > "$T/cache/summarized.log"
+ck "a SAY tag wins over the summarizer under insight too" "ต้นเหตุคือ queue supersede" \
+   "$(run "$(_s n6)" "$T/p-read.json" "$T/t-say.jsonl")"
+ck "…and skipped the model call entirely" 0 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
 cfgset narrate_source facts
 
 echo "== the pair: every step says what it is about to do, then how it went =="

@@ -407,15 +407,22 @@ voice:
                                    #   เพราะ teardown.sql พัง จะ bump แล้วรัน scoped test ใหม่".
                                    #   `false` keeps max's ack + closing line without the mid-turn
                                    #   talking; it is the level's main cost lever (see chattiness).
-    narrate_source: insight        # insight (default) | facts | prose. What a narrated line is ABOUT.
-                                   #   insight → a CONCLUSION, from the assistant's own reasoning
-                                   #     block: what it found, the cause, the next move. The unit is
-                                   #     the thing worked out, not the tool call — because nobody
-                                   #     listening wants to hear which command is running, they want
-                                   #     to hear what it MEANT. Mostly SILENT on purpose: a block that
-                                   #     only announces a step is refused (cheaply by length, then by
-                                   #     the model answering NONE). The only source that spends
-                                   #     tokens, and less than `facts` spent on TTS.
+    narrate_source: say            # say (default) | insight | facts | prose. What a line is ABOUT.
+                                   #   say → ONLY what the assistant named itself: a `SAY[group]: …`
+                                   #     line in its own prose, spoken verbatim mid-turn. The unit is
+                                   #     the thing worked out, not the tool call — nobody listening
+                                   #     wants to hear which command is running, they want to hear
+                                   #     what it MEANT. No tag ⇒ SILENCE, which is correct for work
+                                   #     that has not concluded anything yet. Costs no tokens: the
+                                   #     line is already written. Groups and cues are the closing
+                                   #     line's (`VOICE[…]`); a bare `SAY:` speaks with no cue.
+                                   #   insight → the same, plus a summarizer GUESS at an untagged
+                                   #     block. Opt-in on measurement, not taste: over 12 real
+                                   #     mid-turn blocks a model judging "is this a conclusion?"
+                                   #     refused the best finding, spoke a status line 3/3 even after
+                                   #     the prompt banned exactly that, and spoke a claim the NEXT
+                                   #     block retracted. A model cannot know a later block corrects
+                                   #     an earlier one; the assistant can.
                                    #   facts → the step metronome, and what `max` used to do: two
                                    #     lines per tool call from the payload itself ("รัน cargo test"
                                    #     → "cargo test ผ่าน 42"), a subject and a FIGURE, 3–8 words,
