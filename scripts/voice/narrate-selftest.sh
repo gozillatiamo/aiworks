@@ -458,6 +458,19 @@ gpay() { jq -n --arg e "$1" --arg n "$2" --argjson i "$3" --arg m "${4:-}" \
   '{session_id:"x",hook_event_name:$e,tool_name:$n,tool_input:$i,message:$m}' > "$T/gate.json"; }
 grun() { cp "$T/gate.json" "$T/glive.json"; "$G" --session "$1" --event "$2" --payload "$T/glive.json" 2>/dev/null; }
 
+# THE PARTICLE IS THE VOICE'S. Every gate line used to end in a hardcoded "ค่ะ", correct only for a
+# female voice — and it survived because the machine it was written on has one. So this case forces a
+# MALE voice through the config, which is the only way a suite on a female machine can see it.
+cp "$T/workspace.config.yaml" "$T/cfg-female.keep"
+printf '  tts:\n    gender:\n      elevenlabs: m\n' >> "$T/workspace.config.yaml"
+gpay PermissionRequest Bash '{"command":"cargo test --lib"}'
+ck "a MALE voice asks with ครับ, not ค่ะ" "ขออนุญาตรัน cargo test ครับ" \
+   "$(grun "$(_s pg1)" PermissionRequest)"
+cp "$T/cfg-female.keep" "$T/workspace.config.yaml"
+gpay PermissionDenied Bash '{"command":"git push origin develop"}'
+ck "…and a female voice is unchanged" "git push ถูก block ค่ะ" \
+   "$(grun "$(_s pg2)" PermissionDenied)"
+
 gpay PermissionRequest Bash '{"command":"cargo test --lib -p ofb"}'
 ck "permission names the command" "SPOKE[milestone/attention]: ขออนุญาตรัน cargo test ค่ะ" \
    "$(grun "$(_s gt1)" PermissionRequest)"
