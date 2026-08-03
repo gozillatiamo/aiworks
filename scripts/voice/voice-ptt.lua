@@ -357,12 +357,27 @@ local function endHold()
   hudShow("◌ ถอดเสียง…")
   -- hs.task, not hs.execute: transcription takes a second or two and blocking the Hammerspoon
   -- runloop freezes every hotkey on the machine, including this one.
-  hs.task.new("/bin/bash", function(rc, stdout, _stderr)
+  -- `-v` plus a KEPT stderr, because "nothing heard" was undiagnosable. ptt.sh exits 1 for four
+  -- different reasons — nothing recorded · could not wrap the capture · no speech in the audio ·
+  -- no transcript — and this callback used to throw stderr away and log all four with the same
+  -- sentence. Measured against a real complaint: every link tested good in isolation (the chord
+  -- fired, capture worked from the terminal AND from a Hammerspoon child, STT transcribed a known
+  -- file) and the log still could not say which one gave up during an actual hold. The vlog writes
+  -- to stderr, which nothing here was reading, so `-v` costs nothing and buys the reason.
+  hs.task.new("/bin/bash", function(rc, stdout, stderr)
     local text = (stdout or ""):gsub("%s+$", "")
     if rc ~= 0 or #text == 0 then
-      -- ptt.sh exits non-zero for silence and for a discarded hallucination — both mean
-      -- "nothing was said", and the right response is to say nothing back.
-      log("ptt.sh stop rc=" .. tostring(rc) .. ", no text — nothing heard")
+      -- The LAST vlog line is the one that decided. The device and the levels are logged too when
+      -- they are there: "no speech in 2s" is a different bug depending on whether the mic that was
+      -- open is the one you were talking into.
+      local why = ""
+      for line in (stderr or ""):gmatch("[^\n]+") do
+        if line:match("^voice: ptt:") then why = line:gsub("^voice: ptt: ", "") end
+      end
+      log("ptt.sh stop rc=" .. tostring(rc) .. " — " .. (why ~= "" and why or "no text, and no reason on stderr"))
+      for line in (stderr or ""):gmatch("[^\n]+") do
+        if line:match("mean .*dB") or line:match("mic '") then log("  " .. line:gsub("^voice: ptt: ", "")) end
+      end
       hudFlash("ไม่ได้ยินอะไรครับ", 1.5)
       return
     end
@@ -375,7 +390,7 @@ local function endHold()
       log("transcript (" .. #text .. " chars)")
     end
     inject(text)
-  end, { PTT, "stop" }):start()
+  end, { PTT, "-v", "stop" }):start()
 end
 
 -- ── the taps ──────────────────────────────────────────────────────────────────────
