@@ -507,6 +507,39 @@ hookrun 0
 [[ -f "$T/cache/played" ]] && { echo "  ok   unmuted: the cue still lands"; pass=$((pass+1)); } \
                           || { echo "  FAIL the cue stopped landing when unmuted"; fail=$((fail+1)); }
 
+echo "== the state file survives CONCURRENT writers, and repairs itself if it does not =="
+# Found live, not here: several narrate.sh processes are alive at once (one per hook event, more for a
+# parallel tool block), they all wrote to the same "$f.tmp", and the state file came out ZERO BYTES.
+# Everything then failed silently in the worst way — every field read as empty, so the dedupe stopped
+# matching and the same spoken line went out once per hook event. A sequential suite cannot reproduce
+# a race, but it CAN assert the invariant the race broke: the file is always parseable JSON.
+# THE CASE WITH TEETH is this one, not the 24-writer smoke test below it: racing 24 jq calls does not
+# reliably reproduce the interleaving (the buggy version passed that 3 runs out of 3 — jq is fast and
+# the window is small), so the thing asserted is the PROPERTY that makes the race impossible. Two
+# processes must never be handed the same temp path. The old code returned "$f.tmp" to both.
+A="$(bash -c '. '"$T"'/scripts/voice/lib.sh 2>/dev/null; voice_tmp /x/state.json')"
+B="$(bash -c '. '"$T"'/scripts/voice/lib.sh 2>/dev/null; voice_tmp /x/state.json')"
+if [[ -n "$A" && "$A" != "$B" ]]; then
+  echo "  ok   two processes are never handed the same temp path"; pass=$((pass+1))
+else
+  echo "  FAIL both processes got the SAME temp path ($A) — one truncates the other's write"; fail=$((fail+1))
+fi
+CS="$(_s cc1)"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null
+  for i in $(seq 1 24); do voice_narrate_put "$CS" "f$i" "v$i" & done; wait ) >/dev/null 2>&1
+CF="$( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_file "$CS" )"
+if jq -e . "$CF" >/dev/null 2>&1; then echo "  ok   24 concurrent writes left valid JSON"; pass=$((pass+1))
+else echo "  FAIL 24 concurrent writes corrupted the state file ($(wc -c < "$CF" | tr -d ' ') bytes)"; fail=$((fail+1)); fi
+ck "…and no .tmp litter is left behind" 0 \
+   "$(ls "$T/cache/turn"/*.tmp 2>/dev/null | wc -l | tr -d ' ')"
+# The second half of the bug: a corrupt file used to be PERMANENT, because the merge jq failed and
+# the `&& mv` never ran, so nothing could ever rewrite it.
+HS="$(_s cc2)"
+( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_mkdirs; : > "$(voice_narrate_file "$HS")"
+  voice_narrate_put "$HS" iblk abc123 ) >/dev/null 2>&1
+ck "a zero-byte state file is repaired by the next write" "abc123" \
+   "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_get "$HS" iblk )"
+
 echo "== the REAL hook, on the event that sits in front of the tool =="
 # The one link no other case covers: which EVENT reaches narrate.sh is decided by the hook, so a
 # PreToolUse wiring that dropped the event name would leave every case above green and the feature
@@ -556,6 +589,17 @@ for i in 1 2 3 4 5; do
 done
 "$Q" drain >/dev/null 2>&1
 ck "three of five survive — the depth, not one" 3 "$(wc -l < "$T/cache/played" | tr -d ' ')"
+# A real drain writes last-spoken.json, and that write had the same class of bug as the state file:
+# voice_tmp was called TWICE (once in the redirect, once in the mv), so jq filled one temp and an
+# empty second one was moved over the target — 0 bytes, plus an orphan temp beside it. Nothing
+# asserted on this file before, which is why it survived a green suite.
+if jq -e .ts "$T/cache/last-spoken.json" >/dev/null 2>&1; then
+  echo "  ok   the drain left a valid last-spoken.json"; pass=$((pass+1))
+else
+  echo "  FAIL last-spoken.json is not valid JSON after a drain ($(wc -c < "$T/cache/last-spoken.json" 2>/dev/null | tr -d ' ') bytes)"; fail=$((fail+1))
+fi
+ck "…and no orphan temp beside it" 0 \
+   "$(ls "$T/cache"/last-spoken.json.* 2>/dev/null | wc -l | tr -d ' ')"
 ck "…and the newest is among them" "n5.mp3" "$(cat "$T/cache/played" 2>/dev/null)"
 ck "the OLDEST is the one dropped" 0 "$(grep -c 'n1.mp3' "$T/cache/played" 2>/dev/null || true)"
 rm -f "$T/cache/played"
