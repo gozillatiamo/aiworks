@@ -236,6 +236,13 @@ Same groups as the closing line's `VOICE[…]`, same free-and-exact economics, a
 without a cue. **No tag ⇒ silence** — which is the right sound for a stretch of work that has not
 concluded anything yet.
 
+**Where it goes matters, and getting it wrong is silent.** The tag must sit **mid-turn, with a tool call
+still to come** — a hook is what reads it. A tag in the *final* block of a reply is spoken by nobody:
+its own turn has no tool call left to fire a hook, and the next turn's lookback is bounded to that turn
+(measured: an unbounded one spoke the previous turn's closing tag right after the user typed something
+new, which is the monologue about the past this channel exists to avoid). The closing line's
+`VOICE[…]` owns the end of a turn; the two are not interchangeable.
+
 **The unit is a conclusion, not a tool call**, and that correction is the entire history of this
 channel. The version before it narrated every step in both directions — *รัน cd*, *อ่าน queue.sh*,
 *cargo test ผ่าน 42* — and it did that correctly and fast. It was rejected on first contact with the
