@@ -234,13 +234,15 @@ voice_chattiness() {
 # first `max` raised it (4 long sentences, a 360-char ceiling) and came out sounding like a status
 # report read aloud. These four dials are the right ones: shorter, more often, made of facts.
 #
-# `facts` reads the tool's own payload (scripts/voice/tool-fact.py) and speaks BOTH of a step's
-# moments — "รัน cargo test" before it, "cargo test ผ่าน 42" after. `prose` is the previous
-# mechanism, the assistant's own pre-tool sentence: kept as the fallback for a step whose payload
-# carries no speakable figure, and because the two are worth comparing by ear.
+# `insight` (the default) speaks one line per thing WORKED OUT — the assistant's own reasoning block
+# put through the summarizer's `insight` kind, and refused when the block only announces a step.
+# `facts` is the step metronome: two lines per tool call from scripts/voice/tool-fact.py ("รัน cargo
+# test" then "cargo test ผ่าน 42"), free of tokens and too much to listen to, which is why it is no
+# longer the default. `prose` speaks the assistant's pre-tool sentence verbatim — the cheapest, and
+# the one that judges nothing.
 voice_narrate_source() {
-  local v; v="$(printf '%s' "${VOICE_NARRATE_SOURCE:-$(voice_cfg voice.autoplay.narrate_source facts)}" | tr '[:upper:]' '[:lower:]')"
-  case "$v" in facts|prose) printf '%s' "$v" ;; *) vlog "narrate_source: '$v' is not facts|prose — using facts"; printf 'facts' ;; esac
+  local v; v="$(printf '%s' "${VOICE_NARRATE_SOURCE:-$(voice_cfg voice.autoplay.narrate_source insight)}" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in insight|facts|prose) printf '%s' "$v" ;; *) vlog "narrate_source: '$v' is not insight|facts|prose — using insight"; printf 'insight' ;; esac
 }
 
 # Seconds between narrated lines, and **0 = no floor**, which is now the default. It went 9 → 4 → 0

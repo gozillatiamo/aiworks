@@ -46,11 +46,17 @@ voice:
   autoplay:
     enabled: true
     chattiness: max
+    narrate_source: facts
     narrate_intent: true
     narrate_gap: 0
     narrate_max_per_turn: 3
     long_turn_seconds: 300
 YAML
+# `narrate_source: facts` is set EXPLICITLY, and is no longer the shipped default (`insight` is):
+# most cases below exercise the step sources — the thresholds, the floors, the char caps, the mute —
+# and they are cheaper and more deterministic to assert than a summarizer call. The insight section
+# flips the key for its own cases, and one case asserts what the default resolves to when the key is
+# absent entirely, which is the thing a wrong default would otherwise hide.
 cfgset() { # cfgset <key> <value> — the throwaway config is the only way to reach a config-only dial
   sed -i.bak "s/^\( *\)$1: .*/\1$1: $2/" "$T/workspace.config.yaml"
 }
@@ -71,9 +77,13 @@ chmod +x "$T/scripts/voice/speak.sh"
 # Stub the summarizer as well. narrate.sh never calls it (a fact line is a template, and prose is
 # the transcript's own sentence) — but the ack-cue case below runs the REAL UserPromptSubmit hook,
 # which forks ack.sh, and that one does. Without this the suite would make a paid LLM call.
+# It also LOGS every call, which is how "no summarizer call was made" becomes a file test rather
+# than an assumption — the insight source's cheap length gate exists precisely to avoid paying for a
+# block that cannot contain a conclusion, and an assertion on the spoken line alone cannot see that.
 cat > "$T/scripts/voice/summarize.sh" <<'STUB'
 #!/usr/bin/env bash
-printf 'กำลังไปดูให้ค่ะ\n'
+printf '%s\n' "$*" >> "${VOICE_CACHE_HOME}/summarized.log"
+printf '%s\n' "${VOICE_TEST_SUMMARY:-กำลังไปดูให้ค่ะ}"
 STUB
 chmod +x "$T/scripts/voice/summarize.sh"
 N="$T/scripts/voice/narrate.sh"
@@ -175,6 +185,53 @@ ck "first line speaks" "SPOKE[narration]" "$(run "$(_s d1)" "$T/p-read.json")"
 ck "the identical line is not spoken twice" EMPTY "$(run "$(_s d1)" "$T/p-read.json")"
 why="$(cp "$T/p-read.json" "$T/live.json"; "$N" -v --session "$(_s d1)" --payload "$T/live.json" 2>&1 >/dev/null | tail -1)"
 ck "…and says why with -v" "narrate:" "$why"
+
+echo "== the DEFAULT source is insight: a conclusion per block, not a line per step =="
+# What the shipped config resolves to, with the key absent. A wrong default here is invisible to
+# every other case in this file, because they all set the key.
+cp "$T/workspace.config.yaml" "$T/cfg.keep"
+sed -i.sed '/narrate_source:/d' "$T/workspace.config.yaml"
+ck "no key at all ⇒ insight" "insight" \
+   "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; voice_narrate_source )"
+ck "…and an unknown value falls back to it too" "insight" \
+   "$( . "$T/scripts/voice/lib.sh" 2>/dev/null; VOICE_NARRATE_SOURCE=steps voice_narrate_source )"
+cp "$T/cfg.keep" "$T/workspace.config.yaml"
+CONC='เจอแล้ว ต้นเหตุคือ queue.sh supersede narration เหลือ job ใหม่สุดต่อ session อันเดียว burst ห้า step
+เลยพูดแค่ครั้งเดียว ไม่ใช่ rate floor อย่างที่คิดตอนแรก จะเปลี่ยนเป็น backlog ลึกสามแล้วทิ้งเก่าสุดก่อน'
+mk "$T/t-conclusion.jsonl" "$(txt "$CONC")" "$(tool Read /a/b/queue.sh)"
+mk "$T/t-step.jsonl"       "$(txt 'อ่าน `queue.sh` ก่อน')" "$(tool Read /a/b/queue.sh)"
+cfgset narrate_source insight
+: > "$T/cache/summarized.log"
+IS="$(_s n1)"
+ck "a block with a conclusion in it speaks" "SPOKE[narration]: กำลังไปดูให้ค่ะ" \
+   "$(run "$IS" "$T/p-read.json" "$T/t-conclusion.jsonl")"
+# Deduped on the BLOCK, not the spoken line: five tool calls follow one block, each spawning its own
+# narrate.sh, and without this the same block is summarized — and PAID FOR — five times.
+ck "the same block does not speak again for the next step" EMPTY \
+   "$(run "$IS" "$T/p-grep.json" "$T/t-conclusion.jsonl")"
+ck "…and it was summarized exactly once" 1 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
+# The particle is pinned to the VOICE's gender, and `voice_tts_gender` lives in the PROVIDER file
+# rather than in lib.sh — so a caller that forgets voice_load_tts_provider gets an empty gender, the
+# default particle, and a male voice saying ค่ะ. Silent, and it was written that way on the first
+# pass here. Asserted on the arguments the summarizer was actually handed.
+ck "the summarizer is given a particle, not left to guess" "--particle" \
+   "$(cat "$T/cache/summarized.log")"
+ck "…and it is a real Thai particle" "ค" "$(cat "$T/cache/summarized.log")"
+# The cheap gate: a short block cannot hold a conclusion, so it must not reach the summarizer at all.
+: > "$T/cache/summarized.log"
+ck "a block that only announces a step is silent" EMPTY \
+   "$(run "$(_s n2)" "$T/p-read.json" "$T/t-step.jsonl")"
+ck "…and cost nothing — no summarizer call" 0 "$(wc -l < "$T/cache/summarized.log" | tr -d ' ')"
+# The model's own refusal. Most blocks are a step, so NONE is the common answer and it must be
+# silence rather than a spoken "NONE".
+ck "NONE from the summarizer is silence, not a spoken word" EMPTY \
+   "$(VOICE_TEST_SUMMARY=NONE run "$(_s n3)" "$T/p-read.json" "$T/t-conclusion.jsonl")"
+# insight NEVER falls back to the step sources: that would put "รัน cd" back one silence at a time.
+ck "a refused block does not fall through to the step fact" EMPTY \
+   "$(VOICE_TEST_SUMMARY=NONE run "$(_s n4)" "$T/p-green.json" "$T/t-conclusion.jsonl")"
+ck "a VOICE-tagged block is still never narrated mid-turn" EMPTY \
+   "$(run "$(_s n5)" "$T/p-read.json" "$T/t-tag.jsonl")"
+cfgset narrate_source facts
 
 echo "== the pair: every step says what it is about to do, then how it went =="
 # This is what `max` promises, and the two halves must both land on the SAME session with nothing

@@ -6,10 +6,14 @@
 #   summarize.sh [-v] [options] --file PROMPT_FILE
 #   summarize.sh [-v] [options] "text…"
 #
-#   --kind ack|report                 ack (default): "I heard your request, here is what I will
+#   --kind ack|report|insight         ack (default): "I heard your request, here is what I will
 #                                     look at". report: "here is what just happened" — the same
 #                                     model, a different job, and mixing the two produced a
-#                                     finished MR announced as a plan to open one
+#                                     finished MR announced as a plan to open one.
+#                                     insight: MID-TURN — "here is what I worked out and what I am
+#                                     doing about it", run on the assistant's own reasoning block.
+#                                     The only kind that may answer NONE, and usually should:
+#                                     most blocks announce a step, and a step is not a conclusion
 #   --provider openai|gemini|claude   override voice.summarizer.provider
 #   --particle ครับ|ค่ะ                the sentence-final particle to end on (pinned to the
 #                                     voice's gender — a male voice saying ค่ะ is a real bug)
@@ -116,6 +120,11 @@ _level_cap() {   # → "<max chars>|<max sentences>"
     # aloud: correct facts, wrong character.
     max:ack)         printf '150|3' ;;
     max:report)      printf '190|4' ;;
+    # `insight` is the mid-turn conclusion, and it is the only kind whose budget is set by what a
+    # CONCLUSION needs rather than by the level: a finding plus its cause plus the next move is two
+    # sentences, and one of them usually carries a because-clause. Shorter than the closing line on
+    # purpose — the turn is not over, and this must not pre-empt the result.
+    *:insight)       printf '160|2' ;;
     *)               printf '90|1' ;;
   esac
 }
@@ -136,6 +145,9 @@ _phrase() {   # N KIND
     # `max`. A step counts as a fact here — at this level the ORDER of the work is information.
     *:ack)    printf 'ONE short Thai sentence PER FACT OR STEP you actually have, up to FOUR, that say' ;;
     *:report) printf 'ONE short Thai sentence PER FACT OR STEP you actually have, up to FOUR' ;;
+    # Never "up to FOUR": a mid-turn line that runs to four sentences is a status report, which is
+    # the thing this kind replaced.
+    *:insight) printf 'ONE Thai sentence — a SECOND one only to say what you are doing about it' ;;
   esac
 }
 
@@ -201,7 +213,7 @@ N="$MAX_SENTENCES"
 #
 # Not applied at `terse` either: one sentence has no padding pressure, and that level's prompt is
 # specified as byte-for-byte unchanged, which a shrinking "At most N characters" would break.
-if [[ "$KIND" == "report" && "$LEVEL" != "terse" && -z "$MAX" ]] && command -v python3 >/dev/null 2>&1; then
+if [[ "$KIND" == "report" || "$KIND" == "insight" ]] && [[ "$LEVEL" != "terse" && -z "$MAX" ]] && command -v python3 >/dev/null 2>&1; then
   _in="$(printf '%s' "$TEXT" | wc -m | tr -d ' ')"
   read -r _fit _n <<< "$(python3 -c "
 cap = max(60, min($LEVEL_MAX, int($_in * 0.6)))
@@ -320,7 +332,35 @@ from a one-line input that said nothing of the kind.
 Style: ${SEED:-state the outcome plainly, no preamble}.
 $NO_PROCESS"
     ;;
-  *) vdie "--kind must be ack|report" ;;
+  insight)
+    # MID-TURN, and the only kind allowed to answer with nothing at all.
+    #
+    # WHAT IT REPLACED, because that is the whole specification: `max` used to narrate every tool
+    # call — "รัน cd", "อ่าน queue.sh", "cargo test ผ่าน 42" — two lines per step, mechanically
+    # correct and worth nothing to listen to. The unit a person actually thinks in is not a tool
+    # call, it is a CONCLUSION: what was worked out, why, and what happens next. So this runs on the
+    # assistant's own reasoning block instead of on a step, and its hardest job is REFUSING: most
+    # blocks are a step being announced, and a summarizer that always answers turns straight back
+    # into the metronome it replaced. Hence the NONE sentinel — measured on this codebase's
+    # summarizer prompts, "reply with nothing" produces a plausible invented sentence instead
+    # (a vague input reached for a file name it was never given), while an explicit token to emit
+    # does not.
+    JOB="Below is your OWN latest thinking, mid-way through a task you are still working on. Say the
+CONCLUSION out loud in $SENTENCES — what you found or worked out, its cause if
+the text gives one, and what you are doing about it next.
+Reply with exactly NONE — the five characters, nothing else — when the text below contains no
+conclusion: when it only announces a step you are about to take, only names a file or command, or
+only says that something is in progress. Silence is the correct answer far more often than not, and
+a sentence invented to fill this line is worse than saying nothing.
+NEVER narrate mechanics. Which command you ran, which file you opened, how many lines it had, which
+tool you used: none of that belongs here, even when the text below is mostly about it. Say what it
+MEANT.
+Present or immediate-past tense, the finding first. Keep any number, name, verdict or cause that the
+text actually contains.
+Style: ${SEED:-state the finding, then the next move}.
+Do not list the steps you took, do not thank anyone, and never claim anything the text does not say."
+    ;;
+  *) vdie "--kind must be ack|report|insight" ;;
 esac
 
 # ── the level's extra lines, and why `terse` gets NONE ─────────────────────────────
@@ -349,8 +389,31 @@ a one-line input, and none of them was in it. An added sentence with nothing in 
 short line."
 fi
 
+# ── the refusal, hoisted above everything (insight only) ───────────────────────────
+# MEASURED, first try: a purely mechanical block ("อ่าน queue.sh ก่อน แล้วค่อยแก้ cadence … จะดู
+# _prune_droppable ต่อ") came back as "queue.sh อ่านเสร็จแล้ว cadence แก้ไขเรียบร้อย รอให้ตรวจสอบต่อค่ะ"
+# — an invented completion AND an invented request for review, from an input that said neither.
+# The NONE rule was in the JOB, but everything AFTER the job says produce a sentence: the persona,
+# the ceiling, the particle line, and a closing "Output the sentence only." A refusal buried in the
+# middle of that loses to the imperative at the end. So it goes FIRST, the persona (which invites
+# warmth, and warmth needs a sentence to live in) is dropped, and the closing line is changed to
+# permit the one word.
+OUTPUT_LINE="No greeting, no emoji, no quotes, no markdown. Output the sentence only."
+GATE=""
+if [[ "$KIND" == "insight" ]]; then
+  PERSONA=""
+  OUTPUT_LINE="No greeting, no emoji, no quotes, no markdown. Output the sentence only, or exactly NONE."
+  GATE="BEFORE ANYTHING ELSE, DECIDE WHETHER TO SPEAK AT ALL, and prefer not to.
+Read the text at the end and ask: does it state something WORKED OUT — a finding, a cause, a verdict,
+a decision, a number that answers something? If it does not — if it only says what will be looked at
+next, names a file or a command, or reports that work is in progress — then your entire reply is the
+four characters NONE. Nothing else, no explanation, no polite sentence, no particle.
+This is the common case. Most of what you are shown is a step, and a step is not worth speaking."
+fi
+
 SYS="You are the voice of a Thai-speaking dev assistant named Sunmi (ซันมี่).
-$JOB
+${GATE:+$GATE
+}$JOB
 At most $MAX characters.${EXTRA:+ $EXTRA.}${PERSONA:+
 $PERSONA}${CEILING:+
 $CEILING}
@@ -360,7 +423,7 @@ Never translate dev vocabulary into Thai — ticket, branch, review, merge reque
 test, log, pipeline stay in English (a Thai word for one of these is not what a Thai dev says).
 Never invent a file name, ticket key, repo, number or error that is not in the text below. If it
 names nothing concrete, speak without naming anything.
-No greeting, no emoji, no quotes, no markdown. Output the sentence only."
+$OUTPUT_LINE"
 
 # The `terse` prompt, verbatim, for the check that it never drifted. Printed by --show-prompt.
 [[ "${VOICE_SHOW_PROMPT:-0}" == "1" ]] && { printf '%s\n' "$SYS"; exit 0; }
