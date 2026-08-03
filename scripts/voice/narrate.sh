@@ -119,9 +119,14 @@ voice_cfg_bool voice.autoplay.narrate true || { vlog "narrate skipped: voice.aut
 [[ "$(voice_chattiness)" == "max" ]] || { vlog "narrate skipped: chattiness is $(voice_chattiness), not max"; exit 0; }
 SOURCE="$(voice_narrate_source)"
 # The BEFORE half of a STEP pair — `narrate_source: facts` only, since that is the only source with
-# steps in it. Under `insight` the PreToolUse event is not an intent line at all: it is the earliest
-# moment the assistant's newest reasoning block can be seen, so a conclusion is spoken as the work
-# starts instead of after the first step of it finishes.
+# steps in it. Under `say`/`insight` the PreToolUse event is not an intent line at all — it is simply
+# another chance to notice a named line.
+#
+# AND IT IS USUALLY THE POST EVENT THAT NOTICES, which is worth knowing before optimising for the
+# other one: measured, the block containing a tag is NOT yet in the transcript when PreToolUse fires
+# for the tool call right after it, so the claim lands on that call's PostToolUse instead. A named
+# line therefore arrives when the first step after it FINISHES, not as it starts. Both events are
+# wired because either can be the one that sees it, and `iblk` makes the second a no-op.
 INTENT=0
 if [[ "$EVENT" == "PreToolUse" ]]; then
   if [[ "$SOURCE" == "facts" ]]; then
@@ -265,7 +270,14 @@ _try_say() {
   line=""
   while IFS= read -r block; do
     [[ -n "$block" ]] || continue
+    # FENCED CODE IS NOT PROSE, and skipping this was a real bug: quoting a voice log or a test's
+    # output in a reply — which is how this channel gets discussed at all — put a `SAY[...]:` string
+    # inside a code block, and the scanner grepped it out and SPOKE it. Measured: iblk came back
+    # holding the hash of "ไม่หายแล้วครับ n ขยับหนึ่งขั้น…   ← เข้าถึงได้", which is a fragment of this
+    # script's own probe output pasted into a fence, not a line anyone named. A tag is something the
+    # assistant WRITES as prose; a tag inside a fence is something it is TALKING ABOUT.
     line="$(printf '%s\n' "${block//$'\001'/$'\n'}" \
+            | awk '/^[[:space:]]*```/ { f = !f; next } !f' \
             | grep -m1 -E '(^|[[:space:]>*_`-])SAY(\[[a-z-]+\])?:[[:space:]]*.' || true)"
     [[ -n "$line" ]] && break
   done < <(_recent_prose)
