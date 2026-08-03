@@ -276,31 +276,36 @@ voice:
     ack: true                      # a spoken acknowledgement for every prompt
     milestones: true               # the closing line — what the finished turn actually produced
     narrate: true                  # the RUNNING COMMENTARY, chattiness: max ONLY (inert elsewhere):
-                                   #   TWO short lines per step — what it is about to do, then how it
-                                   #   went — spoken WHILE the work happens and built from the tool
-                                   #   call's OWN payload: "รัน cargo test" → "cargo test ผ่าน 42",
-                                   #   "อ่าน queue.sh" → "queue.sh อ่านแล้ว 260 บรรทัด". No
-                                   #   summarizer call on this path at all. `false` keeps max's ack +
-                                   #   closing line without the mid-turn talking; it is the level's
-                                   #   main cost lever (see chattiness below).
-    narrate_intent: true           # the BEFORE half of that pair, on its own switch (max only).
-                                   #   `false` = results only, which is what this level used to do —
-                                   #   and the reason it changed: a result-only narrator is silent for
-                                   #   exactly as long as the work takes, so a 90-second test run and
-                                   #   a wedged command sound identical to someone who is not watching
-                                   #   the screen. The before-line places the wait; the result closes
-                                   #   it. It is also the cheaper half (no response to read, ~2 words,
-                                   #   and short repeated lines are CACHE hits, i.e. free).
-    narrate_source: facts          # facts (default) | prose. What a narrated line is MADE of.
-                                   #   facts → the tool call's own payload: before, the command or
-                                   #     file it is about to touch; after, the file's line count,
-                                   #     matches found, tests passed, exit status. A subject and a
-                                   #     FIGURE, 3–8 words, which is how the character this level
-                                   #     imitates actually talks ("The armour is now at 92%").
-                                   #   prose → the assistant's own sentence from just before the
-                                   #     tool call. Free and true, but one sentence covers ~5 calls.
-                                   #     Each is the other's fallback, so a step with no figure still
-                                   #     speaks and a step with no prose still speaks.
+                                   #   one line each time something is WORKED OUT, spoken while the
+                                   #   work happens — "root cause คือ submodule pointer ค้างที่ OG-631
+                                   #   เพราะ teardown.sql พัง จะ bump แล้วรัน scoped test ใหม่".
+                                   #   `false` keeps max's ack + closing line without the mid-turn
+                                   #   talking; it is the level's main cost lever (see chattiness).
+    narrate_source: insight        # insight (default) | facts | prose. What a narrated line is ABOUT.
+                                   #   insight → a CONCLUSION, from the assistant's own reasoning
+                                   #     block: what it found, the cause, the next move. The unit is
+                                   #     the thing worked out, not the tool call — because nobody
+                                   #     listening wants to hear which command is running, they want
+                                   #     to hear what it MEANT. Mostly SILENT on purpose: a block that
+                                   #     only announces a step is refused (cheaply by length, then by
+                                   #     the model answering NONE). The only source that spends
+                                   #     tokens, and less than `facts` spent on TTS.
+                                   #   facts → the step metronome, and what `max` used to do: two
+                                   #     lines per tool call from the payload itself ("รัน cargo test"
+                                   #     → "cargo test ผ่าน 42"), a subject and a FIGURE, 3–8 words,
+                                   #     the register of the character this level imitates ("The
+                                   #     armour is now at 92%"). Costs no tokens at all. It was too
+                                   #     much to listen to — correct about the machinery, silent about
+                                   #     the meaning — which is why it is opt-in now.
+                                   #   prose → the assistant's own sentence from just before the call,
+                                   #     verbatim. Cheapest, and judges nothing. `facts` and `prose`
+                                   #     fall back to each other; `insight` deliberately does not
+                                   #     fall back at all, or "รัน cd" returns one silence at a time.
+    narrate_intent: true           # `narrate_source: facts` ONLY — the BEFORE half of its step pair.
+                                   #   `false` = results only, which leaves every wait unexplained: a
+                                   #   90-second test run and a wedged command sound identical to
+                                   #   someone who is not watching the screen. Inert under `insight`,
+                                   #   which has no steps in it to announce.
     narrate_gap: 0                 # seconds between narrated lines, 0–60, and **0 = no floor**, the
                                    #   default at max. It went 9 → 4 → 0: any floor eats one half of
                                    #   every pair, because the two halves of one step arrive about a
@@ -347,11 +352,11 @@ voice:
                                    #   switches above): terse (1 sentence, facts only) |
                                    #   balanced (1-2, + a softener and a short reaction) | chatty
                                    #   (2-3, + the follow-through) | max (the register of a ship's
-                                   #   AI: every sentence is [subject] [state] [figure] and stays
-                                   #   under ~45 characters, and it TALKS THROUGH the turn — every
-                                   #   step announced as it starts and again with its result, plus the
-                                   #   thresholds and gates above. The only level that narrates the
-                                   #   process, and it needs `narrate: true` to be itself).
+                                   #   AI: every sentence is [subject] [state] [figure], and it TALKS
+                                   #   THROUGH the turn — a conclusion out loud each time something is
+                                   #   worked out, plus the thresholds and gates above. The only level
+                                   #   that narrates mid-turn, and it needs `narrate: true` to be
+                                   #   itself).
                                    #   `max`'s ack + closing line are SHORTER than chatty's, which
                                    #   looks wrong on a ladder until you see what the ladder grades:
                                    #   how much of what happens the machine tells you, not how many
@@ -364,16 +369,14 @@ voice:
                                    #   it with, a model pads, and padding is one step from inventing.
                                    #   Bad news drops the softener at every level. Cost at 100
                                    #   turns/day × 22 days on elevenlabs: terse ~$48/mo · balanced
-                                   #   ~$76 · chatty ~$105 · max ~$210 typical (extrapolated, not
+                                   #   ~$76 · chatty ~$105 · max ~$135 typical (extrapolated, not
                                    #   measured: ~$75 of ack + closing line now that both shrank, plus
-                                   #   ~$135 of narration at ~10 steps a turn now that a step speaks
-                                   #   twice). The pair costs well under double: an intent line is
-                                   #   about half the characters, and the more repetitive half — "รัน
-                                   #   cargo test" recurs across turns, and a repeated line is a CACHE
-                                   #   hit and therefore free, which prose, unique every time, never
-                                   #   was. `narrate: false` removes all of it; `narrate_intent:
-                                   #   false` removes the before-half; `narrate_max_per_turn` puts a
-                                   #   hard ceiling back on a turn.
+                                   #   ~$60 of narration — a handful of conclusions a turn, most
+                                   #   blocks refused, against the ~$135 of TTS the per-step version
+                                   #   spent). `insight` also pays a cheap-model call per substantive
+                                   #   block, which is cents a month, not dollars. `narrate: false`
+                                   #   removes the channel; `narrate_max_per_turn` puts a hard ceiling
+                                   #   back on a turn.
                                    #   `aiworks voice audition "<a request>"` speaks all four.
                                    #   ROOT CHECKOUT ONLY: a linked worktree is clamped to terse
                                    #   whatever this says. It has to be — layer 2 of the config

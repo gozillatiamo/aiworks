@@ -66,13 +66,12 @@
 #
 # COST, at 100 prompts a day × 22 days, on elevenlabs: every finished turn speaks a closing line,
 # and neither it nor the ack hits the audio cache (unique text each time), so the bill tracks
-# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$210/mo (max is
-# extrapolated, not measured — ~$75 of ack + closing line, plus ~$135 of step narration at ~10 steps
-# a turn, each announced twice: as it starts and with its result). A step's two lines cost well under
-# double, because the before-line is the shorter and far more repetitive one and a repeat is a cache
-# hit. (Earlier notes here said $14–24, then $230: the first was from when milestones almost never
-# spoke, the second from before max's ack and closing line were shortened to the register they now
-# use.)
+# `autoplay.chattiness`: terse ~$48/mo · balanced ~$76/mo · chatty ~$105/mo · max ~$135/mo (max is
+# extrapolated, not measured — ~$75 of ack + closing line, plus ~$60 of mid-turn narration: a handful
+# of CONCLUSIONS a turn, since a block that only announces a step is refused). Plus a cheap-model call
+# per substantive block, which is cents a month. (Earlier notes here said $14–24, then $230, then
+# $210: the first was from when milestones almost never spoke, the second from before max's bookends
+# were shortened, the third from the version that narrated every tool call twice.)
 # `tts.provider: gemini` is ~6× cheaper for 3 % fewer surviving English terms.
 #
 # To go quiet for a while, do NOT edit this back: MUTE THE MACHINE. `aiworks voice mute on` and the
@@ -97,9 +96,9 @@
 #     # HOW MUCH it says, never whether: terse (1 sentence, the shipped length) | balanced (1-2,
 #     # + a softener and a short reaction) | chatty (2-3, + the follow-through) | max (the ship's-AI
 #     # register — every sentence is [subject] [state] [figure] under ~45 characters, and it talks
-#     # THROUGH the turn: every step announced as it starts and again with its result, plus a word
-#     # when a step fails and when something is waiting for you). Ceiling, not quota — one fact
-#     # still means one sentence.
+#     # THROUGH the turn: a conclusion out loud each time something is worked out, plus a word when a
+#     # step fails and when something is waiting for you). Ceiling, not quota — one fact still means
+#     # one sentence.
 #     # `aiworks voice audition "…"` compares all four.
 #     # THIS CHECKOUT ONLY, and the cost above is this checkout's: a linked worktree is clamped to
 #     # terse whatever you set here. This file is git-ignored, so it cannot travel into a worktree —
@@ -107,15 +106,17 @@
 #     # the level that speaks per step, in the session you are least likely to be watching. Both
 #     # share one spool and one pair of speakers, so two `max` sessions queue instead of alternating.
 #     chattiness: balanced
-#     # The step narration, `max` only, and the biggest mid-turn voice there is. false ⇒ keep max's
-#     # ack + closing line, stop the per-step talking (~$135/mo of max's ~$210).
+#     # The mid-turn narration, `max` only, and the biggest mid-turn voice there is. false ⇒ keep
+#     # max's ack + closing line, stop the talking in between (~$60/mo of max's ~$135).
 #     narrate: true
-#     # The BEFORE half of each step's pair ("รัน cargo test" → "cargo test ผ่าน 42"). false ⇒ results
-#     # only, which leaves every wait unexplained: a long run and a wedged one sound the same.
+#     # What a narrated line is ABOUT. insight (default) = a CONCLUSION each time something is worked
+#     # out, from the assistant's own reasoning ("root cause คือ X เพราะ Y จะแก้ Z") — mostly silent,
+#     # since a block that only announces a step is refused. facts = the old step metronome, two lines
+#     # per tool call ("รัน cargo test" → "cargo test ผ่าน 42"): zero tokens, and too much to listen
+#     # to. prose = the assistant's pre-call sentence verbatim, cheapest and judges nothing.
+#     narrate_source: insight
+#     # `facts` only: the BEFORE half of its step pair. Inert under insight.
 #     narrate_intent: true
-#     # What a narrated line is MADE of: facts (the call's own payload — "cargo test ผ่าน 42") or
-#     # prose (the assistant's sentence before the call). Each falls back to the other.
-#     narrate_source: facts
 #     narrate_gap: 0               # 0 = no floor, which is what "every action" needs. A number here
 #                                  # drops one half of every pair, since the two arrive ~1 s apart
 #     narrate_max_per_turn: 0      # 0 = no ceiling. A number bounds a turn's spend, but the turn then
