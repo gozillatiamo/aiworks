@@ -80,7 +80,7 @@ voice:
     milestones: true
     narrate: true
     narrate_intent: true
-    narrate_source: facts
+    narrate_source: insight
     narrate_gap: 0
     narrate_max_per_turn: 0
     thresholds: true

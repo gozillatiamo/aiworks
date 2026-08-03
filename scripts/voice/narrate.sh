@@ -1,37 +1,42 @@
 #!/usr/bin/env bash
 #
-# The step narrator — two short spoken lines per step, while the turn runs: what the step is about
-# to do, then how it went. `voice.autoplay.chattiness: max` only. Runs DETACHED, spawned by
+# The mid-turn narrator — the CONCLUSION of each piece of work, spoken while the turn runs.
+# `voice.autoplay.chattiness: max` only. Runs DETACHED, spawned by
 # .claude/hooks/voice-narrate.sh on PreToolUse, PostToolUse and PostToolUseFailure.
 #
 # Usage:
 #   narrate.sh [-v] --session ID --transcript PATH [--payload FILE] [--event NAME]
 #
 # ── WHAT IT SPEAKS ─────────────────────────────────────────────────────────────────
-# `voice.autoplay.narrate_source: facts` (the default) — the tool call's own payload, turned into
-# one line by scripts/voice/tool-fact.py. Both moments of a step, as a pair:
+# `voice.autoplay.narrate_source: insight` (the default) — one line per thing WORKED OUT, from the
+# assistant's own reasoning block, via the summarizer's `insight` kind:
 #
-#     รัน cargo test    →  cargo test ผ่าน 42
-#     อ่าน queue.sh     →  queue.sh อ่านแล้ว 260 บรรทัด
+#     "root cause คือ submodule pointer ค้างที่ OG-631 เพราะ teardown.sql พัง
+#      จะ bump แล้วรัน scoped test ใหม่ค่ะ"
 #
-# Short (3–8 words), a subject and a figure, and NEW information every time. That form is what
-# JARVIS actually does in the Iron Man films — "The armour is now at 92%", "18,000 feet. 10,000
-# feet. 6,000 feet", "Thirteen, sir." The density that makes him feel present comes from FREQUENCY,
-# not from length; the first `max` got that backwards and made the sentences longer.
+# THE UNIT IS A CONCLUSION, NOT A TOOL CALL, and that correction is the whole history of this file.
+# The previous version narrated every step in both directions — "รัน cd", "อ่าน queue.sh",
+# "cargo test ผ่าน 42" — mechanically true, and dismissed on first contact with the person it was
+# built for: nobody listening wants to be told which command is running, they want to be told what
+# it MEANT. A step is a unit of machinery; a finding, its cause and the next move are what a
+# colleague would say out loud.
 #
-# WHY THE INTENT HALF EXISTS, given that the film character speaks results and not intentions: a
-# result-only narrator is silent for exactly as long as the work takes, and that silence is
-# unreadable — a 90-second test run and a wedged command sound identical until one of them ends.
-# `max` is the level asked for by someone who is NOT watching the screen, so the pair is the point:
-# the intent line places the wait, the result line closes it. It has its own switch
-# (voice.autoplay.narrate_intent) for anyone who wants the results alone.
+# Most blocks are NOT a conclusion (they announce a step), so this source is mostly silent by
+# design — see _try_insight for the two gates, and note that it never falls back to the step
+# sources: falling back would put "รัน cd" back in the channel one silence at a time.
 #
-# `narrate_source: prose` is the previous mechanism, kept: the assistant's own sentence from just
-# before the tool call. Free and true, and the fallback whenever a step yields no speakable fact.
+# `narrate_source: facts` is the previous mechanism, kept whole and now opt-in: two lines per step
+# from tool-fact.py, the JARVIS-metronome register ("The armour is now at 92%"), with the before-half
+# on its own switch (voice.autoplay.narrate_intent). It costs no tokens at all, which is why it
+# survives — but it is the register that was too much.
 #
-# Either way there is NO summarizer call on this path, so the whole channel costs zero tokens; the
-# only spend is the TTS for a line that is deliberately tiny — and an intent line is short and
-# repetitive enough that the audio cache answers most of them for nothing.
+# `narrate_source: prose` is the cheapest of the three: the assistant's own sentence from just before
+# the tool call, verbatim and truncated. No summarizer call, and no judgement about whether the
+# sentence was worth saying.
+#
+# COST: `insight` is the only source that spends tokens, and less than the step pair it replaced —
+# one cheap-model call per substantive block (~1 block per 5 tool calls, and most are refused)
+# against two TTS lines per step.
 #
 # ── THRESHOLDS (voice.autoplay.thresholds) ─────────────────────────────────────────
 # JARVIS also speaks up unbidden when something crosses a line, and always names the consequence:
@@ -70,11 +75,15 @@ set -euo pipefail
 VOICE_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib.sh
 . "$VOICE_SELF_DIR/lib.sh"
+# shellcheck source=./variety.sh
+. "$VOICE_SELF_DIR/variety.sh"   # variety_particle — the insight source speaks a full sentence
 
 MAX_CHARS=60       # ~4 s of Thai speech. A JARVIS line is 3-8 words; so is this one
 MIN_CHARS=12       # below this there is no sentence, only a fragment
 PROSE_CHARS=90     # the prose fallback is a written sentence, so it gets a little more room
 INTENT_CHARS=34    # the intent half is half a result's length — a pair has to fit in one step
+INSIGHT_CHARS=170  # a conclusion needs room for a because-clause and the next move. The summarizer
+                   # is already capped at 160, so this only stops a runaway from being cut mid-word
 
 SESSION="" TRANSCRIPT="" PAYLOAD="" EVENT="PostToolUse"
 while [[ $# -gt 0 ]]; do
@@ -99,13 +108,18 @@ voice_cfg_bool voice.autoplay.enabled false || { vlog "narrate skipped: autoplay
 # loudest thing this feature does, and the ack/closing-line lengths are worth keeping on their own.
 voice_cfg_bool voice.autoplay.narrate true || { vlog "narrate skipped: voice.autoplay.narrate is false"; exit 0; }
 [[ "$(voice_chattiness)" == "max" ]] || { vlog "narrate skipped: chattiness is $(voice_chattiness), not max"; exit 0; }
-# The BEFORE half of the pair, on its own switch: it doubles the number of spoken lines, so someone
-# who wants the running commentary but not the intents can drop it without leaving `max`.
+SOURCE="$(voice_narrate_source)"
+# The BEFORE half of a STEP pair — `narrate_source: facts` only, since that is the only source with
+# steps in it. Under `insight` the PreToolUse event is not an intent line at all: it is the earliest
+# moment the assistant's newest reasoning block can be seen, so a conclusion is spoken as the work
+# starts instead of after the first step of it finishes.
 INTENT=0
 if [[ "$EVENT" == "PreToolUse" ]]; then
-  voice_cfg_bool voice.autoplay.narrate_intent true \
-    || { vlog "narrate skipped: voice.autoplay.narrate_intent is false"; exit 0; }
-  INTENT=1
+  if [[ "$SOURCE" == "facts" ]]; then
+    voice_cfg_bool voice.autoplay.narrate_intent true \
+      || { vlog "narrate skipped: voice.autoplay.narrate_intent is false"; exit 0; }
+    INTENT=1
+  fi
 fi
 voice_is_muted && { vlog "narrate: muted — nothing synthesized"; exit 0; }
 [[ -n "$SESSION" ]] || SESSION="$VOICE_ROOT"
@@ -119,7 +133,6 @@ if [[ "$ENDED" -ge "$TURN" && "$TURN" -gt 0 ]]; then
   exit 0
 fi
 
-SOURCE="$(voice_narrate_source)"
 GAP="$(voice_narrate_gap)"
 CAP="$(voice_narrate_cap)"
 NOW="$(voice_now)"
@@ -177,6 +190,64 @@ _last_prose() {
           | last // ""' "$TRANSCRIPT" 2>/dev/null || printf ''
 }
 
+# ── the insight source: a CONCLUSION per reasoning block, not a line per tool call ──
+# THE UNIT IS THE THING THAT WAS WORKED OUT. `facts` narrates every step — "รัน cd",
+# "queue.sh อ่านแล้ว 260 บรรทัด" — which is mechanically true and worth nothing to listen to: the
+# person is not asking which command is running, they are asking what it MEANT. A conclusion is
+# what they would want said out loud ("root cause คือ submodule pointer ค้างที่ OG-631 เพราะ
+# teardown.sql พัง จะ bump แล้วรัน scoped test ใหม่"), and conclusions are written into the
+# assistant's own prose, roughly one block per five tool calls (measured: 314 blocks / 1 523 calls).
+#
+# So the block is the unit, and the summarizer's job is mostly to REFUSE — most blocks announce a
+# step. Two gates, cheap one first:
+#   1. length. A block under MIN_BLOCK characters is a preamble ("อ่าน queue.sh ก่อน"), never a
+#      finding. Free, and it rejects the majority.
+#   2. the model, which answers NONE when there is no conclusion in the text. Not "answer with an
+#      empty string": measured on this codebase's other summarizer prompts, an instruction to say
+#      nothing produces a plausible invented sentence instead, while a token to emit does not.
+# Deduped on the BLOCK's hash rather than the spoken line, because the same block is seen again by
+# every tool call that follows it and the summarizer would paraphrase it differently each time.
+MIN_BLOCK=100
+_try_insight() {
+  [[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || return 1
+  local block clean hash out
+  block="$(_last_prose)"
+  [[ -n "$block" ]] || return 1
+  # A `VOICE[...]` tag marks the CLOSING line's own text — speaking it mid-turn would announce the
+  # result before the work is done, and then again at the end.
+  case "$block" in *VOICE\[*|*VOICE:*) return 1 ;; esac
+  clean="$(_speakable "$block")"
+  [[ -n "$clean" ]] || return 1
+  if [[ "$(printf '%s' "$clean" | wc -m | tr -d ' ')" -lt "$MIN_BLOCK" ]]; then
+    vlog "insight: the block is $(printf '%s' "$clean" | wc -m | tr -d ' ') chars — a step, not a conclusion"
+    return 1
+  fi
+  hash="$(voice_sha "$(voice_normalize_text "$clean")")"
+  if [[ "$hash" == "$(voice_narrate_get "$SESSION" iblk)" ]]; then
+    vlog "insight: this block already spoke"
+    return 1
+  fi
+  # Recorded BEFORE the call, not after: several tool calls follow one block and each spawns its own
+  # narrate.sh, so the losers of that race must see the winner's mark rather than all paying for the
+  # same summary. This is the one place where a duplicate costs money and not just noise.
+  voice_narrate_put "$SESSION" iblk "$hash"
+  # The particle is pinned to the VOICE's gender (a male voice saying ค่ะ is a real bug), and
+  # `voice_tts_gender` is defined by the PROVIDER file, not by lib.sh — so it has to be loaded
+  # first. Without this the call resolves to nothing, `variety_particle` takes its default, and
+  # every line ends in ค่ะ no matter whose voice is configured. Loaded here rather than at the top
+  # of the script because only this source needs it: the step sources speak no particle at all.
+  command -v voice_tts_gender >/dev/null 2>&1 || voice_load_tts_provider
+  out="$("$VOICE_SELF_DIR/summarize.sh" --kind insight \
+           --particle "$(variety_particle "$(voice_tts_gender)")" "$clean" 2>/dev/null || true)"
+  out="$(printf '%s' "$out" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  case "$out" in
+    ""|NONE|NONE.|none|"NONE "*) vlog "insight: no conclusion in the block (${out:-empty})"; return 1 ;;
+  esac
+  LINE="$out"
+  SRC=insight
+  return 0
+}
+
 _try_prose() {
   [[ -n "$TRANSCRIPT" && -f "$TRANSCRIPT" ]] || return 1
   local out
@@ -190,17 +261,21 @@ _try_prose() {
   return 0
 }
 
-# Each source is the other's fallback, which is why both survive: `facts` goes quiet on a step whose
-# response carries no figure (see SKIP_TOOLS), and `prose` goes quiet on the four-in-five tool calls
-# that have no sentence of their own in front of them.
-if [[ "$SOURCE" == "facts" ]]; then
-  _try_fact || _try_prose || true
-else
-  _try_prose || _try_fact || true
-fi
+# `insight` (the default) has NO fallback to the step sources, and that is the point rather than an
+# omission: falling back to `facts` when a block carries no conclusion would put "รัน cd" back in the
+# channel one silence at a time, which is exactly what this source replaced. Nothing to conclude ⇒
+# nothing said. The other two keep each other company as before: `facts` goes quiet on a step whose
+# response carries no figure (SKIP_TOOLS), `prose` on the four-in-five calls with no sentence of
+# their own in front of them.
+case "$SOURCE" in
+  insight) _try_insight || true ;;
+  facts)   _try_fact || _try_prose || true ;;
+  *)       _try_prose || _try_fact || true ;;
+esac
 [[ -n "$LINE" ]] || { vlog "narrate: nothing to say (no fact, no usable prose)"; exit 0; }
 CHAR_CAP="$MAX_CHARS"
 [[ "$SRC" == "prose" ]] && CHAR_CAP="$PROSE_CHARS"
+[[ "$SRC" == "insight" ]] && CHAR_CAP="$INSIGHT_CHARS"
 [[ "$INTENT" -eq 1 && "$SRC" == "fact" ]] && CHAR_CAP="$INTENT_CHARS"
 URGENT_CHARS=110   # a threshold line prefixes the fact ("ผ่านมา 11 นาที… ล่าสุด <fact>"), and the
                    # tail is the informative half — the step cap would cut exactly that off

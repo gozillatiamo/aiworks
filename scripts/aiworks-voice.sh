@@ -158,12 +158,18 @@ case "$cmd" in
       printf 'chattiness        %s %s(ack + closing line only · aiworks voice audition to compare)%s\n' \
         "$chat" "$c_dim" "$c_off"
     elif voice_cfg_bool voice.autoplay.narrate true; then
-      src="$(voice_narrate_source)"; [[ "$src" == "facts" ]] && src=fact
-      if voice_cfg_bool voice.autoplay.narrate_intent true; then
-        shape="every step twice — one $src line before it, one after"
-      else
-        shape="one $src line per step, after it only (narrate_intent is off)"
-      fi
+      # The shape depends on the SOURCE, and the two differ in what a line is ABOUT, not just how
+      # often one arrives — which is the whole point of the setting and so belongs in the row.
+      src="$(voice_narrate_source)"
+      case "$src" in
+        insight) shape="a conclusion each time something is worked out" ;;
+        prose)   shape="the assistant's own sentence from before each step" ;;
+        *)       if voice_cfg_bool voice.autoplay.narrate_intent true; then
+                   shape="every step twice — one fact line before it, one after"
+                 else
+                   shape="one fact line per step, after it only (narrate_intent is off)"
+                 fi ;;
+      esac
       # The two throttles are 0 = off as shipped, and a `0s apart, 0 max/turn` row read as broken.
       # Named only when a number is actually set — where they matter, since either one silently
       # drops part of what this level promises to say.
