@@ -231,14 +231,16 @@ tracker_upsert() {
   # carried from the previous description is re-appended so images survive the rewrite.
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" --arg ef "$JIRA_EFFORT_FIELD" \
     --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg sf "$JIRA_SPRINT_FIELD" --arg body "$body_md" \
+    --arg base "$JIRA_BASE_URL" --arg prefix "$JIRA_PROJECT_KEY" \
     --argjson media "$existing_media" '
     include "jira";
-    {}
+    ({base:$base, prefix:$prefix}) as $ctx
+    | {}
     + (if .title    then {summary: .title} else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
     + (if .parent   then {parent: {key: .parent}} else {} end)
-    + ( if ($body | length) > 0 then {description: ($body | md_to_adf | adf_append_media($media))}
-        elif .description       then {description: (.description | text_to_adf)}
+    + ( if ($body | length) > 0 then {description: ($body | md_to_adf($ctx) | adf_append_media($media))}
+        elif .description       then {description: (.description | text_to_adf($ctx))}
         else {} end )
     + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
     + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
@@ -314,14 +316,15 @@ jira_create() {
   jfields="$(printf '%s' "$fields" | jq -L "$JIRA_IMPL_DIR" \
     --arg proj "$JIRA_PROJECT_KEY" --arg itype "$itype" --arg ef "$JIRA_EFFORT_FIELD" \
     --arg dpf "$JIRA_DEV_POINTS_FIELD" --arg qpf "$JIRA_QA_POINTS_FIELD" --arg sf "$JIRA_SPRINT_FIELD" --arg body "$body_md" \
-    --arg parent "$parent" --argjson comps "$comp_fields" '
+    --arg parent "$parent" --argjson comps "$comp_fields" --arg base "$JIRA_BASE_URL" '
     include "jira";
-    { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
+    ({base:$base, prefix:$proj}) as $ctx
+    | { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
     + (if ($parent | length) > 0 then {parent: {key: $parent}} else {} end)
     + (if ($comps  | length) > 0 then {components: $comps}     else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
-    + ( if ($body | length) > 0 then {description: ($body | md_to_adf)}
-        elif .description       then {description: (.description | text_to_adf)}
+    + ( if ($body | length) > 0 then {description: ($body | md_to_adf($ctx))}
+        elif .description       then {description: (.description | text_to_adf($ctx))}
         else {} end )
     + (if (.effort     and ($ef  | length > 0)) then {($ef):  .effort}                else {} end)
     + (if (.dev_points and ($dpf | length > 0)) then {($dpf): (.dev_points | tonumber)} else {} end)
@@ -490,7 +493,8 @@ tracker_add_comment() {
   key="$(jira_key "$ticket")"
   # Render the Markdown to ADF (headings, lists, tables, code, inline marks) — a Jira
   # comment body is a full ADF doc, so it renders natively like the issue description.
-  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" 'include "jira"; {body: ($t | md_to_adf)}')"
+  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" --arg base "$JIRA_BASE_URL" --arg prefix "$JIRA_PROJECT_KEY" \
+    'include "jira"; {body: ($t | md_to_adf({base:$base, prefix:$prefix}))}')"
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — POST /rest/api/3/issue/%s/comment\n%s\n' "$key" "$(printf '%s' "$body" | jq .)"
     return 0
@@ -507,7 +511,8 @@ tracker_add_comment() {
 tracker_edit_comment() {
   local ticket="$1" comment_id="$2" dry="$3" text="$4" key body
   key="$(jira_key "$ticket")"
-  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" 'include "jira"; {body: ($t | md_to_adf)}')"
+  body="$(jq -n -L "$JIRA_IMPL_DIR" --arg t "$text" --arg base "$JIRA_BASE_URL" --arg prefix "$JIRA_PROJECT_KEY" \
+    'include "jira"; {body: ($t | md_to_adf({base:$base, prefix:$prefix}))}')"
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — PUT /rest/api/3/issue/%s/comment/%s\n%s\n' "$key" "$comment_id" "$(printf '%s' "$body" | jq .)"
     return 0
