@@ -57,22 +57,22 @@ t "no url no link"             '[]'                                       "$HREF
 
 echo "--- jira: md_to_adf ticket-key autolink (ctx-aware) ---"
 # ctx-aware variant: same doc pipeline, but with a {base, prefix} context so a bare
-# mention of another ticket (e.g. "OFB-2266") in prose gets linked too, not just URLs.
+# mention of another ticket (e.g. "APP-2266") in prose gets linked too, not just URLs.
 tk() {
   local name=$1 want=$2 filter=$3 text=$4 got
-  got=$(printf '%s' "$text" | jq -R -s -L "$J" -c "include \"jira\"; md_to_adf({base:\"https://bluepi.atlassian.net\",prefix:\"OFB\"}) | $filter" 2>&1)
+  got=$(printf '%s' "$text" | jq -R -s -L "$J" -c "include \"jira\"; md_to_adf({base:\"https://example.atlassian.net\",prefix:\"APP\"}) | $filter" 2>&1)
   if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
   else fail=$((fail+1)); printf 'FAIL %s\n     want %s\n     got  %s\n' "$name" "$want" "$got"; fi
 }
-tk "bare ticket key linked"        '["https://bluepi.atlassian.net/browse/OFB-2266"]' "$HREFS" 'blocked by OFB-2266 for now'
-tk "two bare keys both linked"     '["https://bluepi.atlassian.net/browse/OFB-1","https://bluepi.atlassian.net/browse/OFB-22"]' \
-                                   "$HREFS" 'see OFB-1 and OFB-22'
-tk "ticket key in code not linked" '[]'                                                 "$HREFS" 'run `OFB-2266` check'
-tk "already-linked key not doubled" '["https://bluepi.atlassian.net/browse/OFB-2266"]'  "$HREFS" 'plan: [OFB-2266](https://bluepi.atlassian.net/browse/OFB-2266)'
-tk "key inside a url not re-split" '["https://bluepi.atlassian.net/browse/OFB-2266"]'   "$HREFS" 'see https://bluepi.atlassian.net/browse/OFB-2266 above'
+tk "bare ticket key linked"        '["https://example.atlassian.net/browse/APP-2266"]' "$HREFS" 'blocked by APP-2266 for now'
+tk "two bare keys both linked"     '["https://example.atlassian.net/browse/APP-1","https://example.atlassian.net/browse/APP-22"]' \
+                                   "$HREFS" 'see APP-1 and APP-22'
+tk "ticket key in code not linked" '[]'                                                 "$HREFS" 'run `APP-2266` check'
+tk "already-linked key not doubled" '["https://example.atlassian.net/browse/APP-2266"]'  "$HREFS" 'plan: [APP-2266](https://example.atlassian.net/browse/APP-2266)'
+tk "key inside a url not re-split" '["https://example.atlassian.net/browse/APP-2266"]'   "$HREFS" 'see https://example.atlassian.net/browse/APP-2266 above'
 tk "non-matching prefix not linked" '[]'                                                "$HREFS" 'ISO-8601 and UTF-8 are not tickets'
 tk "no key no link"                '[]'                                                 "$HREFS" 'plain sentence, no ticket here'
-t  "0-arity default: no ctx, key stays plain" '[]' "$HREFS" 'blocked by OFB-2266 for now'
+t  "0-arity default: no ctx, key stays plain" '[]' "$HREFS" 'blocked by APP-2266 for now'
 
 echo "--- jira: text_to_adf (one-line / --description path) ---"
 tt() {

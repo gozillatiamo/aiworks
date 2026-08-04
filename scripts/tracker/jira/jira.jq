@@ -68,15 +68,15 @@ def adf_append_media($media):
 
 # Leftmost inline-markup match, or null. Capture index identifies the kind:
 #   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_
-#   6 bare ticket key (e.g. OFB-123)  7 bare url
+#   6 bare ticket key (e.g. APP-123)  7 bare url
 # Index 6/7 (autolinks) are last on purpose: `match` picks the leftmost START position
 # and only breaks a tie by alternative order, so a URL/key inside `code` or inside a
 # [label](url) is still claimed by the earlier-starting token, not by the autolink —
 # same reasoning as the URL fix in [[tracker-urls-autolink-and-roundtrip]], extended to
-# a second mention kind (OFB-2286: "mentioned another ticket in prose" was dead text).
+# a second mention kind (APP-2286: "mentioned another ticket in prose" was dead text).
 # The URL body excludes brackets/parens/quotes (so a wrapped "(see https://x)" stops
 # at the paren) and may not END on sentence punctuation (so a trailing "." is prose).
-# The ticket-key alternative is built from $ctx.prefix (e.g. "OFB", the project's own
+# The ticket-key alternative is built from $ctx.prefix (e.g. "APP", the project's own
 # key) rather than a generic [A-Z]+-[0-9]+ pattern — a generic pattern false-positives
 # on ISO-8601/UTF-8/RFC-2119-shaped prose that is not a ticket reference at all. When
 # $ctx.prefix is empty (no project configured for this call), the alternative is built
