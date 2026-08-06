@@ -83,6 +83,12 @@ class Config:
     thread_ttl_sec: int = 604800      # 7d fixed from thread creation
     busy_ttl_sec: int = 1800          # cap; defaults to dispatch_timeout_sec
 
+    # Sticky command: the thread's standing slash command (`/ultra-review`) is replayed
+    # in front of a conversational follow-up ("revisit"), because a bare follow-up leaves
+    # the session to decide whether to reproduce the skill by hand — measured
+    # non-deterministic. `new:` clears it; an explicit `/…` or `agent:<name>` overrides it.
+    sticky_command_enabled: bool = True
+
     # On the FIRST mention inside a pre-existing thread (whose root did not address the
     # bot), the whole thread up to the mention is pulled in as context. Cap the number
     # of messages fetched so a giant thread can't blow up the prompt.
@@ -139,6 +145,7 @@ class Config:
             context_ttl_sec=int(_optional("CONTEXT_TTL_SEC", "604800")),
             thread_ttl_sec=int(_optional("THREAD_TTL_SEC", "604800")),
             busy_ttl_sec=int(_optional("BUSY_TTL_SEC", str(dispatch_timeout))),
+            sticky_command_enabled=_bool("STICKY_COMMAND_ENABLED", True),
             thread_context_max_msgs=int(_optional("THREAD_CONTEXT_MAX_MSGS", "200")),
             attachment_max_files=int(_optional("ATTACHMENT_MAX_FILES", "20")),
             attachment_max_file_mb=int(_optional("ATTACHMENT_MAX_FILE_MB", "15")),

@@ -27,6 +27,11 @@ class CorrelationContext:
     request_text: str     # mention text, @-mention (and any `agent:` prefix) stripped
     created_at: str       # ISO-8601 UTC
     agent_name: str = ""  # leading `agent:<name>` -> delegate the request to that subagent
+    # The thread's standing slash command, replayed in front of a conversational
+    # follow-up ("revisit"). Empty on a first mention and whenever the user typed the
+    # command themselves. Named in the TRUSTED preamble so the session knows the leading
+    # command is the dispatcher's, not something the request block talked it into.
+    replayed_command: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)

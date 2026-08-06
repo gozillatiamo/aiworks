@@ -135,6 +135,33 @@ spam on the host.
   a follow-up launches a *new* agent session in the *same* worktree/branch. Context
   carries via **`.aiworks/thread-log.md`** — each turn reads it for history and appends
   its own summary (the prompt enforces this).
+- **Sticky command — a thread is ONE work item.** The slash command of a thread's first
+  mention is stored on the mapping (`sticky_command`) and **replayed in front of** a
+  later conversational follow-up, so `@aiworks revisit` dispatches as
+  `/ultra-review OFB-2302` + *"Follow-up from the Slack thread: revisit"*. The follow-up
+  text is kept underneath and is the turn's instruction — `/ultra-review` §0.5 reads
+  "revisit" from it and takes its re-visit branch by itself. The ack names the command it
+  replayed, so a wrong guess is visible before the turn finishes, and the prompt's trusted
+  preamble states that the leading command came from the dispatcher.
+  - **Why mechanical.** Without it a bare follow-up leaves the *session* to decide whether
+    to reproduce the skill by hand — and a skill flagged `disable-model-invocation: true`
+    (`ultra-review`) can't be reached through the `Skill` tool at all. Measured on
+    OFB-2302: rounds 2–4 ("revisit pls", "revisit :hocho::skull:") ran both gates, round 5
+    ("revisit") degraded to a single inline review with **no approval and no ticket
+    advance** — on the one round whose must-fix ledger was finally clear. Same input,
+    different outcome; the fix has to remove the judgement call, not argue with it.
+  - **Overrides.** Typing a new `/command` replaces the standing one · `agent:<name>`
+    routes explicitly and skips the replay (the command stays stored) · `new: <request>`
+    clears it for unrelated work in the same thread · `STICKY_COMMAND_ENABLED=0` turns
+    the whole thing off.
+  - Carried across a **stale mapping**: when the worktree is gone and a fresh one is
+    created, the Slack thread is still the same work item, so the command survives.
+  - **The other half of that round-5 failure** lived in the prompt, not the mapping: the
+    session also declined the `/ultra-review` gate fan-out because its system prompt says
+    not to call the Agent tool unless the user requested it. `prompt.py` now states that a
+    Slack mention **is** the user's request, so the subagents a skill prescribes are
+    user-requested — and that a skill which cannot run fully is reported, never quietly
+    swapped for a lighter version of itself.
 - **Mentioned inside an existing thread.** If the FIRST mention lands in a thread whose
   root did not address the bot, the whole thread up to that mention is pulled in as
   context (each line tagged with its Slack author **name** and **timestamp** — names via
