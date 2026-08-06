@@ -152,6 +152,13 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   read-only pointer to a repo that is *also* cloned as its own primary clone at the
   workspace root — branch/commit/PR in that primary clone (the coding-lifecycle skills
   consult this to redirect submodule'd changes to the right repo).
+- `docs/agents/worktree-gc.md` — `aiworks gc`, which reclaims disk from Superset worktrees.
+  Superset's UI Delete drops the workspace row but leaves the worktree DIRECTORY, the
+  `git worktree` registration and the local branch behind; slack-dispatch leaked one worktree
+  per @-mention (it now sweeps itself). Bare `aiworks gc` only REPORTS. It deliberately creates
+  no shared build state — a shared `CARGO_TARGET_DIR` would serialize concurrent builds — so
+  worktrees stay fully parallel; it only deletes from worktrees three independent liveness
+  checks prove are idle, and `--force` never overrides those.
 - Provider adapters: `scripts/vcs/` (PR/MR via `github`|`gitlab`),
   `scripts/tracker/` (tickets via `notion`|`jira`), `scripts/notify/` (chat via
   `slack`), and `scripts/observability/` (traces/logs via `signoz`). **Always go

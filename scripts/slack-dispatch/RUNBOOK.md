@@ -258,8 +258,14 @@ cat "<worktreePath>/.aiworks/slack-context.json"
 cd /path/to/ai-workspace/scripts/slack-dispatch && docker compose down
 
 # delete the test worktrees:
-superset ws list --json | jq -r '.[] | select(.name|startswith("slack/")) | .id' | xargs -I{} superset ws delete {}
+aiworks gc --dispatch --ttl-days 0
 ```
+
+`superset ws delete` alone leaves the worktree directory, the `git worktree` registration
+and the local branch behind — `aiworks gc` removes all four, and refuses any worktree that
+is still in use. In normal operation you never run this: the service sweeps on an interval
+(`GC_ENABLED` / `GC_INTERVAL_SEC` / `GC_TTL_DAYS`, see `.env.example`). Use `aiworks gc` with
+no arguments to see what it would collect.
 
 ## 7. Troubleshooting
 

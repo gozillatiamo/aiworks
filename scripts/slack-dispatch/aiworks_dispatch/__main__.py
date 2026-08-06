@@ -16,6 +16,7 @@ from .dispatcher import SupersetLocalDispatcher
 from .logging_setup import setup_logging
 from .slack_app import build_app
 from .store import RedisStore
+from .sweeper import start as start_sweeper
 
 log = logging.getLogger("aiworks_dispatch")
 
@@ -45,6 +46,10 @@ def main() -> int:
     dispatcher = SupersetLocalDispatcher(cfg)
     app = build_app(cfg, store, dispatcher)
     handler = SocketModeHandler(app, cfg.slack_app_token)
+
+    # Reap dispatch worktrees past their TTL. A daemon thread, so a stuck sweep can never
+    # hold up shutdown, and it only ever removes worktrees the GC has proven are idle.
+    start_sweeper(cfg)
 
     def _shutdown(signum, _frame):  # noqa: ANN001
         log.info("received signal %s — shutting down", signum)
