@@ -667,12 +667,22 @@ fi
 # ── 3.2. repo .gitignore — ignore agent_logs/ (agent plans / run summaries / bug logs,
 #         incl. the dev.sh verbose logs in agent_logs/executed_verbose/) + .aiworks/ (this
 #         tool's per-repo idempotency sentinels) + the codegraph daemon runtime files
-#         (.codegraph/daemon.pid + .codegraph/codegraph.lock — machine-local, never committed) ──────────
-step "3.2. Ignore agent_logs/ + .aiworks/ + codegraph runtime in $PATH_REL/.gitignore"
+#         (.codegraph/daemon.pid + .codegraph/codegraph.lock — machine-local, never committed)
+#         + .DS_Store (macOS Finder metadata — every mac in the team grows one per directory
+#         it opens, in every repo; a bare `.DS_Store` with no slash matches at ANY depth, so
+#         one line covers nested dirs too and `**/.DS_Store` is redundant) ──────────
+step "3.2. Ignore agent_logs/ + .aiworks/ + codegraph runtime + .DS_Store in $PATH_REL/.gitignore"
 if ensure_line "$REPO_DIR/.gitignore" "agent_logs/"; then ok "added agent_logs/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores agent_logs/"; fi
 if ensure_line "$REPO_DIR/.gitignore" ".aiworks/"; then ok "added .aiworks/ to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores .aiworks/"; fi
+# .DS_Store may already be covered by an equivalent pattern the repo wrote itself
+# (`**/.DS_Store`, `*.DS_Store`, `.DS_Store?`) — ensure_line only matches its own exact line,
+# so check for any of them before appending a second, redundant rule.
+if grep -Eqs '^\*?\*?/?\.DS_Store\??$' "$REPO_DIR/.gitignore"; then
+  skip "3.2. $PATH_REL/.gitignore already ignores .DS_Store"
+elif ensure_line "$REPO_DIR/.gitignore" ".DS_Store"; then ok "added .DS_Store to $PATH_REL/.gitignore"
+else skip "3.2. $PATH_REL/.gitignore already ignores .DS_Store"; fi
 ensure_line "$REPO_DIR/.gitignore" "# codegraph" || true   # group header for the two runtime files below
 if ensure_line "$REPO_DIR/.gitignore" ".codegraph/daemon.pid"; then ok "added .codegraph/daemon.pid to $PATH_REL/.gitignore"
 else skip "3.2. $PATH_REL/.gitignore already ignores .codegraph/daemon.pid"; fi
