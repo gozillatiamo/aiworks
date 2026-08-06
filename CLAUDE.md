@@ -99,6 +99,17 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   diagram and attaches it to a ticket (image + a mermaid.live edit link), gated by
   `diagrams.enabled` (default OFF); skipped quietly (not a fail-loud gate) when off,
   since a diagram is an enhancement to a ticket's spec, not a required deliverable.
+- `docs/agents/loadtest-gate.md` — why a green load suite is only **half** a verdict. A repo
+  declared `suite_kind: load` must also be **equal-or-better than the ticket's base branch**:
+  the base scenario is run first, its run-to-run spread becomes the **noise floor**, and each
+  metric's threshold is `max(loadtest.tolerance_pct, that floor)` — so a jittery laptop cannot
+  manufacture a regression, and a floor wider than the effect returns **`unavailable`** (a loud
+  skip; "the suite is green and whether it got slower is unproven here") instead of a guess. A
+  `fail` goes back to the developer to **attribute before fixing** — only a regression traced to
+  this ticket's diff earns a fix round. Also the home of the rule that applies to EVERY
+  test-suite gate: it **never fails open** — the verdict needs a receipt (real command + exit
+  code + summary line) AND a second agent must find the result comment on the ticket, or the
+  gate is recorded as *not run* and nothing merges.
 - `docs/agents/voice.md` — how the workspace TALKS: a spoken acknowledgement per prompt, a line
   when something happens, a voice note on the Slack messages it already sends, and hold-to-dictate.
   A **`th`-only, off-by-default, per-person** feature (`voice.enabled` in the git-ignored

@@ -130,6 +130,38 @@ branch_model:
 quality_gate:
   provider: sonarqube              # sonarqube | none
 
+# ── Load-test gate (the base-branch NON-DEGRADATION rule) ─────────────────────
+# Read only by a repo declared `suite_kind: load` (see products[].repos[] below). A plain
+# pass/fail suite ignores this block entirely. Full behaviour: docs/agents/loadtest-gate.md
+loadtest:
+  tolerance_pct: 10                # a tracked metric may degrade this much (%) against the base
+                                   #   branch before it counts as a regression. This is the FLOOR
+                                   #   of the effective threshold, not the threshold itself — see
+                                   #   noise_runs.
+  noise_runs: 2                    # how many times the BASE build is run to measure the
+                                   #   environment's own run-to-run spread (its "noise floor"). The
+                                   #   effective per-metric threshold is
+                                   #   max(tolerance_pct, measured noise floor), so a jittery
+                                   #   laptop cannot manufacture a regression. Minimum 2 — one run
+                                   #   measures nothing. Higher = steadier floor, more wall clock.
+  noise_ceiling_multiple: 2        # if the measured noise floor exceeds tolerance_pct × this, the
+                                   #   environment is too coarse to judge the change at all: the
+                                   #   gate returns UNAVAILABLE (a loud skip, banner in the run
+                                   #   summary) instead of widening the threshold until anything
+                                   #   passes. An honest "cannot tell" beats a fake verdict.
+  max_fix_rounds: 2                # a regression the developer ATTRIBUTES to the change loops back
+                                   #   for a fix, then the candidate is re-run (the baseline is
+                                   #   cached, so a loop costs one run, not three). Rounds before
+                                   #   the repo halts for a human. A load run is expensive — small.
+  baseline_cache: ~/.cache/aiworks/loadtest-baselines
+                                   # where base-build results are cached, keyed by
+                                   #   <repo>/<scenario>/<base-sha>/<env-fingerprint>.
+                                   #   Machine-global ON PURPOSE: a Superset worktree is ephemeral,
+                                   #   so a cache inside the repo would be re-measured for every
+                                   #   worktree. The base SHA in the key makes a moved base
+                                   #   self-invalidating; the env fingerprint stops a baseline from
+                                   #   one machine being compared against a candidate from another.
+
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:
   auto_approve: true               # auto-approve-plan. true → execution proceeds straight from the
@@ -570,6 +602,15 @@ products:
       - url: git@github.com:your-org/your-tests.git
         kind: test-suite                            # the cross-repo QA suite (E2E / API / load)
         desc: Android/iOS E2E UI tests for the app.      # one-line repo responsibility
+        # suite_kind: load                          # optional. Which FLAVOUR of test-suite this is.
+                                                    #   Omitted (the default) → a plain pass/fail
+                                                    #   suite: green is green.
+                                                    #   load → the suite measures NUMBERS, so green
+                                                    #   is not enough: every tracked metric must
+                                                    #   also be equal-or-better than the same run on
+                                                    #   the ticket's base branch. Arms the
+                                                    #   non-degradation gate and the loadtest.*
+                                                    #   block above. docs/agents/loadtest-gate.md
 
 # Repo dependency edges (build/merge order) are decided per-ticket by the scoping
 # stage; a typical chain is backend → app → test-suite. When a ticket needs end-to-end

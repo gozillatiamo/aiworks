@@ -30,6 +30,7 @@
 #   vcs.auto_merge                   → const AUTO_MERGE
 #   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
 #   review.level                     → const REVIEW_LEVEL            (dev-cycle.js; 'strict' ⇒ must-fixes only, no nice-to-have)
+#   loadtest.*                       → const LOADTEST                (dev-cycle.js; the base-branch non-degradation gate)
 #   language                         → const LANGUAGE                (dev-cycle.js AND prd.js; 'en' default | 'th' ⇒ English spine, Thai prose)
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
@@ -48,6 +49,8 @@
 #       kind              → the role/gate DEFAULTS below (plan/build/review/guard/perf/
 #                           testSuite/green/guardianFocus/base) — the single source of truth
 #                           for what each kind means in the workflow
+#       suite_kind        → which flavour of test-suite ('load' arms the base-branch
+#                           non-degradation gate — docs/agents/loadtest-gate.md)
 #       path / distribute / auto_merge / green / guardian_focus → optional per-repo overrides
 #
 # ALSO GENERATES — the multi-root <workspace>.code-workspace file (one folder root per repo)
@@ -327,6 +330,10 @@ DESIGN_EN_RAW='false'; DESIGN_KEY=''; DESIGN_PAGE='{work_key} / {feature}'   # F
 IMG_EN_RAW='false'; IMG_QUALITY='balanced'; IMG_MAX='2'   # image-gen OFF unless image_generation.enabled: true
 QG_RAW='none'   # quality_gate.provider — 'none' (guardian gate skips+passes) unless the org declares sonarqube
 RL_RAW='strict' # review.level — 'strict' (must-fixes only) unless the org declares thorough
+# loadtest.* — the base-branch non-degradation gate for a `suite_kind: load` repo. Defaults
+# match the workflow's fallbacks; every one is a number the gate reads at runtime.
+LT_TOL='10'; LT_NOISE_RUNS='2'; LT_NOISE_CEIL='2'; LT_FIX_ROUNDS='2'
+LT_CACHE='~/.cache/aiworks/loadtest-baselines'
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -350,6 +357,11 @@ while IFS=$'\t' read -r k v; do
     IMG_MAX)            IMG_MAX="$v" ;;
     QUALITY_GATE)       QG_RAW="$v" ;;
     REVIEW_LEVEL)       RL_RAW="$v" ;;
+    LT_TOLERANCE)       LT_TOL="$v" ;;
+    LT_NOISE_RUNS)      LT_NOISE_RUNS="$v" ;;
+    LT_NOISE_CEILING)   LT_NOISE_CEIL="$v" ;;
+    LT_MAX_FIX_ROUNDS)  LT_FIX_ROUNDS="$v" ;;
+    LT_BASELINE_CACHE)  LT_CACHE="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -379,6 +391,11 @@ done < <(
     sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
     sec=="quality_gate" && /^  provider:/            { print "QUALITY_GATE\t" val($0); next }
     sec=="review"       && /^  level:/               { print "REVIEW_LEVEL\t" val($0); next }
+    sec=="loadtest"     && /^  tolerance_pct:/        { print "LT_TOLERANCE\t"      val($0); next }
+    sec=="loadtest"     && /^  noise_runs:/           { print "LT_NOISE_RUNS\t"     val($0); next }
+    sec=="loadtest"     && /^  noise_ceiling_multiple:/ { print "LT_NOISE_CEILING\t" val($0); next }
+    sec=="loadtest"     && /^  max_fix_rounds:/       { print "LT_MAX_FIX_ROUNDS\t" val($0); next }
+    sec=="loadtest"     && /^  baseline_cache:/       { print "LT_BASELINE_CACHE\t" val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
@@ -391,6 +408,12 @@ case "$IMG_QUALITY" in fast|balanced|quality) ;; *) IMG_QUALITY='balanced' ;; es
 [[ "$IMG_MAX" =~ ^[0-9]+$ ]] || IMG_MAX='2'         # numeric budget cap; fall back to 2
 QUALITY_GATE="${QG_RAW:-none}"
 case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # clamp to the supported providers
+# loadtest.* — clamp to sane numbers; a garbage value falls back rather than reaching the gate.
+[[ "$LT_TOL" =~ ^[0-9]+$ ]]         || LT_TOL='10'
+[[ "$LT_NOISE_RUNS" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_RUNS" -ge 2 ]] || LT_NOISE_RUNS='2'  # <2 cannot measure a floor
+[[ "$LT_NOISE_CEIL" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_CEIL" -ge 1 ]] || LT_NOISE_CEIL='2'
+[[ "$LT_FIX_ROUNDS" =~ ^[0-9]+$ ]]  || LT_FIX_ROUNDS='2'
+LT_CACHE="${LT_CACHE:-~/.cache/aiworks/loadtest-baselines}"
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
 LANGUAGE="$(printf '%s' "${LANG_RAW:-en}" | tr '[:upper:]' '[:lower:]')"
@@ -431,7 +454,7 @@ repos_body=""
 repo_count=0
 folders_tsv=""   # accumulates "<folder name>\t<folder path>\n" per repo, in declared order,
                  # for the multi-root <name>.code-workspace `folders` array (built in step 6).
-while IFS=$'\037' read -r url kind path dist green gf am; do   # \037 (US): empty fields preserved
+while IFS=$'\037' read -r url kind path dist green gf am sk; do   # \037 (US): empty fields preserved
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
@@ -463,6 +486,9 @@ while IFS=$'\037' read -r url kind path dist green gf am; do   # \037 (US): empt
   entry+="    green: $(jsq "$d_green"),"$'\n'
   [[ "$d_guard" == true ]] && entry+="    guardianFocus: $(jsq "$d_gf"),"$'\n'
   [[ "$d_testsuite" == true ]] && entry+="    testSuite: true,"$'\n'
+  # suite_kind: which FLAVOUR of test-suite this is. 'load' arms the base-branch
+  # non-degradation gate (docs/agents/loadtest-gate.md); absent ⇒ a plain pass/fail suite.
+  [[ -n "$sk" ]] && entry+="    suiteKind: $(jsq "$sk"),"$'\n'
   entry+="    distribute: ${local_dist},"$'\n'
   [[ -n "$am" ]] && entry+="    autoMerge: $(jsbool "$am" true),"$'\n'
   entry+="  },"$'\n'
@@ -477,9 +503,9 @@ done < <(
       if(k~/^url:/) url=val(k); else if(k~/^kind:/) kind=val(k)
       else if(k~/^path:/) path=val(k); else if(k~/^distribute:/) dist=val(k)
       else if(k~/^green:/) green=val(k); else if(k~/^guardian_focus:/) gf=val(k)
-      else if(k~/^auto_merge:/) am=val(k) }
-    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am }
-      url="";kind="";path="";dist="";green="";gf="";am="" }
+      else if(k~/^auto_merge:/) am=val(k); else if(k~/^suite_kind:/) sk=val(k) }
+    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk }
+      url="";kind="";path="";dist="";green="";gf="";am="";sk="" }
     /^products:[ \t]*$/ { inp=1; next }
     inp && /^  - id:/ { flush(); inrepos=0; next }
     inp && /^    repos:[ \t]*$/ { inrepos=1; next }
@@ -543,6 +569,13 @@ const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml desig
 const QUALITY_GATE = $(jsq "$QUALITY_GATE")     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = $(jsq "$REVIEW_LEVEL")     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const LANGUAGE = $(jsq "$LANGUAGE")     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE below); 'en' ⇒ unchanged
+const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-branch non-degradation gate (docs/agents/loadtest-gate.md)
+  tolerancePct: ${LT_TOL},            // a metric may degrade this much before it counts as a regression
+  noiseRuns: ${LT_NOISE_RUNS},                // base-vs-base runs used to measure the env's own run-to-run spread
+  noiseCeilingMultiple: ${LT_NOISE_CEIL},     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
+  maxFixRounds: ${LT_FIX_ROUNDS},             // attributed-regression → developer fix → re-run loops before halting
+  baselineCache: $(jsq "$LT_CACHE"),
+}
 const STATUS = {
 ${status_body}}
 const REPOS = {
