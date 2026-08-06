@@ -82,6 +82,8 @@ Commands:
              past their TTL. It never creates shared build state — a shared CARGO_TARGET_DIR
              would serialize concurrent builds — so worktrees stay fully parallel; it only
              deletes from worktrees it has proven are idle. Run with no arguments to REPORT.
+             `--install-schedule` adds a weekly launchd job for the UI-Delete leftovers, which
+             nothing else collects (slack-dispatch sweeps only its OWN worktrees).
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
              adapter .env, link adapters into each repo + git-exclude the links so they never
              dirty the product repo). Pass-through — forwards any extra args.
@@ -133,6 +135,8 @@ Examples:
   aiworks gc --artifacts --idle-days 7  # clear target//node_modules from week-idle worktrees
   aiworks gc --dispatch --ttl-days 3    # reap stale slack/req-* dispatch worktrees
   aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
+  aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts (launchd)
+  aiworks gc --schedule-status          # installed? loaded? when did it last run?
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
   aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)

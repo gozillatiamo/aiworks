@@ -102,6 +102,32 @@ check "empty workspace list exits non-zero" "$?" "1"
 [[ -d "$WT/live" ]] && r=present || r=gone
 check "nothing deleted on an empty list" "$r" "present"
 
+# ── the scheduled job's plist must be valid and carry the safe defaults ─────────
+echo "── weekly schedule"
+
+# shellcheck disable=SC1090
+source <(sed -n '/^SCHED_LABEL=/,/^SCHED_IDLE_DEFAULT=/p; /^write_plist/,/^}/p; /^cron_line/,/^}/p' "$GC")
+SCHED_LOG="$TMP/gc.log"
+write_plist "$TMP/test.plist" 7
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  plutil -lint "$TMP/test.plist" >/dev/null 2>&1 && r=valid || r=malformed
+  check "generated plist parses" "$r" "valid"
+fi
+grep -q '<string>--orphans</string>' "$TMP/test.plist" && r=yes || r=no
+check "scheduled job reaps orphans" "$r" "yes"
+# --dispatch must NOT be in there: slack-dispatch sweeps its own, and doing it twice would
+# race two GCs over the same worktrees.
+grep -q -- '--dispatch' "$TMP/test.plist" && r=present || r=absent
+check "scheduled job does NOT duplicate the dispatch sweep" "$r" "absent"
+# An unattended run must never inherit the interactive 3-day default.
+grep -A1 -- '--idle-days' "$TMP/test.plist" | grep -q '<string>7</string>' && r=7 || r=other
+check "unattended idle threshold is the conservative 7d" "$r" "7"
+grep -q 'homebrew' "$TMP/test.plist" && r=yes || r=no
+check "plist sets a PATH launchd can find the CLIs on" "$r" "yes"
+cron_line 7 | grep -q -- '--orphans --artifacts --idle-days 7' && r=ok || r=bad
+check "non-Darwin cron fallback line is well-formed" "$r" "ok"
+
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi
 printf '%s%d passed%s\n' "$c_ok" "$PASS" "$c_off"

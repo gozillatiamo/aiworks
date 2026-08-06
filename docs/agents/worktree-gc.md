@@ -10,6 +10,7 @@ aiworks gc --orphans                  # reap the UI-Delete leftovers
 aiworks gc --artifacts --idle-days 7  # clear target//node_modules from week-idle worktrees
 aiworks gc --dispatch --ttl-days 3    # reap stale slack/req-* dispatch worktrees
 aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
+aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts
 ```
 
 ## What leaks, and why
@@ -123,5 +124,31 @@ deriving the threshold from it means a worktree a live thread could still be rou
 is out of the sweeper's reach **by construction**, not by a comment asking someone to keep
 two numbers in sync.
 
-For worktrees created through the Superset UI rather than dispatch, run `aiworks gc`
-yourself, or schedule it.
+### The UI-Delete leftovers get their own job
+
+The dispatcher sweeps **only its own** worktrees, and only while it is running. The
+UI-Delete leftovers are the larger leak and have nothing to do with that service, so they
+get a host-level weekly job rather than being bolted onto the dispatcher:
+
+```bash
+aiworks gc --install-schedule     # macOS launchd, Sundays 03:00
+aiworks gc --schedule-status      # installed? loaded? when did it last run?
+aiworks gc --uninstall-schedule
+```
+
+It runs `--orphans --artifacts` — deliberately **not** `--dispatch`, which would race the
+dispatcher's own sweep over the same worktrees. On a non-Darwin host, `--install-schedule`
+prints the equivalent crontab line instead of installing anything.
+
+Two details the plist has to get right, both covered by the selftest:
+
+- **The idle threshold defaults to 7 days, not the interactive 3.** Unattended, wiping a
+  `target/` that someone returns to on Monday costs them a long rebuild, so a full week of
+  silence is the bar. `--idle-days N` at install time overrides it.
+- **`PATH` is set explicitly.** A launchd job inherits a minimal environment, and the GC
+  needs `git`, `jq` and the `superset` CLI — without this the job runs and silently fails
+  its own precondition check.
+
+Output goes to `~/Library/Logs/aiworks-gc.log`. Verify a fresh install actually works with
+`launchctl kickstart -k gui/$UID/dev.aiworks.gc` and read that log — a weekly job that has
+never run is a weekly job nobody has tested.

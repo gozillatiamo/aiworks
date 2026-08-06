@@ -47,13 +47,21 @@
 #
 #   Options:
 #     --project NAME   only this Superset project (default: every project)
-#     --idle-days N    (--artifacts) idle threshold, default 3
+#     --idle-days N    (--artifacts) idle threshold, default 3 (7 for the scheduled job)
 #     --ttl-days N     (--dispatch)  age threshold, default 7
 #     -n, --dry-run    print what WOULD happen; change nothing
 #     -f, --force      remove even when dirty/unpushed (never overrides the liveness checks)
 #     --enable-sccache one-time host setup: install sccache + wire it as rustc-wrapper
 #     -v, --verbose    per-candidate detail, including why something was skipped
 #     -h, --help       show this help
+#
+#   Scheduling — slack-dispatch sweeps its OWN worktrees (see its sweeper.py), but nothing
+#   collects the UI-Delete leftovers, which is the larger leak and has nothing to do with
+#   that service. Install a weekly job so it does not depend on remembering:
+#     --install-schedule    weekly `--orphans --artifacts` (macOS launchd; prints the cron
+#                           line to add by hand on other platforms). Honours --idle-days.
+#     --uninstall-schedule  remove it
+#     --schedule-status     installed? when did it last run?
 #
 set -uo pipefail
 
@@ -70,7 +78,7 @@ die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────────
 DO_ORPHANS=0 DO_ARTIFACTS=0 DO_DISPATCH=0 REPORT_ONLY=1
-DRY=0 FORCE=0 IDLE_DAYS=3 TTL_DAYS=7 PROJECT= SCCACHE=0
+DRY=0 FORCE=0 IDLE_DAYS=3 TTL_DAYS=7 PROJECT= SCCACHE=0 IDLE_SET=0 SCHEDULE=
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -79,8 +87,11 @@ while [[ $# -gt 0 ]]; do
     --dispatch)  DO_DISPATCH=1; REPORT_ONLY=0; shift ;;
     --all)       DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; REPORT_ONLY=0; shift ;;
     --project)   PROJECT="${2:?--project needs a name}"; shift 2 ;;
-    --idle-days) IDLE_DAYS="${2:?--idle-days needs a number}"; shift 2 ;;
+    --idle-days) IDLE_DAYS="${2:?--idle-days needs a number}"; IDLE_SET=1; shift 2 ;;
     --ttl-days)  TTL_DAYS="${2:?--ttl-days needs a number}"; shift 2 ;;
+    --install-schedule)   SCHEDULE=install; shift ;;
+    --uninstall-schedule) SCHEDULE=uninstall; shift ;;
+    --schedule-status)    SCHEDULE=status; shift ;;
     --enable-sccache) SCCACHE=1; shift ;;
     -n|--dry-run) DRY=1; shift ;;
     -f|--force)   FORCE=1; shift ;;
@@ -91,8 +102,9 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$IDLE_DAYS" =~ ^[0-9]+$ ]] || die "--idle-days must be a whole number of days"
 [[ "$TTL_DAYS"  =~ ^[0-9]+$ ]] || die "--ttl-days must be a whole number of days"
-# No selector: report every category, touch nothing. Reporting is always safe.
-if [[ "$REPORT_ONLY" -eq 1 && "$SCCACHE" -eq 0 ]]; then
+# No selector: report every category, touch nothing. Reporting is always safe. A bare
+# --enable-sccache / --*-schedule is a host-setup action on its own, not a reason to sweep.
+if [[ "$REPORT_ONLY" -eq 1 && "$SCCACHE" -eq 0 && -z "$SCHEDULE" ]]; then
   DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DRY=1
 fi
 
@@ -273,7 +285,129 @@ enable_sccache() {
   info "      CARGO_TARGET_DIR is deliberately NOT set: it would serialize concurrent builds."
 }
 
+# ── scheduling ────────────────────────────────────────────────────────────────────
+# slack-dispatch sweeps its own worktrees, but only its own, and only while it is running.
+# The UI-Delete leftovers are the bigger leak and have nothing to do with that service, so
+# they get a host-level job instead of being bolted onto the dispatcher.
+#
+# The scheduled run is `--orphans --artifacts` and defaults to a MORE conservative idle
+# threshold than the interactive default: unattended, wiping a target/ someone returns to
+# on Monday costs a long rebuild, so a week of silence is the bar rather than three days.
+SCHED_LABEL="dev.aiworks.gc"
+SCHED_PLIST="$HOME/Library/LaunchAgents/$SCHED_LABEL.plist"
+SCHED_LOG="$HOME/Library/Logs/aiworks-gc.log"
+SCHED_IDLE_DEFAULT=7
+
+sched_idle() { [[ "$IDLE_SET" -eq 1 ]] && echo "$IDLE_DAYS" || echo "$SCHED_IDLE_DEFAULT"; }
+
+write_plist() {  # $1 = destination path, $2 = idle days
+  local self; self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  mkdir -p "$(dirname "$1")"
+  cat > "$1" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$SCHED_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$self</string>
+    <string>--orphans</string>
+    <string>--artifacts</string>
+    <string>--idle-days</string><string>$2</string>
+  </array>
+  <!-- Weekly, Sunday 03:00. If the machine is asleep then, launchd runs it on wake. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>0</integer>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <!-- A launchd job inherits a minimal PATH; the GC needs git, jq and the superset CLI. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key><string>$SCHED_LOG</string>
+  <key>StandardErrorPath</key><string>$SCHED_LOG</string>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+</dict>
+</plist>
+PLIST
+}
+
+cron_line() {
+  local self; self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  printf '0 3 * * 0 %s --orphans --artifacts --idle-days %s >> %s 2>&1\n' "$self" "$1" "$SCHED_LOG"
+}
+
+install_schedule() {
+  step "Weekly worktree GC"
+  local idle; idle="$(sched_idle)"
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    info "launchd is macOS-only. Add this to your crontab (\`crontab -e\`):"
+    printf '\n      %s\n' "$(cron_line "$idle")"
+    return 0
+  fi
+  if [[ "$DRY" -eq 1 ]]; then
+    info "would write  $SCHED_PLIST"
+    info "would run    launchctl bootstrap gui/$UID $SCHED_PLIST"
+    info "schedule     Sundays 03:00 — --orphans --artifacts --idle-days $idle"
+    return 0
+  fi
+  write_plist "$SCHED_PLIST" "$idle"
+  plutil -lint "$SCHED_PLIST" >/dev/null 2>&1 || die "generated plist is malformed: $SCHED_PLIST"
+  # bootout first so a re-install replaces cleanly rather than erroring as already-loaded.
+  launchctl bootout "gui/$UID/$SCHED_LABEL" >/dev/null 2>&1
+  if ! launchctl bootstrap "gui/$UID" "$SCHED_PLIST" 2>/dev/null; then
+    launchctl load -w "$SCHED_PLIST" >/dev/null 2>&1 \
+      || die "could not load $SCHED_PLIST — load it yourself with: launchctl bootstrap gui/$UID $SCHED_PLIST"
+  fi
+  ok "installed  $SCHED_PLIST"
+  info "runs Sundays 03:00 — --orphans --artifacts --idle-days $idle"
+  info "log: $SCHED_LOG   ·   remove with: aiworks gc --uninstall-schedule"
+  info "${c_dim}dispatch worktrees are swept by slack-dispatch itself, not by this job${c_off}"
+}
+
+uninstall_schedule() {
+  step "Weekly worktree GC — remove"
+  if [[ ! -f "$SCHED_PLIST" ]]; then info "not installed"; return 0; fi
+  if [[ "$DRY" -eq 1 ]]; then info "would remove $SCHED_PLIST"; return 0; fi
+  launchctl bootout "gui/$UID/$SCHED_LABEL" >/dev/null 2>&1 \
+    || launchctl unload -w "$SCHED_PLIST" >/dev/null 2>&1
+  rm -f "$SCHED_PLIST"
+  ok "removed  $SCHED_PLIST"
+}
+
+schedule_status() {
+  step "Weekly worktree GC — status"
+  if [[ ! -f "$SCHED_PLIST" ]]; then
+    info "not installed  (aiworks gc --install-schedule)"
+  else
+    ok "plist present  $SCHED_PLIST"
+    if launchctl print "gui/$UID/$SCHED_LABEL" >/dev/null 2>&1; then
+      ok "loaded in launchd"
+    else
+      warn "plist exists but is NOT loaded — re-run --install-schedule"
+    fi
+    info "args: $(sed -n 's/.*<string>\(--[a-z-]*\)<\/string>.*/\1/p' "$SCHED_PLIST" | tr '\n' ' ')"
+  fi
+  if [[ -f "$SCHED_LOG" ]]; then
+    info "log: $SCHED_LOG  (last run $(date -r "$SCHED_LOG" '+%Y-%m-%d %H:%M'))"
+    info "${c_dim}tail -20 $SCHED_LOG${c_off}"
+  else
+    info "log: none yet — the job has not run"
+  fi
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────────
+case "$SCHEDULE" in
+  install)   install_schedule; exit 0 ;;
+  uninstall) uninstall_schedule; exit 0 ;;
+  status)    schedule_status; exit 0 ;;
+esac
+
 command -v jq >/dev/null 2>&1 || die "jq is required (brew install jq)"
 
 if [[ "$SCCACHE" -eq 1 ]]; then

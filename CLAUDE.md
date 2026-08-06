@@ -158,7 +158,8 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   per @-mention (it now sweeps itself). Bare `aiworks gc` only REPORTS. It deliberately creates
   no shared build state — a shared `CARGO_TARGET_DIR` would serialize concurrent builds — so
   worktrees stay fully parallel; it only deletes from worktrees three independent liveness
-  checks prove are idle, and `--force` never overrides those.
+  checks prove are idle, and `--force` never overrides those. `--install-schedule` adds the
+  weekly launchd job that collects the UI-Delete leftovers — nothing else does.
 - Provider adapters: `scripts/vcs/` (PR/MR via `github`|`gitlab`),
   `scripts/tracker/` (tickets via `notion`|`jira`), `scripts/notify/` (chat via
   `slack`), and `scripts/observability/` (traces/logs via `signoz`). **Always go
