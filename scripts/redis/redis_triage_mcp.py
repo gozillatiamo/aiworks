@@ -1,11 +1,14 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#   "mcp>=1.2",
+#   "mcp>=1.2,<2",
 #   "redis>=5.0",
 #   "python-dotenv>=1.0",
 # ]
 # ///
+# # The <2 bound is load-bearing: mcp 2.0 removed `mcp.server.fastmcp`, so an unbounded `mcp>=1.2`
+# # resolves to a release this file cannot import. It only looks fine on a machine whose uv cache
+# # still holds a 1.x environment — a fresh clone gets ModuleNotFoundError on the import below.
 """redis-triage — on-demand, READ-ONLY MCP over your PRODUCTION (and staging) Redis.
 
 One MCP process, as many targets as you configure. Which Redis a tool touches is chosen *per
