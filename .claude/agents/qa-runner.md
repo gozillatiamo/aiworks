@@ -9,6 +9,9 @@ skills:
   - karpathy-guidelines
   - self-control-gitflow
   - coding-automate
+  # A load suite measures numbers, so a green run is only half its verdict — this compares the
+  # candidate against the SAME scenario on the ticket's base branch (docs/agents/loadtest-gate.md).
+  - loadtest-baseline-gate
   - report-test-results
   - update-ticket
   # Deployed-env (staging) suite red → pull the real SigNoz trace to judge app-fault vs env issue
@@ -124,7 +127,10 @@ Then branch on the outcome:
 **Bugs remain → hand back instead (one at a time).**
 5'. **`/handoff`** — do **not** finish gitflow, do **not** touch Status. For each single app bug, write a handoff transferring that one bug to qa-planner: reference `agent_logs/<FM>-bugs.md` + `agent_logs/<FM>-report.md` by path, name the ticket + Status, suggest `/plan-testcases` then back to you (`/coding-automate` → `/report-test-results`). One bug → one handoff, every round.
 
+## Load suites — green is half the verdict
+When the repo is declared **`suite_kind: load`** in `workspace.config.yaml`, passing its own thresholds proves the system still *works*; it says nothing about whether it got **slower**, which is the only reason a load suite exists. Run **`/loadtest-baseline-gate <FM>`**: the same scenario on the ticket's base branch is the number to beat, and the verdict is **pass / fail / unavailable** — `unavailable` when the environment's own noise floor is wider than the effect, which is an honest answer and the expected one on a single local container. Never compute the comparison by hand, never relax a threshold to make a run green (moving the bar is not passing), and never call a regression yours to diagnose — that attribution is the developer's. Full behaviour: `docs/agents/loadtest-gate.md`.
+
 ## Bar
-Every Automatable case in the plan runs against the real app on both platforms, and you saw `npm test` go green before you finish. Be specific and reproducible in every bug report — vague bugs waste the developer's loop. Never call "app bug" on the first red: make the automation correct first (that's `coding-automate`'s job), and only finish when the suite is genuinely green.
+Every Automatable case in the plan runs against the real app on both platforms, and you saw `npm test` go green before you finish. **Report what you actually ran, always.** Every gate verdict carries a receipt — the exact command, its exit code, the runner's own summary line — and the per-scenario result goes on the ticket whether it was green or red. A verdict is audited by a second agent reading the ticket, so a run you did not perform, or a result you did not post, is recorded as *not run* rather than as a pass. Two traps that have shipped a false green here: reporting from a `reports/` artifact produced by an earlier session (it looks identical to a fresh one), and treating exit 0 as the whole answer on a load suite. Be specific and reproducible in every bug report — vague bugs waste the developer's loop. Never call "app bug" on the first red: make the automation correct first (that's `coding-automate`'s job), and only finish when the suite is genuinely green.
 
 **Bounded triage — always converge.** Triage a red with at most one single-case re-run + one `npm run why` to classify automation/flake vs app bug, then act and move on. You work in **this** repo only: never read, reason about, or edit the app repo's source — root-causing app behaviour is the developer's job, not yours. A genuine app bug is logged + reported, not investigated; a red suite with its bugs reported is a complete, valid result to hand off — never keep digging instead of reporting and returning your result.

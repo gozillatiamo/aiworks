@@ -8,7 +8,7 @@ export const meta = {
     { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo iterates SCOPED (`npm test -- <spec>`) then runs the ticket scope — its spec(s) + regression scope — before the PR/MR.', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
     { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec, AND runs the repo suite — approval is gated on a green receipt; a suite that cannot run halts the repo rather than failing open) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet' },
-    { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
+    { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `npm test -- <specs>`, NOT the full suite. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. NEVER fails open: the verdict needs a receipt (real command + exit code + summary line) AND a second agent must find the result comment on the ticket — otherwise the gate is recorded as NOT RUN, not as a pass, and nothing merges. A repo declared `suite_kind: load` must additionally be equal-or-better than the same scenario on the ticket\'s base branch, judged against the environment\'s own measured noise floor, so its verdict is pass / fail / unavailable; a regression the developer ATTRIBUTES to the change loops back for a fix (attribute first, fix second) up to loadtest.max_fix_rounds. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet' },
     { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
@@ -85,6 +85,13 @@ const DESIGN_ENABLED = false     // from workspace.config.yaml design.enabled; f
 const QUALITY_GATE = 'sonarqube'     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = 'strict'     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
 const LANGUAGE = 'en'     // from workspace.config.yaml language; 'th' ⇒ English spine, Thai prose (docs/agents/language.md; see LANGUAGE_DIRECTIVE below); 'en' ⇒ unchanged
+const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-branch non-degradation gate (docs/agents/loadtest-gate.md)
+  tolerancePct: 10,            // a metric may degrade this much before it counts as a regression
+  noiseRuns: 2,                // base-vs-base runs used to measure the env's own run-to-run spread
+  noiseCeilingMultiple: 2,     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
+  maxFixRounds: 2,             // attributed-regression → developer fix → re-run loops before halting
+  baselineCache: '~/.cache/aiworks/loadtest-baselines',
+}
 const STATUS = {
   to_do: 'TO DO',
   in_progress: 'IN PROGRESS',
@@ -271,8 +278,9 @@ const REPOS = {
     base: { feature: 'main', fix: 'main' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
-    green: 'tests via k6 passed successfully',
+    green: 'tests via k6 passed successfully, and no tracked metric degraded against the base branch',
     testSuite: true,
+    suiteKind: 'load',
     distribute: null,
   },
   'lotto-service': {
@@ -363,8 +371,15 @@ const TICKET_RE = new RegExp(`${TICKET_PREFIX}-\\d+`, 'i')
 const ticket = (rawArg.match(TICKET_RE)?.[0] || rawArg).trim()
 if (!ticket) throw new Error(`dev-cycle needs a ticket number, e.g. args: "${TICKET_PREFIX}-12"`)
 const opt = typeof args === 'object' && args ? args : {}
-const MAX_GATE_ROUNDS = opt.maxGateRounds || 3     // build↔gates loops, per repo
-const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 3 // review↔fix loops, per repo
+// review↔fix loops, per repo. Generous ON PURPOSE: at review.level strict the gates report
+// must-fixes only, a reviewer that passes is FROZEN (never re-run), and a re-visit may raise
+// nothing new — so extra rounds cannot widen scope. They only let a repo finish its own
+// finding list inside ONE invocation instead of stranding a nearly-done PR at the cap. The
+// loop still exits the moment no findings remain, so the cap costs nothing when unused.
+const MAX_REVIEW_ROUNDS = opt.maxReviewRounds || 10
+// Attributed load-test regression → developer fix → re-run, per repo. Small by contrast: a
+// load run costs wall clock, not tokens (workspace.config.yaml loadtest.max_fix_rounds).
+const MAX_LOADTEST_FIX_ROUNDS = opt.maxLoadtestFixRounds || LOADTEST.maxFixRounds
 const MAX_BUILD_TRIAGE = opt.maxBuildTriage || 3   // fix attempts per failing test before a build agent must hand off (OFB-2141)
 // REVIEW LEVEL (workspace.config.yaml review.level, mirrored above). strict ⇒ the Review phase
 // reports must-fixes ONLY and suppresses the whole nice-to-have tier; thorough ⇒ + nice-to-have.
@@ -406,6 +421,12 @@ const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory — OFB-2141):
 • ALWAYS HAND OFF. Ending WITHOUT calling StructuredOutput is a FAILURE. Even if the work is incomplete or the suite is red, you MUST end by returning the DEV_SCHEMA result with "status" set: "complete" (Definition of Done met — for the test-suite repo a red caused only by reported app bugs / expected pre-merge reds still counts as complete), "partial" (some slices landed, work remains), or "blocked" (cannot proceed). For "partial"/"blocked" put exactly WHAT REMAINS and WHY in "remaining". Never withhold the handoff to keep investigating.
 • NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
 • BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.`
+
+// Appended to every test-suite gate prompt. The verdict is audited twice — the receipt must
+// describe a real command, and a SECOND agent reads the ticket for the result — because a run
+// has reported green having executed nothing, and a self-report cannot catch that about itself.
+const RECEIPT_CLAUSE = `
+RECEIPT (required — the verdict does not count without it): fill "receipt" with the EXACT command line you ran THIS session, its exit code, and the runner's own summary line quoted verbatim, plus the report file paths you produced and the URL of the comment you posted. Two checks run on your answer: this receipt, and an independent read of the ticket by another agent looking for your result comment. If either comes up empty the gate is recorded as NOT RUN — not as a pass — and nothing merges. So: post the per-scenario result to the ticket (\`scripts/tracker/add-ticket-comment.sh\`) whether the run was green or red, and never report from a report file you did not produce in this session — a stale artifact from an earlier round reads exactly like a fresh one.`
 
 // ──────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -601,11 +622,41 @@ const MERGE_SCHEMA = {
     sha: { type: 'string' }, note: { type: 'string' },
   },
 }
+// The cross-repo QA gate's verdict. `receipt` is REQUIRED and not decorative: a gate that
+// returns passed:true with no evidence of having run is the one failure this schema exists to
+// stop (it has happened — the run reported green and no result reached the ticket). The caller
+// treats a missing/empty receipt as "did not run" and downgrades the verdict, so there is
+// nothing to gain by asserting a pass you cannot evidence.
 const TEST_SUITE_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['passed'],
+  required: ['passed', 'receipt'],
   properties: {
     passed: { type: 'boolean' }, conclusion: { type: 'string' },
+    receipt: {
+      type: 'object', additionalProperties: false,
+      required: ['command', 'exit_code', 'summary_line'],
+      properties: {
+        command: { type: 'string' },        // the exact command line you ran, this session
+        exit_code: { type: 'integer' },
+        summary_line: { type: 'string' },   // the runner's own tally, quoted verbatim
+        report_paths: { type: 'array', items: { type: 'string' } },
+        ticket_comment_url: { type: 'string' }, // where you posted the result
+      },
+    },
+    // Load suites (REPOS[id].suiteKind === 'load') only — the base-branch comparison.
+    // `unavailable` means the environment's noise floor is wider than the effect: an honest
+    // "cannot tell", loud-skipped like any other gate that could not run — never a quiet pass.
+    loadtest: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        verdict: { type: 'string', enum: ['pass', 'fail', 'unavailable'] },
+        base_sha: { type: 'string' }, candidate_sha: { type: 'string' },
+        baseline_cached: { type: 'boolean' }, env_fingerprint: { type: 'string' },
+        markdown: { type: 'string' },       // the comparator's table, as posted
+        regressed: { type: 'array', items: { type: 'string' } },
+        too_noisy: { type: 'array', items: { type: 'string' } },
+      },
+    },
     failures: {
       type: 'array', items: {
         type: 'object', additionalProperties: false,
@@ -614,6 +665,30 @@ const TEST_SUITE_SCHEMA = {
         },
       },
     },
+  },
+}
+// The developer's ATTRIBUTION verdict on a load-test regression — the step before any fix.
+// Its whole job is to keep a jittery environment from burning developer rounds: only
+// `attributable` earns a fix; the other two flip the gate to a loud `unavailable`.
+const LOADTEST_ATTRIBUTION_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['attribution', 'reasoning'],
+  properties: {
+    attribution: { type: 'string', enum: ['attributable', 'not-attributable', 'need-bigger-env'] },
+    reasoning: { type: 'string' },  // the commit / query / lock / allocation that explains it
+    evidence: { type: 'string' },   // file:line, EXPLAIN output, span — what you actually read
+    repo: { type: 'string' },       // which scoped repo carries the cause (where the fix lands)
+  },
+}
+// Independent confirmation that the gate's result actually REACHED the ticket. A second agent
+// reads the tracker rather than the gate re-asserting its own claim — self-report is the thing
+// being audited, so it cannot be the evidence.
+const RESULT_AUDIT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['posted'],
+  properties: {
+    posted: { type: 'boolean' },
+    detail: { type: 'string' },  // the matching comment's opening line, or why none matched
   },
 }
 const DIST_SCHEMA = {
@@ -672,6 +747,10 @@ let trackerReachable = true // set by the scope stage; false → tracker writes 
 // quality/perf gate could not actually run). Fail-open policy: the run still merges/ships, but
 // this is surfaced loudly (summary banner + run result) so it is never read as gate-validated.
 let qualityGateUnavailable = null
+// Set when a LOAD suite ran green but its base-branch comparison could not produce a verdict
+// (the environment's noise floor is wider than the effect). Same loud-skip treatment: the run
+// continues, and the summary says plainly that "no slower than base" is unproven.
+let loadtestGateUnavailable = null
 const tick = (label) => { const now = budget.spent(); spend.push({ label, out: now - mark }); mark = now }
 
 // agent() THROWS when a subagent never returns StructuredOutput (after the engine's
@@ -744,7 +823,7 @@ async function writeSummary(runStatus, runResult) {
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.
-${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
+${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. As the LAST step, RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write the file AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.` + LANGUAGE_DIRECTIVE,
     { agentType: 'documentor', phase: 'Summary', label: `summary:${ticket}`, schema: SUMMARY_SCHEMA },
@@ -1341,20 +1420,106 @@ if (scope.test_suite?.needed && testSuiteRepo && mergeOrder.some((id) => !REPOS[
   const specHint = testSuiteFixed.length
     ? ` The ${testSuiteRepo} build for this ticket touched these spec/Page-Object files — use them to pin the ticket's own spec scope: ${testSuiteFixed.join(', ')}.`
     : ''
+  // A LOAD suite measures numbers, so passing its own thresholds proves only that the system
+  // still works — not that it is no slower. Green stays necessary; equal-or-better than the
+  // ticket's base branch becomes the actual bar.
+  const isLoadSuite = REPOS[testSuiteRepo].suiteKind === 'load'
+  const loadClause = isLoadSuite
+    ? `
+3. LOAD SUITE — ${testSuiteRepo} is declared suite_kind: load, so a green run is NOT a pass on its own. Invoke \`/loadtest-baseline-gate ${ticket}\` and run the SAME scenario against the ticket's base branch as well, so the candidate has a number to beat. The base is the branch this ticket's PR/MR actually TARGETS (${mergeOrder.filter((id) => !REPOS[id].testSuite).map((id) => `${id} → ${repoResults[id]?.plan?.base_branch}`).join(', ')}), not the repo default. The skill measures the environment's own noise floor from ${LOADTEST.noiseRuns} base runs, sets each metric's threshold to max(${LOADTEST.tolerancePct}%, that floor), and returns pass / fail / unavailable — fill the "loadtest" object from its output verbatim, including base_sha, candidate_sha and its markdown table. Do NOT compute the comparison yourself and do NOT relax a k6 threshold to make a run green: moving the bar is not passing the gate. If the noise floor is too wide to judge, "unavailable" is the correct, expected answer — report it rather than picking a side.`
+    : ''
   testSuite = await safeAgent(
     `${tag(testSuiteRepo, 'qa-runner', 'test-suite')} CROSS-REPO TEST-SUITE gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite. Validate the CANDIDATE (the ticket's work branches, NOT yet merged): build the app/service repo(s) from their ticket work branch(es) — ${candidates.join(', ')} (checkout that branch in each repo before building). Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/, already on its work branch ${repoResults[testSuiteRepo].plan.work_branch}). Then run ONLY this ticket's scope:
 1. SCOPE = (a) the ticket's own spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the spec map in agent_logs/${ticket}-automation-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)).
 2. RUN SCOPED — \`npm test -- <spec-token…>\` covering exactly the ticket + regression spec(s) on each platform the suite targets. Do NOT run \`npm test\` with no args: the FULL-suite run is ON-DEMAND (the user triggers it separately) and is NOT part of this gate.
 On a red: SINGLE-CASE triage — re-run just the broken case to rule out flake: \`PLATFORM=<failing-platform> npm test -- <spec-token>\` (+ \`npm run why\`). If it reproduces as a genuine APP/feature bug, report it as-is — comment a reproducible report ON THE TICKET (scripts/tracker/add-ticket-comment.sh) with platform + evidence, list it in failures, and fail the gate (you do NOT fix app code here — only re-run to triage).
-Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures.`,
+Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures.${loadClause}${RECEIPT_CLAUSE}`,
     { agentType: 'qa-runner', phase: 'Test suite', label: `test-suite:${ticket}`, schema: TEST_SUITE_SCHEMA },
   )
   log(`Test-suite gate (scoped: ticket + regression): ${testSuite?.passed ? 'PASS' : `${testSuite?.failures?.length ?? '?'} failure(s)`}`)
   tick('test-suite')
+
+  // 4a. NEVER FAIL OPEN. A gate result is only worth what its evidence is worth, so the
+  // verdict is checked twice before it counts: the receipt must describe a real command, and
+  // a SECOND agent must find the result on the ticket. (A run has reported green with neither
+  // — the suite was never executed and nothing reached the ticket, which is exactly the shape
+  // a self-report cannot catch about itself.) Mirrors the code reviewer's green-gate rule at
+  // review time: a gate that could not run HALTS the repo rather than passing.
+  const rc = testSuite?.receipt
+  const receiptOk = !!(rc?.command && Number.isInteger(rc.exit_code) && rc.summary_line)
+  const audit = await safeAgent(
+    `${tag(testSuiteRepo, 'qa-runner', 'test-suite-audit')} AUDIT ONLY — run no tests, fix nothing. The ${ticket} test-suite gate claims: exit_code=${rc?.exit_code ?? '(none)'}, summary="${(rc?.summary_line || '(none)').slice(0, 160)}". Read the ticket's comments (\`scripts/tracker/get-ticket-comments.sh ${ticket}\`) and decide ONE thing: is there a comment reporting THIS run's results — the per-scenario outcome of the run just described? Set posted:true only if you can quote its opening line back in "detail". A comment from an earlier round, a plan, or a bug report is NOT a result comment: posted:false, and say what you found instead.`,
+    { agentType: 'qa-runner', phase: 'Test suite', label: `audit:${ticket}`, schema: RESULT_AUDIT_SCHEMA },
+  )
+  if (!receiptOk || !audit?.posted) {
+    const why = !receiptOk
+      ? 'the gate returned no usable receipt (command + exit code + summary line)'
+      : `an independent read of the ticket found no result comment for this run (${audit?.detail || 'no detail'})`
+    log(`⛔ TEST-SUITE GATE UNVERIFIED — ${why}. Treating the verdict as NOT RUN, never as a pass. NOTHING merged; PR/MR left OPEN. Re-run the dev-cycle once the suite genuinely runs and reports.`)
+    const summary = await writeSummary('test-suite-unverified', { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, why })
+    return { ticket, status: 'test-suite-unverified', mergeOrder, repoResults, testSuite, testSuiteRequested, why, summary, spend }
+  }
+
   if (!testSuite?.passed) {
     log('⚠️ Test-suite gate failed — stopping before Distribute + Merge. The candidate does not pass; NOTHING merged; left for human review.')
     const summary = await writeSummary('test-suite-failed', { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested })
     return { ticket, status: 'test-suite-failed', mergeOrder, repoResults, testSuite, testSuiteRequested, summary, spend }
+  }
+
+  // 4b. LOAD SUITE — green is only half the bar. A load suite exists to measure NUMBERS, so
+  // the candidate must also be equal-or-better than the same scenario on the ticket's base
+  // branch. Three verdicts, and `unavailable` is a real one: when the environment's own
+  // run-to-run noise floor is wider than the effect, no honest call exists, so the gate
+  // loud-skips instead of inventing one in either direction.
+  if (isLoadSuite) {
+    let lt = testSuite?.loadtest
+    let ltRound = 0
+    while (lt?.verdict === 'fail' && ltRound < MAX_LOADTEST_FIX_ROUNDS) {
+      ltRound++
+      // Attribute BEFORE fixing. A percentile that moved on a laptop is not yet a regression,
+      // and a developer round spent on jitter is worse than no round at all.
+      const attrRepo = mergeOrder.find((id) => !REPOS[id].testSuite)
+      const attribution = await safeAgent(
+        `${tag(attrRepo, 'developer', 'loadtest-attribution', ltRound)} ATTRIBUTION ONLY for ${ticket} — do NOT change code in this step. The load-test gate measured a regression against base ${lt.base_sha || '(base)'} on candidate ${lt.candidate_sha || '(candidate)'}:
+${lt.markdown || (lt.regressed || []).join('; ')}
+Decide ONE of three, and ground it in something you actually read:
+• attributable — you can name the commit, query, lock, allocation or added round-trip in THIS ticket's diff that explains the measured move. Put it in "reasoning" with file:line evidence, and set "repo" to the repo that carries it.
+• not-attributable — the diff contains nothing that plausibly explains it; the move is environmental (host load, container jitter, a cold cache). Say what you checked to rule the diff out.
+• need-bigger-env — the effect could be real but this environment cannot show it (single container, rate tuned down); name the environment that could.
+Only "attributable" earns a fix round — the other two flip the gate to a loud "unavailable" and no code is touched. Guessing "attributable" to look thorough costs a real load run.`,
+        { agentType: 'developer', phase: 'Test suite', label: `lt-attribute:${ticket}:${ltRound}`, schema: LOADTEST_ATTRIBUTION_SCHEMA },
+      )
+      if (attribution?.attribution !== 'attributable') {
+        lt = { ...lt, verdict: 'unavailable', too_noisy: [...(lt.too_noisy || []), `developer attribution: ${attribution?.attribution || 'unavailable'} — ${attribution?.reasoning || 'no reasoning returned'}`] }
+        log(`[loadtest] round ${ltRound}: developer says ${attribution?.attribution || 'no verdict'} — not a regression of this change; gate → unavailable, no fix round spent.`)
+        break
+      }
+      const fixRepo = REPOS[attribution.repo] ? attribution.repo : attrRepo
+      log(`[loadtest] round ${ltRound}: ATTRIBUTED to ${fixRepo} — ${String(attribution.reasoning).slice(0, 120)}`)
+      const fix = await safeAgent(
+        `${tag(fixRepo, 'developer', 'loadtest-fix', ltRound)} Fix the ATTRIBUTED load-test regression for ${ticket} in ${fixRepo}, on ${repoResults[fixRepo]?.plan?.work_branch}. Cause (your own attribution): ${attribution.reasoning}${attribution.evidence ? ` — evidence: ${attribution.evidence}` : ''}. Measured: ${(lt.regressed || []).join('; ') || 'see the comparison table on the PR/MR'}. Fix the cause, keep ${REPOS[fixRepo]?.green}, commit (fix(…) Refs ${ticket}) and push — the gate re-runs the candidate against the SAME cached baseline, so the next measurement is comparable only if you push. Do not touch the load-test repo or its thresholds: moving the bar is not fixing the regression.`,
+        { agentType: 'developer', phase: 'Test suite', label: `lt-fix:${ticket}:${ltRound}`, schema: DEV_SCHEMA },
+      )
+      log(`[loadtest] round ${ltRound} fix: ${fix?.summary?.slice(0, 80) ?? 'no summary'}`)
+      const reRun = await safeAgent(
+        `${tag(testSuiteRepo, 'qa-runner', 'test-suite', ltRound)} RE-RUN the load-test gate for ${ticket} after a fix in ${fixRepo} (round ${ltRound}). Rebuild the candidate from the ticket work branches — ${candidates.join(', ')} — then invoke /loadtest-baseline-gate ${ticket} again. The baseline is UNCHANGED (same base SHA), so reuse the cached base runs and measure the candidate only. Post the fresh comparison to the ticket and the PR/MR, and return the same structured result as before — receipt included.${RECEIPT_CLAUSE}`,
+        { agentType: 'qa-runner', phase: 'Test suite', label: `test-suite:${ticket}:r${ltRound}`, schema: TEST_SUITE_SCHEMA },
+      )
+      if (reRun) { testSuite = reRun; lt = reRun.loadtest }
+      tick(`loadtest-round-${ltRound}`)
+    }
+    testSuite = { ...testSuite, loadtest: lt }
+    if (lt?.verdict === 'fail') {
+      log(`⛔ LOAD-TEST REGRESSION stands after ${ltRound} fix round(s) — ${(lt.regressed || []).join('; ')}. The candidate is slower than ${lt.base_sha || 'base'} by more than the environment's own noise. NOTHING merged; PR/MR left OPEN for human action.`)
+      const summary = await writeSummary('loadtest-degraded-halt', { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, rounds: ltRound })
+      return { ticket, status: 'loadtest-degraded-halt', mergeOrder, repoResults, testSuite, testSuiteRequested, summary, spend }
+    }
+    if (lt?.verdict === 'unavailable' || !lt?.verdict) {
+      loadtestGateUnavailable = `The load-test gate could not judge ${ticket} against its base branch: ${(lt?.too_noisy || []).join('; ') || 'no baseline comparison was returned'}. The suite is GREEN, but "equal-or-better than base" is UNPROVEN — do NOT describe this run as performance-validated.`
+      log(`⚠️  LOAD-TEST BASELINE UNAVAILABLE — ${loadtestGateUnavailable}`)
+    } else {
+      log(`✅ Load-test baseline: no tracked metric degraded past its threshold vs ${lt.base_sha || 'base'}${lt.baseline_cached ? ' (cached baseline)' : ''}.`)
+    }
   }
 } else if (scope.test_suite?.needed && !testSuiteRepo) {
   testSuiteGateUnavailable = testSuiteGateUnavailable
@@ -1387,7 +1552,7 @@ for (const id of mergeOrder) {
     // NOTIFY (final phase) — auto-merge is off, so the validated PR/MR are awaiting a human:
     // ping the configured chat channel to review them. No-op unless notify.enabled.
     const notify = await notifyReview(mergeOrder)
-    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, summary, notify, spend }
+    return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, loadtestGateUnavailable, summary, notify, spend }
   }
   const merger = desc.review || desc.build // test-suite repo (no reviewer): the qa-runner merges its own PR
   const mergePreamble = desc.review
@@ -1467,7 +1632,7 @@ const summary = await writeSummary('shipped', {
 return {
   ticket, status: 'shipped',
   repos: mergeOrder, repoResults, merges,
-  testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable,
+  testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, loadtestGateUnavailable,
   distribution: dists, closed: close?.closed === true, summary, trackerReachable,
   spend, // per-phase output-token deltas; the per-repo/role table lives in summary.summary_path
 }
