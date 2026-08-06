@@ -40,6 +40,11 @@ def build_prompt(
     holds the history of earlier turns. The CLI cannot resume the previous agent's
     live session, so that log is how context carries across turns.
 
+    `ctx.replayed_command` (set when the dispatcher put the thread's standing slash
+    command in front of a conversational follow-up) is named in the TRUSTED preamble, so
+    the session learns from us — not from the untrusted request block — that the leading
+    command is carried over and the text below it is this turn's instruction.
+
     `ctx.agent_name` (set when the mention led with `agent:<name>`) turns this session into
     a router: the request is delegated to that subagent instead of being worked here.
     The Slack post-back stays with this session either way — a subagent's report is
@@ -91,8 +96,27 @@ def build_prompt(
             "    run that skill with those arguments exactly as if it had been typed in a",
             "    Claude Code session.",
             "  - Otherwise, do what the text asks.",
+            # The mention IS the human's request. Round 5 of OFB-2302 withheld the
+            # /ultra-review gate fan-out on the grounds that nobody had asked for a
+            # subagent — and silently shipped a single-gate review with no approval.
+            "  - A skill you run may prescribe subagents (e.g. /ultra-review spawning its",
+            "    two gates). The Slack mention IS the user asking for that skill, so those",
+            "    spawns ARE user-requested — run them; do not downgrade the skill to a",
+            "    hand-rolled version of itself. If some part genuinely cannot run, say so",
+            "    in the post-back and name what would unblock it — never substitute a",
+            "    lighter workflow silently.",
         ]
     )
+    replayed = (ctx.replayed_command or "").strip()
+    if replayed:
+        task_lines += [
+            f"  - The leading `{replayed}` was REPLAYED by the dispatcher, not typed this",
+            "    turn: it is this Slack thread's standing command, carried over from an",
+            "    earlier mention. The text under it is the human's follow-up and is the",
+            "    instruction for THIS turn (e.g. \"revisit\" -> the skill's re-visit path).",
+            "    Run the command. If the follow-up is plainly a different request, say so",
+            "    in the post-back and tell them to prefix it with `new:`.",
+        ]
     lines = [
             "You are an autonomous agent handling a request that arrived from Slack",
             f"via the aiworks dispatcher. {intro}",

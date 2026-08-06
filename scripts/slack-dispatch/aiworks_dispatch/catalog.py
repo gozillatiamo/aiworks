@@ -1,8 +1,10 @@
 """What this workspace can be asked for — its subagents and its workflows.
 
 Pure parsing, no Slack dependency: what exists (`.claude/agents/<name>.md`,
-`.claude/workflows/<name>.js`), a one-line summary for each, and how a leading
-`agent:<name>` / `workflow:<name>` is peeled off a request.
+`.claude/workflows/<name>.js`), a one-line summary for each, how a leading
+`agent:<name>` / `workflow:<name>` is peeled off a request, and how a thread's
+standing slash command is replayed in front of a conversational follow-up
+(`resolve_sticky_command`).
 
 The prefix is `agent:` and NOT `@name` on purpose: Slack linkifies an `@handle` that
 collides with a real user or usergroup into `<@U…>` / `<!subteam^…>`, and leading
@@ -205,3 +207,59 @@ def split_agent(text: str, agents: set[str]) -> tuple[str, str, str]:
 
 def split_workflow(text: str, workflows: set[str]) -> tuple[str, str, str]:
     return split_prefixed(text, WORKFLOW, workflows)
+
+
+# -- sticky command --------------------------------------------------------------
+#
+# A Slack thread is ONE work item: the first mention names the skill
+# (`/ultra-review`), every follow-up is conversation ("revisit", "re-run it"). The
+# dispatcher therefore REPLAYS the thread's standing slash command in front of such a
+# follow-up, so the session sees the same shape as the first turn — the only shape the
+# prompt's "run it as if typed" clause covers.
+#
+# Why mechanically and not by prompting: a skill flagged `disable-model-invocation:
+# true` (ultra-review) is unreachable via the Skill tool, so a bare follow-up leaves the
+# session to decide whether to reproduce the workflow by hand. Measured on OFB-2302:
+# 4 of 5 conversational follow-ups ran the two gates, the 5th degraded to a single
+# inline review with no approval and no ticket advance — and said so only in the log.
+# Replaying the command removes the judgement call.
+_NEW_PREFIX = re.compile(r"^new\s*:\s*", re.IGNORECASE)
+
+# The standing command is echoed back into a prompt; cap it so a pathological first
+# line cannot dominate the request block.
+_STICKY_MAX_CHARS = 200
+
+
+def resolve_sticky_command(
+    text: str, prior: str = "", *, replay: bool = True
+) -> tuple[str, str, str]:
+    """`(request_text, sticky_to_persist, replayed_command)` for one mention.
+
+    - Leading `/…`  — this mention sets the thread's standing command (replacing any).
+    - Leading `new:` — drop the standing command and take the rest as a plain request.
+    - Anything else, with a standing command and `replay` on — prepend that command so
+      the follow-up runs the same skill, with the user's own words kept underneath as
+      the turn's instruction (`/ultra-review` §0.5 reads "revisit" from them and picks
+      its re-visit branch by itself).
+
+    `replay=False` (the mention routed itself with `agent:<name>`) keeps the standing
+    command stored but does not apply it — an explicit route wins over the thread's.
+
+    `replayed_command` is non-empty only in the third case: it is what the dispatcher
+    put in front of the user's words, and the prompt names it in the trusted preamble.
+    """
+    text = (text or "").strip()
+    prior = (prior or "").strip()
+
+    stripped = _NEW_PREFIX.sub("", text, count=1).strip()
+    if stripped != text:
+        # `new:` alone carries no request — treat it as a typo, not an empty dispatch.
+        return (stripped or text), "", ""
+
+    if text.startswith("/"):
+        return text, text.split("\n", 1)[0].strip()[:_STICKY_MAX_CHARS], ""
+
+    if prior and replay:
+        return f"{prior}\n\nFollow-up from the Slack thread: {text}", prior, prior
+
+    return text, prior, ""
