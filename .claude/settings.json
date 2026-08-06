@@ -63,6 +63,8 @@
       "Bash(rm -rf ~*)",
       "Bash(git push --force*)",
       "Bash(git push -f *)",
+      "Bash(kubectl *)",
+      "Bash(gcloud *)",
       "Read(**/.env)",
       "Read(**/.env.local)",
       "Read(**/*.pem)",

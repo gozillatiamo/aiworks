@@ -71,7 +71,7 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
 - `docs/adr/` — architecture decision records: why the workspace is shaped as it is
   (`0001` config mirror, `0002` output localization, `0003` personal runtime overrides,
   `0004` the Cursor mirror, `0005` deployed-env triage + the production gate, `0006` the live
-  config carries no comments).
+  config carries no comments, `0007` Kubernetes triage runs as a separate read-only identity).
 - `docs/agents/cursor.md` — how this workspace runs under **Cursor**. Everything (project
   instruction, rules, skills, subagents, hooks, permissions, MCP, adapters) works there via a
   GENERATED mirror — `aiworks cursor` — built from symlinks back to the `.claude/` files, so
@@ -159,6 +159,16 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   `slack`), and `scripts/observability/` (traces/logs via `signoz`). **Always go
   through the adapters — never call `gh`/`glab`/Notion/Jira/Slack/the SigNoz API
   directly.**
+- `scripts/k8s/` — READ-ONLY Kubernetes triage over the deployed GKE clusters, as the
+  `k8s_triage` MCP (skill: `k8s-triage`). It never uses your kubeconfig credential: it
+  impersonates `k8s-triage@<project>.iam.gserviceaccount.com`, whose `view`-based RBAC makes
+  the **API server** reject writes, so a delete is a 403 rather than a code path we trust.
+  Targets are DERIVED from each context's `gke_<project>_<region>_<cluster>` string (never
+  from its personal alias), so `product` + `env` are required per call, there is no config
+  file, and nothing is ever written to `~/.kube/config`. Production reuses `triage.prod`.
+  ⚠️ `Bash(kubectl *)` and `Bash(gcloud *)` are **denied** — a read-only MCP beside an open
+  shell would be decoration. Ask the user to run `!kubectl …` for anything outside the tools.
+  Bootstrap + runbook: `scripts/k8s/README.md`; rationale: `docs/adr/0007`.
 - **Test environment:** automated runs target **local** by default; staging is an
   explicit, QA-reserved opt-in (`CYPRESS_ENV=staging`). Defer to each repo's default —
   never hardcode an environment in agents/skills/workflow.

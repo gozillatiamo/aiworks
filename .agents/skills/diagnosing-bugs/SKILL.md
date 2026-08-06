@@ -13,6 +13,16 @@ When the resolved language is **`th`**, write every ticket description, spec, ac
 
 A discipline for hard bugs. Skip phases only when explicitly justified.
 
+## First: can you trigger it at all?
+
+This skill is built on a loop you can run — Phase 1 exists to get one, and every later phase
+consumes it. If the symptom lives **only in a deployed environment** and no loop is reachable
+(the request is gone, the pod is gone, you have a trace id and telemetry and nothing to press),
+this discipline does not apply and forcing it produces a plausible story instead of a cause.
+
+**Stop and use `root-cause-deployed` instead.** Come back here once a deployed finding gives you
+something reproducible to fix.
+
 When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
 ## Phase 1 — Build a feedback loop

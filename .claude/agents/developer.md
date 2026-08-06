@@ -16,8 +16,10 @@ skills:
   - caveman:caveman
   - karpathy-guidelines
   - open-pr
-  # Runtime root-cause from SigNoz logs/traces for a deployed-env bug — investigate, then its
-  # developer branch seeds /diagnosing-bugs with the captured trace/payload and fixes test-first.
+  # SigNoz logs/traces for a deployed-env bug. This is the DATA; the METHOD for a symptom that
+  # cannot be reproduced locally is /root-cause-deployed (base rate -> hypothesis ledger ->
+  # discriminator -> CONFIRMED/LEADING/SPECULATIVE), invoked on demand like /diagnosing-bugs.
+  # Its finding then seeds /diagnosing-bugs with something reproducible to fix test-first.
   - telemetry-triage
   # Read-only deployed Postgres ground truth (staging or prod, `env` per call; prod needs the
   # machine's triage.prod opt-in) — SCOPED TO /diagnosing-bugs ONLY (bug triage: PRD pre-ticket
@@ -117,6 +119,17 @@ tools:
   # SYNTHESIZED in the server. No production value crosses to local — that is the point.
   - mcp__redis_triage__capture_shape
   - mcp__redis_triage__disconnect
+  # READ-ONLY Kubernetes triage (scripts/k8s/). Impersonates a view-only identity, so the API
+  # server rejects writes — the cluster's own answer to "did the request ever arrive", which no
+  # amount of reading code or querying the DB can give. See docs/adr/0007.
+  - mcp__k8s_triage__list_targets
+  - mcp__k8s_triage__list_resources
+  - mcp__k8s_triage__get_resource
+  - mcp__k8s_triage__get_logs
+  - mcp__k8s_triage__list_events
+  - mcp__k8s_triage__top_pods
+  - mcp__k8s_triage__top_nodes
+  - mcp__k8s_triage__disconnect
   # The ONE sanctioned path to persist prod-derived data locally — masks external PII, entity-
   # scoped, into a throwaway ofb_repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
   - Bash(uv run *prod_repro_seed.py*)
@@ -169,6 +182,8 @@ What each maps to is repo-specific — check the repo's `scripts/dev.sh` header 
 - anything a teammate or the user reports as **broken / throwing / failing / slow**.
 
 The non-negotiable core of the skill is **Phase 1: stand up a tight, red-capable feedback loop** — a failing `scripts/dev.sh test`, a curl, a CLI or headless repro — that reproduces the **user's exact symptom** and that you have **already run once** (paste the invocation + output), **before** you theorize a cause or edit a line. That loop is then the `/tdd` red test you fix to green and the Phase-5 regression test. If you catch yourself reading code to build a theory before that command exists, **stop** — jumping to a hypothesis is the exact failure this skill prevents. If you genuinely cannot build a loop, say so explicitly (what you tried + what you need) rather than guessing.
+
+**When the symptom exists ONLY in a deployed environment, the loop is not reachable and this is the wrong skill.** A request that already failed in prod, a pod that has since been replaced, an intermittent 5xx with a trace id and nothing to press — there is no command to run red. Drive those with **`/root-cause-deployed`** instead: it counts the failure class before theorising (`scripts/observability/find-traces.sh`), forces at least two competing hypotheses, and grades the answer CONFIRMED / LEADING / SPECULATIVE so a single sighting cannot be reported as a cause. `k8s_triage` is how you see the cluster's own account of whether the request ever arrived — pod replacements, `previous=true` logs from a container that already died, endpoint membership, gateway route and upstream config. Return to `/diagnosing-bugs` once that hands you something reproducible to fix.
 
 **Bug only shows in a deployed env (staging/prod/dev) and won't reproduce locally? Get the ground truth FIRST with `/telemetry-triage`** — pull the real SigNoz logs + trace for the failing request, then use that captured trace/payload to seed the Phase 1 loop (its "replay a captured trace" option). Telemetry finds *what happened*; it is the seed for the repro loop, never a substitute for it — you still fix against a red loop.
 
