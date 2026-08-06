@@ -37,6 +37,13 @@ def _csv_set(name: str) -> set[str]:
     return {tok.strip() for tok in raw.split(",") if tok.strip()}
 
 
+def _bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _default_workspace_root() -> str:
     # scripts/slack-dispatch/aiworks_dispatch/config.py -> up 3 = the meta-repo root.
     return str(Path(__file__).resolve().parents[3])
@@ -88,6 +95,16 @@ class Config:
     attachment_max_file_mb: int = 15
     attachment_total_mb: int = 50
 
+    # Worktree GC. Every mention that starts a thread creates a worktree, and until this
+    # existed nothing ever removed one — they accumulated until someone noticed the disk.
+    # A background sweeper runs `aiworks gc --dispatch`, which refuses to touch a worktree
+    # that is in use, so it never interferes with a running agent or a concurrent build.
+    # gc_ttl_days = 0 DERIVES the age threshold from thread_ttl_sec, so a worktree a live
+    # thread could still be routed back to is out of the sweeper's reach by construction.
+    gc_enabled: bool = True
+    gc_interval_sec: int = 21600      # 6h
+    gc_ttl_days: int = 0              # 0 = derive from thread_ttl_sec
+
     log_level: str = "info"
     # pretty (human console) | json (machine/grep) | auto = pretty on a TTY, json when
     # stdout is redirected. Both shapes stay one line per event.
@@ -126,6 +143,9 @@ class Config:
             attachment_max_files=int(_optional("ATTACHMENT_MAX_FILES", "20")),
             attachment_max_file_mb=int(_optional("ATTACHMENT_MAX_FILE_MB", "15")),
             attachment_total_mb=int(_optional("ATTACHMENT_TOTAL_MB", "50")),
+            gc_enabled=_bool("GC_ENABLED", True),
+            gc_interval_sec=int(_optional("GC_INTERVAL_SEC", "21600")),
+            gc_ttl_days=int(_optional("GC_TTL_DAYS", "0")),
             log_level=_optional("LOG_LEVEL", "info"),
             log_format=_optional("LOG_FORMAT", "auto"),
             log_name_width=int(_optional("LOG_NAME_WIDTH", "10")),

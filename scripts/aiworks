@@ -10,6 +10,7 @@
 #   aiworks remove <repo>|--all    [options]   # offboard a repo (or all)    (→ aiworks-remove.sh)
 #   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
 #   aiworks update                 [options]   # upgrade the prerequisites   (→ aiworks-update.sh)
+#   aiworks gc                     [options]   # reclaim worktree disk       (→ aiworks-gc.sh)
 #   aiworks setup                  [args…]     # workspace setup             (→ .superset/setup.sh)
 #   aiworks run                    [args…]     # workspace run               (→ .superset/run.sh)
 #   aiworks teardown               [args…]     # workspace teardown          (→ .superset/teardown.sh)
@@ -74,6 +75,14 @@ Commands:
              it. Best-effort: one failure never aborts the run. node, repo dependencies and
              the per-repo/global skill locks are REPORTED, never changed (--check-deps lists
              what is outdated per repo). Use -n to preview, --only/--skip to narrow.
+  gc         Reclaim disk from Superset worktrees. Superset's UI Delete drops the workspace
+             row but leaves the worktree DIRECTORY, the `git worktree` registration and the
+             local branch behind; slack-dispatch leaks one worktree per @-mention and has no
+             cleanup path at all. `gc` reaps three things: orphaned worktrees (Superset no
+             longer lists them), build artifacts inside IDLE worktrees, and dispatch worktrees
+             past their TTL. It never creates shared build state — a shared CARGO_TARGET_DIR
+             would serialize concurrent builds — so worktrees stay fully parallel; it only
+             deletes from worktrees it has proven are idle. Run with no arguments to REPORT.
   setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
              adapter .env, link adapters into each repo + git-exclude the links so they never
              dirty the product repo). Pass-through — forwards any extra args.
@@ -119,6 +128,13 @@ Examples:
   aiworks voice mute off                # back
   aiworks voice status                  # why is it (not) talking?
   aiworks voice test                    # end-to-end check with timings
+  # reclaim worktree disk (safe by default — bare `gc` only reports):
+  aiworks gc                            # what is orphaned / idle / past TTL, and how much
+  aiworks gc --all -n                   # preview a real run
+  aiworks gc --orphans                  # reap only the UI-Delete leftovers
+  aiworks gc --artifacts --idle-days 7  # clear target//node_modules from week-idle worktrees
+  aiworks gc --dispatch --ttl-days 3    # reap stale slack/req-* dispatch worktrees
+  aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
   # workspace lifecycle — pass straight through to the .superset hooks:
   aiworks setup                         # exec .superset/setup.sh
   aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
@@ -149,6 +165,7 @@ case "$cmd" in
   cursor)         exec "$DIR/aiworks-cursor.sh" "$@" ;;
   update)         exec "$DIR/aiworks-update.sh" "$@" ;;
   voice)          exec "$DIR/aiworks-voice.sh" "$@" ;;
+  gc)             exec "$DIR/aiworks-gc.sh" "$@" ;;
   setup)          superset_hook setup "$@" ;;
   run)            superset_hook run "$@" ;;
   teardown)       superset_hook teardown "$@" ;;
