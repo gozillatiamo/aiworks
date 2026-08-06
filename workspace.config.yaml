@@ -41,6 +41,13 @@ quality_gate:
 review:
   level: strict
 
+loadtest:
+  tolerance_pct: 10
+  noise_runs: 2
+  noise_ceiling_multiple: 2
+  max_fix_rounds: 2
+  baseline_cache: ~/.cache/aiworks/loadtest-baselines
+
 planning:
   auto_approve: false
   to_html: false
@@ -262,9 +269,10 @@ products:
 
       - url: git@gitlab.com:bluepicode/qa/ofb-k6-loadtests.git
         kind: test-suite
+        suite_kind: load
         desc: K6 load tests for the platform, mostly for the backend services.
         lang: javascript
-        green: "tests via k6 passed successfully"
+        green: "tests via k6 passed successfully, and no tracked metric degraded against the base branch"
 
       - url: git@gitlab.com:bluepicode/ofb/lotto-service.git
         kind: backend
