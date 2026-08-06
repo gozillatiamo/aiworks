@@ -88,7 +88,10 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
 - `docs/agents/human-review.md` — the `Human:` convention: a human reviewer's required
   changes, left as `Human:`-prefixed PR/MR review-thread comments, are blocking, top-priority
   directives the agents auto-route (code→developer, test→qa, scope→planner) and resolve. The
-  `apply-human-review` skill drives them on demand ("take my review", no prefix needed).
+  `apply-human-review` skill drives them on demand ("take my review", no prefix needed). The
+  mirror case matters just as much: a `Human:` **reply on an agent's own must-fix** is a
+  *disposition* ("accepted", "this is a task for QA") — it CLEARS that finding, so approve and
+  advance even if the handed-off work hasn't landed, and never re-open a thread a human resolved.
 - `docs/agents/image-generation.md` — how the graphic-designer generates assets
   (the `mcp-image` server + `GEMINI_API_KEY`), gated by `image_generation.enabled`
   (default OFF); the design/PRD phase fails loud when it's not set up rather than
