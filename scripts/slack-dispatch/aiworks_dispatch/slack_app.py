@@ -31,6 +31,7 @@ from .catalog import (
     available_workflows,
     is_agent_list,
     is_workflow_list,
+    resolve_sticky_command,
     split_agent,
     split_workflow,
     workflow_summaries,
@@ -52,6 +53,8 @@ _USAGE = (
     "• `@aiworks agent:developer implement APP-45 per the plan on the ticket` "
     "(a leading `agent:<name>` hands the whole request to that subagent)\n"
     "`agent:list` shows every agent, `workflow:list` every workflow.\n"
+    "In a thread I keep running its slash command, so a plain `revisit` continues the "
+    "same job — start something unrelated with `new: <request>`.\n"
     "I'll spin up a worktree, run Claude on it, and reply in this thread when done."
 )
 
@@ -238,6 +241,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         thread_context: str,
         attachments: list[SlackFileRef],
         mention_ts: str,
+        sticky_command: str,
         client,  # noqa: ANN001
     ) -> None:
         # Reuse the thread's worktree if it still exists; otherwise fall back to fresh.
@@ -300,6 +304,8 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
                     "last_activity": ctx.created_at,
                     # High-water mark: next follow-up re-scans only messages after this.
                     "last_read_ts": mention_ts,
+                    # The thread's standing slash command, replayed onto bare follow-ups.
+                    "sticky_command": sticky_command,
                 })
             else:
                 store.create_thread(thread_key, {
@@ -312,6 +318,9 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
                     "last_activity": ctx.created_at,
                     # High-water mark: next follow-up re-scans only messages after this.
                     "last_read_ts": mention_ts,
+                    # Carried across a stale-mapping re-create: the Slack thread is the
+                    # same work item even when its worktree had to be rebuilt.
+                    "sticky_command": sticky_command,
                 }, cfg.thread_ttl_sec)
         except Exception:
             log.exception("failed to persist thread mapping for %s", thread_key)
@@ -455,6 +464,20 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         mapping = store.get_thread(thread_key)
         attachments = list(mention_files)
 
+        # Sticky command: a thread is one work item, so a conversational follow-up
+        # ("revisit") gets the thread's standing slash command replayed in front of it.
+        # An `agent:<name>` route is explicit and wins — the command stays stored, unused.
+        prior_sticky = (mapping or {}).get("sticky_command", "")
+        sticky_command, replayed = prior_sticky, ""
+        if cfg.sticky_command_enabled:
+            request_text, sticky_command, replayed = resolve_sticky_command(
+                request_text, prior_sticky, replay=not agent_name,
+            )
+            if replayed:
+                log.info("thread %s: replayed standing command %r", thread_key, replayed)
+            elif prior_sticky and not sticky_command:
+                log.info("thread %s: standing command cleared by `new:`", thread_key)
+
         # When the mention is inside a thread, pull the conversation as text context AND
         # its attachments. On a follow-up (mapping exists) only what is NEW since the last
         # turn's high-water mark is re-scanned; on the first turn, the whole thread up to
@@ -498,6 +521,7 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             request_text=request_text,
             created_at=now_iso(),
             agent_name=agent_name,
+            replayed_command=replayed,
         )
         try:
             store.save_context(ctx)
@@ -513,6 +537,13 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
             ctx.correlation_id, channel, user, continuing, agent_name or "-",
         )
         agent_note = f" — routed to `{agent_name}`" if agent_name else ""
+        # Say which command a bare follow-up was expanded to — a silent replay is
+        # indistinguishable from a wrong guess until the turn is already finished.
+        if replayed:
+            agent_note += (
+                f" — continuing this thread's `{replayed}`"
+                " (start something unrelated with `new:`)"
+            )
         _post(
             client, channel, thread_ts,
             f":eyes: On it{agent_note} — {'continuing this thread' if continuing else 'spinning up a worktree'}. "
@@ -526,7 +557,8 @@ def build_app(cfg: Config, store: RedisStore, dispatcher: Dispatcher) -> App:
         # Heavy (fresh worktree setup can take minutes). Do it off the socket thread.
         threading.Thread(
             target=_run_dispatch,
-            args=(ctx, thread_key, mapping, thread_context, attachments, mention_ts, client),
+            args=(ctx, thread_key, mapping, thread_context, attachments, mention_ts,
+                  sticky_command, client),
             name=f"dispatch-{ctx.correlation_id}", daemon=True,
         ).start()
 
