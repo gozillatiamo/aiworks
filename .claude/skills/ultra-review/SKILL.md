@@ -214,7 +214,8 @@ caps the verdict at "partially met" even when the code-quality gate is clean.
 The combined verdict answers one **ticket-wide** question: are the ticket's requirements
 *genuinely met* across **every** repo's MR/PR? Post the PASS signal **only** on a clean **met**
 — zero unresolved must-fix at *every* gate on *every* repo, no open `Human:` directive, **and a
-green test receipt from the code gate on every repo**. When
+green test receipt from the code gate on every repo**. A must-fix a human answered with a
+`Human:` **disposition** counts as MET (`docs/agents/human-review.md`). When
 met, the orchestrator itself posts it on **each** repo's MR/PR: one host-level approval + one
 loud verdict line, via
 
@@ -224,6 +225,11 @@ scripts/vcs/pr-approve.sh <num> --body "✅ APPROVED — <KEY>: requirements met
 
 body in the resolved OUTPUT LANGUAGE, and name the green run in it — an approval that cannot
 point at a suite result is the failure this gate exists to prevent.
+
+Work a human handed off does NOT hold the PASS, even when it has not landed (a suite fix in a
+repo with no branch yet, a product call, a follow-up ticket). Carry it as a stated condition —
+a merge-order warning with a named owner — on the approval line, the ticket, and the chat
+summary. And never re-open a thread a human resolved: note the gap once in the verdict.
 
 **No test receipt ⇒ no approval, even with zero must-fixes.** A code gate that could not run
 the suite (missing toolchain, a dependency stack that would not come up) has produced an

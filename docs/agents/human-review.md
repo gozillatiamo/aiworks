@@ -8,6 +8,40 @@ code-reviewer, development-planner, qa-runner, qa-planner) and the `apply-human-
 skill consult this file; the marker is read and resolved through the VCS adapter
 (`scripts/vcs/`), never a git host API directly.
 
+## Two kinds of `Human:` comment — directive vs disposition
+
+The marker always means "a human is speaking, act on this". *What* to act on depends on
+whose thread it sits in:
+
+| | **Directive** | **Disposition** |
+|---|---|---|
+| Sits in | a thread the **human opened** | a **reply** on a thread an **agent** opened (an agent must-fix) |
+| Says | "change this" | "accepted" · "not a fix — this belongs to \<role\>" · "deferred, tracked elsewhere" |
+| The agent does | route + fix + reply + resolve (below) | **nothing to the code** — record it and count that must-fix as **cleared** |
+
+A disposition **closes the finding for gate purposes.** Do not re-argue it, do not re-open
+the thread, and do not keep the finding in the must-fix tally — **even when the work it hands
+off has not landed yet** (a test-suite fix in another repo, a product decision, a follow-up
+ticket). Carry that outstanding work forward as a **stated condition** on the approval, the
+ticket, and the chat summary — a merge-order warning, a named owner — never as a blocker on
+the MR/PR the human just cleared. Withholding approval until the handed-off work lands
+re-opens the decision the human already made.
+
+Worked example (OFB-2242): the reviewer filed a wire-contract break — renamed error codes
+with 9 stale Newman assertions living in a *different* repo that had no branch yet. The
+developer replied `Human: this is a task for QA` and resolved the thread. Correct handling:
+the finding is cleared, **both MRs are approved and the ticket advances**, and the un-landed
+Newman fix survives as "⚠️ merge order — do not merge before the QA-suite MR" on the
+approval line, the ticket, and the review thread.
+
+### When a human resolves a thread and writes nothing
+
+Silence is not a directive, and it is **not yours to overturn**. **Never re-open a thread a
+human resolved.** Note the gap **once** — in your verdict, naming what is still unrecorded
+and the single line that would settle it — then treat the finding as dispositioned and let
+the gate pass. Re-opening resolved threads to force an answer reads as the agent overruling
+the reviewer; it is the failure this section exists to prevent.
+
 ## Where they live
 
 PR/MR **review threads only** — inline at `file:line`, listed by
@@ -22,8 +56,9 @@ A `Human:` directive **outranks every agent-reviewer comment** (Daniel / Ethan /
 
 - It **jumps the developer's FIFO queue** — drain `Human:` directives before agent comments.
 - It is **always a must-fix**, regardless of `review.level`.
-- The merge/Done gate **cannot pass while any `Human:` thread is unresolved** — the Code
-  Reviewer never approves or squash-merges through one (`code-reviewer.md` §5–6).
+- The merge/Done gate **cannot pass while any `Human:` directive thread is unresolved** — the
+  Code Reviewer never approves or squash-merges through one (`code-reviewer.md` §5–6). A
+  **disposition** is the mirror image: it never blocks, it *clears*.
 
 ## Routing — classify each directive by what it asks for
 
@@ -36,6 +71,10 @@ The `apply-human-review` skill **auto-routes** each `Human:` directive to one ro
 | change the approach/scope — a different design, add/drop scope, an ADR conflict → needs re-planning before code | **development-planner** (George) → then developer implements the revised plan |
 
 Ambiguous → **developer** (the branch owner, who pulls in planner/QA if the fix needs them).
+
+A **disposition** routes nowhere — there is no work order in it. If it names an owner
+("this is a task for QA"), that ownership is recorded in the ticket and the approval line,
+not turned into a thread the agents keep open.
 
 ## Mechanics — fix, reply, resolve (the agent resolves)
 
