@@ -76,6 +76,17 @@ tools:
   - mcp__redis_triage__stream_consumers
   - mcp__redis_triage__stream_pending
   - mcp__redis_triage__disconnect
+  # READ-ONLY Kubernetes triage (scripts/k8s/). Impersonates a view-only identity, so the API
+  # server rejects writes — the cluster's own answer to "did the request ever arrive", which no
+  # amount of reading code or querying the DB can give. See docs/adr/0007.
+  - mcp__k8s_triage__list_targets
+  - mcp__k8s_triage__list_resources
+  - mcp__k8s_triage__get_resource
+  - mcp__k8s_triage__get_logs
+  - mcp__k8s_triage__list_events
+  - mcp__k8s_triage__top_pods
+  - mcp__k8s_triage__top_nodes
+  - mcp__k8s_triage__disconnect
   # Local DB (read-only) — to compare a prod row against dev/expected, and profile plans.
   - mcp__postgres_main__list_schemas
   - mcp__postgres_main__list_objects

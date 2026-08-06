@@ -413,6 +413,20 @@ seed_triage_mcps() {
   fi
 }
 
+# ── Kubernetes triage readiness ───────────────────────────────────────────────────
+# A DOCTOR, not an installer: k8s_triage needs no configuration (it derives its targets from the
+# kubeconfig), but it does need a read-only identity bootstrapped per cluster and the right to
+# impersonate it — neither of which this machine can grant itself. The check reads only, prints
+# the exact command for each gap, and always exits 0, so a teammate who never touches Kubernetes
+# is not blocked by it. See scripts/k8s/README.md and docs/adr/0007.
+check_k8s_triage() {
+  local sh="$DIR/k8s/setup.sh"
+  [[ -x "$sh" ]] || return 0
+  step "Check the Kubernetes triage identity (read-only)"
+  if [[ "$DRY" -eq 1 ]]; then dim "would run scripts/k8s/setup.sh"; return 0; fi
+  if [[ "$VERBOSE" -eq 1 ]]; then "$sh"; else "$sh" --quiet; fi
+}
+
 # Resolve the positional: a known products[].id is a product filter; anything else is a repo name.
 if [[ -n "$SELECTOR" ]]; then
   if parse_repos | awk -F$'\037' -v p="$SELECTOR" '$1==p{f=1} END{exit f?0:1}'; then
@@ -446,6 +460,10 @@ seed_image_gen_settings
 # names away. Reaching PRODUCTION stays a separate, per-machine opt-in (triage.prod) that the
 # servers enforce themselves, so staging triage works out of the box.
 seed_triage_mcps
+
+# k8s_triage carries no config, so there is nothing to seed — but its read-only identity has to
+# exist in each cluster. Report the gaps with the command that closes them; never fail sync.
+check_k8s_triage
 
 # ── SonarQube onboarding scaffold (quality_gate.provider: sonarqube) ─────────────
 # Read the provider once, then seed a minimal sonar-project.properties into each CODE repo so the

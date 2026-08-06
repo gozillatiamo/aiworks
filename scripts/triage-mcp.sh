@@ -57,6 +57,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SERVERS=(
   "pg_triage|scripts/db/pg_triage_mcp.py"
   "redis_triage|scripts/redis/redis_triage_mcp.py"
+  "k8s_triage|scripts/k8s/k8s_triage_mcp.py"
 )
 
 # Pre-0005 names + paths. Registered locally on machines that opted in before the rename; this

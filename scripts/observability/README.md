@@ -20,6 +20,13 @@ cp scripts/observability/.env.example scripts/observability/.env
 # Trace waterfall (from a SigNoz trace URL: /trace/<trace_id>?spanId=<span_id>)
 scripts/observability/get-trace.sh <trace_id> [--span <span_id>] [--raw]
 
+# SEARCH and COUNT traces — the base rate, before explaining any single one
+scripts/observability/find-traces.sh \
+  [--service <name>] [--status <code>] [--error] [--operation <name>] \
+  [--tag k=v]... [--min-duration <ms>] \
+  [--since -7d] [--until now] \
+  [--by <attribute>] [--interval 1h] [--list] [--limit 20] [--raw]
+
 # Logs — explicit filter flags (each ANDed; comma-separate --service/--severity for several)
 scripts/observability/get-logs.sh \
   [--service <name>] [--severity <level>] [--env local|dev|staging|prod] \
@@ -32,6 +39,33 @@ scripts/observability/get-logs.sh \
 > regardless, so a wrong query looks like "wrong/extra logs", not an error. The flags above map
 > to structured filter items in `signoz/impl.sh`; that is the only reliable path. Don't add a
 > free-text query flag back.
+
+### Base rate first
+
+`get-trace.sh` answers *what happened in this request*. `find-traces.sh` answers the question that
+has to come first — *how often does this happen, and when* — because the shape of that answer
+eliminates whole families of cause before any code is read:
+
+```bash
+# clustered or spread? the single most decisive cheap query
+find-traces.sh --service APISIX --status 502 --since -7d --interval 1h
+# which route/host carries them
+find-traces.sh --service APISIX --status 502 --since -7d --by httpRoute
+# sample ids to hand to get-trace.sh
+find-traces.sh --service APISIX --status 502 --since -7d --list
+```
+
+A clustered result rules out steady causes (request content, an always-wrong branch); a spread one
+rules out episodic causes (a deploy, an eviction). The output says which it found. `/root-cause-deployed`
+drives this.
+
+> ⚠️ **ISO-8601 arguments are read as LOCAL time; SigNoz timestamps are UTC.** Passing a trace's
+> clock time straight back queries the wrong hour and returns a confidently wrong answer — pass
+> **epoch ms** when correlating against a trace.
+
+> **Not every attribute is populated by every emitter.** APISIX-lua fills `http.target` /
+> `apisix.route_name`, not SigNoz's normalized `httpUrl` / `httpHost`, so a `--by` on the wrong key
+> returns one `(unset)` bucket. The tool says so rather than reporting a total of zero.
 
 ## Provider interface (`lib.sh`)
 

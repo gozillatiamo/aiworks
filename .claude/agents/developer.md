@@ -111,6 +111,19 @@ tools:
   # SYNTHESIZED in the server. No production value crosses to local — that is the point.
   - mcp__redis_triage__capture_shape
   - mcp__redis_triage__disconnect
+  # READ-ONLY Kubernetes triage (scripts/k8s/). Impersonates a view-only identity, so the API
+  # server rejects writes — the cluster's own answer to "did the request ever arrive", which no
+  # amount of reading code or querying the DB can give. See docs/adr/0007.
+  - mcp__k8s_triage__list_targets
+  - mcp__k8s_triage__list_resources
+  - mcp__k8s_triage__get_resource
+  - mcp__k8s_triage__get_logs
+  - mcp__k8s_triage__list_events
+  - mcp__k8s_triage__top_pods
+  - mcp__k8s_triage__top_nodes
+  - mcp__k8s_triage__disconnect
+  # The ONE sanctioned path to persist prod-derived data locally — masks external PII, entity-
+  # scoped, into a throwaway ofb_repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
   - Bash(uv run *prod_repro_seed.py*)
   # The Redis counterpart: replays a capture_shape descriptor as SYNTHETIC keys into LOCAL Redis
   # under a `repro:<label>:` prefix, torn down by that prefix. Refuses a non-loopback URL.
@@ -160,6 +173,8 @@ What each maps to is repo-specific — check the repo's `scripts/dev.sh` header 
 - anything a teammate or the user reports as **broken / throwing / failing / slow**.
 
 The non-negotiable core of the skill is **Phase 1: stand up a tight, red-capable feedback loop** — a failing `scripts/dev.sh test`, a curl, a CLI or headless repro — that reproduces the **user's exact symptom** and that you have **already run once** (paste the invocation + output), **before** you theorize a cause or edit a line. That loop is then the `/tdd` red test you fix to green and the Phase-5 regression test. If you catch yourself reading code to build a theory before that command exists, **stop** — jumping to a hypothesis is the exact failure this skill prevents. If you genuinely cannot build a loop, say so explicitly (what you tried + what you need) rather than guessing.
+
+**When the symptom exists ONLY in a deployed environment, the loop is not reachable and this is the wrong skill.** A request that already failed in prod, a pod that has since been replaced, an intermittent 5xx with a trace id and nothing to press — there is no command to run red. Drive those with **`/root-cause-deployed`** instead: it counts the failure class before theorising (`scripts/observability/find-traces.sh`), forces at least two competing hypotheses, and grades the answer CONFIRMED / LEADING / SPECULATIVE so a single sighting cannot be reported as a cause. `k8s_triage` is how you see the cluster's own account of whether the request ever arrived — pod replacements, `previous=true` logs from a container that already died, endpoint membership, gateway route and upstream config. Return to `/diagnosing-bugs` once that hands you something reproducible to fix.
 
 **Cause still hidden after the loop goes red? Step through it — don't guess and don't spin another print cycle.** When print-debugging isn't revealing enough, or you need to see exactly how execution reached a bad state, drive **`/debugging-code:debugging-code`** (interactive DAP debugger: breakpoints — incl. conditional — step line-by-line, inspect live variables + the call stack, evaluate expressions against the running process). This is escalation *inside* `/diagnosing-bugs`, **never** a replacement: the red repro loop still comes first and still becomes the Phase-5 regression test; the debugger just beats another `println!`/`console.log` round to the root cause. Works across the workspace stacks (Rust backend, Node/TS web apps, …).
 
