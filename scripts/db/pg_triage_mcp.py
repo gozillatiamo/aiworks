@@ -1,12 +1,15 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#   "mcp>=1.2",
+#   "mcp>=1.2,<2",
 #   "psycopg[binary]>=3.1",
 #   "psycopg-pool>=3.2",
 #   "python-dotenv>=1.0",
 # ]
 # ///
+# # The <2 bound is load-bearing: mcp 2.0 removed `mcp.server.fastmcp`, so an unbounded `mcp>=1.2`
+# # resolves to a release this file cannot import. It only looks fine on a machine whose uv cache
+# # still holds a 1.x environment — a fresh clone gets ModuleNotFoundError on the import below.
 """pg-triage — on-demand, READ-ONLY MCP wrapper over the OFB deployed Postgres (STAGING + PROD).
 
 One MCP process, two environments, many targets. Both axes are chosen *per call* and neither is
