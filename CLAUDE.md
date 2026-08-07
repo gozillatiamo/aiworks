@@ -180,7 +180,13 @@ sustained work in one repo open that repo: `cd <repo> && cursor .`. See `docs/ag
   `scripts/tracker/` (tickets via `notion`|`jira`), `scripts/notify/` (chat via
   `slack`), and `scripts/observability/` (traces/logs via `signoz`). **Always go
   through the adapters — never call `gh`/`glab`/Notion/Jira/Slack/the SigNoz API
-  directly.**
+  directly.** ⚠️ **Run a WRITER bare** — never in a pipe, `&&`, `;`, `$( )` or a heredoc.
+  The allow rules match the WHOLE command string, so a bare call matches and runs while a
+  compound matches nothing, falls through to the permission classifier, and is denied
+  **silently, without prompting anyone** (measured: the same `merge-pr.sh` ran bare and was
+  denied as `… 2>&1 | tail -5`). Piping buys nothing — these print 1-4 lines; redirect to a
+  file if a later step needs the output. Readers and any `--dry-run` may be piped freely.
+  Enforced by `pretool-adapter-pipe-guard.sh`, which explains the rest.
 - `scripts/k8s/` — READ-ONLY Kubernetes triage over the deployed GKE clusters, as the
   `k8s_triage` MCP (skill: `k8s-triage`). It never uses your kubeconfig credential: it
   impersonates `k8s-triage@<project>.iam.gserviceaccount.com`, whose `view`-based RBAC makes
