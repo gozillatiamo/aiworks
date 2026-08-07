@@ -547,6 +547,29 @@ check_artifacts_contract() {
   fi
 }
 
+# ── CLAUDE.md budget: the always-loaded instruction has to stay small ─────────────
+# Every CLAUDE.md is loaded IN FULL at the start of every session, so its length is a
+# per-turn tax and, past a point, a drag on adherence (Anthropic's own guidance: target
+# under 200 lines). `aiworks add` step 7 already caps a NEW repo at 60 — but that guard
+# fires once, at onboarding, and says nothing as the file grows afterwards. This is the
+# drift check: it re-measures on every sync, for the root and for every repo.
+#
+# The cure when it fires is `.claude/rules/<topic>.md` carrying a `paths:` list, which
+# loads only when Claude reads a matching file. ⚠️ A rule with NO `paths:` loads at launch
+# with the same priority as CLAUDE.md, so moving prose into one to satisfy this check buys
+# nothing — scope the rule, or delete what a doc or a hook already owns. Reports, never
+# blocks: a sync is not the place to fail a repo over the size of its instruction.
+CLAUDEMD_MAX_ROOT=100   # a meta-repo indexing every repo, the adapter families and docs/
+CLAUDEMD_MAX_REPO=60    # the same cap aiworks-add.sh step 7 hands to /init
+check_claudemd_size() {
+  local label="$1" dir="$2" max="$3" n
+  [[ -f "$dir/CLAUDE.md" ]] || return 0
+  n="$(grep -c '' "$dir/CLAUDE.md" 2>/dev/null || echo 0)"
+  [[ "$n" -gt "$max" ]] || return 0
+  warn "$label: CLAUDE.md is $n lines (>$max) — move path-specific detail into .claude/rules/<topic>.md with a paths: list, and drop what a doc or hook already owns"
+  noted+=("$label: CLAUDE.md $n lines (>$max)")
+}
+
 # ── parallel pre-clone: clone the WHOLE set up front, concurrently ────────────────
 # The per-repo loop below delegates to `aiworks add`, whose step 3 clones via a BARE
 # `mani sync` — so a fresh workspace clones all N repos ONE AT A TIME. Measured on a large
@@ -616,7 +639,7 @@ while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) �
   # </dev/null so aiworks-add never consumes this loop's parse stream. Its own prompts read
   # /dev/tty (not stdin), so when -y is OMITTED they still fire here; with no tty they fall back
   # to defaults. Ctrl+C is signal-based, so it still stops the whole sweep.
-  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path" "$url"; check_artifacts_contract "$key" "$repokind" "$path"
+  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path" "$url"; check_artifacts_contract "$key" "$repokind" "$path"; check_claudemd_size "$key" "$ROOT/${path:-$key}" "$CLAUDEMD_MAX_REPO"
   else
     rc=$?
     [[ "$rc" -eq 130 ]] && { printf '\n%s✗ interrupted during %s/%s%s\n' "$c_warn" "$prod" "$key" "$c_off" >&2; exit 130; }
@@ -668,6 +691,9 @@ if [[ -x "$CURGEN" && "$DRY" -ne 1 ]]; then
   if [[ "$VERBOSE" -eq 1 ]]; then "$CURGEN" || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"
   else "$CURGEN" >/dev/null || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"; fi
 fi
+
+# ── the root's own instruction is subject to the same budget ─────────────────────
+[[ "$DRY" -eq 1 ]] || check_claudemd_size "(workspace root)" "$ROOT" "$CLAUDEMD_MAX_ROOT"
 
 # ── summary ──────────────────────────────────────────────────────────────────────
 printf '\n%s──────── sync summary ────────%s\n' "$c_step" "$c_off"
