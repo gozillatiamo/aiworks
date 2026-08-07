@@ -673,6 +673,93 @@ EOF
   else
     skip $g "cursor drift" "--deep (aiworks cursor --check costs ~8s)"
   fi
+
+  # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at USER scope on purpose
+  # (its own comment: one install covers the root AND all 22 clones; project scope would mean 22
+  # installs that drift apart). A project-scope entry beside it is not a second plugin — it is a
+  # duplicate registration of the same one, pinned to whatever marketplace commit was cached the
+  # day it appeared, and `claude plugin update` only ever moves the USER entry. So it silently
+  # rots: measured 2026-08-07, this workspace carried one 18 days behind the user-scope install.
+  # Cheap enough for the default run — two file reads, no network, no session.
+  local reg="$HOME/.claude/plugins/installed_plugins.json"
+  if ! command -v jq >/dev/null 2>&1; then
+    skip $g "plugin scope" "jq unavailable — cannot read the plugin registry"
+  elif [[ ! -f "$reg" ]]; then
+    skip $g "plugin scope" "no plugin registry on this machine yet"
+  else
+    # Report DIVERGENCE, not mere duplication. A project-scope entry appears on its own here
+    # (`claude plugin update` refreshed one into this root mid-run on 2026-08-07, and every
+    # dispatched worktree gets one), so warning on existence alone would be a warn no command can
+    # permanently clear — the same defect this file's `gh` currency warn had. While the two entries
+    # carry the SAME version nothing is broken; the failure is when they part, because only the
+    # user entry is ever updated. That is the caveman case: project 77 lines vs user 87.
+    # Match the project entry on the RESOLVED path, never the recorded string. $ROOT is already
+    # physical (`cd … && pwd`) while the registry stores whatever path the session was opened
+    # with — on macOS a /var/… symlink of /private/var/… is the same directory spelled two ways,
+    # and a string compare silently matches nothing. Caught by the selftest, not by inspection.
+    local pkey projscoped="" dup=0 uv pv ep ev rootp
+    rootp="$(cd "$ROOT" 2>/dev/null && pwd -P)" || rootp="$ROOT"
+    while IFS= read -r pkey; do
+      [[ -z "$pkey" ]] && continue
+      uv="$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .version' "$reg" 2>/dev/null | head -1)"
+      pv=""
+      while IFS="$(printf '\t')" read -r ep ev; do
+        [[ -z "$ep" ]] && continue
+        [[ "$(cd "$ep" 2>/dev/null && pwd -P)" == "$rootp" ]] && { pv="$ev"; break; }
+      done <<INNER
+$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "project") | "\(.projectPath)\t\(.version)"' "$reg" 2>/dev/null)
+INNER
+      [[ -n "$pv" ]] && dup=$((dup+1))
+      [[ -n "$uv" && -n "$pv" && "$uv" != "$pv" ]] && projscoped="${projscoped:+$projscoped }$pkey"
+    done <<EOF
+$(jq -r '(.enabledPlugins // {}) | keys[]' "$settings" 2>/dev/null)
+EOF
+    if [[ -n "$projscoped" ]]; then
+      # The uninstall ALSO deletes the plugin's line from the committed settings.json, which is
+      # the very file lib.sh reads to install it user-scope everywhere — so the restore is part
+      # of the fix, not an afterthought.
+      # `claude plugin uninstall` takes ONE plugin, so a bare space-joined list would fail — loop.
+      # The trailing checkout is not optional: each uninstall deletes that plugin's line from the
+      # committed settings.json, the file lib.sh reads to install it user-scope on every machine.
+      warn $g "project-scope plugin copy has drifted from user scope" \
+           "$projscoped — the session may serve this older copy; only user scope gets updated" \
+           "for p in $projscoped; do claude plugin uninstall \"\$p\" -s project -y; done; git checkout -- .claude/settings.json"
+    elif [[ $dup -gt 0 ]]; then
+      pass $g "plugin scope" "$dup project-scope duplicate(s), all matching user scope"
+    else
+      pass $g "plugin scope" "declared plugins are user-scope only"
+    fi
+  fi
+
+  # RESTART. A plugin update writes a new content-hash cache dir; the RUNNING session keeps
+  # serving the old one, because its SessionStart hook already injected that version's ruleset.
+  # Nothing else reports this, and it is what team "caveman is misbehaving" reports turn out to
+  # be — the old ruleset is missing the rule against dropping not/never/no and the strict
+  # language-preservation rule. caveman is checked by name rather than generically because it is
+  # the one plugin every session and all 16 agent definitions depend on, and because it is the
+  # one that leaves a per-activation marker to compare against: its activate hook rewrites
+  # $CLAUDE_CONFIG_DIR/.caveman-active every time it runs, so that file's mtime IS the last
+  # activation. Update newer than activation ⇒ no session since has picked the new rules up.
+  local flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.caveman-active"
+  if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$reg" ]]; then
+    : # already reported by the scope check above
+  elif [[ ! -f "$flag" ]]; then
+    skip $g "caveman restart" "no .caveman-active marker — caveman is off or has never activated"
+  else
+    local lu ue fm
+    lu="$(jq -r '(((.plugins // .)["caveman@caveman"]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
+    fm="$(stat -f %m "$flag" 2>/dev/null)"
+    ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
+    if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
+      skip $g "caveman restart" "cannot compare install time with last activation"
+    elif [[ "$ue" -gt "$fm" ]]; then
+      warn $g "caveman plugin updated since the last activation" \
+           "every running session is still serving the OLD ruleset" \
+           "see: restart Claude Code (a plugin update cannot reach a live session)"
+    else
+      pass $g "caveman ruleset current" "activated after the last plugin update"
+    fi
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
