@@ -1,6 +1,6 @@
 ---
 name: update-ticket
-description: Write to a ticket in the issue tracker — move its Status, set properties (Priority/Effort/Title/Description), create a ticket when missing, and/or post a comment (inline text or a Markdown file like agent_logs/<KEY>-testcases.md). Wraps scripts/tracker/upsert-ticket-details.sh + add-ticket-comment.sh. Use whenever an agent or person needs to change a ticket or publish a note/plan/verdict onto a ticket.
+description: Write to a ticket in the issue tracker — move its Status, set properties (Priority/Effort/Title/Description), create a ticket when missing, post a comment (inline text or a Markdown file like agent_logs/<KEY>-testcases.md), and attach a file so it shows INSIDE the comment (a screenshot, a rendered report). Wraps scripts/tracker/upsert-ticket-details.sh + add-ticket-comment.sh + add-ticket-attachment.sh. Use whenever an agent or person needs to change a ticket, publish a note/plan/verdict onto a ticket, or put visual evidence on one.
 argument-hint: "[ticket] [what to change — e.g. status Testing, comment plan.md]"
 arguments: [ticket, request]
 model: haiku
@@ -26,6 +26,7 @@ and id format are defined in `docs/agents/issue-tracker.md` / `workspace.config.
 |---|---|
 | Move Status / set a property / rename / create | `scripts/tracker/upsert-ticket-details.sh` |
 | Post a comment (note, plan, verdict) | `scripts/tracker/add-ticket-comment.sh` |
+| Show a file (screenshot, report) **in** a comment | `scripts/tracker/add-ticket-attachment.sh` → §4 |
 
 Do **both** when the task calls for it (e.g. comment the plan *and* move Status →
 Testing) — just run the two scripts.
@@ -74,7 +75,45 @@ passed). Without `--title`, a missing ticket is an error.
 > Note: some trackers store comments as plain/rich text, so Markdown may show literally
 > rather than rendered. The content is preserved faithfully; only live styling may not be.
 
-## 4. Preview, then write
+## 4. Attachments — show the file, don't just upload it
+
+An uploaded file lands in the ticket's **Attachments panel**, away from the words that
+explain it and under whatever name the tool that produced it chose. Evidence read that
+way is evidence nobody reads. Put it **in** the comment instead. Three moves, in order:
+
+**Rename first.** Copy the artifact to a name that says what it is —
+`<KEY>-TC001-fail.png`, `<KEY>-loadtest.png` — under `agent_logs/<KEY>-artifacts/`.
+The tracker never renames an attachment, so the upload name is permanent, and the
+original (`… -- TC001 [regression] - Success … (failed).png`) is unreadable in a panel.
+Copy, never move: the original stays put for anyone re-reading the run. Re-running the
+same ticket? Suffix the round — `-r2` — because Jira does **not** dedupe filenames and
+two same-named attachments leave nobody able to tell which is current.
+
+**Upload and keep the EMBED id.** An upload yields two handles and they are not
+interchangeable: the numeric attachment id (`--id-only`) is the tracker's own, used to
+remove or download the file later, while the **media uuid** (`--embed-id`) is the only
+thing an inline image accepts. Feeding the numeric one to a comment is rejected with a
+bare `ATTACHMENT_VALIDATION_ERROR` that names nothing.
+```sh
+id=$(scripts/tracker/add-ticket-attachment.sh <KEY> agent_logs/<KEY>-artifacts/<KEY>-TC001-fail.png --embed-id)
+```
+
+**Embed it by that id.** In the Markdown you pipe to `add-ticket-comment.sh`, put the
+image **alone on its own line** — that is what makes it a block-level image rather than
+literal text:
+```markdown
+### TC001 — Sign in with a wrong password
+![TC001 fail](attachment:12345)
+```
+One image on a line renders full-width; several on **one** line render as a thumbnail
+strip. Use full-width for a failure a human must actually look at, and a strip for
+pass evidence that is proof-of-record.
+
+Two limits, both loud rather than silent: this is **Jira-only** (Notion's uploader dies
+with a message saying so), and an `![…](attachment:…)` **not** alone on its line stays
+literal text — ADF has nowhere to put an image inside a paragraph.
+
+## 5. Preview, then write
 
 Both writers take `--dry-run` — it prints the request instead of sending. Use it when
 unsure about the resolved ticket, status name, or comment body, then run for real.
@@ -84,7 +123,7 @@ scripts/tracker/upsert-ticket-details.sh FM-9 --status Done --dry-run
 scripts/tracker/add-ticket-comment.sh    FM-9 < plan.md --dry-run
 ```
 
-## 5. Requirements & failures
+## 6. Requirements & failures
 
 - Needs `scripts/tracker/.env` configured for the active `TRACKER_PROVIDER` (plus `curl`
   + `jq`) — see `scripts/tracker/README.md`.

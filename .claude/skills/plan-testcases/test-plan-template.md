@@ -4,21 +4,24 @@ QA test plan — {{ Ticket Number }} ({{ QA Engineer }}) · Status → Testing
 
 BDD scenarios
 
-<!-- Test Scenarios (3–6 BDD cases, user-focused; each with clear title) -->
+<!-- Test Scenarios (3–6 BDD cases, user-focused; each with clear title).
+     The TC id is the join key: the automated test's title carries it, so the runner
+     writes it into every screenshot/video filename, and the results report can tie a
+     row and its evidence back to THIS scenario. Number from TC001, never reuse. -->
 
-### Scenario 1 — {{ Short descriptive title for TC1 }}
+### TC001 — {{ Short descriptive title }}
 **Given** {{ Clear user starting state or precondition }}  
 **When** {{ Specific action the user takes }}  
 **Then** {{ Observable outcome or feedback to the user }}
 
-### Scenario 2 — {{ Short descriptive title for TC2 }}
+### TC002 — {{ Short descriptive title }}
 **Given** {{ Clear user starting state or precondition }}  
 **When** {{ Specific action the user takes }}  
 **Then** {{ Observable outcome or feedback to the user }}
 
-<!-- ...Repeat for scenarios 3–5 as needed following same structure... -->
+<!-- ...Repeat for TC003–TC005 as needed following same structure... -->
 
-### Scenario 6 — {{ Short descriptive title for TC6 }}
+### TC006 — {{ Short descriptive title }}
 **Given** {{ Clear user starting state or precondition }}  
 **When** {{ Specific action the user takes }}  
 **Then** {{ Observable outcome or feedback to the user }}

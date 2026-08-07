@@ -517,6 +517,34 @@ seed_sonar_scaffold() {
   } > "$dir/sonar-project.properties" && ok "seeded sonar-project.properties (org=${org:-–}, projectKey=$pkey)"
 }
 
+# ── test-suite contract: `dev.sh artifacts` must actually answer ──────────────────
+# The QA skills attach a run's own evidence (screenshots, the rendered run report) to a
+# ticket, and they get every path from the repo's own `scripts/dev.sh artifacts` so they
+# never have to know whether the repo runs Cypress, Playwright, k6 or Appium. But dev.sh
+# is SCAFFOLDED BY A MODEL (aiworks-add step 10, best-effort) — a repo can end up without
+# the subcommand, and the failure is silent and plausible: the report just says "no
+# screenshots captured", which is exactly what a genuinely capture-less run says too.
+# So verify it here rather than trusting the generator. Advisory: this reports, never
+# blocks — a sync is not the place to fail a repo over a reporting nicety.
+check_artifacts_contract() {
+  local key="$1" repokind="$2" reldir="$3"
+  [[ "$repokind" == "test-suite" ]] || return 0
+  local dir="$ROOT/${reldir:-$key}"
+  [[ -x "$dir/scripts/dev.sh" ]] || return 0        # no harness at all — step 10 already said so
+  local out rc=0
+  out="$( cd "$dir" && ./scripts/dev.sh artifacts 2>&1 )" || rc=$?
+  # rc 2 is "unknown command". rc 1 with a message ("no test run yet") is a healthy
+  # subcommand on a repo that simply hasn't run — that is a pass, not a finding.
+  if [[ "$rc" -eq 2 ]] || printf '%s' "$out" | grep -qiE 'unknown (sub)?command'; then
+    warn "$key: scripts/dev.sh has no 'artifacts' subcommand — QA reports on this repo will attach no evidence (see .claude/skills/report-test-results/SKILL.md §3)"
+    return 0
+  fi
+  # It answered. If it printed rows, every row must be the 3-column contract.
+  if [[ -n "$out" ]] && ! printf '%s' "$out" | awk -F'\t' 'NF!=3{bad=1} END{exit bad?1:0}'; then
+    warn "$key: 'dev.sh artifacts' rows are not '<id><TAB><kind><TAB><path>' — QA reports cannot join them to scenarios"
+  fi
+}
+
 # ── parallel pre-clone: clone the WHOLE set up front, concurrently ────────────────
 # The per-repo loop below delegates to `aiworks add`, whose step 3 clones via a BARE
 # `mani sync` — so a fresh workspace clones all N repos ONE AT A TIME. Measured on the OFB
@@ -586,7 +614,7 @@ while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) �
   # </dev/null so aiworks-add never consumes this loop's parse stream. Its own prompts read
   # /dev/tty (not stdin), so when -y is OMITTED they still fire here; with no tty they fall back
   # to defaults. Ctrl+C is signal-based, so it still stops the whole sweep.
-  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path" "$url"
+  if "${cmd[@]}" </dev/null; then synced=$((synced+1)); seed_sonar_scaffold "$prod" "$key" "$repokind" "$path" "$url"; check_artifacts_contract "$key" "$repokind" "$path"
   else
     rc=$?
     [[ "$rc" -eq 130 ]] && { printf '\n%s✗ interrupted during %s/%s%s\n' "$c_warn" "$prod" "$key" "$c_off" >&2; exit 130; }
