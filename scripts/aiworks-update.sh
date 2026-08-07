@@ -10,9 +10,11 @@
 # skips (never fights) a tool that came from somewhere else.
 #
 # Groups — all run by default; narrow with --only / --skip:
-#   brew       the brew-owned prerequisites: mani, glab, jq, dap, rtk, k6, pnpm (+ the ngrok cask).
-#              Each is upgraded ONLY if brew actually owns it here, so a jq from /usr/bin or a
-#              pnpm from nvm is left alone rather than shadowed by a second copy.
+#   brew       the brew-owned prerequisites: mani, glab, gh, jq, dap, rtk, k6, pnpm (+ the ngrok
+#              cask). Each is upgraded ONLY if brew actually owns it here, so a jq from /usr/bin or
+#              a pnpm from nvm is left alone rather than shadowed by a second copy. The list is the
+#              one `aiworks doctor` reports currency for, so the command it names can actually fix
+#              what it flagged — keep the two in step.
 #   rust       rustup update — the toolchain behind agent-webservice and every Rust service.
 #   pnpm       corepack prepare pnpm@latest, but ONLY when brew does not own pnpm (else the brew
 #              group already handled it). Stays inside the CURRENT node; never switches node.
@@ -163,7 +165,11 @@ conclude "aiworks update — $ROOT"
 # The prerequisites brew CAN own. Each is upgraded only if it actually does: jq is /usr/bin/jq
 # on a stock macOS and pnpm usually rides along with nvm's node, so blanket-upgrading either
 # would install a SECOND copy that shadows the one the workspace has been running on.
-BREW_FORMULAE="mani glab jq dap rtk k6"
+# This list must match the one aiworks-doctor.sh version-currency greps: doctor points its warn
+# at `aiworks update --only brew`, so a name it flags but this list omits is a warn no command can
+# clear (gh and pnpm were both in that hole). A tool absent from this machine is skipped by
+# brew_owns, so listing one costs nothing.
+BREW_FORMULAE="mani glab gh jq dap rtk k6 pnpm"
 BREW_CASKS="ngrok"
 if want brew; then
   if ! command -v brew >/dev/null 2>&1; then
