@@ -230,13 +230,13 @@ PY
 C=aiworks-slack-dispatch-redis
 
 # all keys (seen / corr / outcome / thread / busy)
-docker exec $C redis-cli keys '*'
+docker exec $C redis-cli --scan
 
 # busy flags + remaining TTL (should be empty when no agent is running)
-for k in $(docker exec $C redis-cli keys 'thread:*:busy'); do echo "$k ttl=$(docker exec $C redis-cli ttl "$k")"; done
+for k in $(docker exec $C redis-cli --scan --pattern 'thread:*:busy'); do echo "$k ttl=$(docker exec $C redis-cli ttl "$k")"; done
 
 # thread → worktree mappings + TTL
-for k in $(docker exec $C redis-cli keys 'thread:*' | grep -v ':busy'); do echo "$k ttl=$(docker exec $C redis-cli ttl "$k")"; done
+for k in $(docker exec $C redis-cli --scan --pattern 'thread:*' | grep -v ':busy'); do echo "$k ttl=$(docker exec $C redis-cli ttl "$k")"; done
 
 # dispatch outcome for a ref
 docker exec $C redis-cli get outcome:req-xxxx | jq .

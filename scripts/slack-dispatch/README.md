@@ -272,6 +272,51 @@ Controls in place:
 - **No secrets in prompts or workspace names.** Post-back uses the main clone's
   adapter by path; no token is ever interpolated.
 
+## Redis state
+
+The service keeps everything it remembers in its own Redis container
+(`aiworks-slack-dispatch-redis`, host port **6370**, `REDIS_URL=redis://localhost:6370/0`).
+It is **not** your product's Redis and not the `redis` MCP target — reach it through
+the container (or `redis-cli -p 6370` if the host has one):
+
+```bash
+C=aiworks-slack-dispatch-redis
+
+docker exec $C redis-cli --scan                          # every key
+docker exec $C redis-cli dbsize                          # how many
+docker exec $C redis-cli --scan --pattern 'thread:*'     # one prefix
+docker exec $C redis-cli get outcome:req-xxxx | jq .     # one value
+
+# key + type + remaining TTL
+docker exec $C redis-cli --scan | while read -r k; do
+  printf '%s\t%s\t%s\n' "$k" \
+    "$(docker exec $C redis-cli type "$k")" \
+    "$(docker exec $C redis-cli ttl "$k")"
+done
+```
+
+Use `--scan` (cursor-based `SCAN`), never `keys '*'` — `KEYS` blocks Redis's single thread
+for the whole sweep.
+
+Every key is TTL'd, and the AOF file lives in the git-ignored `./.redis-data/` bind mount.
+Nothing here is permanent state — wiping it (`docker compose down` + `rm -rf .redis-data/`)
+costs only in-flight thread continuity and the dedup window.
+
+| Key | Holds | TTL |
+|---|---|---|
+| `seen:<event-uuid>` | dedup marker — this Slack event was already handled | `DEDUP_TTL_SEC` (1d) |
+| `ignored:<event-uuid>` | why a mention was refused (allowlist, busy, …) | `CONTEXT_TTL_SEC` (7d) |
+| `corr:req-<id>` | the dispatch's `CorrelationContext` (channel, ts, user, slug) | `CONTEXT_TTL_SEC` (7d) |
+| `outcome:req-<id>` | what the dispatch returned (workspace id, worktree path, error) | `CONTEXT_TTL_SEC` (7d) |
+| `thread:<channel>:<ts>` | Slack thread → worktree mapping, for follow-up reuse | `THREAD_TTL_SEC` (7d, **fixed from creation** — reuse does not slide it) |
+| `thread:<channel>:<ts>:busy` | a run is in flight on that thread; a second mention is rejected | `BUSY_TTL_SEC` (30m) |
+
+A leftover `:busy` key is the one to look for when a thread refuses every mention — the
+Stop hook (`aiworks_dispatch.clear_busy`) clears it, so the flag outliving its run means
+the hook is not wired (see the Stop-hook section above). It self-heals at `BUSY_TTL_SEC`.
+
+`RUNBOOK.md` §5 uses these same commands as part of the test drill.
+
 ## Logs
 
 One line per event, always — in one of two shapes, picked by `LOG_FORMAT`
