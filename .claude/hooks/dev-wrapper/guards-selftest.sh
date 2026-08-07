@@ -357,6 +357,38 @@ t  "superproject own src Write ok"   0 $G "$(jw "$TMP/super/src/main.rs")"
 t  "non-git command untouched"       0 $G "$(j 'cargo test')"
 t  "outside any repo fails open"     0 $G "$(jw "/nonexistent-root-xyz/a/b.rs")"
 
+echo "--- pretool-adapter-pipe-guard ---"
+# A bare adapter call matches Bash(*scripts/{vcs,tracker,notify}/*) and runs. Wrapped in a
+# pipe it matches NO rule, falls through to the permission classifier, and a WRITE gets
+# denied silently (measured on MR !11: the same merge ran bare and was denied piped). So:
+# writers must be bare, readers and previews may be piped, and an operator inside a quoted
+# argument is prose — a Markdown pipe table in a --body must not read as shell.
+P=pretool-adapter-pipe-guard.sh
+t  "piped merge blocked"             2 $P "$(j 'scripts/vcs/merge-pr.sh 11 2>&1 | tail -5')"
+t  "cd && open-pr blocked"           2 $P "$(j 'cd /abs/x && scripts/vcs/open-pr.sh --title y')"
+t  "writer ; chained blocked"        2 $P "$(j 'scripts/vcs/open-pr.sh --title y ; echo done')"
+t  "heredoc comment blocked"         2 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 <<EOF')"
+t  "command substitution blocked"    2 $P "$(j 'id=$(scripts/tracker/add-ticket-attachment.sh A-1 f.png)')"
+t  "notify writer piped blocked"     2 $P "$(j 'scripts/notify/send.sh --channel c "hi" | cat')"
+t  "bare merge allowed"              0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --subject "x"')"
+t  "bare writer, stdin allowed"      0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 < report.md')"
+t  "bare writer, redirect allowed"   0 $P "$(j 'scripts/vcs/open-pr.sh --title y > out.txt')"
+t  "piped --dry-run allowed"         0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --dry-run 2>&1 | tail -3')"
+t  "piped READER allowed"            0 $P "$(j 'scripts/vcs/pr-view.sh 11 | head -3')"
+t  "pipe table in a body allowed"    0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 "| a | b |"')"
+t  "&& inside a body allowed"        0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 "run x && y"')"
+t  "unrelated piped cmd allowed"     0 $P "$(j 'git log --oneline | head -5')"
+# A HEREDOC BODY IS PROSE. A commit message or PR body that NAMES an adapter is not a
+# call to it — an earlier version of this guard blocked its own commit for saying
+# "scripts/vcs/merge-pr.sh" in the message. The heredoc's own command line still counts, so a real
+# writer fed by a heredoc is still caught (see "heredoc comment blocked" above).
+t  "commit msg naming a writer ok"   0 $P "$(printf '%s' "$(jq -cn --arg c 'git commit -F - <<EOF
+fix: explain why scripts/vcs/merge-pr.sh must run bare
+EOF' '{tool_name:"Bash",tool_input:{command:$c}}')")"
+t  "PR body naming a writer ok"      0 $P "$(printf '%s' "$(jq -cn --arg c 'cat <<EOF > body.md
+Run scripts/vcs/merge-pr.sh bare, never piped.
+EOF' '{tool_name:"Bash",tool_input:{command:$c}}')")"
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
