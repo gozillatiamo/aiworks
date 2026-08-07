@@ -388,6 +388,19 @@ EOF' '{tool_name:"Bash",tool_input:{command:$c}}')")"
 t  "PR body naming a writer ok"      0 $P "$(printf '%s' "$(jq -cn --arg c 'cat <<EOF > body.md
 Run scripts/vcs/merge-pr.sh bare, never piped.
 EOF' '{tool_name:"Bash",tool_input:{command:$c}}')")"
+# NAMING A WRITER IS NOT CALLING IT. In operand position the path is data — reading the
+# script with another tool is a maintenance read, not an invocation. Only the FIRST token of
+# a shell segment counts, so these must pass while every real call above still blocks.
+t  "grep ON a writer allowed"        0 $P "$(j 'grep -n body-file scripts/vcs/open-pr.sh | head')"
+t  "wc ON a writer allowed"          0 $P "$(j 'wc -l scripts/notify/send.sh && echo ok')"
+t  "reader piped, writer named ok"   0 $P "$(j 'scripts/vcs/pr-view.sh 11 | grep merge-pr.sh')"
+t  "diff of two writers allowed"     0 $P "$(j 'diff scripts/tracker/delete-ticket.sh scripts/tracker/delete-ticket-comment.sh | head')"
+# …and command position survives the things that legitimately precede a command.
+t  "./ prefixed writer blocked"      2 $P "$(j './scripts/vcs/merge-pr.sh 11 | tail')"
+t  "bash-wrapped writer blocked"     2 $P "$(j 'bash scripts/vcs/merge-pr.sh 11 | tail')"
+t  "env-assigned writer blocked"     2 $P "$(j 'VCS_PROVIDER=gitlab scripts/vcs/merge-pr.sh 11 | tail')"
+t  "writer inside a for-do blocked"  2 $P "$(j 'for f in a b; do scripts/notify/send.sh --channel c $f; done')"
+t  "writer in a subshell blocked"    2 $P "$(j '(scripts/vcs/close-pr.sh 11) | tee log')"
 
 echo
 echo "pass=$pass fail=$fail"
