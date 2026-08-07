@@ -46,7 +46,10 @@ Every run ends on exactly one, and **`unavailable` is a real answer, not a failu
    On a hit, reuse it. On a miss, check out the base build and run the scenario `noise_runs`
    times, then write the results there. Two runs of the same code on the same machine differ;
    that spread **is** the measurement, not waste.
-4. **Run the candidate** — the same scenario, same shape, same duration, once.
+4. **Run the candidate** — the same scenario, same shape, same duration, once. **Mark the
+   start first** (`touch agent_logs/.loadtest-start`): the suite repo's own runs are driven
+   by you, not by `scripts/dev.sh`, so that marker is what step 6 dates the run's reports
+   against — without it a report left over from an earlier ticket reads as this run's.
 5. **Compare.** Run the comparator; do not do this arithmetic yourself:
    ```
    python3 .claude/skills/loadtest-baseline-gate/scripts/compare.py \
@@ -60,6 +63,27 @@ Every run ends on exactly one, and **`unavailable` is a real answer, not a failu
    report paths, every tracked metric with its delta, noise floor, and threshold — to the
    ticket (`scripts/tracker/add-ticket-comment.sh`) **and** the PR/MR
    (`scripts/vcs/pr-comment.sh`). A verdict nobody can read did not happen.
+
+   **Attach the candidate run's own report as a picture**, so the numbers arrive with the
+   thing that produced them. Ask the harness what the run wrote — never guess a path:
+   ```sh
+   scripts/dev.sh artifacts --since agent_logs/.loadtest-start
+   ```
+   Take the `report` row (the suite's HTML run report), render it, and embed it under the
+   table on the TICKET (the PR/MR comment keeps the table alone — a reviewer reading a diff
+   wants the deltas, not a poster):
+   ```sh
+   scripts/pdf/render.sh <that report.html> agent_logs/<KEY>-artifacts/<KEY>-loadtest.png --png --expand
+   ```
+   `--expand` is not optional here. A run report is a TABBED page and a screenshot is one
+   frozen state, so without it the picture carries only whichever tab was open — on a real
+   k6-reporter report that means the metrics table and NOT the checks, which is the half a
+   reader most wants (measured: 2756px tall without it, 4496px with).
+
+   Upload and embed it per **`/update-ticket` §4** (rename → `--embed-id` → the image alone
+   on its own line). No `report` row — a suite that writes no HTML report — is fine: post
+   the table and say the run produced no report. The **table** is the verdict; the picture
+   is corroboration, and a missing picture never changes pass/fail/unavailable.
 
 **Done when** the comparator has run on real files produced by this session, both comments
 are posted, and you can name the base SHA, the candidate SHA, and the exit code.

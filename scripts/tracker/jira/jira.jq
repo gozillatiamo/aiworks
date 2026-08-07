@@ -69,6 +69,10 @@ def adf_append_media($media):
 # Leftmost inline-markup match, or null. Capture index identifies the kind:
 #   0 `code`  1 [text](url)  2 **bold**  3 __bold__  4 *italic*  5 _italic_
 #   6 bare ticket key (e.g. APP-123)  7 bare url
+# The link alternative carries a `(?<!!)` lookbehind so an IMAGE (`![alt](…)`) is not
+# claimed as a link with a stray `!` left in front of it. Images are block nodes
+# (mediaSingle/mediaGroup, see _md_media_nodes) and are folded out before this runs;
+# the lookbehind only guards the case of one appearing mid-prose.
 # Index 6/7 (autolinks) are last on purpose: `match` picks the leftmost START position
 # and only breaks a tie by alternative order, so a URL/key inside `code` or inside a
 # [label](url) is still claimed by the earlier-starting token, not by the autolink —
@@ -76,6 +80,12 @@ def adf_append_media($media):
 # a second mention kind (APP-2286: "mentioned another ticket in prose" was dead text).
 # The URL body excludes brackets/parens/quotes (so a wrapped "(see https://x)" stops
 # at the paren) and may not END on sentence punctuation (so a trailing "." is prose).
+# The `_`/`__` alternatives are guarded against INTRAWORD matches, per CommonMark. A
+# snake_case identifier written as prose is otherwise read as emphasis and its
+# underscores are EATEN: `agent_logs/executed_verbose/x.log` rendered as italic
+# "agentlogs/executedverbose/x.log" on a real ticket — a path the reader cannot copy,
+# and silently wrong rather than visibly broken. Underscores are far more common in
+# our prose (table names, field names, file paths) than intraword emphasis ever is.
 # The ticket-key alternative is built from $ctx.prefix (e.g. "APP", the project's own
 # key) rather than a generic [A-Z]+-[0-9]+ pattern — a generic pattern false-positives
 # on ISO-8601/UTF-8/RFC-2119-shaped prose that is not a ticket reference at all. When
@@ -85,7 +95,7 @@ def adf_append_media($media):
 def _md_first($s; $ctx):
   ( ($ctx.prefix // "") ) as $p0
   | (if ($p0 | length) > 0 then $p0 else "NOPFX" end) as $p
-  | [ $s | match("(`[^`]+`)|(\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|(__[^_]+__)|(\\*[^*]+\\*)|(_[^_]+_)|(\\b\($p)-[0-9]+\\b)|(https?://[^\\s<>()\\[\\]\"'`]*[^\\s<>()\\[\\]\"'`.,;:!?])") ] | .[0];
+  | [ $s | match("(`[^`]+`)|((?<!!)\\[[^\\]]+\\]\\([^)]+\\))|(\\*\\*[^*]+\\*\\*)|((?<![A-Za-z0-9])__[^_]+__(?![A-Za-z0-9]))|(\\*[^*]+\\*)|((?<![A-Za-z0-9_])_[^_]+_(?![A-Za-z0-9_]))|(\\b\($p)-[0-9]+\\b)|(https?://[^\\s<>()\\[\\]\"'`]*[^\\s<>()\\[\\]\"'`.,;:!?])") ] | .[0];
 def _adf_plain($s): if (($s // "") | length) == 0 then [] else [{ type: "text", text: $s }] end;
 
 # Parse inline Markdown into ADF text nodes with marks (strong/em/code/link).
@@ -154,10 +164,38 @@ def _adf_table($rows; $ctx):
         + ( $t.body | map({type:"tableRow", content: (map({type:"tableCell", attrs:{}, content:[_adf_para(.; $ctx)]}))}) )
       ) };
 
+# --- Images → ADF media (write side) ---------------------------------------------
+# `![alt](attachment:<id>)` renders an issue ATTACHMENT inside the body/comment, so
+# evidence (a test screenshot, a rendered load-test report) sits in the prose that
+# explains it instead of only in the Attachments panel. `<id>` is the numeric id the
+# attachments endpoint returns on upload — see tracker_add_attachment, which prints it
+# for exactly this purpose. An image token that is NOT alone on its line stays literal
+# text: a media node is block-level in ADF, so there is nowhere valid to put it inside a
+# paragraph, and a silent drop would lose the evidence without saying so.
+#
+# Two block shapes, because they read differently:
+#   one image on a line  → mediaSingle, full width — for a failure a human must SEE.
+#   many images on a line → mediaGroup, a thumbnail strip — for pass evidence that is
+#                           proof-of-record, not something anyone reads one by one.
+def _md_image_ids($l):
+  [ $l | scan("!\\[[^\\]]*\\]\\(attachment:([^)]+)\\)") | .[0] ];
+# A line is a media BLOCK only when it holds nothing but image tokens (and whitespace).
+def _is_media_line($l):
+  (($l | test("!\\[[^\\]]*\\]\\(attachment:[^)]+\\)"))
+   and ($l | gsub("!\\[[^\\]]*\\]\\(attachment:[^)]+\\)"; "") | test("^\\s*$")));
+def _adf_media($id):
+  { type:"media", attrs:{ type:"file", id:$id, collection:"" } };
+def _adf_media_node($ids):
+  if ($ids | length) == 1
+  then { type:"mediaSingle", attrs:{layout:"center"}, content:[ _adf_media($ids[0]) ] }
+  else { type:"mediaGroup", content:( $ids | map(_adf_media(.)) ) }
+  end;
+
 # Classify one (non-fence, non-blank, non-table) line into a token {kind, level?, text?}.
 def _md_classify:
   . as $l
-  | if   ($l|test("^### "))             then {kind:"h",      level:3, text:($l|sub("^### ";""))}
+  | if   (_is_media_line($l))           then {kind:"media",  ids:(_md_image_ids($l))}
+    elif ($l|test("^### "))             then {kind:"h",      level:3, text:($l|sub("^### ";""))}
     elif ($l|test("^## "))              then {kind:"h",      level:2, text:($l|sub("^## ";""))}
     elif ($l|test("^# "))               then {kind:"h",      level:1, text:($l|sub("^# ";""))}
     elif ($l|test("^[-*] \\[ \\] "))    then {kind:"bullet",  text:("[ ] " + ($l|sub("^[-*] \\[ \\] ";"")))}
@@ -173,6 +211,7 @@ def _md_classify:
 def _md_tok_to_node($ctx):
   . as $t
   | if   $t.kind == "h"     then { type:"heading", attrs:{level:$t.level}, content:_adf_text($t.text; $ctx) }
+    elif $t.kind == "media" then _adf_media_node($t.ids)
     elif $t.kind == "rule"  then { type:"rule" }
     elif $t.kind == "quote" then { type:"blockquote", content:[_adf_para($t.text; $ctx)] }
     elif $t.kind == "code"  then ((_adf_text_plain($t.text)) as $c

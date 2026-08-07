@@ -1,6 +1,6 @@
 ---
 name: report-test-results
-description: Gather the automation run results for a ticket and report them on the ticket as a concise, human-readable summary. Reads the run logs (logs/test-<platform>.log via `npm run why`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-scenario results table tied to the plan to agent_logs/<KEY>-report.md and posts it with scripts/tracker/add-ticket-comment.sh. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
+description: Gather the automation run results for a ticket and report them on the ticket as a concise, human-readable summary WITH the run's own screenshots embedded in the comment. Reads the run summary (`scripts/dev.sh why test`), the run's artifacts (`scripts/dev.sh artifacts`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-TC results table to agent_logs/<KEY>-report.md and posts it with the evidence attached. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---
@@ -13,46 +13,68 @@ arguments: [ticket]
 
 When the resolved language is **`th`**, write every ticket description, spec, acceptance criterion, and comment you post (the ticket Summary/title itself stays on the English spine) in **Thai prose with an English spine** — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code, checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files), **and ANY file you author with a `.md` extension** (plans, testcases, PRD/summary Markdown in `agent_logs/`) are **never** Thai — the `th` prose rule applies to chat, tickets, PR/MR discussion, Slack, and `.html` docs only. Default **`en`** = unchanged; this block is a no-op. Full policy: `docs/agents/language.md`.
 
-Turn a finished automation run into a short, readable verdict on the ticket — a results table a non-engineer can read, tied scenario-by-scenario to the test plan. **Report only — never run `npm test` or write test code.** Build the report from artifacts that already exist (the run already happened in `coding-automate`), then post it with `add-ticket-comment.sh`. If the suite passed or failed, report **the same way** — same table, same structure; a failure just fills in the failure rows.
+Turn a finished automation run into a short, readable verdict on the ticket — a results table a non-engineer can read, tied row-by-row to the test plan, **with the run's own screenshots in the comment beside the rows they belong to**. **Report only — never run the suite or write test code.** Build the report from artifacts that already exist (the run happened in `coding-automate`). If the suite passed or failed, report **the same way** — same table, same structure; a failure just fills in the failure rows.
+
+**The repo owns its stack; this skill knows none of it.** Cypress, Newman, k6, Playwright, Appium — it does not matter here. Everything you need comes from the repo's own harness, **`scripts/dev.sh`**, which every repo in this workspace has. Never reach for `npm test` / `npm run why`: in this workspace's Cypress repos `npm test` is a stub that exits 1.
 
 ## 1. Resolve the ticket and gather the inputs
 
-- Resolve the ticket: `$ticket` (a key, e.g. `FM-9`/`APP-123`) given → use it; already in context → reuse it; neither → ask for the key.
-- **Test plan — the row source / reference:** read **`agent_logs/<FM>-testcases.md`**. Its BDD scenarios are the rows of the results table and define what each scenario *should* do (its `Then`). If it says **"Nothing to test"**, there are no results to report — say so and stop. Keep any **Regressions** list for the coverage note.
-- **Coverage context:** read **`agent_logs/<FM>-automation-plan.md`** if present, to know which scenarios were **Automatable / Partial / Manual-only** — so an un-run scenario is reported as *not automated*, not silently dropped or counted as a pass.
-- **Bug details:** read **`agent_logs/<FM>-bugs.md`** if present — the reproducible app bugs `coding-automate` logged. These populate the failure rows and the Failures section.
+- Resolve the ticket: `$ticket` (a key, e.g. `APP-2245`) given → use it; already in context → reuse it; neither → ask for the key.
+- **Test plan — the row source:** read **`agent_logs/<KEY>-testcases.md`**. Its `TC<nnn>` scenarios are the rows of the results table and define what each should do (its `Then`). If it says **"Nothing to test"**, there are no results to report — say so and stop. Keep any **Regressions** list for the coverage note.
+- **Coverage context:** read **`agent_logs/<KEY>-automation-plan.md`** if present, to know which scenarios were **Automatable / Partial / Manual-only** — so an un-run scenario is reported as *not automated*, never silently dropped or counted as a pass.
+- **Bug details:** read **`agent_logs/<KEY>-bugs.md`** if present — the reproducible app bugs `coding-automate` logged. These populate the failure rows.
 
-## 2. Determine the results — `npm run why`
+## 2. Determine the results — `scripts/dev.sh why test`
 
-The freshest verdict lives in the run logs, and `why` reads them without a device or a re-run:
+The freshest verdict lives in the run log, and `why` reads it without a re-run:
 
-- Run **`npm run why`** (both platforms; or `npm run why <platform>` for one). It prints, per platform, either `✓ no errors in logs/test-<platform>.log` (**pass**) or `✖ …` with the thrown error + its `test.js`/`pages/`/`config/` frame and any failed selector lookups (**fail**).
-- **No logs** (`no log at … (run npm test first)`) → there are no results to report. Stop and tell the user to run `/coding-automate <FM>` (or `npm test`) first — don't fabricate a result.
-- Map each test-plan scenario to its outcome per platform: ✅ pass, ❌ fail, or — not automated (Manual-only/Partial from the plan). Be faithful to what the logs actually show — if the run is one combined flow rather than per-scenario specs, report at that granularity and note it rather than inventing per-scenario detail.
+- Run **`scripts/dev.sh why test`** from the suite repo. It prints the run's `SUMMARY:` line(s) and exit code, then the failure detail.
+- **No log** (`no test run yet` / `no logs for 'test'`) → there are no results to report. Stop and tell the user to run `/coding-automate <KEY>` first — **don't fabricate a result.**
+- The `SUMMARY:` lines are the harness's own account of what ran, and their shape **is** the report's shape. One tool that ran → one result column. Several (`cypress … newman …`) → one column each. Be faithful to what the summary actually says: if the run is one combined flow rather than per-test results, report at that granularity and note it rather than inventing per-scenario detail.
+- Map each test-plan `TC<nnn>` to its outcome: ✅ pass, ❌ fail, or — not automated (Manual-only/Partial from the plan).
 
-## 3. Build the human-readable report
+## 3. Collect the evidence — `scripts/dev.sh artifacts`
 
-Read **`report-template.md`** (next to this skill), fill every `{{ … }}` placeholder, delete the `<!-- … -->` guidance comments and unused rows/blocks, and write the result to **`agent_logs/<FM>-report.md`** (create `agent_logs/` if missing).
+Run **`scripts/dev.sh artifacts`**. Each row is `<TC-id>\t<kind>\t<path>`, and only files newer than the run are listed, so nothing left over from an earlier ticket can be reported as this run's evidence.
 
-- **Title line** — ticket number, overall verdict (`PASS`/`FAIL`), and a per-platform mark (`Android ✓ · iOS ✗`).
-- **One-line summary** — e.g. *"5 of 6 planned scenarios automated; all pass on Android, 1 fails on iOS."*
-- **Results table** — one row per test-plan scenario: `# · Scenario · Android · iOS · Notes`. Keep cells terse (✅/❌/—, a few words of note, a bug reference). Concise and skimmable beats exhaustive.
-- **Failures** — include this section **only if any ❌**. One short block per failing scenario: expected (the plan's `Then`) vs actual, and the `npm run why` signal (error + `file:frame`, log path). Pull specifics from `agent_logs/<FM>-bugs.md`. Same concise style as the rest — don't paste raw logs.
-- **Coverage** — automated count vs total planned, which scenarios were not automated (Manual-only/Partial) with a one-line reason, and the regression checks' status if the plan listed any.
+- **`<TC-id>`** joins the artifact to a table row. A row whose id is `-` belongs to no single scenario (the run video, the whole-suite report) — reference it under Coverage, not in a row.
+- **`<kind>`** is `fail-screenshot`, `screenshot`, `video`, or `report` (a load suite adds `data`).
+- **No rows on a green run** means the specs never captured anything. Say so plainly in the report — "no screenshots captured" — and do not present the run as evidenced. Do **not** go fix the specs; that is `coding-automate`'s job.
+- An `.html` report can be turned into a picture worth attaching:
+  ```sh
+  scripts/pdf/render.sh <the report.html> agent_logs/<KEY>-artifacts/<KEY>-report.png --png
+  ```
 
-## 4. Post it to the ticket — `add-ticket-comment.sh`
+## 4. Build the human-readable report
 
-Post the report file **verbatim** via stdin (preserves multi-line Markdown, dodges shell-quoting hazards):
+Read **`report-template.md`** (next to this skill), fill every `{{ … }}` placeholder, delete the `<!-- … -->` guidance comments and unused rows/blocks, and write the result to **`agent_logs/<KEY>-report.md`** (create `agent_logs/` if missing).
+
+- **Title line** — ticket, overall verdict (`PASS`/`FAIL`), and the harness's own per-tool marks (`cypress ✓ · newman ✗`).
+- **One-line summary** — e.g. *"5 of 6 planned scenarios automated; all pass."*
+- **Results table** — one row per test-plan `TC<nnn>`: `TC · Scenario · Result · Evidence · Notes`. Keep cells terse.
+- **Failures** — **only if any ❌.** One short block per failing `TC`: expected (the plan's `Then`) vs actual, the `why` signal, and the failure screenshot. No raw logs.
+- **Coverage** — automated count vs total planned, which scenarios were not automated (with a one-line reason), the regression checks' status if the plan listed any, and the run-wide artifacts (video, report).
+
+## 5. Post it to the ticket — with the evidence in the comment
+
+Attaching and embedding is **`/update-ticket`'s** job — read its §4 for the exact moves (rename → upload with `--embed-id` → `![alt](attachment:<id>)` alone on a line) rather than improvising them here. What this skill decides is **which** files go up and **how they lay out**:
+
+- **A failing `TC`** → its `fail-screenshot`, **alone on its own line** inside that TC's Failures block, so it renders full-width. A reviewer has to actually look at this one.
+- **Passing `TC`s** → their `screenshot`s, **all on ONE line** under the Results table, so they render as a thumbnail strip. This is proof-of-record, not something anyone reads one by one.
+- **The rendered run report** (§3) → one line under Coverage.
+- **Video** → attach only when a failure is a sequence a still cannot show. It is large and rarely opened.
+
+Rename every file before upload — `<KEY>-TC001-fail.png`, `<KEY>-report.png` — into `agent_logs/<KEY>-artifacts/`, suffixing the round (`-r2`) on a re-run. Then post the finished Markdown verbatim via stdin:
 
 ```sh
 scripts/tracker/add-ticket-comment.sh <KEY> < agent_logs/<KEY>-report.md
 ```
 
-- Preview first if unsure of the resolved ticket: append `--dry-run` to print the request body instead of sending.
-- **Markdown-literal caveat:** some trackers store comments as plain/rich text, so `#`, `**bold**`, and `|table|` pipes may show up **literally**, not rendered. The content is faithful; only live styling may not be — so keep the layout readable as plain monospace text (the template's table already is).
-- Moving the ticket's **Status** (e.g. → `Done` on a clean pass) is **not** this skill's job — that's `/update-ticket`. Mention it if the run warrants it, but don't change status here.
+- Preview with `--dry-run` if unsure of the resolved ticket.
+- **Only Jira embeds images.** On another provider the upload dies loud and the comment still posts — the words are the deliverable, the pictures are the proof. Say which you got.
+- Moving the ticket's **Status** is **not** this skill's job — that's `/update-ticket`. Mention it if the run warrants it; don't change it here.
 
-## 5. Requirements & report back
+## 6. Requirements & report back
 
-- Needs `scripts/tracker/.env` configured for the active `TRACKER_PROVIDER` (plus `curl` + `jq`) — see `scripts/tracker/README.md`. If `add-ticket-comment.sh` errors (no creds, ticket not found, empty body), **surface the exact error and stop** — don't retry blindly.
-- Finish by reporting back: the overall verdict and per-platform result, the path to `agent_logs/<KEY>-report.md`, and the posted comment id (or the dry-run preview).
+- Needs `scripts/tracker/.env` configured for the active `TRACKER_PROVIDER` (plus `curl` + `jq`) — see `scripts/tracker/README.md`. If a tracker script errors (no creds, ticket not found, empty body), **surface the exact error and stop** — don't retry blindly.
+- Finish by reporting back: the overall verdict, the path to `agent_logs/<KEY>-report.md`, the posted comment id (or the dry-run preview), and **how many artifacts were attached** — including "none" when the run captured nothing.

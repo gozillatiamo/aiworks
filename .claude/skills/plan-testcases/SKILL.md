@@ -43,6 +43,8 @@ If the ticket introduces **no user-observable behavior worth verifying** — a c
 
 `Given / When / Then`, **at least 3, never more than 6**. Cover the happy path, the key edge case(s), and error/offline where the ticket implies them — and every acceptance criterion. Each scenario has a distinct, self-contained purpose and a clear title.
 
+**Give every scenario a `TC<nnn>` id** — `TC001`, `TC002`, … numbered from 1 within this plan, never reused. This plan **owns** the id. It is the join key for everything downstream: the automated test's title repeats it verbatim, so the runner stamps it into each screenshot/video filename, and the results report ties a row and its evidence back to this scenario. Drop the id here and the evidence arrives on the ticket attached to nothing.
+
 **Write in the user's voice, not an engineer's.** Describe what the user *does* and *sees* on screen — name buttons, screens, and messages the way the app labels them to the user ("the **Save** button", "a *Saved* confirmation").
 
 **Forbidden** — never appears in a case: source identifiers, class or page-object names, selectors (`//…`, `$(…)`), file paths, API endpoints, database/field names, or any technical jargon. If you can't name something without code, name it the way the user sees it.
@@ -59,7 +61,7 @@ Pull regression scope **only** from the developer's "⚠️ Regression request".
 The plan's layout lives in a separate file: **`test-plan-template.md`** (next to this skill). Read it, fill every `{{ … }}` placeholder, and write the result to `agent_logs/<FM>-testcases.md` (create `agent_logs/` if missing). Delete the `<!-- … -->` guidance comments and any leftover placeholder blocks.
 
 - **Title line** — fill the ticket number and the QA engineer's name (you — e.g. `Peter` when run by qa-planner). Keep `· Status → Testing`.
-- **Scenarios** — one `### Scenario N — …` block per case (3–6 total); remove the unused `### Scenario` placeholders.
+- **Scenarios** — one `### TC00N — …` block per case (3–6 total); remove the unused `### TC` placeholders.
 - **Regressions** — keep this block **only** if the dev filed a "⚠️ Regression request" (one bullet per feature). No request → delete the whole `**Regressions**` block.
 - **Nothing to test** — keep only the title line and replace the body with a single `**Nothing to test** — <one-line reason>.` (drop the scenarios and regressions).
 

@@ -22,6 +22,8 @@
 #                                             CORE input, fetch before treating a ticket as understood
 #   tracker_download_attachment KEY REF DEST — download one attachment (REF = filename, id, or URL
 #                                             per provider) to a local path DEST, for viewing (e.g. Read)
+#   tracker_remove_attachment KEY DRY REF    — DESTRUCTIVE: delete one attachment (REF = filename or id)
+#   tracker_delete_ticket KEY DRY SUBTASKS   — DESTRUCTIVE: delete the whole ticket (SUBTASKS = 0|1)
 #   tracker_comments_for_block BLOCK_ID     — internal --deep worker (no-op for providers without it)
 #
 # A ticket KEY is provider-neutral: a full key (FM-9 / APP-123), a bare number, or a

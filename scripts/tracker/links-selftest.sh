@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# Link regression for both tracker providers. A URL an agent writes into a ticket —
-# description or comment — must render as a REAL clickable link, must NOT be linked
-# where it is code or already a labelled link, and must survive being read back out
-# (an upsert rewrites the whole description, so a href lost on read is deleted for good).
+# Link + embedded-evidence regression for both tracker providers. A URL an agent writes
+# into a ticket — description or comment — must render as a REAL clickable link, must
+# NOT be linked where it is code or already a labelled link, and must survive being read
+# back out (an upsert rewrites the whole description, so a href lost on read is deleted
+# for good). An `![alt](attachment:<id>)` must become an ADF media node so a screenshot
+# shows up IN the comment, and must NOT become one where it would dangle.
 #
 # Run:  scripts/tracker/links-selftest.sh
 # Exit: 0 = all green, 1 = at least one case regressed.
@@ -84,6 +86,44 @@ tt() {
 tt "bare url linked"      '["https://x.com/a"]'       'Artifact: https://x.com/a'
 tt "labelled link linked" '["https://example.com/x"]' 'Artifact: [the plan](https://example.com/x)'
 tt "empty string safe"    '[]'                        ''
+
+echo "--- jira: md_to_adf embedded evidence (![alt](attachment:<id>)) ---"
+# A test screenshot / rendered load report must land IN the prose that explains it.
+# One image alone on a line = mediaSingle (a failure a human must see); several on one
+# line = mediaGroup (a thumbnail strip of pass evidence). Anything else stays literal
+# rather than becoming a media node pointing at a file Jira cannot resolve.
+MEDIA='[.. | objects | select(.type=="mediaSingle" or .type=="mediaGroup") | {n:.type, ids:[.content[].attrs.id]}]'
+t "single image is mediaSingle"   '[{"n":"mediaSingle","ids":["10501"]}]'          "$MEDIA" '![TC004 fail](attachment:10501)'
+t "two images are one mediaGroup" '[{"n":"mediaGroup","ids":["10502","10503"]}]'   "$MEDIA" '![TC001](attachment:10502) ![TC002](attachment:10503)'
+t "image after heading kept"      '[{"n":"mediaSingle","ids":["7"]}]'              "$MEDIA" '### TC004 — Error path
+![shot](attachment:7)'
+t "non-attachment image not media" '[]'                                            "$MEDIA" '![logo](https://x.com/logo.png)'
+t "image mid-prose not media"     '[]'                                             "$MEDIA" 'see ![shot](attachment:99) here'
+t "image mid-prose not a link"    '[]'                                             "$HREFS" 'see ![shot](attachment:99) here'
+t "prose link beside image line"  '["https://x.com/r"]'                            "$HREFS" '![TC001](attachment:1)
+Full run: [the report](https://x.com/r)'
+
+echo "--- jira: md_to_adf snake_case survives (intraword _ is not emphasis) ---"
+# A snake_case identifier in prose used to be parsed as emphasis, which ATE the
+# underscores: agent_logs/executed_verbose became italic "agentlogs/executedverbose".
+# Measured on a real ticket. Underscores in our prose are table/field/path names far
+# more often than they are intraword emphasis, and CommonMark forbids the latter too.
+TXTS='[.. | objects | select(.type=="text") | .text] | join("")'
+EM='[.. | objects | select(.type=="text") | select(([.marks[]?|select(.type=="em")]|length)>0) | .text]'
+t "snake_case path keeps underscores" '"log: agent_logs/executed_verbose/test.log"' "$TXTS" 'log: agent_logs/executed_verbose/test.log'
+t "…and is not italicised"            '[]'                                          "$EM"   'log: agent_logs/executed_verbose/test.log'
+t "a lone snake_case word survives"   '"see bet_payout_stream now"'                 "$TXTS" 'see bet_payout_stream now'
+t "snake_case survives inside a table" '["a","b","cell","agent_logs/x.log"]' '[.. | objects | select(.type=="text") | .text]' '| a | b |
+| --- | --- |
+| cell | agent_logs/x.log |'
+# RESIDUAL, deliberately pinned: a SPACE-DELIMITED __dunder__ is still read as strong —
+# CommonMark says the same, so `__init__` in prose renders bold and loses its
+# underscores. The fix for that one is backticks, not a looser emphasis rule; pinning it
+# here so the behaviour is a known contract rather than a surprise found on a ticket.
+t "space-delimited __dunder__ is still strong (backtick it)" '"call init first"' "$TXTS" 'call __init__ first'
+t "real emphasis still works"         '["emphasised"]'                              "$EM"   'this is _emphasised_ text'
+t "emphasis at line start works"      '["start"]'                                   "$EM"   '_start_ of the line'
+t "asterisk emphasis unaffected"      '["still"]'                                   "$EM"   'this is *still* italic'
 
 echo "--- notion: md_to_blocks autolink ---"
 t "bare url linked"          '["https://x.com/a"]'       "$NHREFS" 'Doc: https://x.com/a' notion
