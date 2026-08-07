@@ -13,7 +13,9 @@ arguments: [ticket]
 
 When the resolved language is **`th`**, write the prose you author in **Thai prose with an English spine** — but note the `.md` deliverable itself (the plan/testcases Markdown in `agent_logs/`) stays **English regardless**; only an `.html` render (via `/write-interactive-docs`) is localized to Thai — titles + every section heading + labels/enum values, ALL code + identifiers + commit messages + branch names, and technical / transliterated / domain terms + proper nouns stay English (Arabic numerals always); the sentences themselves are Thai. **Code, checked-in repo docs** (`docs/`, `README`, ADRs, committed PRD/BRD files), **and ANY file you author with a `.md` extension** (plans, testcases, PRD/summary Markdown in `agent_logs/`) are **never** Thai — the `th` prose rule applies to chat, tickets, PR/MR discussion, Slack, and `.html` docs only. Default **`en`** = unchanged; this block is a no-op. Full policy: `docs/agents/language.md`.
 
-Turn an approved test plan into an implementation plan for automating it the way **this** project does automation. **Plan only — never write Page Objects/specs and never run the app or `npm test`.** The output is a Markdown file in `agent_logs/`, produced by filling the shared `automation-plan-template.md`.
+Turn an approved test plan into an implementation plan for automating it the way **this** project does automation. **Plan only — never write Page Objects/specs and never run the app or the suite.** The output is a Markdown file in `agent_logs/`, produced by filling the shared `automation-plan-template.md`.
+
+**The repo owns its stack; this skill knows none of it.** A test-suite repo here may be Cypress, Newman, k6, Playwright, Appium, or whatever the team adopts next. Read the repo's own `CLAUDE.md` and `.claude/rules/` for its layout, naming, and idiom before planning anything, and run the suite only through **`scripts/dev.sh`** (the per-repo harness — `test`, `analyze`, `why <name>`, `artifacts`). Never assume `npm test` exists: in this workspace's Cypress repos it is a stub that exits 1.
 
 ## 1. Read the test plan — the input
 
@@ -24,20 +26,22 @@ Turn an approved test plan into an implementation plan for automating it the way
 
 ## 2. Survey the project — so the plan fits real conventions
 
-Map what already exists so the plan reflects it, not a generic template — **codegraph FIRST.** Query the repo's codegraph index (`codegraph explore` for "where are the Page Objects / how is the runner wired", `codegraph query` for a named Page Object/method, `codegraph callers` for reuse) instead of a grep+read sweep; it is the pre-built index for this repo. Reserve `Grep`/`Glob`/`Read` for a last-resort detail codegraph didn't surface. The artifacts to map:
+Map what already exists so the plan reflects it, not a generic template — **codegraph FIRST.** Query the repo's codegraph index (`codegraph explore` for "where are the Page Objects / how is the runner wired", `codegraph query` for a named Page Object/method, `codegraph callers` for reuse) instead of a grep+read sweep; it is the pre-built index for this repo. Reserve `Grep`/`Glob`/`Read` for a last-resort detail codegraph didn't surface. What to map, in the repo's OWN terms:
 
-- `pages/*.js` — existing Page Objects to **reuse**, and the idiom to follow (see `pages/WelcomePage.js`): a `class` with `constructor(driver)`, selector **getters** returning `this.driver.$('~accessibility-id')`, an `isLoaded()` bounded-wait check, and intent-named action methods. **No assertions, no test logic in a Page Object.**
-- `config/capabilities.js` — platform caps + the app-under-test id. That id is declared in the workspace `workspace.config.yaml` (the mobile app repo's `app_id` under `products[].repos[]`); `config/capabilities.js` must match it. Selectors prefer the cross-platform accessibility-id (`~`) — branch android/ios only when the labels actually differ.
-- `test.js` + `scripts/run-tests.js` — how a spec is run today. **Note the current reality:** there is no `tests/` directory yet and the runner executes only the hardcoded root `test.js`, so "where the new spec lives and how it gets run" is a real planning item, not a given.
+- **Page Objects to reuse, and the idiom to copy.** Where they live and what they look like differs per repo (`cypress/pageObjects/` extending a `BasePage` with a `selectors={}` map; `cypress/page-object/` singletons; a `class` taking a driver). Find one and follow it exactly. **No assertions, no test logic in a Page Object** — that rule holds everywhere.
+- **How a spec is discovered and run**, and what the repo's own harness calls it (`scripts/dev.sh test`, and any sub-mode such as `test api` / `test all`). If a new spec would not be picked up by the existing wiring, that is a real planning item.
+- **Config and target selection** — which environment the suite points at and how it is chosen (an env var, a config fixture). Automated runs default to **local**; staging is an explicit, QA-reserved opt-in. Never hardcode a target.
+- **Selector strategy** — the repo's preferred attribute (`data-cy`, an accessibility id, a role). Never invent one.
 
 ## 3. Map each scenario to POM artifacts
 
-For every BDD scenario in the test plan, work out:
+For every `TC<nnn>` scenario in the test plan, work out:
 
-- **Screens → Page Objects.** Reuse an existing `pages/*.js`, or add a new `pages/<Screen>Page.js`. Name it after the screen as the user sees it.
-- **Interactions → action methods** on the relevant Page Object (intent, not mechanics — `openHealthStep()`, `enterWeight(kg)`), returning elements/values or another Page Object. Specs must **never** carry a raw selector.
+- **Screens → Page Objects.** Reuse an existing one, or add a new one named after the screen as the user sees it, in the repo's own directory and idiom.
+- **Interactions → action methods** on the relevant Page Object (intent, not mechanics — `openWithdrawForm()`, `enterAmount(n)`), returning elements/values or another Page Object. Specs must **never** carry a raw selector.
 - **Assertions → the spec**, never the Page Object.
-- **Don't invent selectors.** List the elements whose accessibility-id / locator must be **confirmed against the app**, with the proposed strategy (`~` first; android/ios fallback only if needed).
+- **The `TC<nnn>` id carries through to the test title.** Name the plan's target test title so it opens with the id (`TC001 - Success : …` in this workspace's Cypress repos). That is what stamps the id into the run's screenshot filenames, which is what lets the results report attach the right evidence to the right row.
+- **Don't invent selectors.** List the elements whose locator must be **confirmed against the app**, with the proposed strategy in the repo's preferred form.
 
 ## 4. Decide what's automatable
 
@@ -45,8 +49,9 @@ Mark each scenario **Automatable / Partial / Manual-only** with a one-line reaso
 
 ## 5. Plan the spec + runner wiring and prerequisites
 
-- Where the spec(s) live (`tests/` per `CLAUDE.md`) and **how they get executed** — call out the change needed since `run-tests.js` runs only `test.js` today (e.g. discover `tests/*.spec.js`, or have an entry import them). Describe it as a plan item; don't make the change here.
-- App-under-test prerequisites: build/install the app, any **test-data reset** the plan needs (e.g. a clean reinstall precondition), and that platform caps already exist in `config/capabilities.js`.
+- Where the spec(s) live per the repo's `CLAUDE.md`, and **how they get executed** by `scripts/dev.sh test`. If the existing wiring would not pick the new spec up, describe the change as a plan item; don't make it here.
+- **Evidence capture.** Every scenario ends by capturing a screenshot, so a passing run leaves proof and not just a green tick — name the capture call the repo's own API provides and where its output lands. The implementer wires it; the plan says it is required.
+- App-under-test prerequisites: how the app gets built/started, any **test-data reset** the plan needs, and any config the target selection requires.
 - **Ground truth first** — any prerequisite/seed data the plan calls for must mirror a **real** entity's full row-set (check the schema + `docs/adr/` + `CONTEXT*.md`), not a minimal stub: a stub missing a row the app's own queries require makes the test fail for a non-feature reason. See [`../ground-truth-first.md`](../ground-truth-first.md).
 
 ## 6. Fill the template and write to agent_logs/

@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # scripts/pdf/render.sh — render an HTML or Markdown doc (image + Mermaid diagram
-# illustrations) to a PDF via headless Chrome.
+# illustrations) to a PDF, or to a full-page PNG screenshot, via headless Chrome.
 #
 #   ./render.sh <input.html|.md> <output.pdf> [--format A4|Letter] [--timeout ms] [--margin 14mm]
+#   ./render.sh <input.html|.md> <output.png> --png [--width 1280] [--expand] [--timeout ms]
+#
+# The PDF is a clean re-typeset document; --png is a screenshot of the page as it renders
+# (for results that ARE a rendered page — a k6 run report, a coverage summary); add --expand
+# to reveal collapsed tabs first, or the shot carries only the open one. See pdf.mjs.
 #
 # Resolves a Chromium-family browser in this order, so it runs on a mac dev box AND a
 # headless cloud host with no code change:

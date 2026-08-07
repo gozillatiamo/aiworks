@@ -6,10 +6,30 @@
 // headless Chromium-family browser driven by puppeteer-core.
 //
 //   node pdf.mjs <input.html|.md> <output.pdf> [--format A4|Letter] [--timeout ms] [--margin 14mm] [--as-is]
+//   node pdf.mjs <input.html|.md> <output.png> --png [--width 1280] [--timeout ms]
 //
 // Invoke through render.sh, which resolves/provisions the browser and exports CHROME_PATH.
 //
-// Output is a CLEAN, plain document — NOT a screenshot of the interactive page:
+// TWO OUTPUT MODES, and they are deliberately opposites:
+//
+//   default (PDF) — a CLEAN, plain document, NOT a screenshot of the interactive page. The
+//                   detail below describes this mode.
+//   --png         — the exact opposite: a full-page SCREENSHOT of the page as it actually
+//                   renders, chrome and all. It exists because some results ARE a rendered
+//                   page — a k6 HTML run report, a coverage summary — and the point of
+//                   putting one on a ticket is that a human sees what the tool drew. A
+//                   paginated re-typeset of it would be a different, worse artifact. --png
+//                   therefore implies --as-is (never reconstruct the content) and never
+//                   paginates, so --format/--margin do not apply to it.
+//
+// --expand (with --png) reveals content the page keeps COLLAPSED, before capturing. A
+// screenshot is one frozen state, so a tabbed page yields only its open tab: a real
+// k6-reporter run report hides "Test Run Details" and "Checks & Groups" behind CSS
+// radio-tabs, and the checks are the half a QA reader most wants. Best-effort by design —
+// it un-hides the common collapse idioms (CSS radio-tabs, [role=tabpanel], .tab-pane,
+// <details>) and cannot know a bespoke one, so it is opt-in and never silently assumed.
+//
+// Default (PDF) mode:
 //   .md   — converted with `marked`; ```mermaid fences become <pre class="mermaid"> and the
 //           result is wrapped in a minimal document shell that loads the vendored Mermaid.
 //   .html from write-interactive-docs — the page carries an export engine (window.WID) that
@@ -36,7 +56,8 @@ import { marked } from "marked";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VENDOR_MERMAID = path.join(HERE, "vendor", "mermaid.min.js");
 const USAGE =
-  "usage: pdf.mjs <input.html|.md> <output.pdf> [--format A4|Letter] [--timeout ms] [--margin 14mm] [--as-is]";
+  "usage: pdf.mjs <input.html|.md> <output.pdf> [--format A4|Letter] [--timeout ms] [--margin 14mm] [--as-is]\n" +
+  "       pdf.mjs <input.html|.md> <output.png> --png [--width 1280] [--expand] [--timeout ms]";
 
 const warn = (m) => process.stderr.write(`[pdf] warn: ${m}\n`);
 const info = (m) => process.stderr.write(`[pdf] ${m}\n`);
@@ -48,13 +69,16 @@ const die = (m) => {
 // -- args ---------------------------------------------------------------------
 const argv = process.argv.slice(2);
 let input, output;
-const opt = { format: "A4", timeout: 20000, margin: "14mm", asis: false };
+const opt = { format: "A4", timeout: 20000, margin: "14mm", asis: false, png: false, width: 1280, expand: false };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--format") opt.format = argv[++i];
   else if (a === "--timeout") opt.timeout = parseInt(argv[++i], 10) || opt.timeout;
   else if (a === "--margin") opt.margin = argv[++i];
   else if (a === "--as-is") opt.asis = true;
+  else if (a === "--png") opt.png = true;
+  else if (a === "--width") opt.width = parseInt(argv[++i], 10) || opt.width;
+  else if (a === "--expand") opt.expand = true;
   else if (a === "-h" || a === "--help") { process.stdout.write(USAGE + "\n"); process.exit(0); }
   else if (a.startsWith("--")) die(`unknown option: ${a}\n${USAGE}`);
   else if (!input) input = a;
@@ -63,6 +87,10 @@ for (let i = 0; i < argv.length; i++) {
 }
 if (!input || !output) die(USAGE);
 if (!fs.existsSync(input)) die(`no such input: ${input}`);
+// A screenshot of a re-typeset document would defeat the purpose of asking for one.
+if (opt.png) opt.asis = true;
+if (opt.png && !/\.png$/i.test(output)) die(`--png writes a PNG, but the output is '${output}'`);
+if (!opt.png && /\.png$/i.test(output)) die(`output '${output}' looks like a PNG — pass --png`);
 
 const CHROME = process.env.CHROME_PATH;
 if (!CHROME || !fs.existsSync(CHROME))
@@ -113,6 +141,11 @@ function writeShellFile(md, baseHref, title) {
   });
   try {
     const page = await browser.newPage();
+    // A screenshot has no paper size to fall back on, so the viewport IS the layout: fix the
+    // width and let fullPage grow the height to whatever the document turns out to be. The
+    // starting height is deliberately short — fullPage captures max(content, viewport), so a
+    // tall default would pad a small report with blank space.
+    if (opt.png) await page.setViewport({ width: opt.width, height: 400, deviceScaleFactor: 2 });
 
     // Offline-safe Mermaid: serve the vendored bundle for the doc's own CDN <script>.
     await page.setRequestInterception(true);
@@ -170,7 +203,9 @@ function writeShellFile(md, baseHref, title) {
     // The clean shell carries its own print styles; the as-is HTML path ALWAYS gets the
     // fallback appended (last in <head> so its !important wins), regardless of whether the doc
     // ships an id="wid-print" block — that block may be stale/foreign and miss a control class.
-    if (mode === "asis") {
+    // Not for --png: PRINT_CSS is a PRINT stylesheet (it strips controls and unclips
+    // viewports for paper). A screenshot is supposed to show the page as it really is.
+    if (mode === "asis" && !opt.png) {
       await page
         .evaluate((css) => {
           const s = document.createElement("style");
@@ -197,13 +232,30 @@ function writeShellFile(md, baseHref, title) {
       )
       .catch(() => warn("render wait timed out — printing partial (some diagrams may be blank)"));
 
-    await page.pdf({
-      path: output,
-      format: opt.format,
-      printBackground: true,
-      preferCSSPageSize: true,
-      margin: { top: opt.margin, bottom: opt.margin, left: opt.margin, right: opt.margin },
-    });
+    if (opt.png) {
+      if (opt.expand) {
+        await page
+          .evaluate((css) => {
+            const s = document.createElement("style");
+            s.setAttribute("data-pdf-expand", "");
+            s.textContent = css;
+            document.head.appendChild(s);
+            for (const d of document.querySelectorAll("details")) d.open = true;
+          }, EXPAND_CSS)
+          .catch((e) => warn(`expand: ${e.message}`));
+        // Reflow + any lazy content the reveal triggers.
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))).catch(() => {});
+      }
+      await page.screenshot({ path: output, fullPage: true, type: "png" });
+    } else {
+      await page.pdf({
+        path: output,
+        format: opt.format,
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: opt.margin, bottom: opt.margin, left: opt.margin, right: opt.margin },
+      });
+    }
     process.stdout.write(`wrote: ${output}\n`);
   } finally {
     await browser.close().catch(() => {});
@@ -254,3 +306,17 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
   );
 }
+
+// --expand: reveal content the page keeps collapsed, so one screenshot carries the whole
+// report instead of whichever tab happened to be open. Covers the idioms that actually
+// occur in tool-generated reports:
+//   .tabs .tab / .tab-pane / [role=tabpanel]  — a tabbed report (k6-reporter, mochawesome)
+//   [hidden] on a panel                        — the same thing, done with the attribute
+// <details> is opened imperatively (a DOM property, not styling). Deliberately narrow:
+// a blanket `display:block !important` would also unfold menus, modals and tooltips and
+// produce a longer, worse picture than the one it replaced.
+const EXPAND_CSS = `
+  .tabs > .tab, .tab-pane, [role="tabpanel"] { display: block !important; }
+  .tab-pane[hidden], [role="tabpanel"][hidden] { display: block !important; }
+  .tabs > .tab { border-radius: 0 !important; }
+`;
