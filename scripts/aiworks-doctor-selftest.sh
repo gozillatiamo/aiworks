@@ -328,6 +328,50 @@ else
   skipc "live workspace run (no config in this clone)"
 fi
 
+# ── 19 · plugin scope drift + the caveman restart marker ──────────────────────────
+# Both checks read machine state ($HOME plugin registry, $CLAUDE_CONFIG_DIR activation flag), so
+# each case points those at a crafted directory instead of the real one. The pair that matters is
+# 19a/19c: the check must fire on DIVERGENCE and stay silent on mere duplication, because a
+# project-scope entry re-appears on its own and a warn nobody can clear is the defect this file
+# already pins for `gh` currency.
+W="$T/pluginscope"; make_ws "$W"; stage "$W"
+printf '{"hooks":{},"enabledPlugins":{"caveman@caveman":true}}\n' > "$W/.claude/settings.json"
+FH="$T/fakehome"; mkdir -p "$FH/.claude/plugins"
+
+mk_reg() {  # mk_reg <user-version> <project-version>
+  cat > "$FH/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{"caveman@caveman":[
+ {"scope":"user","version":"$1","lastUpdated":"2026-07-20T11:15:27.000Z"},
+ {"scope":"project","projectPath":"$W","version":"$2","lastUpdated":"2026-07-01T00:00:00.000Z"}]}}
+JSON
+}
+# -v so a PASSING check's detail line is visible too — the "duplicate but in step" case asserts on
+# that detail, and without -v the renderer collapses every pass into a single "✓ N ok".
+run_ps() { HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg -v 2>&1; }
+
+mk_reg NEW999 OLD111
+printf 'full' > "$FH/.claude/.caveman-active"; touch -t 202607010000 "$FH/.claude/.caveman-active"
+OUT="$(run_ps)"
+ck "a diverged project-scope copy is a finding"   "drifted from user scope" "$OUT"
+ck "the finding names the plugin"                 "caveman@caveman"         "$OUT"
+ck "an update after the last activation warns"    "updated since the last activation" "$OUT"
+# The rendered owner command is width-truncated ("… (+1 more)"), and the half that gets cut is the
+# settings.json restore — the half whose absence breaks the whole team. Assert on --json, which
+# carries the command whole.
+JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
+ck "the fix restores the committed settings.json" "git checkout -- .claude/settings.json" "$JOUT"
+
+mk_reg SAME777 SAME777
+touch -t 202608010000 "$FH/.claude/.caveman-active"
+OUT="$(run_ps)"
+ck "a duplicate at the SAME version is not a finding" "ABSENT:drifted from user scope" "$OUT"
+ck "activation after the update is not a finding"     "ABSENT:updated since the last activation" "$OUT"
+ck "the duplicate is still reported as context"       "project-scope duplicate" "$OUT"
+
+rm -f "$FH/.claude/.caveman-active"
+OUT="$(run_ps)"
+ck "no activation marker skips rather than warns" "ABSENT:updated since the last activation" "$OUT"
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]

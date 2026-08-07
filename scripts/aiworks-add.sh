@@ -754,9 +754,16 @@ fi
 # today, but the "<skill>|<source>" form keeps multi-source support. Already-present skills are
 # skipped. Project scope is guaranteed by being inside the repo with a .claude/ marker + -y (no
 # --global).
-# NOTE: caveman is intentionally NOT installed per-repo. It's the user-scope `caveman@caveman`
-# plugin (enabledPlugins in the meta repo's .claude/settings.json), and the meta-repo agents
-# invoke the `caveman:caveman` skill themselves, so a per-repo copy would be redundant.
+# NOTE: caveman is deliberately absent from THIS list. For Claude Code it is the user-scope
+# `caveman@caveman` plugin (enabledPlugins in the meta repo's .claude/settings.json) and the agents
+# invoke `caveman:caveman` themselves, so installing it through the `skills` CLI as well would be
+# redundant.
+# It does NOT follow that a repo carries no caveman file — read on before deleting one. Every repo
+# DOES hold a vendored `.claude/skills/caveman/SKILL.md`, committed and content-synced by
+# `aiworks-cursor.sh` (`VENDOR_REPO`), because Cursor cannot see a Claude Code plugin and a symlink
+# to $HOME cannot be committed. Two channels, two consumers: this step serves Claude Code, that one
+# serves Cursor and any clone without the plugin. An earlier version of this NOTE said only the
+# first half and read as "the per-repo copies are strays", which nearly got all 22 of them deleted.
 step "6. Install third-party skills — project scope (one per skill)"
 # "<skill>|<source>" — <source> is the `skills` CLI repo spec that ships that one skill.
 ext_skills=(
