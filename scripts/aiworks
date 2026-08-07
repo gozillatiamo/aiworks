@@ -35,6 +35,19 @@ Output is QUIET by default for sync / setup / run / teardown — only warnings, 
 the closing summary print. Pass -v/--verbose to any of them for the full step-by-step log.
 
 Commands:
+  doctor     Report what is MISSING or BROKEN in this workspace, and print the one command
+             that fixes each thing. Reads by default and writes nothing — every repair below
+             already has an owner (`sync` clones, `setup` links, `cursor` regenerates,
+             `update` upgrades), so what was missing was the surface telling you WHICH to
+             run. Offline and ~4s: config parses · every declared repo cloned · each
+             adapter's REQUIRED vars set (a quiet `grep -q`, never a value) · per-repo dev.sh
+             / CLAUDE.md budget / codegraph index / adapter links · every hook present and
+             executable · the prerequisites on PATH. `--deep` adds what needs a daemon or the
+             network: the MCP stack, local ports, live credential probes, brew currency and
+             worktree disk. Knows it is in a linked worktree and says `cp` from the main
+             clone instead of "go make a token". `--fix` runs the owner commands (never its
+             own repair logic) after showing the plan; exit 1 on any failure, `--strict` also
+             on a warning.
   add        Onboard ONE repo: register it (workspace.config.yaml products[] + mani.d +
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
              seed hooks/permissions, seed the default coding-standards rules
@@ -104,6 +117,13 @@ Commands:
   help       Show this help. Use `aiworks <command> -h` for a command's options.
 
 Examples:
+  # is this workspace actually ready? (read-only, offline, ~4s)
+  aiworks doctor                        # every group; the fix command beside each finding
+  aiworks doctor --deep                 # + daemons, ports, live credentials, brew currency
+  aiworks doctor backoffice             # narrow to one repo
+  aiworks doctor --only adapters -v     # one group, every passing check shown
+  aiworks doctor --fix -n               # what --fix WOULD run, run nothing
+  aiworks doctor --json --strict        # CI: machine-readable, a warning fails too
   # fast path — declare repos under products: in workspace.config.yaml, then:
   aiworks sync                          # onboard every repo in the config
   aiworks sync your-product --dry-run   # preview just the your-product product
@@ -162,6 +182,7 @@ superset_hook() {
 
 cmd="${1:-}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
+  doctor)         exec "$DIR/aiworks-doctor.sh" "$@" ;;
   add)            exec "$DIR/aiworks-add.sh" "$@" ;;
   sync)           exec "$DIR/aiworks-sync.sh" "$@" ;;
   remove|rm)      exec "$DIR/aiworks-remove.sh" "$@" ;;
