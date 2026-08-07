@@ -68,6 +68,37 @@ case "$bare" in
   *) exit 0 ;;
 esac
 
+# THE WRITER MUST BE IN COMMAND POSITION. Naming the script is not calling it: reading one
+# with another tool — `grep -n pattern scripts/vcs/open-pr.sh | head`, `wc -l …/send.sh` —
+# puts the path in OPERAND position, where it is data. The first version matched the token
+# anywhere in the command and blocked those; it blocked two of this guard's own maintenance
+# reads. Third prose-not-code class, after a quoted argument and a heredoc body.
+#
+# So split the (quote-stripped) command on shell control operators and check only the FIRST
+# token of each segment, after peeling what legitimately precedes a command: shell keywords,
+# leading VAR=value assignments, and wrappers that take a command as their argument (`bash
+# x.sh` IS an invocation of x.sh, so peeling `bash` is correct — it must still block).
+#
+# Known gap, accepted: a writer reached indirectly — `xargs …/send.sh`, `find -exec …` —
+# never sits in command position, so it is allowed. Both are exotic next to the `| tail`
+# habit this guard exists for, and the alternative is re-implementing shell parsing.
+printf '%s' "$bare" | perl -e '
+  my $s = do { local $/; <STDIN> };
+  my $w = $ARGV[0];
+  for my $g (split /(?:\|\||&&|\||;|&|\n|\$\(|\x60|\()/, $s) {
+    $g =~ s/^\s+//;
+    1 while $g =~ s/^(?:do|then|else|elif|if|while|until|for|\{|!)\s+//
+         or $g =~ s/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+//
+         or $g =~ s/^(?:sudo|env|command|exec|time|nohup|bash|sh)\s+//;
+    next unless $g =~ /^(\S+)/;
+    exit 0 if $1 =~ m{scripts/(?:vcs|tracker|notify)/(?:$w)$};
+  }
+  exit 1;
+' "$writers"
+# 1 = the writer only ever appears as an operand, so nothing is being invoked. Any other
+# non-zero (no perl, a bad pattern) falls through and blocks — the pre-existing behaviour.
+[ "$?" -eq 1 ] && exit 0
+
 prog=$(printf '%s' "$nobody" | grep -oE "scripts/(vcs|tracker|notify)/($writers)" | head -n1)
 
 {
