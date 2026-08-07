@@ -46,6 +46,10 @@
         "matcher": "Shell"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-adapter-pipe-guard.sh'",
+        "matcher": "Shell"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh'",
         "timeout": 10,
         "matcher": "Read"
@@ -108,6 +112,10 @@
       },
       {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-codegraph-sync.sh'",
+        "matcher": "Write|Edit"
+      },
+      {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-workflow-compile.sh'",
         "matcher": "Write|Edit"
       },
       {
