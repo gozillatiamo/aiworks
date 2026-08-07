@@ -30,8 +30,8 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 - `docs/agents/pii-provenance.md` — egress masks personal data only when a sanctioned PRODUCTION read returned
   that value (keyed hash, never shape), leaving local and staging work untouched.
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace
-  root (`.claude/rules/submodules.md`) · `plan-artifacts.md` — one plan per repo, never committed ·
-  `worktree-gc.md` — `aiworks gc` reclaims Superset worktree disk, bare `gc` only REPORTS.
+  root · `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
+  `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per finding; `--fix` runs those.
 - `docs/agents/figma.md` · `image-generation.md` · `diagram-generation.md` — design, asset and diagram surfaces,
   each behind its own `enabled` flag (default OFF).
 - `scripts/k8s/README.md` — READ-ONLY Kubernetes triage (`k8s_triage` MCP) through a `view`-only impersonated
