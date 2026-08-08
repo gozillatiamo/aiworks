@@ -19,10 +19,11 @@
 #   committed mirror always reflects workspace.config.yaml (shared) ONLY, so no personal pref
 #   ever leaks into a tracked file. (The personal OUTPUT preferences still reach a headless run at
 #   RUNTIME, not through this mirror: dev-cycle.js's resolve-runtime-config sub-agent reads the local
-#   file local-first and resolves `language` + `planning.to_html` into RESOLVED_LANGUAGE /
-#   RESOLVED_PLAN_TO_HTML, making the consts it generates here the FALLBACK DEFAULTS for those two —
-#   see docs/agents/language.md + docs/adr/0003. Control-flow consts (auto_merge, auto_approve,
-#   statuses, REPOS) are shared-only, with no runtime override at all.)
+#   file local-first and resolves `language`, `planning.to_html` + `planning.auto_approve` into
+#   RESOLVED_LANGUAGE / RESOLVED_PLAN_TO_HTML / RESOLVED_AUTO_APPROVE, making the consts it generates
+#   here the FALLBACK DEFAULTS for those three — see docs/agents/language.md + docs/adr/0003. The
+#   IRREVERSIBLE control-flow consts (auto_merge, statuses, REPOS) are shared-only, with no runtime
+#   override at all.)
 #
 # WHAT IT DERIVES (workspace.config.yaml → dev-cycle.js CONFIG)
 #   tracker.ticket_prefix            → const TICKET_PREFIX
