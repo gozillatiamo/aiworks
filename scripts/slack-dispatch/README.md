@@ -86,13 +86,13 @@ the same thread when the agent finishes (`ref: req-…` ties the messages togeth
 A leading `agent:<name>` hands the whole request to that **subagent** instead of letting
 the dispatched session work it directly. Valid names are the workspace's own agent
 definitions — `.claude/agents/<name>.md` (`developer`, `code-reviewer`, `qa-planner`,
-`performance-triage`, …) — read per mention, so adding an agent needs no restart.
+`oncall`, …) — read per mention, so adding an agent needs no restart.
 
 ```
 @aiworks agent:list                                  # who can I route to?
 @aiworks workflow:list                               # what pipelines can I run?
 @aiworks agent:developer implement OFB-45 following the plan on the ticket
-@aiworks agent:performance-triage root-cause the slow payout endpoint in staging
+@aiworks agent:oncall root-cause the slow payout endpoint in staging
 @aiworks agent:qa-planner /plan-testcases OFB-45     # agent + slash command combine
 @aiworks workflow:dev-cycle OFB-45                   # same as `/dev-cycle OFB-45`
 ```
