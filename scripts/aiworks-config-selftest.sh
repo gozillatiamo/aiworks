@@ -170,7 +170,12 @@ ck "…and the run says why the local file was not used for it" \
    "regenerated from workspace.config.yaml (shared) only" "$out"
 
 # 7. Nothing was written. If the script ever grows a write that ignores DRY, this notices.
-if git -C "$ROOT" diff --quiet -- .claude/workflows/dev-cycle.js .claude/workflows/prd.js 2>/dev/null; then
+# `git diff` also exits non-zero when there is no repo AT ALL — an extracted tarball, which is how
+# a person first meets this framework. That is a check that could not run, not a failed assertion,
+# and reporting it as a failure made the suite red out of the box on a fresh clone.
+if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  skipc "not a git checkout (an extracted tarball) — no baseline to diff the workspace against"
+elif git -C "$ROOT" diff --quiet -- .claude/workflows/dev-cycle.js .claude/workflows/prd.js 2>/dev/null; then
   ok "the suite wrote nothing into the workspace"
 else
   bad "the suite wrote nothing into the workspace" "dev-cycle.js or prd.js changed"
