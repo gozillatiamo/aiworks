@@ -139,7 +139,7 @@ against local source, that is a **developer** step inside `/diagnosing-bugs`, an
 sanctioned way to move prod-derived data onto local disk is **`scripts/db/prod_repro_seed.py`**
 — it masks external PII, is entity-scoped, and loads into a **throwaway `repro_<KEY>` DB**
 that `--teardown` DROPs wholesale. Never hand-craft local `INSERT`s from prod values.
-Investigation agents (e.g. `performance-triage`) do **not** seed — they read, find, and hand
+Investigation agents (e.g. `oncall`) do **not** seed — they read, find, and hand
 the fix off.
 
 ## Reporting

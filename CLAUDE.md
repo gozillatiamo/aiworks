@@ -16,7 +16,7 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so it is already in context. Keys documented
   in `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither — the rule beside it.
-- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0007`).
+- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0008`).
 - `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`):
   author on the Claude side, never hand-edit `.cursor/`, and open the `.code-workspace` **file**, not the folder.
 - `docs/agents/language.md` · `caveman.md` · `voice.md` · `stagehand.md` — the always-on output conventions,
