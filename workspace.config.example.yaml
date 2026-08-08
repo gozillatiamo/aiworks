@@ -92,7 +92,7 @@ notify:
                                    #   webhook live in scripts/notify/.env (seeded by `aiworks sync`).
 
 # ── Observability (the traces/logs the perf + triage agents read) ──────────────
-# Where the performance-engineer and performance-triage agents get ground truth about a
+# Where the performance-engineer and oncall agents get ground truth about a
 # RUNNING environment. Read through the observability adapter (scripts/observability/),
 # provider-agnostic like vcs/tracker/notify.
 observability:

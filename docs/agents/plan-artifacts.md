@@ -17,6 +17,13 @@ One plan file **per touched repo**, inside that repo:
 | Test cases | `<repo>/agent_logs/<KEY>-testcases.md` |
 | Logged bugs (bug round) | `<repo>/agent_logs/<KEY>-bugs.md` |
 | Run report | `<repo>/agent_logs/<KEY>-report.md` |
+| Production case file | `<script-repo>/agent_logs/<CASE>-report.md` |
+
+The **case file** is the one artifact that is not per touched repo: a production case is
+investigated across whatever repos the symptom crosses and often names none of them, so it lands in
+the repo declared `kind: script` — the same repo that holds the reusable troubleshooting scripts its
+runbook cites. `<CASE>` is the ticket key when one exists, else `<YYYY-MM-DD>-<short-slug>`. Written
+by **oncall** via `/case-report`.
 
 `<KEY>` is the ticket key (`APP-1944`). `<repo>` is the repo's directory name,
 which is why the same ticket produces `APP-1944-agent-webservice-plan.md` and

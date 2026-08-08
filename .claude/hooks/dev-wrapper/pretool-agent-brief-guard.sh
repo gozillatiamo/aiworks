@@ -128,7 +128,7 @@ if [ -n "$TOOLS" ]; then
 scripts/vcs/[a-z-]+\.sh~Bash\(\*?scripts/vcs~the VCS adapter~developer or code-reviewer
 scripts/notify/[a-z-]+\.sh~Bash\(\*?scripts/notify~the notify adapter~code-reviewer, or run the /notify skill yourself
 scripts/tracker/[a-z-]+\.sh~Bash\(\*?scripts/tracker~the tracker adapter~product-owner, or run /update-ticket yourself
-scripts/observability/[a-z-]+\.sh~Bash\(\*?scripts/observability~the observability adapter~performance-engineer or performance-triage
+scripts/observability/[a-z-]+\.sh~Bash\(\*?scripts/observability~the observability adapter~performance-engineer or oncall
 git (commit|push|merge|rebase|cherry-pick|reset --hard)~Bash\(git \*\)~write access to git~an agent that owns the branch (developer, qa-runner)
 RULES
 fi

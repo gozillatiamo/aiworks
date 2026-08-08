@@ -160,7 +160,7 @@ deployed data onto local disk is **`scripts/db/prod_repro_seed.py`** — its spe
 `env`, it is entity-scoped, and it loads into a **throwaway `ofb_repro_<KEY>` DB** that
 `--teardown` DROPs wholesale. A `prod` source is masked + vaulted; a `staging` source loads
 verbatim. Never hand-craft local `INSERT`s from deployed values. Investigation agents (e.g.
-`performance-triage`) do **not** seed — they read, find, and hand the fix off.
+`oncall`) do **not** seed — they read, find, and hand the fix off.
 
 ## Reporting
 
