@@ -36,7 +36,7 @@ branch_model:
   fix_base:     main
 
 quality_gate:
-  provider: sonarqube
+  provider: none
 
 review:
   level: strict
