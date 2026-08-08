@@ -12,15 +12,18 @@
 #     (they read it before producing output), and interactive skills.
 #   • The committed workflow CONFIG mirror (.claude/workflows/{dev-cycle,prd}.js) is
 #     generated from `workspace.config.yaml` ONLY — a local override NEVER rewrites that
-#     tracked file (that is the whole point: no personal pref leaks into git). So a headless
-#     workflow's own control-flow (auto_merge, auto_approve, statuses, REPOS, …) follows the
-#     SHARED value. The exceptions that still work headlessly are the personal OUTPUT
-#     preferences — `language` and `planning.to_html`: `dev-cycle.js` runs a dedicated
-#     resolver sub-agent (`resolve-runtime-config`) as its first step that reads THIS file
-#     local-first at runtime, and bakes the result into every downstream prompt — so the
-#     baked const is only the fallback default. Control flow is deliberately NOT in that
-#     set: `auto_approve`, `auto_merge`, statuses and REPOS decide what the pipeline DOES,
-#     and a personal pref must never change that for a shared run.
+#     tracked file (that is the whole point: no personal pref leaks into git). Three keys
+#     still reach a headless run anyway: `language`, `planning.to_html` and
+#     `planning.auto_approve`. `dev-cycle.js` runs a dedicated resolver sub-agent
+#     (`resolve-runtime-config`) as its first step that reads THIS file local-first at
+#     runtime and bakes the result into every downstream prompt — so the baked const is
+#     only the fallback default.
+#   • The line is REVERSIBILITY, not preference-vs-control-flow. `planning.auto_approve`
+#     only decides whether the run stops for you to approve your own plan; review, the
+#     test-suite gate and the merge all still stand after it. The irreversible keys are NOT
+#     overridable and follow the SHARED value always: `vcs.auto_merge` (it publishes), the
+#     status lifecycle and REPOS (they rewrite artifacts the whole team reads).
+#     See docs/adr/0003-personal-runtime-config-overrides.md.
 #
 # The realistic use for this file is a personal preference like output language:
 # ─────────────────────────────────────────────────────────────────────────────
@@ -28,10 +31,12 @@
 # Write in Thai locally while the team default stays English — see docs/agents/language.md.
 # language: th
 
-# Get the interactive HTML render of every plan locally while the team default stays
-# markdown-only. ONLY `to_html` is honored from here — `auto_approve` is control flow and is
-# read from the SHARED workspace.config.yaml always, so setting it here changes nothing.
+# Skip the plan-approval gate on your own runs, and/or get the interactive HTML render of every
+# plan locally, while the team defaults stay as they are. ⚠️ SHALLOW MERGE: a local `planning:`
+# block replaces the shared one WHOLE — a key you omit here reads as `false`, it does NOT inherit
+# the shared value. Set both if you want both.
 # planning:
+#   auto_approve: true
 #   to_html: true
 
 # Try /diagram-ticket locally without turning it on for the whole team yet — see

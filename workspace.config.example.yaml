@@ -168,6 +168,12 @@ planning:
                                    #   plan (no review). false → after a plan is produced the run
                                    #   STOPS for a human to review + APPROVE before execution (build);
                                    #   re-run the dev-cycle with --approve-plan to proceed past the gate.
+                                   #   LOCAL-FIRST: the only control-flow key a personal
+                                   #   workspace.config.local.yaml may override, headless runs included
+                                   #   (the plan gate is reversible — review, the test-suite gate and the
+                                   #   merge all still stand after it). Resolution is fail-closed: absent
+                                   #   from a local `planning:` block reads as false, never as this
+                                   #   default. See docs/adr/0003.
   to_html: false                   # plan-to-html. true → each plan is ALSO rendered to a self-contained
                                    #   interactive HTML doc (the write-interactive-docs skill), alongside
                                    #   the plan markdown — handy for sharing/reviewing when auto_approve is off.

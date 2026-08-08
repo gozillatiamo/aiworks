@@ -46,12 +46,17 @@ export const meta = {
 //   run reviews + runs the test-suite gate then STOPS, leaving the PR/MR OPEN for a human (nothing
 //   merged or distributed).
 // AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
-//   approval before build; re-run with --approve-plan to proceed.
+//   approval before build; re-run with --approve-plan to proceed. Like PLAN_TO_HTML this const is
+//   only the FALLBACK DEFAULT: it is RE-RESOLVED at runtime (local-first) into RESOLVED_AUTO_APPROVE
+//   below — the value the gate actually reads — so a personal workspace.config.local.yaml
+//   `planning: auto_approve:` reaches a headless run too. It is the ONE control-flow key that takes a
+//   personal override: skipping the plan gate is reversible (review + the test-suite gate + merge all
+//   still stand between the plan and anything shipping). See docs/adr/0003.
 // PLAN_TO_HTML — planning.to_html. true ⇒ planners ALSO render each plan to interactive HTML. This
 //   const is only the FALLBACK DEFAULT: like LANGUAGE it is RE-RESOLVED at runtime (local-first) into
 //   RESOLVED_PLAN_TO_HTML below — the value the run actually uses — so a personal
 //   workspace.config.local.yaml `planning: to_html:` reaches a headless run too. It is an output
-//   preference, not control flow; AUTO_APPROVE_PLAN and AUTO_MERGE stay shared-only.
+//   preference, not control flow; AUTO_MERGE, the status lifecycle and REPOS stay shared-only.
 // NOTIFY / NOTIFY_PROVIDER / NOTIFY_CHANNEL — notify.{enabled,provider,channel}. When NOTIFY is
 //   true AND AUTO_MERGE is false, the final Notify phase posts a "please review" digest (the open
 //   PR/MR per repo) to NOTIFY_CHANNEL via the scripts/notify/ adapter. With auto-merge ON the run
@@ -141,24 +146,34 @@ const FIGMA_DIRECTIVE = (typeof DESIGN_ENABLED !== 'undefined' ? DESIGN_ENABLED 
 // whose ENTIRE job is that one Read, is far more reliable — do it once, here, and bake the result
 // into every downstream prompt instead of hoping each one remembers.
 //
-// THE SAME RESOLVER ALSO CARRIES planning.to_html (see PLAN_TO_HTML above). Both keys are personal
-// OUTPUT preferences rather than control flow — which artifacts a human wants to read, not what the
-// run does — so both honor the local override; auto_approve / auto_merge / statuses / REPOS stay
-// SHARED-only (a personal pref must never change the pipeline's control flow). One resolver Read
-// covers both keys, so this costs nothing extra over the language check it replaces.
+// THE SAME RESOLVER ALSO CARRIES planning.to_html and planning.auto_approve (see the consts above).
+// to_html is a personal OUTPUT preference — which artifacts a human wants to read. auto_approve is
+// control flow, and the ONE control-flow key that honors a personal override: the plan gate is
+// REVERSIBLE (review, the test-suite gate and merge all still stand between a plan and anything
+// shipping), so skipping it changes only how the runner spends their own time. The irreversible
+// control flow — auto_merge (it publishes), the status lifecycle and REPOS (they rewrite artifacts
+// the whole team reads) — stays SHARED-only. One resolver Read covers all three keys, so this costs
+// nothing over the language check it replaces. See docs/adr/0003.
+//
+// FAIL-CLOSED by construction: auto_approve is reported ONLY when a local `planning:` block exists,
+// so a resolver that throws, omits the key, or returns junk leaves the committed AUTO_APPROVE_PLAN
+// standing — the gate stays ON. Nothing here can loosen it by accident.
 const RUNTIME_SCHEMA = { type: 'object', additionalProperties: false, required: ['language'], properties: {
-  language: { type: 'string', enum: ['en', 'th'] }, plan_to_html: { type: 'boolean' }, source: { type: 'string' } } }
+  language: { type: 'string', enum: ['en', 'th'] }, plan_to_html: { type: 'boolean' }, auto_approve: { type: 'boolean' }, source: { type: 'string' } } }
 let RESOLVED_LANGUAGE = (typeof LANGUAGE !== 'undefined' ? LANGUAGE : 'en')
 let RESOLVED_PLAN_TO_HTML = (typeof PLAN_TO_HTML !== 'undefined' ? PLAN_TO_HTML : false)
+let RESOLVED_AUTO_APPROVE = (typeof AUTO_APPROVE_PLAN !== 'undefined' ? AUTO_APPROVE_PLAN : false)
 try {
   const cfgCheck = await agent(
-    'Resolve two workspace config values, local-first. Read `workspace.config.local.yaml` in the repo root if it exists; else read `workspace.config.yaml`. (1) language: if the local file exists AND has a `language:` line, that value wins, source="workspace.config.local.yaml"; otherwise use `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". (2) plan_to_html: if the local file exists AND has a `planning:` block, read `to_html` from THAT block ONLY — the merge is shallow per top-level key, so a local `planning:` block replaces the shared one whole and a `to_html` absent from it means false, NOT the shared file\'s value; otherwise use `workspace.config.yaml`\'s `planning.to_html` (default false if absent). Return ONLY the resolved language ("en" or "th"), plan_to_html (boolean), and the source file — nothing else, no other files, no other analysis.',
+    'Resolve three workspace config values, local-first. Read `workspace.config.local.yaml` in the repo root if it exists; else read `workspace.config.yaml`. (1) language: if the local file exists AND has a `language:` line, that value wins, source="workspace.config.local.yaml"; otherwise use `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". (2) plan_to_html: if the local file exists AND has a `planning:` block, read `to_html` from THAT block ONLY — the merge is shallow per top-level key, so a local `planning:` block replaces the shared one whole and a `to_html` absent from it means false, NOT the shared file\'s value; otherwise use `workspace.config.yaml`\'s `planning.to_html` (default false if absent). (3) auto_approve: report this key ONLY when the local file exists AND has a `planning:` block — then read `auto_approve` from THAT block ONLY, and an `auto_approve` absent from that block means false, NOT the shared file value. If there is no local file, or it has no `planning:` block, OMIT auto_approve from your answer entirely so the workflow keeps its committed default. Return ONLY the resolved language ("en" or "th"), plan_to_html (boolean), auto_approve (boolean — omitted entirely unless a local `planning:` block exists), and the source file — nothing else, no other files, no other analysis.',
     { agentType: 'documentor', label: 'resolve-runtime-config', schema: RUNTIME_SCHEMA },
   )
   if (cfgCheck?.language === 'en' || cfgCheck?.language === 'th') RESOLVED_LANGUAGE = cfgCheck.language
   if (typeof cfgCheck?.plan_to_html === 'boolean') RESOLVED_PLAN_TO_HTML = cfgCheck.plan_to_html
+  if (typeof cfgCheck?.auto_approve === 'boolean') RESOLVED_AUTO_APPROVE = cfgCheck.auto_approve
 } catch { /* any failure here keeps the committed-default fallbacks above */ }
 if (RESOLVED_PLAN_TO_HTML !== PLAN_TO_HTML) log(`planning.to_html resolved to ${RESOLVED_PLAN_TO_HTML} at runtime (committed mirror says ${PLAN_TO_HTML}) — personal workspace.config.local.yaml override.`)
+if (RESOLVED_AUTO_APPROVE !== AUTO_APPROVE_PLAN) log(`planning.auto_approve resolved to ${RESOLVED_AUTO_APPROVE} at runtime (committed mirror says ${AUTO_APPROVE_PLAN}) — personal workspace.config.local.yaml override.`)
 
 const LANGUAGE_DIRECTIVE = RESOLVED_LANGUAGE === 'th'
   ? ' LANGUAGE_DIRECTIVE — OUTPUT LANGUAGE = th, already resolved for this run (docs/agents/language.md). This is AUTHORITATIVE: do NOT re-check any config file or override it with your own resolution — obey it verbatim. Write ALL prose — chat, ticket description & comments, PR/MR description & review discussion, and the .html render of a plan — in THAI, but keep the English SPINE English: titles + every section heading + labels/enum values, ALL code + code comments + git commit messages + branch names, and technical/transliterated/domain terms + proper nouns (Arabic numerals always). Code, checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files), AND ANY file you author with a .md extension (plans, testcases, PRD/summary Markdown in agent_logs/) are NEVER Thai — the th prose rule applies to chat, tickets, PR/MR discussion, Slack, and .html docs only.'
@@ -1079,7 +1094,9 @@ const plans = (await parallel(scoped.map((r) => () => {
   // The markdown at planPath stays the SOURCE OF TRUTH this workflow reads at build — the HTML
   // is human-only. data-plan-md stays REPO-ROOT-RELATIVE (planRel) per the in-HTML convention;
   // the on-disk file is the absolute planPath. When auto_approve is OFF, turn on plan-approval mode.
-  const approvalClause = !AUTO_APPROVE_PLAN
+  // RESOLVED_AUTO_APPROVE, not the committed const: a personal local override must not leave an
+  // approval widget on a plan this run will never stop at (or drop one off a plan it will).
+  const approvalClause = !RESOLVED_AUTO_APPROVE
     ? ` Since planning.auto_approve is OFF, turn ON plan-approval mode in that HTML: set data-plan-approval="pending", data-plan-md="${planRel}" (the repo-root-relative path to the authoritative markdown this workflow reads at build — never replace it with the HTML), data-plan-cmd="/dev-cycle ${ticket} --approve-plan", and inline plan-approval.js. The human approves in the page; approving downloads the markdown to drop over the on-disk plan at ${planPath} before the re-run.`
     : ''
   // Both branches state the resolved value EXPLICITLY so the planner never re-resolves it from
@@ -1156,7 +1173,8 @@ tick('kickoff')
 
 // PLAN-APPROVAL GATE — when planning.auto_approve is off, STOP here with the plan(s) ready
 // for a human to review/approve; the run does NOT proceed to build. Re-run with --approve-plan.
-if (!AUTO_APPROVE_PLAN && !approvePlan) {
+// Reads RESOLVED_AUTO_APPROVE (local-first, see the resolver above), not the committed const.
+if (!RESOLVED_AUTO_APPROVE && !approvePlan) {
   const planList = plans.map((p) => `${p.repo}: ${p.plan_path}${p.plan_html ? ` (html: ${p.plan_html})` : ''}`).join('; ')
   log(`⏸️ Plan approval required (planning.auto_approve=false) — plans ready for human review, NOT proceeding to build: ${planList}. Re-run \`/dev-cycle ${ticket} --approve-plan\` once approved.`)
   const summary = await writeSummary('awaiting-plan-approval', { ticket, repos: waveList.flat(), plans, testSuiteRequested, testSuiteGateUnavailable })
