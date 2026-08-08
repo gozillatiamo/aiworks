@@ -50,6 +50,11 @@ run() { # run <config> <config-local> → the guards' output, generated blocks d
        --target "$T/dc.js" --prd-target "$T/prd.js" --workspace "$T/ws.code-workspace" \
        --dry-run 2>&1 | sed -n '1,/^\/\/ ──/p'
 }
+full() { # full <config> <config-local> → everything, guards AND the generated blocks
+  bash "$SCRIPT" --config "$1" --config-local "$2" \
+       --target "$T/dc.js" --prd-target "$T/prd.js" --workspace "$T/ws.code-workspace" \
+       --dry-run 2>&1
+}
 
 printf '\nBOOLEAN VALUE GUARD\n'
 
@@ -140,8 +145,37 @@ else
   skipc "no live workspace.config.yaml here (a framework clone) — the fixtures cover the logic"
 fi
 
-# 6. Nothing was written. If the script ever grows a write that ignores DRY, this notices.
-if git -C "$ROOT" diff --quiet -- .claude/workflows/dev-cycle.js .claude/workflows/prd.js 2>/dev/null; then
+printf '\nMIRROR STAYS SHARED-ONLY\n'
+
+# 6. planning.auto_approve is the ONE control-flow key a personal config may override (ADR 0003) —
+# but only at RUNTIME, where dev-cycle.js re-resolves it local-first. The COMMITTED mirror must keep
+# carrying the SHARED value, or a git-ignored personal preference rides into a tracked file the whole
+# team runs, which is exactly what ADR 0001 exists to prevent. Every other case here reads the
+# guards; this one reads the generated const, and it is the only test of that boundary.
+cat > "$T/shared-gate-on.yaml" <<'YAML'
+language: en
+planning:
+  auto_approve: false
+  to_html: false
+products: []
+YAML
+cat > "$T/local-gate-off.yaml" <<'YAML'
+planning:
+  auto_approve: true
+YAML
+out="$(full "$T/shared-gate-on.yaml" "$T/local-gate-off.yaml")"
+ck "a local auto_approve:true never reaches the committed mirror" \
+   "const AUTO_APPROVE_PLAN = false" "$out"
+ck "…and the run says why the local file was not used for it" \
+   "regenerated from workspace.config.yaml (shared) only" "$out"
+
+# 7. Nothing was written. If the script ever grows a write that ignores DRY, this notices.
+# `git diff` also exits non-zero when there is no repo AT ALL — an extracted tarball, which is how
+# a person first meets this framework. That is a check that could not run, not a failed assertion,
+# and reporting it as a failure made the suite red out of the box on a fresh clone.
+if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  skipc "not a git checkout (an extracted tarball) — no baseline to diff the workspace against"
+elif git -C "$ROOT" diff --quiet -- .claude/workflows/dev-cycle.js .claude/workflows/prd.js 2>/dev/null; then
   ok "the suite wrote nothing into the workspace"
 else
   bad "the suite wrote nothing into the workspace" "dev-cycle.js or prd.js changed"

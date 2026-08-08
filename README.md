@@ -276,7 +276,9 @@ cursor ai-workspace.code-workspace
 **How a run behaves here:**
 
 - 🧭 **Plan approval is on** — the run stops after planning. Review, then re-run with
-  `--approve-plan` to continue.
+  `--approve-plan` to continue. Skip it on your own runs with `planning: auto_approve: true`
+  in the git-ignored `workspace.config.local.yaml` (the one control-flow key that takes a
+  personal override — see [ADR 0003](docs/adr/0003-personal-runtime-config-overrides.md)).
 - 🔒 **Auto-merge is off** — the run reviews + tests, then leaves the PR/MR open for a
   human to merge, and posts a review digest to `#dev-oneforbet`.
 - 🎯 **Jira status** is moved by the workflow itself — don't touch it by hand mid-run.

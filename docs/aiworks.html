@@ -715,7 +715,7 @@ scripts/aiworks config --dry-run</code></pre>
     <table>
       <thead><tr><th>Key</th><th>Values</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td><code>planning.auto_approve</code></td><td><code>true</code> · <code>false</code></td><td><code>true</code> — execution proceeds straight from the plan. <code>false</code> — the run stops after planning for human review; re-run with <code>--approve-plan</code> to proceed.</td></tr>
+        <tr><td><code>planning.auto_approve</code></td><td><code>true</code> · <code>false</code></td><td><code>true</code> — execution proceeds straight from the plan. <code>false</code> — the run stops after planning for human review; re-run with <code>--approve-plan</code> to proceed. The <em>only</em> control-flow key a personal <code>workspace.config.local.yaml</code> may override, headless runs included — the plan gate is reversible, so review, the test-suite gate and the merge all still stand after it (ADR&nbsp;0003).</td></tr>
         <tr><td><code>planning.to_html</code></td><td><code>true</code> · <code>false</code></td><td><code>true</code> — each plan is also rendered to a self-contained interactive HTML doc via the <code>write-interactive-docs</code> skill. Handy for sharing when <code>auto_approve</code> is off.</td></tr>
       </tbody>
     </table>
