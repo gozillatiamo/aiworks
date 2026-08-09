@@ -599,8 +599,8 @@ check_claudemd_size() {
 # `aiworks add` only APPENDS mani.d/<product>.yaml and its import line. A product rename
 # (or a repo moving between products) leaves the old file + import in place. Mani then
 # merges DUPLICATE project keys across imports by silently dropping them — `mani list
-# projects` shows only the non-colliding repos (seen when feeed-me.yaml and
-# feeed-me-app.yaml both declared feeedme-app / feeedme-appium). Prune BEFORE the parallel
+# projects` shows only the non-colliding repos (typical after a product rename left
+# both the old and new mani.d/<product>.yaml importing the same keys). Prune BEFORE the parallel
 # pre-clone so `mani sync --parallel` sees the live set.
 #
 # Rules:

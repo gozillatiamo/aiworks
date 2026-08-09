@@ -186,6 +186,11 @@ tracker_upsert() {
   # before doing anything — covers both the create ("new") and update paths, dry or not.
   jira_warn_dropped_fields "$fields"
 
+  # --project is not a per-issue field on Jira (a project MOVE is a distinct operation);
+  # be honest rather than silently drop it. Create uses JIRA_PROJECT_KEY.
+  [[ "$(printf '%s' "$fields" | jq -r '((.project // "") | tostring | length) > 0')" == "true" ]] \
+    && echo "WARN: --project ignored on Jira — the project is JIRA_PROJECT_KEY at create; moving an existing issue's project is a separate Jira operation." >&2
+
   # ref "new" → create a fresh issue in JIRA_PROJECT_KEY (the key is server-assigned,
   # mirroring Notion's auto-id create). Requires --title.
   if [[ "$ticket" =~ ^[Nn][Ee][Ww]$ ]]; then
@@ -239,6 +244,7 @@ tracker_upsert() {
     + (if .title    then {summary: .title} else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
     + (if .parent   then {parent: {key: .parent}} else {} end)
+    + (if (.labels // [] | length) > 0 then {labels: .labels} else {} end)
     + ( if ($body | length) > 0 then {description: ($body | md_to_adf($ctx) | adf_append_media($media))}
         elif .description       then {description: (.description | text_to_adf($ctx))}
         else {} end )
@@ -322,6 +328,7 @@ jira_create() {
     | { project: {key: $proj}, issuetype: {name: $itype}, summary: .title }
     + (if ($parent | length) > 0 then {parent: {key: $parent}} else {} end)
     + (if ($comps  | length) > 0 then {components: $comps}     else {} end)
+    + (if (.labels // [] | length) > 0 then {labels: .labels}  else {} end)
     + (if .priority then {priority: {name: .priority}} else {} end)
     + ( if ($body | length) > 0 then {description: ($body | md_to_adf($ctx))}
         elif .description       then {description: (.description | text_to_adf($ctx))}
