@@ -29,6 +29,13 @@
 # sweep (npm i -g @colbymchenry/codegraph, else the bundled curl|sh installer). A no-op when it's
 # already on PATH; best-effort, so a failed install just makes the repos' index steps SKIP.
 #
+# It does NOT set up deployed-environment triage. Registering the read-only triage MCPs is
+# `scripts/triage-mcp.sh sync`, and the Kubernetes triage IDENTITY is created per cluster by a
+# GCP project owner running `scripts/k8s/bootstrap-sa.sh` — neither is something a repo-onboarding
+# sweep should do on your behalf, and the k8s check alone cost several gcloud/kubectl round-trips
+# on every run. Sync REPORTS both in its summary; `aiworks doctor` scores them and `--fix` runs
+# the one that is safe to automate. See docs/adr/0009.
+#
 # It also ENSURES the workspace lifecycle hooks — .superset/{setup,run,teardown}.sh — exist and
 # that .superset/config.json registers all three (via scripts/aiworks-superset.sh). The hooks loop
 # over every cloned repo, so the synced set is covered automatically; this creates the run hook
@@ -390,39 +397,63 @@ NODE
   esac
 }
 
-# ── deployed-env triage MCPs (pg_triage + redis_triage), local scope ──────────────
-# Registration follows `triage.enabled` (default ON — staging triage needs no authorization);
-# PRODUCTION access follows `triage.prod` (default OFF), which the servers read in-process, so it
-# is NOT a registration concern. Both are read LOCAL-FIRST. This step also migrates the pre-0005
-# `prod_pg_triage` / `prod_redis_triage` registrations away. The reconcile logic lives in
-# scripts/triage-mcp.sh (also runnable by hand: `scripts/triage-mcp.sh status`).
-seed_triage_mcps() {
-  local sh="$DIR/triage-mcp.sh"
-  step "Reconcile the read-only triage MCPs (staging+prod) with the triage policy"
-  [[ -x "$sh" ]] || { warn "scripts/triage-mcp.sh missing or not executable — skipping"; return 0; }
-  local args=(sync); [[ "$DRY" -eq 1 ]] && args+=(-n)
-  local out; out="$("$sh" "${args[@]}" 2>&1)"
-  if [[ "$VERBOSE" -eq 1 ]]; then
-    [[ -n "$out" ]] && printf '%s\n' "$out"
-  else
-    # Quiet mode still surfaces a state CHANGE (and any warning) — "registered, restart the
-    # session for its tools to appear" is the one line a teammate must not miss.
-    printf '%s\n' "$out" | grep -Ev 'already registered|Triage MCPs DISABLED|staging only —|production targets are ENABLED' | grep -E '.' || true
-  fi
+# ── deployed-environment triage: REPORTED here, never installed here ──────────────
+# Sync onboards repos. It does not reach into a deployed environment on anyone's behalf, and it
+# does not bootstrap the identity that lets it — see docs/adr/0009. So the two things it used to
+# do here are gone: it no longer registers the triage MCPs (`scripts/triage-mcp.sh sync` does,
+# and `aiworks doctor --fix` runs that), and it no longer probes GKE for the read-only identity
+# (`scripts/k8s/setup.sh` does, and `aiworks doctor --deep` scores it).
+#
+# What remains is one stanza in the summary. Its two halves are deliberately asymmetric:
+#
+#   MCPs   CONDITIONAL, because the state is a jq read of a local file — free to check, so the
+#          line appears only when something is actually unregistered and a healthy workspace
+#          stays silent. `status` is READ-ONLY; the writing form is never called from here.
+#   k8s    STATIC, because the state costs gcloud + kubectl round-trips per cluster, which is
+#          the whole reason it left sync. A line that never probes cannot slow a sync down.
+#
+# Both are suppressed by `triage.enabled: false` — someone who turned triage off asked not to
+# hear about it, and a summary line that prints forever is one people stop reading.
+#
+# Reads one `<section>.<key>` out of ONE file; prints nothing when absent, so the caller can tell "absent"
+# from "false" and fall through. Same awk shape as the QG_PROVIDER read below, and the same
+# parser scripts/triage-mcp.sh uses — triage.enabled is read LOCAL-FIRST (docs/adr/0003),
+# because it is a per-person decision and this must agree with the script that acts on it.
+cfg_flag() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  awk -v want_sec="$2" -v want_key="$3" '
+    /^[A-Za-z_][A-Za-z0-9_]*:/ { sec=$0; sub(/:.*/,"",sec) }
+    sec==want_sec && $0 ~ "^  "want_key":" { v=$0; sub(/^[^:]*:[ \t]*/,"",v); sub(/[ \t]+#.*$/,"",v);
+      gsub(/^[ \t"'\'']+|[ \t"'\'']+$/,"",v); print tolower(v); exit }
+  ' "$f" 2>/dev/null
 }
+TRIAGE_ENABLED_RAW="$(cfg_flag "$ROOT/workspace.config.local.yaml" triage enabled)"
+[[ -n "$TRIAGE_ENABLED_RAW" ]] || TRIAGE_ENABLED_RAW="$(cfg_flag "$WC" triage enabled)"
+TRIAGE_ENABLED=1
+case "$TRIAGE_ENABLED_RAW" in false|no|0|off) TRIAGE_ENABLED=0 ;; esac
 
-# ── Kubernetes triage readiness ───────────────────────────────────────────────────
-# A DOCTOR, not an installer: k8s_triage needs no configuration (it derives its targets from the
-# kubeconfig), but it does need a read-only identity bootstrapped per cluster and the right to
-# impersonate it — neither of which this machine can grant itself. The check reads only, prints
-# the exact command for each gap, and always exits 0, so a teammate who never touches Kubernetes
-# is not blocked by it. See scripts/k8s/README.md and docs/adr/0007.
-check_k8s_triage() {
-  local sh="$DIR/k8s/setup.sh"
-  [[ -x "$sh" ]] || return 0
-  step "Check the Kubernetes triage identity (read-only)"
-  if [[ "$DRY" -eq 1 ]]; then dim "would run scripts/k8s/setup.sh"; return 0; fi
-  if [[ "$VERBOSE" -eq 1 ]]; then "$sh"; else "$sh" --quiet; fi
+# Prints the stanza, or nothing. Never writes, never touches the network, safe under --dry-run.
+triage_stanza() {
+  [[ "$TRIAGE_ENABLED" -eq 1 ]] || return 0
+  local sh="$DIR/triage-mcp.sh" missing="" k8s_line=1
+  local mcp_line=""
+
+  if [[ -x "$sh" ]] && command -v jq >/dev/null 2>&1; then
+    missing="$("$sh" status 2>/dev/null | grep -c 'not registered' || true)"
+    [[ "${missing:-0}" -gt 0 ]] && mcp_line="${missing} of 3 read-only triage MCP(s) not registered — \`scripts/triage-mcp.sh sync\` (sync no longer does this)"
+  elif [[ ! -x "$sh" ]]; then
+    mcp_line="scripts/triage-mcp.sh is missing — the read-only triage MCPs cannot be registered"
+  fi
+
+  [[ -x "$DIR/k8s/setup.sh" ]] || k8s_line=0
+
+  [[ -n "$mcp_line" || "$k8s_line" -eq 1 ]] || return 0
+  printf '%sTriage:%s\n' "$c_warn" "$c_off"
+  [[ -n "$mcp_line" ]] && printf '  • %s\n' "$mcp_line"
+  [[ "$k8s_line" -eq 1 ]] && printf '  • %s\n' \
+    "Kubernetes triage identity is bootstrapped BY HAND, per cluster: \`scripts/k8s/setup.sh\` reports the gaps, a GCP project owner runs \`scripts/k8s/bootstrap-sa.sh --context <ctx>\`. \`aiworks doctor --deep\` scores it."
+  return 0
 }
 
 # Resolve the positional: a known products[].id is a product filter; anything else is a repo name.
@@ -454,14 +485,8 @@ prepare_adapter_env
 # once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
 seed_image_gen_settings
 
-# Register (or deregister) the read-only triage MCPs per triage.enabled, and migrate the pre-0005
-# names away. Reaching PRODUCTION stays a separate, per-machine opt-in (triage.prod) that the
-# servers enforce themselves, so staging triage works out of the box.
-seed_triage_mcps
-
-# k8s_triage carries no config, so there is nothing to seed — but its read-only identity has to
-# exist in each cluster. Report the gaps with the command that closes them; never fail sync.
-check_k8s_triage
+# NOTE: deployed-environment triage is deliberately NOT set up here — see triage_stanza() above
+# and docs/adr/0009. It is reported in the summary and scored by `aiworks doctor`.
 
 # ── SonarQube onboarding scaffold (quality_gate.provider: sonarqube) ─────────────
 # Read the provider once, then seed a minimal sonar-project.properties into each CODE repo so the
@@ -558,7 +583,7 @@ check_artifacts_contract() {
 # nothing — scope the rule, or delete what a doc or a hook already owns. Reports, never
 # blocks: a sync is not the place to fail a repo over the size of its instruction.
 CLAUDEMD_MAX_ROOT=100   # a meta-repo indexing every repo, the adapter families and docs/
-CLAUDEMD_MAX_REPO=60    # the same cap aiworks-add.sh step 7 hands to /init
+CLAUDEMD_MAX_REPO=100   # the same cap aiworks-add.sh step 7 hands to /init
 check_claudemd_size() {
   local label="$1" dir="$2" max="$3" n
   [[ -f "$dir/CLAUDE.md" ]] || return 0
@@ -567,6 +592,179 @@ check_claudemd_size() {
   warn "$label: CLAUDE.md is $n lines (>$max) — move path-specific detail into .claude/rules/<topic>.md with a paths: list, and drop what a doc or hook already owns"
   noted+=("$label: CLAUDE.md $n lines (>$max)")
 }
+
+# ── reconcile mani.d/ + mani.yaml imports with products[] ─────────────────────────
+# `aiworks add` only APPENDS mani.d/<product>.yaml and its import line. A product rename
+# (or a repo moving between products) leaves the old file + import in place. Mani then
+# merges DUPLICATE project keys across imports by silently dropping them — `mani list
+# projects` shows only the non-colliding repos (typical after a product rename left
+# both the old and new mani.d/<product>.yaml importing the same keys). Prune BEFORE the parallel
+# pre-clone so `mani sync --parallel` sees the live set.
+#
+# Rules:
+#   1. mani.d/<id>.yaml whose <id> is not a products[].id → delete (+ drop import).
+#   2. A project key listed under the wrong product file (config says it belongs elsewhere)
+#      → strip that block; delete the file if it goes empty.
+#   3. mani.yaml `import:` list → rewritten to exactly the live mani.d files, in products[]
+#      order (no stale lines, no orphans).
+reconcile_mani_registry() {
+  step "Reconcile mani.d/ + mani.yaml imports with products[]"
+
+  local -a products=()
+  local id
+  while IFS= read -r id; do
+    [[ -n "$id" ]] && products+=("$id")
+  done < <(awk '
+    /^products:[ \t]*$/ { inp=1; next }
+    inp && /^  - id:/ {
+      sub(/^[^:]*:[ \t]*/, "")
+      gsub(/^["'\'' \t]+|["'\'' \t]+$/, "")
+      if ($0 != "") print
+      next
+    }
+    inp && /^[A-Za-z_]/ { inp=0 }
+  ' "$WC")
+
+  is_live_product() {
+    local p="$1" x
+    for x in "${products[@]+"${products[@]}"}"; do [[ "$x" == "$p" ]] && return 0; done
+    return 1
+  }
+
+  # repo_name → owning products[].id (from config). Used to strip misplaced keys.
+  local -A repo_owner=()
+  local prod url kind lang dist path desc key
+  while IFS=$'\037' read -r prod url kind lang dist path desc; do
+    [[ -n "$url" ]] || continue
+    key="${url%.git}"; key="${key##*/}"; key="${key##*:}"
+    # Mani project keys are always the URL-derived repo name (path: is only the clone dir).
+    [[ -n "$key" && -n "$prod" ]] && repo_owner["$key"]="$prod"
+  done < <(parse_repos)
+
+  strip_mani_project() {  # $1=file $2=repo-key — drop `  <key>:` + indented fields
+    local file="$1" repo="$2"
+    awk -v key="$repo" '
+      skip==1 && /^    / { next }
+      skip==1 { skip=0 }
+      $0 ~ ("^  " key ":[ \t]*$") { skip=1; next }
+      { print }
+    ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  }
+
+  mani_file_empty() {  # no project keys left
+    ! grep -qE '^  [A-Za-z0-9._-]+:[[:space:]]*$' "$1" 2>/dev/null
+  }
+
+  mkdir -p "$ROOT/mani.d"
+  local f base repo owner changed=0
+  shopt -s nullglob
+  for f in "$ROOT"/mani.d/*.yaml; do
+    base="$(basename "$f" .yaml)"
+    if ! is_live_product "$base"; then
+      if [[ "$DRY" -eq 1 ]]; then
+        printf '    %swould remove stale mani.d/%s.yaml (no products[].id match)%s\n' \
+          "$c_dim" "$base" "$c_off"
+      else
+        rm -f "$f" && ok "removed stale mani.d/$base.yaml (not in products[])"
+      fi
+      changed=1
+      continue
+    fi
+    # Strip project keys that config assigns to a DIFFERENT product (rename / move leftovers).
+    while IFS= read -r repo; do
+      [[ -n "$repo" ]] || continue
+      owner="${repo_owner[$repo]:-}"
+      [[ -n "$owner" && "$owner" != "$base" ]] || continue
+      if [[ "$DRY" -eq 1 ]]; then
+        printf '    %swould strip project %s from mani.d/%s.yaml (owned by products[].id=%s)%s\n' \
+          "$c_dim" "$repo" "$base" "$owner" "$c_off"
+      else
+        strip_mani_project "$f" "$repo" \
+          && ok "stripped project '$repo' from mani.d/$base.yaml (belongs to $owner)"
+      fi
+      changed=1
+    done < <(awk '/^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+                     sub(/:[[:space:]]*$/, ""); sub(/^  /, ""); print
+                   }' "$f")
+    if [[ -f "$f" ]] && mani_file_empty "$f"; then
+      if [[ "$DRY" -eq 1 ]]; then
+        printf '    %swould remove empty mani.d/%s.yaml%s\n' "$c_dim" "$base" "$c_off"
+      else
+        rm -f "$f" && ok "removed empty mani.d/$base.yaml"
+      fi
+      changed=1
+    fi
+  done
+
+  # Desired import list = live mani.d files for products[], in config order.
+  local -a desired=()
+  for id in "${products[@]+"${products[@]}"}"; do
+    [[ -f "$ROOT/mani.d/$id.yaml" ]] && desired+=("mani.d/$id.yaml")
+  done
+
+  local current="" want=""
+  current="$(awk '
+    /^import:[ \t]*$/ { inn=1; next }
+    inn && /^  - / { sub(/^  - [ \t]*/, ""); print; next }
+    inn && /^[A-Za-z_#]/ { exit }
+  ' "$ROOT/mani.yaml" | paste -sd'|' -)"
+  want="$(printf '%s\n' "${desired[@]+"${desired[@]}"}" | paste -sd'|' -)"
+
+  if [[ "$current" != "$want" ]]; then
+    if [[ "$DRY" -eq 1 ]]; then
+      printf '    %swould rewrite mani.yaml import: → [%s]%s\n' \
+        "$c_dim" "$(printf '%s' "$want" | tr '|' ' ')" "$c_off"
+    else
+      local tmp wantf
+      tmp="$(mktemp)" || die "mktemp failed rewriting mani.yaml imports"
+      wantf="$(mktemp)" || { rm -f "$tmp"; die "mktemp failed for import want-list"; }
+      printf '%s\n' "${desired[@]+"${desired[@]}"}" > "$wantf"
+      awk -v wantf="$wantf" '
+        BEGIN {
+          while ((getline line < wantf) > 0) { n++; d[n]=line }
+          close(wantf)
+        }
+        /^import:[ \t]*$/ {
+          print
+          for (i=1; i<=n; i++) print "  - " d[i]
+          if (n) print ""
+          skip=1
+          next
+        }
+        skip && /^  - / { next }
+        skip && /^[ \t]*$/ { next }
+        skip && (/^[A-Za-z_]/ || /^#/) { skip=0 }
+        { print }
+      ' "$ROOT/mani.yaml" > "$tmp" && mv "$tmp" "$ROOT/mani.yaml" \
+        && ok "rewrote mani.yaml import: ($(printf '%s' "$want" | tr '|' ' '))" \
+        || { rm -f "$tmp"; warn "could not rewrite mani.yaml imports — edit by hand"; }
+      rm -f "$wantf"
+      changed=1
+    fi
+  fi
+
+  # Duplicate project keys across remaining files still break mani silently — surface them.
+  local dups
+  dups="$(awk '
+    /^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+      k=$0; sub(/:[[:space:]]*$/, "", k); sub(/^  /, "", k)
+      file=FILENAME; sub(/.*\//, "", file)
+      if (seen[k] != "" && seen[k] != file) print k " in " seen[k] " and " file
+      else seen[k]=file
+    }
+  ' "$ROOT"/mani.d/*.yaml 2>/dev/null || true)"
+  if [[ -n "$dups" ]]; then
+    warn "duplicate mani project key(s) still present — mani will drop them on import:"
+    while IFS= read -r line; do [[ -n "$line" ]] && printf '      %s\n' "$line"; done <<< "$dups"
+    noted+=("mani.d: duplicate project keys (mani silently drops collisions)")
+  fi
+
+  [[ "$changed" -eq 0 && -z "$dups" ]] && ok "mani.d/ + imports already match products[]"
+  shopt -u nullglob
+}
+
+noted=()  # may also collect duplicate-key warnings from reconcile_mani_registry
+reconcile_mani_registry
 
 # ── parallel pre-clone: clone the WHOLE set up front, concurrently ────────────────
 # The per-repo loop below delegates to `aiworks add`, whose step 3 clones via a BARE
@@ -600,7 +798,7 @@ if [[ -z "$REPO_FILTER" ]]; then
 fi
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
-total=0; synced=0; failed=0; noted=(); MATCHED=""
+total=0; synced=0; failed=0; MATCHED=""  # noted[] seeded before reconcile_mani_registry
 while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) — empty fields aren't collapsed
   [[ -n "$url" ]] || continue
   [[ -z "$PRODUCT" || "$prod" == "$PRODUCT" ]] || continue
@@ -706,4 +904,8 @@ else
   fi
   printf '%sNext:%s `mani list projects` to see the set, then `cursor %s.code-workspace` to open every repo as its own Source Control panel. (The .claude/workflows/dev-cycle.js CONFIG and %s.code-workspace were regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off" "$(basename "$ROOT")" "$(basename "$ROOT")"
 fi
+# Printed in EVERY branch, including a 0-repo run and a dry run: triage readiness has nothing to
+# do with how many repos matched the filter, so scoping it to the normal branch would hide it
+# from exactly the narrow re-sync (`aiworks sync --repo one-thing`) people run most often.
+triage_stanza
 [[ "$failed" -eq 0 ]]

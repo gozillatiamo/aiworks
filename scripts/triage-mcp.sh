@@ -29,8 +29,10 @@
 #   scripts/triage-mcp.sh status       # report policy + what is registered
 #   scripts/triage-mcp.sh sync -n      # preview; change nothing
 #
-# `aiworks sync` (and therefore `aiworks setup`) runs the sync form, so a fresh clone gets the
-# servers with no extra step, and a machine that wants production only adds `triage.prod: true`.
+# RUN IT YOURSELF — `aiworks sync` does NOT (docs/adr/0009). Sync onboards repos; it does not
+# reach into a deployed environment on your behalf, so it only REPORTS an unregistered server in
+# its summary. `aiworks doctor` scores the same gap and `aiworks doctor --fix` runs this script.
+# A machine that also wants production adds `triage.prod: true` — no re-registration needed.
 set -uo pipefail
 
 c_ok=$'\033[32m'; c_warn=$'\033[33m'; c_err=$'\033[31m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
@@ -64,6 +66,8 @@ SERVERS=(
 # script removes its OWN old entries so nobody is left running two servers over the same fleet.
 # These four strings are HISTORICAL literals — they must keep naming the OLD server + file, so
 # never sweep them along in a rename; they are what identifies an entry to clean up.
+# (They were swept once, into the post-0005 names, which made `status` report every HEALTHY
+# registration as a leftover and made `sync` deregister-then-reregister all three every run.)
 LEGACY=(
   "prod_pg_triage|scripts/db/prod_pg_mcp.py"
   "prod_redis_triage|scripts/redis/prod_redis_mcp.py"

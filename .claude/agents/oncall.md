@@ -70,7 +70,8 @@ tools:
   - mcp__pg_triage__disconnect
   # PRODUCTION/staging Redis, READ-ONLY, on-demand. Typed read tools only — there is no command
   # passthrough, and no write-shaped command exists (no KEYS either: it blocks a single-threaded
-  # server). `target` is required and prod is never implied. ALWAYS disconnect at the end.
+  # server). `target` is required and prod is never implied. ALWAYS disconnect at the end. No
+  # capture_shape: persisting state locally belongs to the developer, not an investigation.
   - mcp__redis_triage__list_targets
   - mcp__redis_triage__tunnel_status
   - mcp__redis_triage__cluster_topology

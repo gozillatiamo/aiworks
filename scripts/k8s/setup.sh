@@ -11,11 +11,16 @@
 #
 # So this is a DOCTOR, not an installer: it reads, it never writes, and it prints the exact
 # command that unblocks each gap — including the one somebody else has to run. It always exits 0,
-# because a teammate who does not work on Kubernetes should not see `aiworks sync` fail.
+# because a teammate who does not work on Kubernetes should not be told they are broken.
+#
+# RUN IT YOURSELF. `aiworks sync` does NOT call this (docs/adr/0009) — every check below is a
+# gcloud/kubectl round-trip per cluster, and the command that closes a gap needs a GCP project
+# owner, so bring-up could only ever reprint an instruction. Sync says the step is manual;
+# `aiworks doctor --deep` scores the result.
 #
 # Usage:
 #   scripts/k8s/setup.sh            # check every GKE target this kubeconfig can see
-#   scripts/k8s/setup.sh --quiet    # only report problems (what `aiworks sync` calls)
+#   scripts/k8s/setup.sh --quiet    # only report problems (what `aiworks doctor --deep` calls)
 set -uo pipefail
 
 c_ok=$'\033[32m'; c_warn=$'\033[33m'; c_dim=$'\033[2m'; c_off=$'\033[0m'

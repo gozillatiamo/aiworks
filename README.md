@@ -142,10 +142,21 @@ if it isn't there). They are prose, not config — Claude reads them as standing
 > `capture_shape` → `scripts/redis/replay_shape.py`, which writes SYNTHETIC values from a schema.
 
 Both servers live in **local scope**, not the shared `.mcp.json`, so prod credentials never enter
-the shared repo. `aiworks sync` registers them on every machine — **staging triage needs no
-opt-in**. **Production** does, and that half is enforced inside the servers, so it is one line in
-your personal, git-ignored `workspace.config.local.yaml` and takes effect immediately (no
-re-register, no restart):
+the shared repo:
+
+```sh
+cp scripts/db/.env.example    scripts/db/.env      # read-only DSNs, per target and per env
+cp scripts/redis/.env.example scripts/redis/.env   # Redis targets (+ tunnel, if you need one)
+scripts/triage-mcp.sh sync                         # register the servers (local scope)
+scripts/triage-mcp.sh status                       # policy + what is registered
+```
+
+Registration is a step **you** run: `aiworks sync` does not do it (`docs/adr/0009`) — it reports
+what is unregistered, and `aiworks doctor` fails on it with the same command attached. Once
+registered, **staging triage needs no opt-in**.
+**Production** does, and the servers enforce it themselves, so it is one line in your personal,
+git-ignored `workspace.config.local.yaml` and takes effect immediately (no re-register, no
+restart):
 
 ```yaml
 triage:
@@ -154,7 +165,6 @@ triage:
 ```
 
 ```sh
-./aiworks setup                  # or: scripts/triage-mcp.sh sync
 scripts/triage-mcp.sh status     # what the policy says + what is registered
 ```
 

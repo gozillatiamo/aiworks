@@ -25,6 +25,10 @@ Every call authenticates as `k8s-triage@<project>.iam.gserviceaccount.com`, hold
 server**: a delete returns 403 before it is matched against an object. `scripts/k8s/bootstrap-sa.sh`
 creates the identity and refuses to report success unless reads answer yes and writes answer no.
 
+That bootstrap is run **by hand**, once per cluster, by an owner of the GCP project — never by
+`aiworks sync`, which neither probes nor grants (`docs/adr/0009`). `scripts/k8s/setup.sh` reports
+the gaps on demand and `aiworks doctor --deep` scores them.
+
 The identity is reached by **impersonation**, not a key file. A JSON key would be a long-lived
 production-adjacent credential sitting on every teammate's laptop, revocable only by remembering
 which laptops have it. Impersonation mints a short-lived token from the human's own credential

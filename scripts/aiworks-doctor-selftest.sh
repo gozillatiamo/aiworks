@@ -372,6 +372,25 @@ rm -f "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
 ck "no activation marker skips rather than warns" "ABSENT:updated since the last activation" "$OUT"
 
+# ── 20 · triage: sync reports it, doctor scores it, a human bootstraps it ─────────
+# `aiworks sync` no longer registers the triage MCPs and no longer probes GKE (docs/adr/0009),
+# which makes this group the only thing that scores either. So it has to stay quiet on a machine
+# that does no deployed-environment work at all: both halves SKIP — never fail — when the pieces
+# are simply absent, because a finding nobody can clear is worse than no group.
+W="$T/triage"; make_ws "$W"; stage "$W"
+
+OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
+ck_exit "--only triage runs clean with nothing installed" 0 "$RC"
+ck "a missing triage-mcp.sh skips, never fails" "scripts/triage-mcp.sh not present" "$OUT"
+ck "the kubernetes half is reported too"        "kubernetes triage identity"        "$OUT"
+ck "--only triage runs no other group"          "ABSENT:adapters"                   "$OUT"
+
+printf 'triage:\n  enabled: false\n' >> "$W/workspace.config.yaml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
+ck_exit "a disabled triage keeps exit 0"  0 "$RC"
+ck "a disabled triage reads as skipped"   "triage.enabled is false"          "$OUT"
+ck "a disabled triage checks nothing"     "ABSENT:kubernetes triage identity" "$OUT"
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]

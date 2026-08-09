@@ -9,10 +9,10 @@ export const meta = {
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
     { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec, AND runs the repo suite — approval is gated on a green receipt; a suite that cannot run halts the repo rather than failing open) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet' },
     { title: 'Test suite', detail: 'qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `scripts/dev.sh test <specs>`, NOT the full suite, then reports the per-TC results to the ticket WITH the run\'s own screenshots embedded. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. NEVER fails open: the verdict needs a receipt (real command + exit code + summary line) AND a second agent must find the result comment on the ticket — otherwise the gate is recorded as NOT RUN, not as a pass, and nothing merges. A repo declared `suite_kind: load` must additionally be equal-or-better than the same scenario on the ticket\'s base branch, judged against the environment\'s own measured noise floor, so its verdict is pass / fail / unavailable; a regression the developer ATTRIBUTES to the change loops back for a fix (attribute first, fix second) up to loadtest.max_fix_rounds. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
-    { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). If vcs.auto_merge is on: each repo squash-merged UPSTREAM→DOWNSTREAM via scripts/vcs/merge-pr.sh so the web PR/MR is marked Merged, not Closed; each SHA recorded — by the code-reviewer (code repos) or the qa-runner (test-suite repo). If auto-merge is off (global or per-repo) the validated, reviewed PR/MR is left OPEN for a human and the run stops here (nothing merged or distributed).', model: 'sonnet' },
-    { title: 'Distribute', detail: 'per-repo: build a release artifact from the MERGED base and ship it to the repo\'s distribution target (e.g. Firebase App Distribution); then the WORKFLOW moves the ticket to done.', model: 'sonnet' },
+    { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). The squash-merge is outward + irreversible, so under auto-mode only a human clears it: with vcs.auto_merge ON the workflow does NOT merge — it emits the exact `! …/merge-pr.sh` command (upstream→downstream) for the main session to present, then stops (status awaiting-human-ship). With auto-merge OFF the validated PR/MR is left OPEN and the run stops. Either way the run itself merges/distributes nothing.', model: 'sonnet' },
+    { title: 'Distribute', detail: 'outward + irreversible like Merge, so also a human `!` step: the workflow emits the `! … firebase appdistribution:distribute …` command (a template the main session resolves) to run AFTER the merge lands; the main session then moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
-    { title: 'Notify', detail: 'OPTIONAL — only when notify.enabled AND auto-merge is off: post a "please review" digest of the open PR/MR per repo to the configured chat channel via the /notify skill (scripts/notify/). With auto-merge on, the run merges + distributes itself, so nothing is left to review and this phase is skipped.', model: 'haiku' },
+    { title: 'Notify', detail: 'OPTIONAL — only when notify.enabled AND auto-merge is off: post a "please review" digest of the open PR/MR per repo to the configured chat channel via the /notify skill (scripts/notify/). With auto-merge on, the run hands the merge/distribute to a human as `!` commands, so this phase is skipped.', model: 'haiku' },
   ],
 }
 
@@ -41,10 +41,11 @@ export const meta = {
 //   testSuite   — true for the repo that PROVIDES the cross-repo test-suite gate (the QA repo).
 //   distribute  — 'firebase' | 'custom' | null (how the merged build ships).  ← repos[].distribute
 //   autoMerge   — OPTIONAL per-repo override of AUTO_MERGE.                   ← repos[].auto_merge
-// AUTO_MERGE — vcs.auto_merge. true ⇒ the Merge phase squash-merges automatically (after review +
-//   the test-suite gate validate the candidate), then the merged build is distributed. false ⇒ the
-//   run reviews + runs the test-suite gate then STOPS, leaving the PR/MR OPEN for a human (nothing
-//   merged or distributed).
+// AUTO_MERGE — vcs.auto_merge. true ⇒ after review + the test-suite gate validate the candidate, the
+//   Merge phase EMITS the `!` merge command and Distribute the `!` distribute command for a human to
+//   run in-session (the auto-mode classifier clears these outward steps ONLY for a human, never a
+//   background agent), and the run stops (awaiting-human-ship). false ⇒ the run reviews + runs the
+//   test-suite gate then STOPS, leaving the PR/MR OPEN for a human. Either way the run merges/distributes nothing itself.
 // AUTO_APPROVE_PLAN — planning.auto_approve. false ⇒ after Kickoff the run STOPS for human plan
 //   approval before build; re-run with --approve-plan to proceed. Like PLAN_TO_HTML this const is
 //   only the FALLBACK DEFAULT: it is RE-RESOLVED at runtime (local-first) into RESOLVED_AUTO_APPROVE
@@ -60,7 +61,7 @@ export const meta = {
 // NOTIFY / NOTIFY_PROVIDER / NOTIFY_CHANNEL — notify.{enabled,provider,channel}. When NOTIFY is
 //   true AND AUTO_MERGE is false, the final Notify phase posts a "please review" digest (the open
 //   PR/MR per repo) to NOTIFY_CHANNEL via the scripts/notify/ adapter. With auto-merge ON the run
-//   merges + distributes itself, so there is nothing to review and the phase is skipped.
+//   hands the merge/distribute to a human as `!` commands, so there is nothing to review and the phase is skipped.
 // DESIGN_ENABLED — design.enabled (the workspace-wide Figma switch). false ⇒ Figma is OFF: the
 //   dev/QA agents do NOT call Figma — they build from the ticket spec, not a Figma screenshot
 //   (see FIGMA_DIRECTIVE below and docs/agents/figma.md). The /prd-design design phase is what authors
@@ -629,14 +630,6 @@ const REVIEW_SCHEMA = {
     regression_detail: { type: 'string' }, // what the fix broke + file:line + evidence it was the fix
   },
 }
-const MERGE_SCHEMA = {
-  type: 'object', additionalProperties: false,
-  required: ['merged'],
-  properties: {
-    merged: { type: 'boolean' }, base: { type: 'string' },
-    sha: { type: 'string' }, note: { type: 'string' },
-  },
-}
 // The cross-repo QA gate's verdict. `receipt` is REQUIRED and not decorative: a gate that
 // returns passed:true with no evidence of having run is the one failure this schema exists to
 // stop (it has happened — the run reported green and no result reached the ticket). The caller
@@ -704,22 +697,6 @@ const RESULT_AUDIT_SCHEMA = {
   properties: {
     posted: { type: 'boolean' },
     detail: { type: 'string' },  // the matching comment's opening line, or why none matched
-  },
-}
-const DIST_SCHEMA = {
-  type: 'object', additionalProperties: false,
-  required: ['distributed'],
-  properties: {
-    distributed: { type: 'boolean' }, release_link: { type: ['string', 'null'] },
-    build: { type: 'string' }, note: { type: 'string' },
-  },
-}
-const CLOSE_SCHEMA = {
-  type: 'object', additionalProperties: false,
-  required: ['closed'],
-  properties: {
-    closed: { type: 'boolean' }, // true ONLY after Status → Done actually persisted
-    note: { type: 'string' },
   },
 }
 // One ticket-status move (the workflow's monotonic status driver — see moveTicket).
@@ -853,7 +830,7 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
 // Called ONLY from the auto-merge-OFF (merge-skipped) path: every repo is built + reviewed
 // and the cross-repo test-suite gate is green, but the validated PR/MR are left OPEN for a
 // human to merge — so we ping the team to review them. Gated on notify.enabled (NOTIFY). With
-// auto-merge ON the run merges + distributes itself (nothing to review), so this is never
+// auto-merge ON the run hands the merge/distribute off to a human (nothing to review), so this is never
 // reached. Best-effort: a send failure NEVER changes the run's outcome — the PRs are already
 // open + validated. The command is `scripts/voice/notify-voice.sh`, which is send.sh plus a
 // voice note: when `voice.notify_voice.enabled` is on (a `th`-only, opt-in, per-machine flag) the
@@ -1561,7 +1538,14 @@ if (dryRun) {
 // here — NOTHING is merged or distributed (review + the test-suite gate still ran, so the human
 // merges a fully-validated candidate). Exactly like a dry-run, but with real, reviewed PRs.
 phase('Merge')
+// The `!` hand-off (auto-merge ON). The squash-merge — and everything downstream (distribute,
+// close) — is outward + irreversible. Under auto-mode the permission classifier clears these ONLY
+// for a HUMAN running them in-session (the `!` prefix); a background Workflow agent is always
+// denied ([Merge Without Review] / self-approval / [Production Deploy]). So the workflow no longer
+// dispatches doomed merge/distribute agents (they burned tokens + tripped a SECURITY WARNING every
+// run) — it emits the exact `!` commands, upstream->downstream, for the main session to present.
 const merges = {}
+const shipSteps = [] // ordered human `!` hand-off: merges (upstream->downstream), then distributes
 for (const id of mergeOrder) {
   const rr = repoResults[id], desc = REPOS[id], rp = rr.plan
   if ((desc.autoMerge ?? AUTO_MERGE) === false) {
@@ -1573,85 +1557,42 @@ for (const id of mergeOrder) {
     const notify = await notifyReview(mergeOrder)
     return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, loadtestGateUnavailable, summary, notify, spend }
   }
-  const merger = desc.review || desc.build // test-suite repo (no reviewer): the qa-runner merges its own PR
-  const mergePreamble = desc.review
-    ? `You approved the PR/MR for ${ticket} in ${id} (${rr.pr.pr_url}). The squash-merge is YOUR exclusive gate.`
-    : `The ticket scope (spec(s) + regression specs) for ${ticket} is green and its PR/MR is open in ${id} (${rr.pr.pr_url}). It is now your turn in the dependency order to squash-merge it.`
-  const m = await safeAgent(
-    `${tag(id, merger, 'merge')} ${mergePreamble} Work in the ${id} repo (cwd ${desc.path}/). Squash-merge PR/MR number ${rr.pr?.pr_number ?? '(see ' + rr.pr?.pr_url + ')'} into ${rp.base_branch} THROUGH THE HOST (via the VCS adapter) so the web PR/MR is marked **Merged** — do NOT run a local "git merge --squash" + push: that advances the base but leaves the PR/MR showing **Closed**, the exact bug we avoid. Run:
-\`scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<number>'} --subject "${prTitle(rp)}"\` (the same Conventional Commits subject as the PR/MR title) — this squash-merges server-side, advances ${rp.base_branch}, marks the PR/MR Merged, and prints \`state=\` + \`merge_sha=\`.
-VERIFY the printed \`state=MERGED\` before reporting (re-check with \`scripts/vcs/pr-view.sh ${rr.pr?.pr_number ?? '<number>'}\` if unsure). Return merged:true ONLY when state is MERGED (not Closed), base=${rp.base_branch}, and sha = the printed merge_sha on ${rp.base_branch}.`,
-    { agentType: merger, phase: 'Merge', label: `merge:${ticket}:${id}`, schema: MERGE_SCHEMA },
-  )
-  merges[id] = m
-  log(`[${id}] merged → ${rp.base_branch}${m?.sha ? ` (${m.sha.slice(0, 8)})` : ''}`)
-  tick(`${id}:merge`)
-  if (!m?.merged) {
-    log(`⚠️ [${id}] merge did not complete — stopping before distribution; left for human review (review + test-suite already passed).`)
-    const summary = await writeSummary('merge-failed', { ticket, mergeOrder, repoResults, merges, testSuiteRequested, testSuiteGateUnavailable })
-    return { ticket, status: 'merge-failed', failedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
-  }
+  // AUTO-MERGE ON → emit the `!` merge command (never dispatch the doomed agent; see above).
+  const absRepo = haveAbs ? `${WORKSPACE_ROOT}/${desc.path}` : desc.path
+  const mergeCmd = `! cd ${absRepo} && scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<pr-number>'} --subject ${JSON.stringify(prTitle(rp))}`
+  merges[id] = { merged: false, handoff: true, base: rp.base_branch, pr: rr.pr?.pr_url, command: mergeCmd }
+  shipSteps.push({ repo: id, kind: 'merge', pr_number: rr.pr?.pr_number ?? null, pr_url: rr.pr?.pr_url ?? null, base: rp.base_branch, command: mergeCmd })
+  log(`🫱 [${id}] MERGE → run in-session (only a human clears the auto-mode ship guard):\n    ${mergeCmd}`)
 }
 
-// 6. DISTRIBUTE — per-repo: build a release artifact from the MERGED base and ship it to the
-// repo's target. distribute: 'firebase' | 'custom' | null/'none'.
+// 6. DISTRIBUTE + CLOSE sit downstream of a landed merge, so under the `!` hand-off they're human
+// steps too. Emit the distribute `!` command per distributing repo — a TEMPLATE, because the
+// concrete app id / tester group / artifact path live in files the workflow can't read; the main
+// session fills the <…> placeholders (firebase.json + `firebase appdistribution:group:list` + the
+// built artifact) before presenting, and moves the ticket to done once the ship lands.
 phase('Distribute')
-const dists = {}
 for (const id of mergeOrder) {
-  const desc = REPOS[id]
-  if (desc.distribute && desc.distribute !== 'none') {
-    const how = desc.distribute === 'firebase'
-      ? 'distribute it to Firebase App Distribution for the tester group (firebase CLI "firebase appdistribution:distribute …" or the Firebase MCP)'
-      : `distribute it via this repo's configured target ("${desc.distribute}" — see the repo's docs/scripts)`
-    dists[id] = await safeAgent(
-      `${tag(id, desc.build, 'distribute')} ${ticket} is squash-merged into ${repoResults[id].plan.base_branch}${merges[id]?.sha ? ` (${merges[id].sha})` : ''}. Work in the ${id} repo (cwd ${desc.path}/). Build a release artifact from the merged base and ${how}. Return distributed + the release link.`,
-      { agentType: desc.build, phase: 'Distribute', label: `distribute:${ticket}:${id}`, schema: DIST_SCHEMA },
-    )
-    log(`[${id}] distributed: ${dists[id]?.release_link ?? '(see note)'}`)
-    tick(`${id}:distribute`)
-  }
+  const desc = REPOS[id], rp = repoResults[id].plan
+  if (!desc.distribute || desc.distribute === 'none') continue
+  const absRepo = haveAbs ? `${WORKSPACE_ROOT}/${desc.path}` : desc.path
+  const distCmd = desc.distribute === 'firebase'
+    ? `! cd ${absRepo} && flutter build apk --release && firebase appdistribution:distribute build/app/outputs/flutter-apk/app-release.apk --app <android appId from firebase.json> --project <firebase projectId> --groups <tester group from: firebase appdistribution:group:list> --release-notes ${JSON.stringify(prTitle(rp))}`
+    : `! cd ${absRepo} && <run this repo's "${desc.distribute}" distribution command — see the repo's docs/scripts>`
+  shipSteps.push({ repo: id, kind: 'distribute', target: desc.distribute, after: 'merge', command_template: distCmd, resolve: 'main session fills the <…> placeholders from the repo before presenting' })
+  log(`🫱 [${id}] DISTRIBUTE → run in-session AFTER the merge lands:\n    ${distCmd}`)
 }
 
-// 6b. CLOSE → done — the WORKFLOW closes the ticket now that the whole change set is
-// MERGED (the real ship). Gated on a reachable tracker (else the write won't persist) and
-// a successful merge. The build role that shipped the app posts the closing comment.
-let close = null
-const closeId = mergeOrder.find((id) => merges[id]?.merged && REPOS[id].distribute && REPOS[id].distribute !== 'none')
-  || mergeOrder.find((id) => merges[id]?.merged)
-if (trackerReachable && closeId) {
-  const cdesc = REPOS[closeId]
-  const csha = merges[closeId]?.sha
-  const clink = dists[closeId]?.release_link
-  const cpr = repoResults[closeId].pr?.pr_url
-  close = await safeAgent(
-    `${tag(closeId, cdesc.build, 'close')} ${ticket} is squash-merged into ${repoResults[closeId].plan.base_branch}${csha ? ` (${csha})` : ''}${clink ? ` and distributed (${clink})` : ''}. You shipped it, so you CLOSE it: invoke /update-ticket ${ticket} to move Status → ${STATUS.done}, then post a one-line closing comment citing PR/MR ${cpr ?? '(see run)'}${csha ? `, merge ${csha}` : ''}${clink ? `, ${clink}` : ''}. Return { closed:true } ONLY after the ${STATUS.done} write actually persisted.`,
-    { agentType: cdesc.build, phase: 'Merge', label: `close:${ticket}:${closeId}`, schema: CLOSE_SCHEMA },
-  )
-  if (close?.closed) statusRank = rankOf('done')
-  log(`[${closeId}] ticket → ${STATUS.done}: ${close?.closed ? 'closed' : 'NOT confirmed (left for manual close)'}`)
-  tick(`${closeId}:close`)
-} else if (!trackerReachable) {
-  log('⚠️ Tracker unreachable — ticket NOT moved to Done (write would not persist); left for manual close.')
-} else {
-  log('No merged repo — ticket Done-transition skipped; left for manual close.')
-}
-
-// 7. SUMMARY — required closing step.
-const summary = await writeSummary('shipped', {
-  ticket, repos: mergeOrder,
-  per_repo: mergeOrder.map((id) => ({
-    repo: id, base: repoResults[id].plan.base_branch, work: repoResults[id].plan.work_branch,
-    reviewRounds: repoResults[id].reviewRound,
-    pr: repoResults[id].pr?.pr_url, sha: merges[id]?.sha, distribution: dists[id]?.release_link,
-  })),
-  testSuite: testSuite ? { passed: testSuite.passed } : null,
-  testSuiteRequested, testSuiteGateUnavailable,
-})
+// Hand off + STOP: the run can't proceed past its own outward steps. The main session presents the
+// `!` commands (merge upstream->downstream, then distribute), then closes the ticket to done.
+const nMerge = shipSteps.filter((s) => s.kind === 'merge').length
+const nDist = shipSteps.filter((s) => s.kind === 'distribute').length
+log(`⏭️  ${ticket}: review + test-suite validated; ${nMerge} merge + ${nDist} distribute step(s) handed off as \`!\` commands (only a human clears the auto-mode ship guard). After you run them, the main session closes ${ticket} → ${STATUS.done}.`)
+const summary = await writeSummary('awaiting-human-ship', { ticket, mergeOrder, repoResults, merges, shipSteps, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable })
 
 return {
-  ticket, status: 'shipped',
-  repos: mergeOrder, repoResults, merges,
+  ticket, status: 'awaiting-human-ship',
+  repos: mergeOrder, repoResults, merges, shipSteps,
   testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, loadtestGateUnavailable,
-  distribution: dists, closed: close?.closed === true, summary, trackerReachable,
+  summary, trackerReachable,
   spend, // per-phase output-token deltas; the per-repo/role table lives in summary.summary_path
 }

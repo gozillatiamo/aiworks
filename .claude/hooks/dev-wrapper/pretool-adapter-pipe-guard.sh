@@ -57,14 +57,54 @@ printf '%s' "$nobody" | grep -qE "scripts/(vcs|tracker|notify)/($writers)" || ex
 # people away from previewing, which is the opposite of what this guard is for.
 printf '%s' "$cmd" | grep -qE '(^|[[:space:]])--dry-run([[:space:]]|$)' && exit 0
 
-# Is it compound? Strip single- and double-quoted spans first: an operator inside a
-# quoted argument (a commit message containing "A && B", a --body with a pipe table) is
-# text, not shell syntax, and blocking on it would be a false positive on exactly the
-# rich PR/MR bodies this workspace writes.
-bare=$(printf '%s' "$nobody" | perl -pe "s/'[^']*'//g; s/\"(\\\\.|[^\"\\\\])*\"//g" 2>/dev/null) || bare="$cmd"
+# Is it compound? Blank out quoted spans first: an operator inside a quoted argument (a
+# commit message containing "A && B", a --body with a pipe table) is text, not shell
+# syntax, and blocking on it would be a false positive on exactly the rich PR/MR bodies
+# this workspace writes.
+#
+# This is a quote-state SCANNER rather than a pair of regex substitutions, because the
+# substitutions had two failure modes and both fired on real PR bodies — the exact case
+# this strip exists to protect:
+#
+#   LINE-ORIENTED. `perl -pe` runs per line, so a multi-line `--body "…"` opens its quote
+#   on one line and closes it many lines later and NEITHER pattern ever matched. The whole
+#   body survived into $bare, where every `|` of a Markdown table and every `;` of an
+#   English sentence read as shell syntax. Measured on aiworks#85: three identical
+#   `open-pr.sh` calls blocked, on a table, then on one semicolon in prose.
+#
+#   ORDER-DEPENDENT. Stripping single-quoted spans FIRST lets two apostrophes in prose
+#   ("somebody's … that file's") pair up and swallow the double quote between them, so the
+#   second substitution runs against a string that no longer parses as it was written. No
+#   single-line payload has been found where that alone flips the verdict — every operator
+#   tried happened to fall inside the span it deleted — so this one is luck rather than a
+#   measured bug. A scanner that tracks quote state does not need the luck.
+#
+# Walking the string once with a quote state has neither failure mode: a quote character
+# only opens or closes a span when the state says it can, a backslash escapes the next
+# character everywhere except inside single quotes, and quoted content is replaced with a
+# space so tokens can never glue together.
+bare=$(printf '%s' "$nobody" | perl -e '
+  my $s = do { local $/; <STDIN> };
+  my ($SQ, $DQ, $BS) = (chr(39), chr(34), chr(92));
+  my ($out, $q, $i, $n) = ("", "", 0, length $s);
+  while ($i < $n) {
+    my $c = substr($s, $i, 1);
+    if    ($q eq ""  and ($c eq $SQ or $c eq $DQ))    { $q = $c; $out .= " " }
+    elsif ($q ne ""  and $c eq $q)                    { $q = "";  $out .= " " }
+    elsif ($q ne $SQ and $c eq $BS and $i + 1 < $n)   { $i++;     $out .= " " }
+    elsif ($q eq "")                                  { $out .= $c }
+    else                                              { $out .= " " }
+    $i++;
+  }
+  print $out;
+' 2>/dev/null) || bare="$cmd"
 
+# Every arm needs its leading `*`: the backtick one lacked it, so a command substitution
+# anywhere but the first character (`echo `…merge-pr.sh``) was not seen as compound at all.
+# `&` and `>` are deliberately absent — `writer 2>&1` and `writer > out.txt` keep the
+# allowlist match, and the block message recommends the redirect itself.
 case "$bare" in
-  *'|'*|*'&&'*|*'||'*|*';'*|*'$('*|'`'*|*'<<'*) ;;
+  *'|'*|*'&&'*|*'||'*|*';'*|*'$('*|*'`'*|*'<<'*) ;;
   *) exit 0 ;;
 esac
 

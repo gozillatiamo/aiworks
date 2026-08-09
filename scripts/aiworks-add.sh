@@ -25,9 +25,13 @@
 #   --product <id>         Product this repo belongs to = its group under `products:` in
 #                          workspace.config.yaml AND the mani.d/<product>.yaml file (repos
 #                          of one product share both). Default: the repo name.
-#   --lang <language>      Repo language (e.g. flutter, go, node). Becomes the 2nd tag and
-#                          steers the scripts/dev.sh scaffold. Default: auto-detected from
-#                          the repo's anatomy once cloned.
+#   --lang <a[,b,…]>       Repo stack (e.g. flutter, go, node). A repo that is genuinely
+#                          several stacks takes a COMMA-SEPARATED list, dominant one FIRST
+#                          (e.g. "n8n, terraform"): each becomes its own mani tag, each
+#                          contributes its build dirs to the VS Code search excludes, and
+#                          the first that classifies picks the coding-standards flavor.
+#                          Also steers the scripts/dev.sh scaffold. Default: auto-detected
+#                          from the repo's anatomy once cloned.
 #   --tags <a,b,…>         EXTRA tags, appended after [product, language] in the mani entry
 #                          (e.g. "ui,offline"). Default: none.
 #   --desc <text>          one-line repo responsibility — explains the repo's anatomy/role. Written
@@ -236,6 +240,23 @@ detect_lang() {
   else echo ''; fi
 }
 
+# A repo may be several stacks at once (`lang: n8n, terraform`), so the field is a LIST that
+# happens to be written inline. Split it into REPO_LANGS[] — comma- or space-separated,
+# lowercased, blanks dropped — and take the FIRST entry as REPO_LANG_PRIMARY: the author
+# writes the dominant stack first, and a few steps (the standards flavor) must pick exactly
+# one. REPO_LANG itself is left as authored, for display and for the config round-trip.
+REPO_LANGS=() REPO_LANG_PRIMARY=""
+repo_langs_split() {
+  local raw="${1:-}" one
+  REPO_LANGS=()
+  raw="${raw//,/ }"
+  for one in $raw; do
+    one="$(printf '%s' "$one" | tr '[:upper:]' '[:lower:]')"
+    [[ -n "$one" ]] && REPO_LANGS+=("$one")
+  done
+  REPO_LANG_PRIMARY="${REPO_LANGS[0]:-}"
+}
+
 # Pick the default coding-standards FLAVOR for a repo from its kind + language: backend |
 # frontend | "" (empty = no obvious flavor → seed nothing). The `kind` decides when it's
 # explicit; otherwise the language does (so a `package`/`generic` repo still classifies by its
@@ -243,19 +264,29 @@ detect_lang() {
 # doc repos (markdown/json) match neither and get no standards. The templates these map to live
 # in scripts/templates/coding-standards/<flavor>/ — backend ← agent-webservice conventions,
 # frontend ← paotung-template conventions.
+# A multi-stack repo gets ONE flavor (the templates are one flavor each), so the languages
+# are tried IN ORDER and the first that classifies wins — the author writes the dominant
+# stack first, which makes `lang: rust, typescript` a backend repo and `lang: typescript,
+# rust` a frontend one, deliberately and predictably.
 standards_flavor() {
-  local kind lang
+  local kind one flavor
   kind="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
-  lang="$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')"
   case "$kind" in
     backend|service|api|migration) echo backend; return ;;
     web-app|webapp|frontend|ui)    echo frontend; return ;;
+    test-suite)                    echo ''; return ;;   # a QA suite writes tests, not product code
   esac
-  case "$lang" in
-    *rust*|go|*golang*|*jvm*|*java*|*kotlin*|*scala*|*postgres*|*sql*|*python*|py|*ruby*|*php*|*elixir*|*dotnet*|c#) echo backend ;;
-    *next*|*nuxt*|*node*|*react*|*vue*|*svelte*|*angular*|*astro*|*solid*|*typescript*|ts|*javascript*|js) echo frontend ;;
-    *) echo '' ;;
-  esac
+  for one in $(printf '%s' "${2:-}" | tr '[:upper:],' '[:lower:] '); do
+    # Frontend FIRST: `*java*` would otherwise swallow `javascript` and flavor a JS repo
+    # backend — which is exactly what happened to the Appium suite before this ordering.
+    case "$one" in
+      *next*|*nuxt*|*node*|*react*|*vue*|*svelte*|*angular*|*astro*|*solid*|*typescript*|ts|*javascript*|js) flavor=frontend ;;
+      *rust*|go|*golang*|*jvm*|*java*|*kotlin*|*scala*|*postgres*|*sql*|*python*|py|*ruby*|*php*|*elixir*|*dotnet*|c#) flavor=backend ;;
+      *) continue ;;
+    esac
+    echo "$flavor"; return
+  done
+  echo ''
 }
 
 # Render a stream of glance lines as a fixed N-line "running log" window (like a docker
@@ -359,7 +390,7 @@ claude_run() {
 }
 
 # ── args ────────────────────────────────────────────────────────────────────
-PRODUCT="" URL="" TAGS="" DESC="" PATH_REL="" LANG="" SKILL_CMD="/run-skill-generator"
+PRODUCT="" URL="" TAGS="" DESC="" PATH_REL="" REPO_LANG="" SKILL_CMD="/run-skill-generator"
 KIND="generic" DISTRIBUTE="none" APP_ID="" CLAUDE_TIMEOUT=900
 FORCE=0 YES=0 PERM_FLAG="--dangerously-skip-permissions"
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
@@ -367,7 +398,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --product)         PRODUCT="${2:-}"; shift 2 ;;
     --url)             URL="${2:-}"; shift 2 ;;
-    --lang)            LANG="${2:-}"; shift 2 ;;
+    --lang)            REPO_LANG="${2:-}"; shift 2 ;;
     --tags)            TAGS="${2:-}"; shift 2 ;;
     --desc)            DESC="${2:-}"; shift 2 ;;
     --kind)            KIND="${2:-}"; shift 2 ;;
@@ -412,12 +443,21 @@ WC="$ROOT/workspace.config.yaml"
 
 # Language: --lang wins; otherwise detect from the repo's anatomy if it's already cloned
 # (first run won't have it yet — then it's left blank here and re-detected for dev.sh).
-[[ -n "$LANG" ]] || { [[ -d "$REPO_DIR" ]] && LANG="$(detect_lang "$REPO_DIR")"; }
+#
+# NEVER name this variable LANG. LANG is the POSIX locale variable and it is already
+# exported by the login shell, so assigning a repo's stack to it re-exports that string to
+# every child process — and ICU segfaults V8 on a value it can't parse as a locale, killing
+# node/npx/claude/codegraph at startup (`LANG="n8n, terraform" node -e 0` → SIGSEGV).
+[[ -n "$REPO_LANG" ]] || { [[ -d "$REPO_DIR" ]] && REPO_LANG="$(detect_lang "$REPO_DIR")"; }
+repo_langs_split "$REPO_LANG"
 
-# Tags written to the mani entry = [PRODUCT, LANGUAGE, …extra --tags] (in that order).
-# --tags is purely supplemental now; product/language lead the list.
+# Tags written to the mani entry = [PRODUCT, …LANGUAGES, …extra --tags] (in that order).
+# --tags is purely supplemental now; product/language lead the list. A multi-stack repo
+# contributes ONE TAG PER LANGUAGE, so `mani list projects --tags terraform` finds it —
+# a single "n8n, terraform" tag would match neither name.
 IFS=',' read -r -a _extra <<<"$TAGS"
-tags_list=("$PRODUCT"); [[ -n "$LANG" ]] && tags_list+=("$LANG")
+tags_list=("$PRODUCT")
+for _l in ${REPO_LANGS[@]+"${REPO_LANGS[@]}"}; do tags_list+=("$_l"); done
 for t in "${_extra[@]:-}"; do
   t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"   # trim
   [[ -n "$t" ]] && tags_list+=("$t")
@@ -443,7 +483,7 @@ esac
 
 # Intro banner — verbose-only chatter (the closing summary restates repo + product).
 if [[ "$VERBOSE" -eq 1 ]]; then
-  printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${LANG:-auto}" "$c_off"
+  printf '%sOnboarding repo "%s" → product "%s"  (dir: %s/, lang: %s)%s\n' "$c_step" "$REPO_NAME" "$PRODUCT" "$PATH_REL" "${REPO_LANG:-auto}" "$c_off"
   printf '  url=%s  tags=[%s]\n  workspace root=%s\n' "$URL" "$tags_yaml" "$ROOT"
 fi
 if [[ "$YES" -ne 1 && -t 0 ]]; then
@@ -473,6 +513,37 @@ else
   printf '# %s — mani projects. path is relative to THIS file dir (mani.d/), so ../%s resolves under the workspace root.\nprojects:\n%s' \
     "$PRODUCT" "$PATH_REL" "$mani_entry" > "$MANI_FILE" && ok "wrote mani.d/$PRODUCT.yaml (project '$REPO_NAME')"
 fi
+
+# ── 1.1. Drop this project key from any OTHER mani.d/*.yaml ───────────────────
+# Product renames / moves leave the same project key in the old product file. Mani merges
+# duplicate keys across imports by silently dropping them, so `mani list projects` loses
+# those repos. Always own the key in exactly one file: this product's.
+step "1.1. Ensure project '$REPO_NAME' is not duplicated in other mani.d files"
+shopt -s nullglob
+for _other in "$ROOT"/mani.d/*.yaml; do
+  [[ "$(cd "$(dirname "$_other")" && pwd)/$(basename "$_other")" == "$(cd "$(dirname "$MANI_FILE")" && pwd)/$(basename "$MANI_FILE")" ]] && continue
+  grep -qE "^  ${REPO_NAME}:[[:space:]]*$" "$_other" 2>/dev/null || continue
+  if awk -v key="$REPO_NAME" '
+        skip==1 && /^    / { next }
+        skip==1 { skip=0 }
+        $0 ~ ("^  " key ":[ \t]*$") { skip=1; next }
+        { print }
+      ' "$_other" > "$_other.tmp" && mv "$_other.tmp" "$_other"; then
+    ok "removed duplicate project '$REPO_NAME' from mani.d/$(basename "$_other")"
+    if ! grep -qE '^  [A-Za-z0-9._-]+:[[:space:]]*$' "$_other"; then
+      rm -f "$_other"
+      ok "removed empty mani.d/$(basename "$_other")"
+      # Drop its import line if present (sync also rewrites the whole import list).
+      if grep -qxF "  - mani.d/$(basename "$_other")" "$ROOT/mani.yaml" 2>/dev/null; then
+        grep -vxF "  - mani.d/$(basename "$_other")" "$ROOT/mani.yaml" > "$ROOT/mani.yaml.tmp"           && mv "$ROOT/mani.yaml.tmp" "$ROOT/mani.yaml"           && ok "removed stale import for $(basename "$_other") from mani.yaml"
+      fi
+    fi
+  else
+    rm -f "$_other.tmp"
+    skip "1.1. could not edit mani.d/$(basename "$_other") — remove duplicate '$REPO_NAME' by hand"
+  fi
+done
+shopt -u nullglob
 
 # ── 2. import into mani.yaml ──────────────────────────────────────────────────
 step "2. Import mani.d/$PRODUCT.yaml from mani.yaml"
@@ -514,7 +585,7 @@ fi
 # Build the minimal repo block (6/8-space indented). Optional fields only when meaningful.
 repo_block="      - url: $URL"$'\n'"        kind: $KIND"$'\n'
 [[ "$DESC_GIVEN" -eq 1 ]]                     && repo_block+="        desc: $DESC_YAML"$'\n'
-[[ -n "$LANG" ]]                              && repo_block+="        lang: $LANG"$'\n'
+[[ -n "$REPO_LANG" ]]                              && repo_block+="        lang: $REPO_LANG"$'\n'
 [[ -n "$APP_ID" ]]                            && repo_block+="        app_id: $APP_ID"$'\n'
 [[ -n "$DISTRIBUTE" && "$DISTRIBUTE" != none ]] && repo_block+="        distribute: $DISTRIBUTE"$'\n'
 [[ "$PATH_REL" != "$REPO_NAME" ]]             && repo_block+="        path: $PATH_REL"$'\n'
@@ -605,7 +676,8 @@ else skip "3.1.1. workspace .cursorindexingignore already re-includes $PATH_REL/
 
 # Re-detect the language now that the repo is (hopefully) cloned, so later steps + tags-in-
 # hand have it even on a first run. (mani.d was already written; the tag is informational.)
-[[ -n "$LANG" ]] || { [[ -d "$REPO_DIR" ]] && LANG="$(detect_lang "$REPO_DIR")"; }
+[[ -n "" ]] || { [[ -d "" ]] && REPO_LANG="20 20 12 61 79 80 81 701 33 98 100 204 250 395 398 399 400detect_lang "")"; }
+repo_langs_split "$REPO_LANG"
 
 # ── 3.1.2. VS Code search — make $PATH_REL/ searchable in VS Code (.vscode/settings.json) ─
 #   Unlike Cursor, VS Code has no per-folder "un-gitignore". Its search honours .gitignore
@@ -620,15 +692,20 @@ if ! have jq; then
   skip "3.1.2. 'jq' missing — set \"search.useIgnoreFiles\":false + $PATH_REL/ build-dir excludes in .vscode/settings.json by hand"
   FOLLOWUP+=("add VS Code search settings for $PATH_REL/ to .vscode/settings.json (install jq to let aiworks do it)")
 else
-  vs_ex=()   # repo-scoped build/output dirs to keep out of search, by detected language
-  case "$LANG" in
-    flutter) vs_ex=( "$PATH_REL/build" "$PATH_REL/.dart_tool" "$PATH_REL/ios/Pods" "$PATH_REL/android/.gradle" ) ;;
-    node)    vs_ex=( "$PATH_REL/dist" "$PATH_REL/coverage" "$PATH_REL/.expo" ) ;;
-    go)      vs_ex=( "$PATH_REL/vendor" "$PATH_REL/bin" ) ;;
-    rust)    vs_ex=( "$PATH_REL/target" ) ;;
-    python)  vs_ex=( "$PATH_REL/.venv" "$PATH_REL/__pycache__" "$PATH_REL/.mypy_cache" "$PATH_REL/.pytest_cache" ) ;;
-    jvm)     vs_ex=( "$PATH_REL/build" "$PATH_REL/.gradle" "$PATH_REL/target" ) ;;
-  esac
+  # Repo-scoped build/output dirs to keep out of search. A multi-stack repo needs the UNION
+  # of its languages' dirs — a terraform+node repo hides both .terraform/ and dist/.
+  vs_ex=()
+  for _l in ${REPO_LANGS[@]+"${REPO_LANGS[@]}"}; do
+    case "$_l" in
+      flutter|dart) vs_ex+=( "$PATH_REL/build" "$PATH_REL/.dart_tool" "$PATH_REL/ios/Pods" "$PATH_REL/android/.gradle" ) ;;
+      node|javascript|typescript) vs_ex+=( "$PATH_REL/node_modules" "$PATH_REL/dist" "$PATH_REL/coverage" "$PATH_REL/.expo" ) ;;
+      go)        vs_ex+=( "$PATH_REL/vendor" "$PATH_REL/bin" ) ;;
+      rust)      vs_ex+=( "$PATH_REL/target" ) ;;
+      python)    vs_ex+=( "$PATH_REL/.venv" "$PATH_REL/__pycache__" "$PATH_REL/.mypy_cache" "$PATH_REL/.pytest_cache" ) ;;
+      jvm)       vs_ex+=( "$PATH_REL/build" "$PATH_REL/.gradle" "$PATH_REL/target" ) ;;
+      terraform) vs_ex+=( "$PATH_REL/.terraform" ) ;;
+    esac
+  done
   VS="$ROOT/.vscode/settings.json"; mkdir -p "$ROOT/.vscode"; [[ -f "$VS" ]] || printf '{}\n' > "$VS"
   if jq '
         .["search.useIgnoreFiles"] = false                       # VS Code search ignores .gitignore now…
@@ -797,11 +874,11 @@ else
   [[ "${#failed[@]}"    -gt 0 ]] && skip "6. failed to install: ${failed[*]} — retry: npx skills@latest add <source> --skill <name> -y"
 fi
 
-# ── 7. project knowledge (CLAUDE.md) — anatomy-driven, ≤60 lines + .claude/rules/ ─
+# ── 7. project knowledge (CLAUDE.md) — anatomy-driven, ≤100 lines + .claude/rules/ ─
 # Keep CLAUDE.md lean; overflow goes into .claude/rules/<topic>.md with frontmatter. If a
 # CLAUDE.md already exists, ask whether to regenerate / combine / skip (default: skip).
 step "7. Scaffold project knowledge (CLAUDE.md)"
-md_guidance="Constraint: keep CLAUDE.md to 60 lines MAX. If the project needs more guidance than fits, move details into .claude/rules/<topic>.md files — each starting with YAML frontmatter that has a 'description:' line (and, when the rule is path-specific, a 'paths:' list of glob patterns scoping it to matching files) — and keep CLAUDE.md a concise index that points to them."
+md_guidance="Constraint: keep CLAUDE.md to 100 lines MAX. If the project needs more guidance than fits, move details into .claude/rules/<topic>.md files — each starting with YAML frontmatter that has a 'description:' line (and, when the rule is path-specific, a 'paths:' list of glob patterns scoping it to matching files) — and keep CLAUDE.md a concise index that points to them."
 init_prompt="Analyze THIS repository's anatomy (languages, build/test tooling, directory layout, conventions) and write a CLAUDE.md giving a future Claude Code session the essential working context: what the project is, the stack, how to build/test/run, key directories, and the conventions to follow. $md_guidance"
 if ! have claude; then
   skip "7. 'claude' CLI not found — run /init in $PATH_REL/ later"
@@ -822,12 +899,12 @@ else
     combine)     glance "merging into the existing CLAUDE.md ..."
                  if claude_run "Update the existing CLAUDE.md IN PLACE: keep all still-accurate content, fill gaps, fix staleness — do NOT discard the author's notes. $md_guidance"; then ok "CLAUDE.md combined"; else skip "7. combine $(claude_fail_hint)"; fi ;;
   esac
-  # 60-line guard: if CLAUDE.md overflowed, nudge toward the .claude/rules/ split.
+  # 100-line guard: if CLAUDE.md overflowed, nudge toward the .claude/rules/ split.
   if [[ -f "$REPO_DIR/CLAUDE.md" ]]; then
     cm_lines="$(grep -c '' "$REPO_DIR/CLAUDE.md" 2>/dev/null || echo 0)"
-    if [[ "$cm_lines" -gt 60 ]]; then
-      warn "CLAUDE.md is $cm_lines lines (>60) — move detail into .claude/rules/<topic>.md (frontmatter: description/paths)"
-      FOLLOWUP+=("trim $PATH_REL/CLAUDE.md ($cm_lines lines) to ≤60 and split detail into .claude/rules/")
+    if [[ "$cm_lines" -gt 100 ]]; then
+      warn "CLAUDE.md is $cm_lines lines (>100) — move detail into .claude/rules/<topic>.md (frontmatter: description/paths)"
+      FOLLOWUP+=("trim $PATH_REL/CLAUDE.md ($cm_lines lines) to ≤100 and split detail into .claude/rules/")
     fi
   fi
 fi
@@ -840,11 +917,11 @@ fi
 # flavor (QA suite, docs) is skipped. Idempotent like the other seeders: present → skip (keeps
 # any team-authored rules), --force reseeds the two baseline files.
 step "7.5. Seed default coding-standards rules (.claude/rules/coding_standards/)"
-cs_flavor="$(standards_flavor "$KIND" "$LANG")"
+cs_flavor="$(standards_flavor "$KIND" "$REPO_LANG")"
 cs_src="$ROOT/scripts/templates/coding-standards/$cs_flavor"
 cs_dest="$REPO_DIR/.claude/rules/coding_standards"
 if [[ -z "$cs_flavor" ]]; then
-  skip "7.5. no backend/frontend flavor for kind '$KIND' / lang '${LANG:-?}' — no default standards seeded"
+  skip "7.5. no backend/frontend flavor for kind '$KIND' / lang '${REPO_LANG:-?}' — no default standards seeded"
 elif [[ ! -d "$cs_src" ]]; then
   skip "7.5. template store missing ($cs_src) — expected scripts/templates/coding-standards/$cs_flavor/*.md"
 elif [[ -f "$cs_dest/standards.md" && "$FORCE" -ne 1 ]]; then
@@ -1041,7 +1118,8 @@ fi
 # No reference file: Claude inspects the repo's own structure/toolchain and implements the
 # standard dev.sh contract for that stack.
 step "10. Generate scripts/dev.sh from the repo's anatomy"
-[[ -n "$LANG" ]] || LANG="$(detect_lang "$REPO_DIR")"
+[[ -n "" ]] || REPO_LANG="20 20 12 61 79 80 81 701 33 98 100 204 250 395 398 399 400detect_lang "")"
+repo_langs_split "$REPO_LANG"
 if ! have claude; then skip "10. 'claude' CLI not found — author scripts/dev.sh by hand"
 elif [[ -f "$REPO_DIR/scripts/dev.sh" && "$FORCE" -ne 1 ]]; then skip "10. scripts/dev.sh already present"
 else
@@ -1057,11 +1135,11 @@ else
   if [[ "$KIND" == "test-suite" ]]; then
     artifacts_clause=" This repo is a TEST-SUITE repo, so ALSO implement an 'artifacts' subcommand. It is a query like 'why' (no log of its own) that prints what the LAST test run produced, one row per line, TAB-separated: '<case-id>\\t<kind>\\t<repo-relative path>'. <case-id> is the test-case id the artifact's own filename carries (this repo's test titles start with one, e.g. TC001) or '-' when the artifact belongs to the whole run rather than one case; <kind> is one of fail-screenshot, screenshot, video, report, data. Derive the directories and the filename format from THIS repo's test tooling — that mapping is the whole point of putting it here. List ONLY files newer than the last test run (date them against that run's log filename timestamp, and accept an optional '--since <file>' to use that file's mtime instead, for a caller that drives the tool directly rather than through dev.sh), so a leftover artifact from an earlier run is never reported as fresh evidence. Exit 0 printing nothing when the run produced none."
   fi
-  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${LANG:+; language: $LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | restart | stop | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. When 'run' backgrounds a long-running instance it MUST record its PID (and port, if any) to a handle file under agent_logs/ (e.g. agent_logs/run.pid) so the instance can be found again. 'stop' reads that handle to tear down any instance 'run' left alive (kill the PID/process group, free the port, remove the handle), is idempotent, and reports stopped vs not-running. 'restart' = 'stop' then 'run' — a clean relaunch of the running instance — and obeys the same verbose-log + one-line-summary rules. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable.${artifacts_clause} Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
-  glance "scaffolding scripts/dev.sh (${LANG:-language inferred}) ..."
+  gen_prompt="Inspect THIS repo's anatomy (its build/test/run tooling, package manager, and layout${REPO_LANG:+; language: $REPO_LANG}) and create scripts/dev.sh implementing this fixed contract with the repo's OWN toolchain: subcommands test | gen | analyze | clean | run | restart | stop | status | why <name>. Each verbose subcommand writes its full log to agent_logs/executed_verbose/<cmd>-<timestamp>.log and prints only a concise one-line summary to stdout; 'why <name>' tails/greps the matching log for failure detail; 'status' shows the latest results. 'run' is the SINGLE SOURCE OF TRUTH for how to launch this repo: it builds if needed then launches/drives the app the repo's OWN way as a NON-INTERACTIVE agent path that proves it works and EXITS with a verdict (a server → start, poll a readiness/health check, report up/down, then tear down; a web app → build or start the dev server and confirm it serves; a CLI → a smoke invocation; a DB/migration repo → apply + verify; ANYTHING long-running MUST be backgrounded, polled for a ready marker, then stopped — never block forever), and it obeys the same verbose-log + one-line-summary rules as the others. When 'run' backgrounds a long-running instance it MUST record its PID (and port, if any) to a handle file under agent_logs/ (e.g. agent_logs/run.pid) so the instance can be found again. 'stop' reads that handle to tear down any instance 'run' left alive (kill the PID/process group, free the port, remove the handle), is idempotent, and reports stopped vs not-running. 'restart' = 'stop' then 'run' — a clean relaunch of the running instance — and obeys the same verbose-log + one-line-summary rules. After writing each run's log, prune the older logs for that command so only the most-recent N are kept (N from the DEV_LOG_KEEP env var, default 5; treat 0 or a non-numeric value as keep-all). POSIX bash, 'set -euo pipefail', a usage(), executable.${artifacts_clause} Write ONLY scripts/dev.sh and chmod +x it — change nothing else."
+  glance "scaffolding scripts/dev.sh (${REPO_LANG:-language inferred}) ..."
   if claude_run "$gen_prompt"; then
     [[ -f "$REPO_DIR/scripts/dev.sh" ]] && chmod +x "$REPO_DIR/scripts/dev.sh" 2>/dev/null
-    ok "scripts/dev.sh scaffolded (${LANG:-language inferred}) — REVIEW it before relying on it"
+    ok "scripts/dev.sh scaffolded (${REPO_LANG:-language inferred}) — REVIEW it before relying on it"
     FOLLOWUP+=("review + test $PATH_REL/scripts/dev.sh (Claude-generated)")
   else skip "10. dev.sh generation $(claude_fail_hint)"; fi
 fi

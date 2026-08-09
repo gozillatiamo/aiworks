@@ -16,7 +16,7 @@
 # repair logic of its own: it runs the OWNER command for each finding, so there is exactly one
 # implementation of every write in this workspace and nothing here can drift from it.
 #
-# Groups — 1-7 run offline by default; 8-11 need `--deep` (daemons, network, credentials):
+# Groups — 1-8 run offline by default; 9-12 need `--deep` (daemons, network, credentials):
 #    1 workspace    mani.yaml · workspace.config[.local].yaml parse · required keys · no
 #                   comments in the config (hook-enforced) · typo'd booleans · CLAUDE.md budget
 #    2 repos        every declared repo cloned with a valid HEAD · mani.d ↔ products[] agree
@@ -34,10 +34,14 @@
 #                   the brew-owned half only — see check_tooling for why that is the honest
 #                   scope rather than a green tick over everything)
 #    7 voice        delegates `aiworks voice status` — skipped unless voice.enabled
-#    8 mcp          --deep · the shared MCP compose stack is up
-#    9 services     --deep · the local Postgres / Redis / SonarQube ports answer
-#   10 credentials  --deep · each adapter's own reader authenticates for real
-#   11 disk         --deep · delegates `aiworks gc` (orphaned / idle / stale worktrees)
+#    8 triage       the read-only deployed-env triage MCPs are registered (offline, and --fix
+#                   runs the owner command) · the Kubernetes triage IDENTITY exists and still
+#                   cannot write (--deep: gcloud + kubectl per cluster; its fix needs a GCP
+#                   project owner, so it is advisory). Skipped unless triage.enabled. ADR 0009
+#    9 mcp          --deep · the shared MCP compose stack is up
+#   10 services     --deep · the local Postgres / Redis / SonarQube ports answer
+#   11 credentials  --deep · each adapter's own reader authenticates for real
+#   12 disk         --deep · delegates `aiworks gc` (orphaned / idle / stale worktrees)
 #
 # HOW A CHECK IS SCORED:
 #   ✓ pass   fine.
@@ -57,10 +61,11 @@
 #
 # Usage: aiworks-doctor.sh [<repo>] [options]
 #   <repo>              narrow to one repo (also --repo a,b). Groups that are not repo-scoped
-#                       (tooling, voice, mcp, services, disk) report as skipped.
+#                       (tooling, voice, triage, mcp, services, disk) report as skipped.
 #       --only a,b      run only these groups (see the list above).
 #       --skip a,b      run every group EXCEPT these.
-#       --deep          also run groups 8-11: daemons, ports, live credentials, disk.
+#       --deep          also run groups 9-12: daemons, ports, live credentials, disk — and the
+#                       Kubernetes half of `triage`.
 #       --json          machine-readable report on stdout. Never contains a secret value.
 #       --strict        treat every warn as a fail (exit 1 on a warn-only run).
 #       --fix           print the owner command for every fixable finding, then ask to run
@@ -77,7 +82,7 @@ ROOT="$(cd "$DIR/.." && pwd)"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 
-ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice mcp services credentials disk"
+ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice triage mcp services credentials disk"
 DEEP_GROUPS="mcp services credentials disk"
 
 # ── args ──────────────────────────────────────────────────────────────────────────
@@ -359,9 +364,59 @@ check_repos() {
     local d=""
     [[ -n "$only_mani" ]] && d="in mani.d only: $only_mani"
     [[ -n "$only_cfg"  ]] && d="${d:+$d; }in config only: $only_cfg"
-    fail $g "mani.d and products[] disagree" "$d" "aiworks config"
+    fail $g "mani.d and products[] disagree" "$d" "aiworks sync"
   else
     pass $g "mani.d ↔ products[] agree" "$(mani_repos | grep -c .) repos"
+  fi
+
+  # Stale mani.d/<product>.yaml (basename not a products[].id) leaves duplicate project keys
+  # after a rename; mani silently drops collisions on import. Sync prunes these.
+  local stale_prod="" f base
+  local -a live_products=()
+  while IFS= read -r base; do
+    [[ -n "$base" ]] && live_products+=("$base")
+  done < <(awk '
+    /^products:[ 	]*$/ { inp=1; next }
+    inp && /^  - id:/ {
+      sub(/^[^:]*:[ 	]*/, "")
+      gsub(/^["'\'' \t]+|["'\'' \t]+$/, "")
+      if ($0 != "") print
+      next
+    }
+    inp && /^[A-Za-z_]/ { inp=0 }
+  ' "$CFG")
+  is_live_prod() {
+    local p="$1" x
+    for x in "${live_products[@]+"${live_products[@]}"}"; do [[ "$x" == "$p" ]] && return 0; done
+    return 1
+  }
+  shopt -s nullglob
+  for f in "$ROOT"/mani.d/*.yaml; do
+    base="$(basename "$f" .yaml)"
+    is_live_prod "$base" || stale_prod="${stale_prod:+$stale_prod }$base.yaml"
+  done
+  shopt -u nullglob
+  if [[ -n "$stale_prod" ]]; then
+    fail $g "stale mani.d product file(s)" "$stale_prod — not in products[].id; duplicate keys make mani drop projects"          "aiworks sync"
+  else
+    pass $g "mani.d product files match products[].id"
+  fi
+
+  # Duplicate project keys across mani.d files — mani drops them silently.
+  local dups
+  dups="$(awk '
+    /^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+      k=$0; sub(/:[[:space:]]*$/, "", k); sub(/^  /, "", k)
+      file=FILENAME; sub(/.*\//, "", file)
+      if (seen[k] != "" && seen[k] != file) {
+        if (!printed[k]++) print k " (" seen[k] " + " file ")"
+      } else seen[k]=file
+    }
+  ' "$ROOT"/mani.d/*.yaml 2>/dev/null || true)"
+  if [[ -n "$dups" ]]; then
+    fail $g "duplicate mani project key(s)" "$(printf '%s' "$dups" | tr '\n' '; ')"          "aiworks sync"
+  else
+    pass $g "no duplicate mani project keys"
   fi
 
   local missing="" ready=0 total=0 r
@@ -396,6 +451,46 @@ check_repos() {
   else
     pass $g "clones are git-ignored"
   fi
+
+  # Every loop above walks the DECLARED set, so a clone on disk that no mani.d entry names is
+  # invisible to all of them: `aiworks sync` never onboards it, its step 3.1 never adds the
+  # `/<dir>/` line to .gitignore, and the unignored check above never looks at it. Git then
+  # treats the nested repo as a GITLINK — `git add -A` stages mode 160000, a bare pointer to
+  # a commit nobody who clones this workspace can resolve. The usual cause is a branch switch:
+  # the clone is an untracked directory and survives, while the .gitignore line and the
+  # products[] entry that arrived with it are tracked and revert.
+  #
+  # Compared against EXPECTED, not SELECTED — `--repo` narrows what we inspect, and must not
+  # make the repos it excluded look undeclared.
+  local orphans="" orphans_open="" d
+  for d in "$ROOT"/*/; do
+    d="${d%/}"; r="${d##*/}"
+    [[ -e "$d/.git" ]] || continue                       # also skips the unmatched glob
+    printf '%s\n' "$EXPECTED" | grep -qx "$r" && continue
+    orphans="${orphans:+$orphans }$r"
+    git -C "$ROOT" check-ignore -q "$r" 2>/dev/null || orphans_open="${orphans_open:+$orphans_open }$r"
+  done
+  if [[ -n "$orphans" ]]; then
+    warn $g "clone(s) no mani.d entry declares" \
+         "$orphans${orphans_open:+ — and $orphans_open is not git-ignored, so \`git add -A\` stages it as a gitlink}" \
+         "see: aiworks add <url> to declare it, or remove the directory"
+  else
+    pass $g "no undeclared clones"
+  fi
+
+  # The same hazard one step later: a gitlink already IN the index. Without a .gitmodules to
+  # back it, this is never a real submodule — committing it publishes a pointer that no clone
+  # of this workspace can resolve. `git rm --cached` touches the index only, never the files;
+  # -f is needed because the staged commit differs from both HEAD and the nested repo's own
+  # HEAD the moment that clone moves on, and with --cached it still cannot delete anything.
+  local links
+  links="$(git -C "$ROOT" ls-files -s 2>/dev/null | awk '$1=="160000"' | cut -f2- | tr '\n' ' ')"
+  links="${links% }"
+  if [[ -n "$links" && ! -f "$ROOT/.gitmodules" ]]; then
+    fail $g "gitlink staged, no .gitmodules" \
+         "$links — committing this makes a submodule nobody can clone" \
+         "git rm --cached -f -- $links"
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -403,7 +498,7 @@ check_repos() {
 # ══════════════════════════════════════════════════════════════════════════════════
 # The required-var table mirrors each provider's own `*_require_config`, which is the single
 # authority on what that provider cannot start without:
-#   scripts/tracker/jira/impl.sh · tracker/notion/impl.sh · notify/slack/impl.sh
+#   scripts/tracker/jira/impl.sh · tracker/notion/impl.sh · tracker/linear/impl.sh · notify/slack/impl.sh
 #   scripts/observability/signoz/impl.sh · vcs/gitlab.sh · vcs/github.sh
 # Space-separated names are ALL required; `A|B` means either one satisfies it (slack takes a
 # bot token or a webhook). The selftest asserts this table still covers every provider dir,
@@ -412,6 +507,7 @@ provider_required_vars() {  # <adapter> <provider>
   case "$1/$2" in
     tracker/jira)        printf 'JIRA_BASE_URL JIRA_EMAIL JIRA_API_TOKEN' ;;
     tracker/notion)      printf 'NOTION_TOKEN NOTION_DB_ID' ;;
+    tracker/linear)      printf 'LINEAR_API_KEY' ;;
     notify/slack)        printf 'SLACK_BOT_TOKEN|SLACK_WEBHOOK_URL' ;;
     observability/signoz) printf 'SIGNOZ_BASE_URL SIGNOZ_API_KEY' ;;
     vcs/gitlab|vcs/github) printf '' ;;   # CLI-authenticated, no .env contract
@@ -549,7 +645,7 @@ check_per_repo() {
     fi
     if [[ -f "$d/CLAUDE.md" ]]; then
       n="$(grep -c '' "$d/CLAUDE.md")"
-      [[ "$n" -gt 60 ]] && over="${over:+$over }$r($n)"
+      [[ "$n" -gt 100 ]] && over="${over:+$over }$r($n)"
     else
       no_claude="${no_claude:+$no_claude }$r"
     fi
@@ -595,8 +691,8 @@ check_per_repo() {
                                  "chmod +x $noexec_dev"
   [[ -z "$no_dev" && -z "$noexec_dev" ]] && pass $g "scripts/dev.sh" "$checked repos"
   [[ -n "$no_claude" ]] && warn $g "no CLAUDE.md" "$no_claude — agents get no repo instructions" "aiworks sync" slow
-  [[ -n "$over"      ]] && warn $g "CLAUDE.md over the 60-line budget" "$over" "\$EDITOR <repo>/CLAUDE.md"
-  [[ -z "$no_claude" && -z "$over" ]] && pass $g "per-repo CLAUDE.md budget" "$checked repos ≤60 lines"
+  [[ -n "$over"      ]] && warn $g "CLAUDE.md over the 100-line budget" "$over" "\$EDITOR <repo>/CLAUDE.md"
+  [[ -z "$no_claude" && -z "$over" ]] && pass $g "per-repo CLAUDE.md budget" "$checked repos ≤100 lines"
   [[ -n "$no_link"   ]] && fail $g "adapter link(s) missing in repo" "$no_link" "aiworks setup" \
                         || pass $g "adapter symlinks" "tracker + vcs in $checked repos"
   [[ -n "$no_cg"     ]] && warn $g "no .codegraph index" "$no_cg — codegraph queries answer from nothing" \
@@ -856,7 +952,87 @@ check_voice() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 8 · mcp   (--deep)
+# 8 · triage
+# ══════════════════════════════════════════════════════════════════════════════════
+# Deployed-environment triage is the one capability workspace bring-up deliberately does NOT
+# install: `aiworks sync` only reports it, and the identity behind k8s_triage can be created
+# only by someone who owns the GCP project (docs/adr/0009). This group is where that gap
+# becomes visible instead of surfacing as an absent MCP tool mid-investigation.
+#
+# Two items, deliberately at different tiers:
+#
+#   registration  a jq read of ~/.claude.json — offline and instant, and its owner command
+#                 (`scripts/triage-mcp.sh sync`) is a safe, idempotent, local-scope write, so
+#                 --fix runs it and the gap sync stopped closing is closed here.
+#   k8s identity  gcloud + kubectl round-trips per cluster, which is exactly what --deep exists
+#                 to fence off. Its fix needs a GCP project owner this machine may not be, so it
+#                 is spelled `see:` and --fix routes it to "needs you" rather than running it.
+check_triage() {
+  local g=triage
+  cfg_bool triage.enabled true
+  case $? in
+    1) skip $g "triage" "triage.enabled is false"; return ;;
+    2) warn $g "triage.enabled is not a boolean" "resolved to the default (on)" \
+            "\$EDITOR workspace.config.yaml" ;;
+  esac
+
+  # ── the read-only triage MCPs: pg_triage · redis_triage · k8s_triage ──
+  local sh="$DIR/triage-mcp.sh"
+  if [[ ! -x "$sh" ]]; then
+    skip $g "triage MCPs" "scripts/triage-mcp.sh not present"
+  elif ! command -v jq >/dev/null 2>&1; then
+    # `status` reads the registration with jq. Without it every server would read as absent,
+    # which is a tooling gap (group 6 owns it) wearing a triage finding's clothes.
+    skip $g "triage MCPs" "jq not on PATH — cannot read the registration"
+  else
+    local out missing legacy drift
+    out="$("$sh" status 2>/dev/null)"
+    missing="$(printf '%s\n' "$out" | grep -c 'not registered' || true)"
+    legacy="$( printf '%s\n' "$out" | grep -c 'LEGACY registration still present' || true)"
+    drift="$(  printf '%s\n' "$out" | grep -c 'registered with a DIFFERENT command' || true)"
+    missing="${missing:-0}"; legacy="${legacy:-0}"; drift="${drift:-0}"
+    if [[ "$missing" -gt 0 ]]; then
+      fail $g "$missing triage MCP(s) not registered" \
+           "aiworks sync no longer registers them — this is the command that does" \
+           "scripts/triage-mcp.sh sync"
+    elif [[ "$legacy" -gt 0 ]]; then
+      warn $g "a pre-0005 triage registration is still present" \
+           "two servers over the same fleet until it is removed" \
+           "scripts/triage-mcp.sh sync"
+    elif [[ "$drift" -gt 0 ]]; then
+      warn $g "a triage MCP is registered with a different command" \
+           "left alone on purpose — somebody set that up by hand" \
+           "see: scripts/triage-mcp.sh status"
+    else
+      pass $g "triage MCPs" "pg_triage · redis_triage · k8s_triage registered (local scope)"
+    fi
+  fi
+
+  # ── the read-only Kubernetes identity (--deep) ──
+  local k="$DIR/k8s/setup.sh"
+  if [[ ! -x "$k" ]]; then
+    skip $g "kubernetes triage identity" "scripts/k8s/setup.sh not present"
+  elif [[ $DEEP == 0 ]]; then
+    skip $g "kubernetes triage identity" "--deep only (gcloud + kubectl, per cluster)"
+  else
+    # --quiet prints nothing at all when there is nothing to check (no kubectl/gcloud, or no
+    # GKE cluster in this kubeconfig), a ✓ per ready target, and a "N target(s) need attention"
+    # line otherwise. It always exits 0, so the text is the verdict.
+    local kout; kout="$("$k" --quiet 2>&1)"
+    if [[ -z "${kout//[[:space:]]/}" ]]; then
+      skip $g "kubernetes triage identity" "no GKE target in this kubeconfig (or kubectl/gcloud absent)"
+    elif printf '%s\n' "$kout" | grep -q 'need attention'; then
+      warn $g "the Kubernetes triage identity is not ready" \
+           "scripts/k8s/setup.sh names the gap and its owner command, per cluster" \
+           "see: scripts/k8s/setup.sh   (then a GCP project owner runs scripts/k8s/bootstrap-sa.sh --context <ctx>)"
+    else
+      pass $g "kubernetes triage identity" "every derived target reads and cannot write"
+    fi
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 9 · mcp   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 check_mcp() {
   local g=mcp
@@ -873,7 +1049,7 @@ check_mcp() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 9 · services   (--deep)
+# 10 · services   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 port_open() { nc -z -G 1 127.0.0.1 "$1" >/dev/null 2>&1 || nc -z -w 1 127.0.0.1 "$1" >/dev/null 2>&1; }
 
@@ -898,7 +1074,7 @@ check_services() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 10 · credentials   (--deep)
+# 11 · credentials   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 # Group 3 proves a variable is SET. This proves it is ACCEPTED — an expired token is set and
 # useless, and the difference only shows against the live API. Each probe is that adapter's
@@ -950,7 +1126,7 @@ check_credentials() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 11 · disk   (--deep)
+# 12 · disk   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 check_disk() {
   local g=disk
@@ -979,7 +1155,7 @@ run_group() {
   # A repo-narrowed run has nothing to say about machine-wide groups. Checked BEFORE the
   # --deep skip, because "you asked about one repo" is the more specific reason of the two.
   if [[ $NARROWED == 1 ]]; then
-    case "$g" in tooling|voice|mcp|services|credentials|disk)
+    case "$g" in tooling|voice|triage|mcp|services|credentials|disk)
       skip "$g" "$g" "not repo-scoped"; return 0 ;;
     esac
   fi
@@ -992,6 +1168,7 @@ run_group() {
     agent-cfg)   check_agent_cfg ;;
     tooling)     check_tooling ;;
     voice)       check_voice ;;
+    triage)      check_triage ;;
     mcp)         check_mcp ;;
     services)    check_services ;;
     credentials) check_credentials ;;

@@ -35,6 +35,9 @@ So the policy splits in two:
 `enabled: false` remains for anyone who wants neither server in their sessions; it is now the
 exception rather than the price of entry.
 
+Registration is still explicit, though: `aiworks sync` does **not** perform it (`docs/adr/0009`) —
+`scripts/triage-mcp.sh sync` does, and `aiworks doctor` reports when it is owed.
+
 ## The production gate lives inside the servers, not in the registration
 
 `triage.prod` could have been enforced at registration time — the shell script reads the config

@@ -92,8 +92,9 @@ Nothing to configure.
 scripts/k8s/setup.sh
 ```
 
-`aiworks sync` runs it automatically. It only reads, always exits 0, and prints the exact command
-for each gap — including the ones an owner has to run for you.
+Run it yourself — `aiworks sync` does **not** (`docs/adr/0009`); it only reminds you this step is
+manual, and `aiworks doctor --deep` scores the result. `setup.sh` only reads, always exits 0, and
+prints the exact command for each gap — including the ones an owner has to run for you.
 
 ## Production
 

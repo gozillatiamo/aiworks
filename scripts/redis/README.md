@@ -118,7 +118,9 @@ convenience on top of one:
    by a hard-killed session. "Must disconnect when done" is mechanical, not remembered.
 8. **Production is gated by policy.** `triage.prod` (local-first, `scripts/lib/triage_policy.py`)
    is checked in `_connect` before a prod tunnel is spawned: being able to `gcloud ssh` the VM is
-   not permission. Staging is ungated (`docs/adr/0005`).
+   not permission. Staging is ungated (`docs/adr/0005`). The flag is read live, so flipping it
+   needs no re-register and no session restart. Registration itself is a step **you** run
+   (`scripts/triage-mcp.sh sync`) — `aiworks sync` only reports it (`docs/adr/0009`).
 
 The agent is never granted `gcloud`. That is on purpose: `gcloud compute ssh <vm> -- <command>`
 is a shell on the production VM, so the tunnel lives inside this server where the argv is built

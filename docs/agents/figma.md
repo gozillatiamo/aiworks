@@ -1,5 +1,7 @@
 # Figma (design authoring & reading convention)
 
+> **The visual *language* (mood, color, type, copy) lives in your org's `docs/agents/design-system.md`** when you author one — THIS file governs Figma *mechanics* only.
+
 The single reference for **how every agent works with Figma** in this workspace —
 both the design pipeline that *authors* frames (`ux-ui-planner` → `graphic-designer`
 → `ux-ui-designer`) and the dev/QA roles that *read* a design screen

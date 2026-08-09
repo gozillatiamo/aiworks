@@ -401,6 +401,27 @@ t  "bash-wrapped writer blocked"     2 $P "$(j 'bash scripts/vcs/merge-pr.sh 11 
 t  "env-assigned writer blocked"     2 $P "$(j 'VCS_PROVIDER=gitlab scripts/vcs/merge-pr.sh 11 | tail')"
 t  "writer inside a for-do blocked"  2 $P "$(j 'for f in a b; do scripts/notify/send.sh --channel c $f; done')"
 t  "writer in a subshell blocked"    2 $P "$(j '(scripts/vcs/close-pr.sh 11) | tee log')"
+# A MULTI-LINE BODY IS STILL PROSE. The quote strip used to run per line, so a --body whose
+# opening and closing quotes sit on different lines was never stripped at all: every Markdown
+# pipe and every English semicolon inside it read as shell syntax. Three real open-pr.sh calls
+# were blocked that way (aiworks#85) before a quote-state scanner replaced the regex pair. The
+# second case is the one that keeps the fix honest — a genuine pipe after such a body must
+# still block, or the fix would be a bypass rather than a repair.
+MB='scripts/vcs/open-pr.sh --title "t" --body "intro line
+
+| half | shape |
+| ---- | ----- |
+
+It has been there since that file'"'"'s first commit; the override stays."'
+t  "multi-line body allowed"         0 $P "$(j "$MB")"
+t  "multi-line body then pipe blocked" 2 $P "$(j "$MB | tail -3")"
+# Apostrophes in prose are not shell quoting. The old strip removed single-quoted spans FIRST,
+# so two of them paired across the real double quote — it happened to still allow this one,
+# which is exactly why it is pinned: the verdict must come from quote state, not from luck.
+t  "apostrophes around a pipe ok"    0 $P "$(j 'scripts/notify/send.sh --channel c "it'"'"'s a | b table, and that file'"'"'s too"')"
+# A command substitution is compound wherever it starts, not only at character 0 — the
+# backtick arm of the case was the one written without its leading `*`.
+t  "backtick writer mid-cmd blocked" 2 $P "$(j 'echo `scripts/vcs/merge-pr.sh 11`')"
 
 echo
 echo "pass=$pass fail=$fail"
