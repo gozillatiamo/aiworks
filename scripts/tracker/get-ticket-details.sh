@@ -14,7 +14,7 @@ usage() {
 Usage: get-ticket-details.sh <ticket>
 
 Print a ticket's details (title, properties/fields, body) as plain text, from the
-tracker selected by TRACKER_PROVIDER (notion | jira).
+tracker selected by TRACKER_PROVIDER (notion | jira | linear).
 
 Arguments:
   <ticket>      Ticket key (FM-9, APP-123, or a bare number), a page id, or a URL.
@@ -23,7 +23,7 @@ Options:
   -h, --help    Show this help and exit.
 
 Environment:
-  TRACKER_PROVIDER  notion | jira (default: notion). Provider creds live in .env.
+  TRACKER_PROVIDER  notion | jira | linear (default: notion). Provider creds live in .env.
 EOF
 }
 
