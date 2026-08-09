@@ -595,6 +595,179 @@ check_claudemd_size() {
   noted+=("$label: CLAUDE.md $n lines (>$max)")
 }
 
+# ── reconcile mani.d/ + mani.yaml imports with products[] ─────────────────────────
+# `aiworks add` only APPENDS mani.d/<product>.yaml and its import line. A product rename
+# (or a repo moving between products) leaves the old file + import in place. Mani then
+# merges DUPLICATE project keys across imports by silently dropping them — `mani list
+# projects` shows only the non-colliding repos (seen when feeed-me.yaml and
+# feeed-me-app.yaml both declared feeedme-app / feeedme-appium). Prune BEFORE the parallel
+# pre-clone so `mani sync --parallel` sees the live set.
+#
+# Rules:
+#   1. mani.d/<id>.yaml whose <id> is not a products[].id → delete (+ drop import).
+#   2. A project key listed under the wrong product file (config says it belongs elsewhere)
+#      → strip that block; delete the file if it goes empty.
+#   3. mani.yaml `import:` list → rewritten to exactly the live mani.d files, in products[]
+#      order (no stale lines, no orphans).
+reconcile_mani_registry() {
+  step "Reconcile mani.d/ + mani.yaml imports with products[]"
+
+  local -a products=()
+  local id
+  while IFS= read -r id; do
+    [[ -n "$id" ]] && products+=("$id")
+  done < <(awk '
+    /^products:[ \t]*$/ { inp=1; next }
+    inp && /^  - id:/ {
+      sub(/^[^:]*:[ \t]*/, "")
+      gsub(/^["'\'' \t]+|["'\'' \t]+$/, "")
+      if ($0 != "") print
+      next
+    }
+    inp && /^[A-Za-z_]/ { inp=0 }
+  ' "$WC")
+
+  is_live_product() {
+    local p="$1" x
+    for x in "${products[@]+"${products[@]}"}"; do [[ "$x" == "$p" ]] && return 0; done
+    return 1
+  }
+
+  # repo_name → owning products[].id (from config). Used to strip misplaced keys.
+  local -A repo_owner=()
+  local prod url kind lang dist path desc key
+  while IFS=$'\037' read -r prod url kind lang dist path desc; do
+    [[ -n "$url" ]] || continue
+    key="${url%.git}"; key="${key##*/}"; key="${key##*:}"
+    # Mani project keys are always the URL-derived repo name (path: is only the clone dir).
+    [[ -n "$key" && -n "$prod" ]] && repo_owner["$key"]="$prod"
+  done < <(parse_repos)
+
+  strip_mani_project() {  # $1=file $2=repo-key — drop `  <key>:` + indented fields
+    local file="$1" repo="$2"
+    awk -v key="$repo" '
+      skip==1 && /^    / { next }
+      skip==1 { skip=0 }
+      $0 ~ ("^  " key ":[ \t]*$") { skip=1; next }
+      { print }
+    ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  }
+
+  mani_file_empty() {  # no project keys left
+    ! grep -qE '^  [A-Za-z0-9._-]+:[[:space:]]*$' "$1" 2>/dev/null
+  }
+
+  mkdir -p "$ROOT/mani.d"
+  local f base repo owner changed=0
+  shopt -s nullglob
+  for f in "$ROOT"/mani.d/*.yaml; do
+    base="$(basename "$f" .yaml)"
+    if ! is_live_product "$base"; then
+      if [[ "$DRY" -eq 1 ]]; then
+        printf '    %swould remove stale mani.d/%s.yaml (no products[].id match)%s\n' \
+          "$c_dim" "$base" "$c_off"
+      else
+        rm -f "$f" && ok "removed stale mani.d/$base.yaml (not in products[])"
+      fi
+      changed=1
+      continue
+    fi
+    # Strip project keys that config assigns to a DIFFERENT product (rename / move leftovers).
+    while IFS= read -r repo; do
+      [[ -n "$repo" ]] || continue
+      owner="${repo_owner[$repo]:-}"
+      [[ -n "$owner" && "$owner" != "$base" ]] || continue
+      if [[ "$DRY" -eq 1 ]]; then
+        printf '    %swould strip project %s from mani.d/%s.yaml (owned by products[].id=%s)%s\n' \
+          "$c_dim" "$repo" "$base" "$owner" "$c_off"
+      else
+        strip_mani_project "$f" "$repo" \
+          && ok "stripped project '$repo' from mani.d/$base.yaml (belongs to $owner)"
+      fi
+      changed=1
+    done < <(awk '/^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+                     sub(/:[[:space:]]*$/, ""); sub(/^  /, ""); print
+                   }' "$f")
+    if [[ -f "$f" ]] && mani_file_empty "$f"; then
+      if [[ "$DRY" -eq 1 ]]; then
+        printf '    %swould remove empty mani.d/%s.yaml%s\n' "$c_dim" "$base" "$c_off"
+      else
+        rm -f "$f" && ok "removed empty mani.d/$base.yaml"
+      fi
+      changed=1
+    fi
+  done
+
+  # Desired import list = live mani.d files for products[], in config order.
+  local -a desired=()
+  for id in "${products[@]+"${products[@]}"}"; do
+    [[ -f "$ROOT/mani.d/$id.yaml" ]] && desired+=("mani.d/$id.yaml")
+  done
+
+  local current="" want=""
+  current="$(awk '
+    /^import:[ \t]*$/ { inn=1; next }
+    inn && /^  - / { sub(/^  - [ \t]*/, ""); print; next }
+    inn && /^[A-Za-z_#]/ { exit }
+  ' "$ROOT/mani.yaml" | paste -sd'|' -)"
+  want="$(printf '%s\n' "${desired[@]+"${desired[@]}"}" | paste -sd'|' -)"
+
+  if [[ "$current" != "$want" ]]; then
+    if [[ "$DRY" -eq 1 ]]; then
+      printf '    %swould rewrite mani.yaml import: → [%s]%s\n' \
+        "$c_dim" "$(printf '%s' "$want" | tr '|' ' ')" "$c_off"
+    else
+      local tmp wantf
+      tmp="$(mktemp)" || die "mktemp failed rewriting mani.yaml imports"
+      wantf="$(mktemp)" || { rm -f "$tmp"; die "mktemp failed for import want-list"; }
+      printf '%s\n' "${desired[@]+"${desired[@]}"}" > "$wantf"
+      awk -v wantf="$wantf" '
+        BEGIN {
+          while ((getline line < wantf) > 0) { n++; d[n]=line }
+          close(wantf)
+        }
+        /^import:[ \t]*$/ {
+          print
+          for (i=1; i<=n; i++) print "  - " d[i]
+          if (n) print ""
+          skip=1
+          next
+        }
+        skip && /^  - / { next }
+        skip && /^[ \t]*$/ { next }
+        skip && (/^[A-Za-z_]/ || /^#/) { skip=0 }
+        { print }
+      ' "$ROOT/mani.yaml" > "$tmp" && mv "$tmp" "$ROOT/mani.yaml" \
+        && ok "rewrote mani.yaml import: ($(printf '%s' "$want" | tr '|' ' '))" \
+        || { rm -f "$tmp"; warn "could not rewrite mani.yaml imports — edit by hand"; }
+      rm -f "$wantf"
+      changed=1
+    fi
+  fi
+
+  # Duplicate project keys across remaining files still break mani silently — surface them.
+  local dups
+  dups="$(awk '
+    /^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+      k=$0; sub(/:[[:space:]]*$/, "", k); sub(/^  /, "", k)
+      file=FILENAME; sub(/.*\//, "", file)
+      if (seen[k] != "" && seen[k] != file) print k " in " seen[k] " and " file
+      else seen[k]=file
+    }
+  ' "$ROOT"/mani.d/*.yaml 2>/dev/null || true)"
+  if [[ -n "$dups" ]]; then
+    warn "duplicate mani project key(s) still present — mani will drop them on import:"
+    while IFS= read -r line; do [[ -n "$line" ]] && printf '      %s\n' "$line"; done <<< "$dups"
+    noted+=("mani.d: duplicate project keys (mani silently drops collisions)")
+  fi
+
+  [[ "$changed" -eq 0 && -z "$dups" ]] && ok "mani.d/ + imports already match products[]"
+  shopt -u nullglob
+}
+
+noted=()  # may also collect duplicate-key warnings from reconcile_mani_registry
+reconcile_mani_registry
+
 # ── parallel pre-clone: clone the WHOLE set up front, concurrently ────────────────
 # The per-repo loop below delegates to `aiworks add`, whose step 3 clones via a BARE
 # `mani sync` — so a fresh workspace clones all N repos ONE AT A TIME. Measured on a large
@@ -627,7 +800,7 @@ if [[ -z "$REPO_FILTER" ]]; then
 fi
 
 # ── iterate every declared repo and delegate to aiworks-add.sh ───────────────────
-total=0; synced=0; failed=0; noted=(); MATCHED=""
+total=0; synced=0; failed=0; MATCHED=""  # noted[] seeded before reconcile_mani_registry
 while IFS=$'\037' read -r prod url kind lang dist path desc; do   # \037 (US) — empty fields aren't collapsed
   [[ -n "$url" ]] || continue
   [[ -z "$PRODUCT" || "$prod" == "$PRODUCT" ]] || continue

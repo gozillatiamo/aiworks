@@ -514,6 +514,37 @@ else
     "$PRODUCT" "$PATH_REL" "$mani_entry" > "$MANI_FILE" && ok "wrote mani.d/$PRODUCT.yaml (project '$REPO_NAME')"
 fi
 
+# ── 1.1. Drop this project key from any OTHER mani.d/*.yaml ───────────────────
+# Product renames / moves leave the same project key in the old product file. Mani merges
+# duplicate keys across imports by silently dropping them, so `mani list projects` loses
+# those repos. Always own the key in exactly one file: this product's.
+step "1.1. Ensure project '$REPO_NAME' is not duplicated in other mani.d files"
+shopt -s nullglob
+for _other in "$ROOT"/mani.d/*.yaml; do
+  [[ "$(cd "$(dirname "$_other")" && pwd)/$(basename "$_other")" == "$(cd "$(dirname "$MANI_FILE")" && pwd)/$(basename "$MANI_FILE")" ]] && continue
+  grep -qE "^  ${REPO_NAME}:[[:space:]]*$" "$_other" 2>/dev/null || continue
+  if awk -v key="$REPO_NAME" '
+        skip==1 && /^    / { next }
+        skip==1 { skip=0 }
+        $0 ~ ("^  " key ":[ \t]*$") { skip=1; next }
+        { print }
+      ' "$_other" > "$_other.tmp" && mv "$_other.tmp" "$_other"; then
+    ok "removed duplicate project '$REPO_NAME' from mani.d/$(basename "$_other")"
+    if ! grep -qE '^  [A-Za-z0-9._-]+:[[:space:]]*$' "$_other"; then
+      rm -f "$_other"
+      ok "removed empty mani.d/$(basename "$_other")"
+      # Drop its import line if present (sync also rewrites the whole import list).
+      if grep -qxF "  - mani.d/$(basename "$_other")" "$ROOT/mani.yaml" 2>/dev/null; then
+        grep -vxF "  - mani.d/$(basename "$_other")" "$ROOT/mani.yaml" > "$ROOT/mani.yaml.tmp"           && mv "$ROOT/mani.yaml.tmp" "$ROOT/mani.yaml"           && ok "removed stale import for $(basename "$_other") from mani.yaml"
+      fi
+    fi
+  else
+    rm -f "$_other.tmp"
+    skip "1.1. could not edit mani.d/$(basename "$_other") — remove duplicate '$REPO_NAME' by hand"
+  fi
+done
+shopt -u nullglob
+
 # ── 2. import into mani.yaml ──────────────────────────────────────────────────
 step "2. Import mani.d/$PRODUCT.yaml from mani.yaml"
 import_line="  - mani.d/$PRODUCT.yaml"

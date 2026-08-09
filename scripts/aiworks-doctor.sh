@@ -364,9 +364,59 @@ check_repos() {
     local d=""
     [[ -n "$only_mani" ]] && d="in mani.d only: $only_mani"
     [[ -n "$only_cfg"  ]] && d="${d:+$d; }in config only: $only_cfg"
-    fail $g "mani.d and products[] disagree" "$d" "aiworks config"
+    fail $g "mani.d and products[] disagree" "$d" "aiworks sync"
   else
     pass $g "mani.d ↔ products[] agree" "$(mani_repos | grep -c .) repos"
+  fi
+
+  # Stale mani.d/<product>.yaml (basename not a products[].id) leaves duplicate project keys
+  # after a rename; mani silently drops collisions on import. Sync prunes these.
+  local stale_prod="" f base
+  local -a live_products=()
+  while IFS= read -r base; do
+    [[ -n "$base" ]] && live_products+=("$base")
+  done < <(awk '
+    /^products:[ 	]*$/ { inp=1; next }
+    inp && /^  - id:/ {
+      sub(/^[^:]*:[ 	]*/, "")
+      gsub(/^["'\'' \t]+|["'\'' \t]+$/, "")
+      if ($0 != "") print
+      next
+    }
+    inp && /^[A-Za-z_]/ { inp=0 }
+  ' "$CFG")
+  is_live_prod() {
+    local p="$1" x
+    for x in "${live_products[@]+"${live_products[@]}"}"; do [[ "$x" == "$p" ]] && return 0; done
+    return 1
+  }
+  shopt -s nullglob
+  for f in "$ROOT"/mani.d/*.yaml; do
+    base="$(basename "$f" .yaml)"
+    is_live_prod "$base" || stale_prod="${stale_prod:+$stale_prod }$base.yaml"
+  done
+  shopt -u nullglob
+  if [[ -n "$stale_prod" ]]; then
+    fail $g "stale mani.d product file(s)" "$stale_prod — not in products[].id; duplicate keys make mani drop projects"          "aiworks sync"
+  else
+    pass $g "mani.d product files match products[].id"
+  fi
+
+  # Duplicate project keys across mani.d files — mani drops them silently.
+  local dups
+  dups="$(awk '
+    /^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+      k=$0; sub(/:[[:space:]]*$/, "", k); sub(/^  /, "", k)
+      file=FILENAME; sub(/.*\//, "", file)
+      if (seen[k] != "" && seen[k] != file) {
+        if (!printed[k]++) print k " (" seen[k] " + " file ")"
+      } else seen[k]=file
+    }
+  ' "$ROOT"/mani.d/*.yaml 2>/dev/null || true)"
+  if [[ -n "$dups" ]]; then
+    fail $g "duplicate mani project key(s)" "$(printf '%s' "$dups" | tr '\n' '; ')"          "aiworks sync"
+  else
+    pass $g "no duplicate mani project keys"
   fi
 
   local missing="" ready=0 total=0 r
@@ -400,6 +450,46 @@ check_repos() {
          "aiworks config"
   else
     pass $g "clones are git-ignored"
+  fi
+
+  # Every loop above walks the DECLARED set, so a clone on disk that no mani.d entry names is
+  # invisible to all of them: `aiworks sync` never onboards it, its step 3.1 never adds the
+  # `/<dir>/` line to .gitignore, and the unignored check above never looks at it. Git then
+  # treats the nested repo as a GITLINK — `git add -A` stages mode 160000, a bare pointer to
+  # a commit nobody who clones this workspace can resolve. The usual cause is a branch switch:
+  # the clone is an untracked directory and survives, while the .gitignore line and the
+  # products[] entry that arrived with it are tracked and revert.
+  #
+  # Compared against EXPECTED, not SELECTED — `--repo` narrows what we inspect, and must not
+  # make the repos it excluded look undeclared.
+  local orphans="" orphans_open="" d
+  for d in "$ROOT"/*/; do
+    d="${d%/}"; r="${d##*/}"
+    [[ -e "$d/.git" ]] || continue                       # also skips the unmatched glob
+    printf '%s\n' "$EXPECTED" | grep -qx "$r" && continue
+    orphans="${orphans:+$orphans }$r"
+    git -C "$ROOT" check-ignore -q "$r" 2>/dev/null || orphans_open="${orphans_open:+$orphans_open }$r"
+  done
+  if [[ -n "$orphans" ]]; then
+    warn $g "clone(s) no mani.d entry declares" \
+         "$orphans${orphans_open:+ — and $orphans_open is not git-ignored, so \`git add -A\` stages it as a gitlink}" \
+         "see: aiworks add <url> to declare it, or remove the directory"
+  else
+    pass $g "no undeclared clones"
+  fi
+
+  # The same hazard one step later: a gitlink already IN the index. Without a .gitmodules to
+  # back it, this is never a real submodule — committing it publishes a pointer that no clone
+  # of this workspace can resolve. `git rm --cached` touches the index only, never the files;
+  # -f is needed because the staged commit differs from both HEAD and the nested repo's own
+  # HEAD the moment that clone moves on, and with --cached it still cannot delete anything.
+  local links
+  links="$(git -C "$ROOT" ls-files -s 2>/dev/null | awk '$1=="160000"' | cut -f2- | tr '\n' ' ')"
+  links="${links% }"
+  if [[ -n "$links" && ! -f "$ROOT/.gitmodules" ]]; then
+    fail $g "gitlink staged, no .gitmodules" \
+         "$links — committing this makes a submodule nobody can clone" \
+         "git rm --cached -f -- $links"
   fi
 }
 
