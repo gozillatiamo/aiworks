@@ -114,6 +114,13 @@ tracker:
   # keys (e.g. `to_do`, `code_review`, `ready_to_merge`) are optional and fully supported.
   statuses:
     not_started:   "Not started"
+    # todo:          "To Do"           # optional — the QUEUED state, between not_started (filed,
+                                       #   unevaluated) and in_progress (someone is on it). Declare
+                                       #   it when your board separates a raw backlog from work
+                                       #   that is groomed and ready to pick up (Linear ships
+                                       #   Backlog + Todo out of the box); the product-owner sets
+                                       #   it, the dev-cycle only reads it as a "ticket created"
+                                       #   state. Omit it on a board with a single to-do column.
     in_progress:   "In progress"
     # code_review:   "Code review"     # optional — richer boards can add intermediate states
     # ready_to_merge: "Ready to merge"
@@ -598,7 +605,13 @@ products:
       - url: git@github.com:your-org/your-app.git   # ← all you must provide
         kind: frontend                              # any dev-context label; test-suite = QA archetype
         desc: The mobile app — offline-first, UI only.   # one-line repo responsibility (anatomy at a glance)
-        lang: dart                                  # the TECH lives here; else auto-detected from the clone
+        lang: dart                                  # the TECH lives here; else auto-detected from the clone.
+                                                    #   Several stacks in one repo → a comma-separated list,
+                                                    #   DOMINANT ONE FIRST (e.g. "n8n, terraform"): each becomes
+                                                    #   its own mani tag (so `mani list projects --tags terraform`
+                                                    #   finds it) and adds its build dirs to the search excludes,
+                                                    #   and the first entry that classifies picks the
+                                                    #   coding-standards flavor (backend vs frontend).
         app_id: com.example.app                     # mobile apps only — the app/bundle id the QA suite drives (matches config/capabilities.js)
         distribute: firebase                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
