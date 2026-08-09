@@ -36,27 +36,62 @@ tasks:
     target: all
     cmd: git status
 
-  develop:
-    desc: checkout develop for all repos
+  default:
+    desc: checkout develop (or the repo's default branch) + sync submodules
     spec: custom
     target: all
     cmd: |
-      if [[ -n $(git status --porcelain) ]]; then
+      # --ignore-submodules=dirty: content inside a submodule checkout is not the
+      # parent repo's work, and the submodule sync below resets it anyway.
+      if [[ -n $(git status --porcelain --ignore-submodules=dirty) ]]; then
         echo "⚠️ ⚠️ ⚠️  DIRTY WORKING TREE — SKIPPED CHECKOUT on $(git rev-parse --abbrev-ref HEAD)"
-        echo "⚠️  commit or stash your changes, then re-run 'mani run checkout-develop'"
+        echo "⚠️  commit or stash your changes, then re-run 'mani run default'"
         exit 1
       fi
-      git checkout develop
+
+      # Prefer develop; fall back to whatever origin says its default branch is.
+      branch=develop
+      if ! git show-ref --verify --quiet refs/heads/develop \
+        && ! git show-ref --verify --quiet refs/remotes/origin/develop; then
+        branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+        if [[ -z $branch ]]; then
+          git remote set-head origin --auto >/dev/null 2>&1
+          branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+        fi
+        if [[ -z $branch ]]; then
+          for candidate in main master trunk; do
+            if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
+              branch=$candidate
+              break
+            fi
+          done
+        fi
+        if [[ -z $branch ]]; then
+          echo "⚠️  no develop and no resolvable default branch — SKIPPED"
+          exit 1
+        fi
+        echo "no develop branch — using default branch '$branch'"
+      fi
+
+      git checkout "$branch"
+
+      if [[ -f .gitmodules ]]; then
+        git submodule update --init --recursive
+      fi
 
   pulls:
-    desc: fetch and pull latest for all repos
+    desc: fetch and pull latest for all repos + sync submodules
     spec: custom
     target: all
     cmd: |
       git fetch --all --prune
-      if [[ -n $(git status --porcelain) ]]; then
+      if [[ -n $(git status --porcelain --ignore-submodules=dirty) ]]; then
         echo "⚠️ ⚠️ ⚠️  DIRTY WORKING TREE — SKIPPED PULL on $(git rev-parse --abbrev-ref HEAD)"
         echo "⚠️  commit or stash your changes, then re-run 'mani run pulls'"
         exit 1
       fi
       git pull --rebase --stat
+
+      if [[ -f .gitmodules ]]; then
+        git submodule update --init --recursive
+      fi
