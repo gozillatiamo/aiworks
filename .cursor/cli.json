@@ -54,7 +54,9 @@
       "Read(**/*.pem)",
       "Read(**/.aws/credentials)",
       "Read(**/.env)",
+      "Read(**/.env.amb)",
       "Read(**/.env.local)",
+      "Read(**/.envrc)",
       "Read(**/id_ed25519)",
       "Read(**/id_rsa)",
       "Read(**/secrets/**)",
@@ -70,6 +72,9 @@
       "Shell(rm -rf ~*)",
       "Shell(sudo *)",
       "Write(**/.env)",
+      "Write(**/.env.amb)",
+      "Write(**/.env.local)",
+      "Write(**/.envrc)",
       "Write(~/.aws/**)",
       "Write(~/.ssh/**)"
     ]
