@@ -16,7 +16,7 @@
 # repair logic of its own: it runs the OWNER command for each finding, so there is exactly one
 # implementation of every write in this workspace and nothing here can drift from it.
 #
-# Groups — 1-7 run offline by default; 8-11 need `--deep` (daemons, network, credentials):
+# Groups — 1-8 run offline by default; 9-12 need `--deep` (daemons, network, credentials):
 #    1 workspace    mani.yaml · workspace.config[.local].yaml parse · required keys · no
 #                   comments in the config (hook-enforced) · typo'd booleans · CLAUDE.md budget
 #    2 repos        every declared repo cloned with a valid HEAD · mani.d ↔ products[] agree
@@ -34,10 +34,14 @@
 #                   the brew-owned half only — see check_tooling for why that is the honest
 #                   scope rather than a green tick over everything)
 #    7 voice        delegates `aiworks voice status` — skipped unless voice.enabled
-#    8 mcp          --deep · the shared MCP compose stack is up
-#    9 services     --deep · the local Postgres / Redis / SonarQube ports answer
-#   10 credentials  --deep · each adapter's own reader authenticates for real
-#   11 disk         --deep · delegates `aiworks gc` (orphaned / idle / stale worktrees)
+#    8 triage       the read-only deployed-env triage MCPs are registered (offline, and --fix
+#                   runs the owner command) · the Kubernetes triage IDENTITY exists and still
+#                   cannot write (--deep: gcloud + kubectl per cluster; its fix needs a GCP
+#                   project owner, so it is advisory). Skipped unless triage.enabled. ADR 0009
+#    9 mcp          --deep · the shared MCP compose stack is up
+#   10 services     --deep · the local Postgres / Redis / SonarQube ports answer
+#   11 credentials  --deep · each adapter's own reader authenticates for real
+#   12 disk         --deep · delegates `aiworks gc` (orphaned / idle / stale worktrees)
 #
 # HOW A CHECK IS SCORED:
 #   ✓ pass   fine.
@@ -57,10 +61,11 @@
 #
 # Usage: aiworks-doctor.sh [<repo>] [options]
 #   <repo>              narrow to one repo (also --repo a,b). Groups that are not repo-scoped
-#                       (tooling, voice, mcp, services, disk) report as skipped.
+#                       (tooling, voice, triage, mcp, services, disk) report as skipped.
 #       --only a,b      run only these groups (see the list above).
 #       --skip a,b      run every group EXCEPT these.
-#       --deep          also run groups 8-11: daemons, ports, live credentials, disk.
+#       --deep          also run groups 9-12: daemons, ports, live credentials, disk — and the
+#                       Kubernetes half of `triage`.
 #       --json          machine-readable report on stdout. Never contains a secret value.
 #       --strict        treat every warn as a fail (exit 1 on a warn-only run).
 #       --fix           print the owner command for every fixable finding, then ask to run
@@ -77,7 +82,7 @@ ROOT="$(cd "$DIR/.." && pwd)"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 
-ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice mcp services credentials disk"
+ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice triage mcp services credentials disk"
 DEEP_GROUPS="mcp services credentials disk"
 
 # ── args ──────────────────────────────────────────────────────────────────────────
@@ -857,7 +862,87 @@ check_voice() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 8 · mcp   (--deep)
+# 8 · triage
+# ══════════════════════════════════════════════════════════════════════════════════
+# Deployed-environment triage is the one capability workspace bring-up deliberately does NOT
+# install: `aiworks sync` only reports it, and the identity behind k8s_triage can be created
+# only by someone who owns the GCP project (docs/adr/0009). This group is where that gap
+# becomes visible instead of surfacing as an absent MCP tool mid-investigation.
+#
+# Two items, deliberately at different tiers:
+#
+#   registration  a jq read of ~/.claude.json — offline and instant, and its owner command
+#                 (`scripts/triage-mcp.sh sync`) is a safe, idempotent, local-scope write, so
+#                 --fix runs it and the gap sync stopped closing is closed here.
+#   k8s identity  gcloud + kubectl round-trips per cluster, which is exactly what --deep exists
+#                 to fence off. Its fix needs a GCP project owner this machine may not be, so it
+#                 is spelled `see:` and --fix routes it to "needs you" rather than running it.
+check_triage() {
+  local g=triage
+  cfg_bool triage.enabled true
+  case $? in
+    1) skip $g "triage" "triage.enabled is false"; return ;;
+    2) warn $g "triage.enabled is not a boolean" "resolved to the default (on)" \
+            "\$EDITOR workspace.config.yaml" ;;
+  esac
+
+  # ── the read-only triage MCPs: pg_triage · redis_triage · k8s_triage ──
+  local sh="$DIR/triage-mcp.sh"
+  if [[ ! -x "$sh" ]]; then
+    skip $g "triage MCPs" "scripts/triage-mcp.sh not present"
+  elif ! command -v jq >/dev/null 2>&1; then
+    # `status` reads the registration with jq. Without it every server would read as absent,
+    # which is a tooling gap (group 6 owns it) wearing a triage finding's clothes.
+    skip $g "triage MCPs" "jq not on PATH — cannot read the registration"
+  else
+    local out missing legacy drift
+    out="$("$sh" status 2>/dev/null)"
+    missing="$(printf '%s\n' "$out" | grep -c 'not registered' || true)"
+    legacy="$( printf '%s\n' "$out" | grep -c 'LEGACY registration still present' || true)"
+    drift="$(  printf '%s\n' "$out" | grep -c 'registered with a DIFFERENT command' || true)"
+    missing="${missing:-0}"; legacy="${legacy:-0}"; drift="${drift:-0}"
+    if [[ "$missing" -gt 0 ]]; then
+      fail $g "$missing triage MCP(s) not registered" \
+           "aiworks sync no longer registers them — this is the command that does" \
+           "scripts/triage-mcp.sh sync"
+    elif [[ "$legacy" -gt 0 ]]; then
+      warn $g "a pre-0005 triage registration is still present" \
+           "two servers over the same fleet until it is removed" \
+           "scripts/triage-mcp.sh sync"
+    elif [[ "$drift" -gt 0 ]]; then
+      warn $g "a triage MCP is registered with a different command" \
+           "left alone on purpose — somebody set that up by hand" \
+           "see: scripts/triage-mcp.sh status"
+    else
+      pass $g "triage MCPs" "pg_triage · redis_triage · k8s_triage registered (local scope)"
+    fi
+  fi
+
+  # ── the read-only Kubernetes identity (--deep) ──
+  local k="$DIR/k8s/setup.sh"
+  if [[ ! -x "$k" ]]; then
+    skip $g "kubernetes triage identity" "scripts/k8s/setup.sh not present"
+  elif [[ $DEEP == 0 ]]; then
+    skip $g "kubernetes triage identity" "--deep only (gcloud + kubectl, per cluster)"
+  else
+    # --quiet prints nothing at all when there is nothing to check (no kubectl/gcloud, or no
+    # GKE cluster in this kubeconfig), a ✓ per ready target, and a "N target(s) need attention"
+    # line otherwise. It always exits 0, so the text is the verdict.
+    local kout; kout="$("$k" --quiet 2>&1)"
+    if [[ -z "${kout//[[:space:]]/}" ]]; then
+      skip $g "kubernetes triage identity" "no GKE target in this kubeconfig (or kubectl/gcloud absent)"
+    elif printf '%s\n' "$kout" | grep -q 'need attention'; then
+      warn $g "the Kubernetes triage identity is not ready" \
+           "scripts/k8s/setup.sh names the gap and its owner command, per cluster" \
+           "see: scripts/k8s/setup.sh   (then a GCP project owner runs scripts/k8s/bootstrap-sa.sh --context <ctx>)"
+    else
+      pass $g "kubernetes triage identity" "every derived target reads and cannot write"
+    fi
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 9 · mcp   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 check_mcp() {
   local g=mcp
@@ -874,7 +959,7 @@ check_mcp() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 9 · services   (--deep)
+# 10 · services   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 port_open() { nc -z -G 1 127.0.0.1 "$1" >/dev/null 2>&1 || nc -z -w 1 127.0.0.1 "$1" >/dev/null 2>&1; }
 
@@ -918,7 +1003,7 @@ check_services() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 10 · credentials   (--deep)
+# 11 · credentials   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 # Group 3 proves a variable is SET. This proves it is ACCEPTED — an expired token is set and
 # useless, and the difference only shows against the live API. Each probe is that adapter's
@@ -977,7 +1062,7 @@ check_credentials() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 11 · disk   (--deep)
+# 12 · disk   (--deep)
 # ══════════════════════════════════════════════════════════════════════════════════
 check_disk() {
   local g=disk
@@ -1006,7 +1091,7 @@ run_group() {
   # A repo-narrowed run has nothing to say about machine-wide groups. Checked BEFORE the
   # --deep skip, because "you asked about one repo" is the more specific reason of the two.
   if [[ $NARROWED == 1 ]]; then
-    case "$g" in tooling|voice|mcp|services|credentials|disk)
+    case "$g" in tooling|voice|triage|mcp|services|credentials|disk)
       skip "$g" "$g" "not repo-scoped"; return 0 ;;
     esac
   fi
@@ -1019,6 +1104,7 @@ run_group() {
     agent-cfg)   check_agent_cfg ;;
     tooling)     check_tooling ;;
     voice)       check_voice ;;
+    triage)      check_triage ;;
     mcp)         check_mcp ;;
     services)    check_services ;;
     credentials) check_credentials ;;

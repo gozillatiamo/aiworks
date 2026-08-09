@@ -144,7 +144,8 @@ from the parsed target spec and no tool argument can reach the command line.
 A target declared `prod=true` is refused — before a tunnel is spawned — unless this machine opts in
 with `triage.prod: true` in the git-ignored `workspace.config.local.yaml`. Being able to reach the
 box (cloud IAM, a VPN, your own forward) is not permission. A `prod=false` target (staging/test) is
-ungated, and `aiworks sync` registers the server everywhere by default (`triage.enabled`). The flag
+ungated, and registration is on by default (`triage.enabled`) — though you register the server
+yourself with `scripts/triage-mcp.sh sync`, not via `aiworks sync` (`docs/adr/0009`). The flag
 is read live by the server, so flipping it needs no re-register and no session restart. See
 `docs/adr/0005`.
 

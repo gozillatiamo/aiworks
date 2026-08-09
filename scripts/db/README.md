@@ -9,9 +9,10 @@ It is ground truth for root-causing a live issue — read-only, with a clean tea
 skill is `pg-triage` (`.claude/skills/pg-triage/`).
 
 It lives in **local scope**, deliberately *not* in the shared `.mcp.json`, so prod credentials
-never enter the shared repo. `aiworks sync` registers it on every machine (`triage.enabled`,
-default on) because **staging needs no authorization**; **production** needs the per-machine
-`triage.prod` opt-in, enforced inside the server. See `docs/adr/0005`.
+never enter the shared repo. Register it with `scripts/triage-mcp.sh sync` — **you** run that,
+`aiworks sync` does not (`docs/adr/0009`); `aiworks doctor` reports when it is owed. Registration
+is on by default (`triage.enabled`) because **staging needs no authorization**; **production**
+needs the per-machine `triage.prod` opt-in, enforced inside the server. See `docs/adr/0005`.
 
 ## Environments and targets
 

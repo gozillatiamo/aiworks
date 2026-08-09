@@ -30,6 +30,13 @@
 # sweep (npm i -g @colbymchenry/codegraph, else the bundled curl|sh installer). A no-op when it's
 # already on PATH; best-effort, so a failed install just makes the repos' index steps SKIP.
 #
+# It does NOT set up deployed-environment triage. Registering the read-only triage MCPs is
+# `scripts/triage-mcp.sh sync`, and the Kubernetes triage IDENTITY is created per cluster by a
+# GCP project owner running `scripts/k8s/bootstrap-sa.sh` — neither is something a repo-onboarding
+# sweep should do on your behalf, and the k8s check alone cost several gcloud/kubectl round-trips
+# on every run. Sync REPORTS both in its summary; `aiworks doctor` scores them and `--fix` runs
+# the one that is safe to automate. See docs/adr/0009.
+#
 # It also ENSURES the workspace lifecycle hooks — .superset/{setup,run,teardown}.sh — exist and
 # that .superset/config.json registers all three (via scripts/aiworks-superset.sh). The hooks loop
 # over every cloned repo, so the synced set is covered automatically; this creates the run hook
@@ -392,39 +399,63 @@ NODE
   esac
 }
 
-# ── deployed-env triage MCPs (pg_triage + redis_triage), local scope ──────────────
-# Registration follows `triage.enabled` (default ON — staging triage needs no authorization);
-# PRODUCTION access follows `triage.prod` (default OFF), which the servers read in-process, so it is
-# NOT a registration concern. Both are read LOCAL-FIRST. This step also migrates the pre-0005
-# `prod_pg_triage` / `prod_redis_triage` registrations away. The reconcile logic lives in
-# scripts/triage-mcp.sh (also runnable by hand: `scripts/triage-mcp.sh status`).
-seed_triage_mcps() {
-  local sh="$DIR/triage-mcp.sh"
-  step "Reconcile the read-only triage MCPs (staging+prod) with the triage policy"
-  [[ -x "$sh" ]] || { warn "scripts/triage-mcp.sh missing or not executable — skipping"; return 0; }
-  local args=(sync); [[ "$DRY" -eq 1 ]] && args+=(-n)
-  local out; out="$("$sh" "${args[@]}" 2>&1)"
-  if [[ "$VERBOSE" -eq 1 ]]; then
-    [[ -n "$out" ]] && printf '%s\n' "$out"
-  else
-    # Quiet mode still surfaces a state CHANGE (and any warning) — "registered, restart the
-    # session for its tools to appear" is the one line a teammate must not miss.
-    printf '%s\n' "$out" | grep -Ev 'already registered|Triage MCPs DISABLED|staging only —|production targets are ENABLED' | grep -E '.' || true
-  fi
+# ── deployed-environment triage: REPORTED here, never installed here ──────────────
+# Sync onboards repos. It does not reach into a deployed environment on anyone's behalf, and it
+# does not bootstrap the identity that lets it — see docs/adr/0009. So the two things it used to
+# do here are gone: it no longer registers the triage MCPs (`scripts/triage-mcp.sh sync` does,
+# and `aiworks doctor --fix` runs that), and it no longer probes GKE for the read-only identity
+# (`scripts/k8s/setup.sh` does, and `aiworks doctor --deep` scores it).
+#
+# What remains is one stanza in the summary. Its two halves are deliberately asymmetric:
+#
+#   MCPs   CONDITIONAL, because the state is a jq read of a local file — free to check, so the
+#          line appears only when something is actually unregistered and a healthy workspace
+#          stays silent. `status` is READ-ONLY; the writing form is never called from here.
+#   k8s    STATIC, because the state costs gcloud + kubectl round-trips per cluster, which is
+#          the whole reason it left sync. A line that never probes cannot slow a sync down.
+#
+# Both are suppressed by `triage.enabled: false` — someone who turned triage off asked not to
+# hear about it, and a summary line that prints forever is one people stop reading.
+#
+# Reads one `<section>.<key>` out of ONE file; prints nothing when absent, so the caller can tell "absent"
+# from "false" and fall through. Same awk shape as the QG_PROVIDER read below, and the same
+# parser scripts/triage-mcp.sh uses — triage.enabled is read LOCAL-FIRST (docs/adr/0003),
+# because it is a per-person decision and this must agree with the script that acts on it.
+cfg_flag() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  awk -v want_sec="$2" -v want_key="$3" '
+    /^[A-Za-z_][A-Za-z0-9_]*:/ { sec=$0; sub(/:.*/,"",sec) }
+    sec==want_sec && $0 ~ "^  "want_key":" { v=$0; sub(/^[^:]*:[ \t]*/,"",v); sub(/[ \t]+#.*$/,"",v);
+      gsub(/^[ \t"'\'']+|[ \t"'\'']+$/,"",v); print tolower(v); exit }
+  ' "$f" 2>/dev/null
 }
+TRIAGE_ENABLED_RAW="$(cfg_flag "$ROOT/workspace.config.local.yaml" triage enabled)"
+[[ -n "$TRIAGE_ENABLED_RAW" ]] || TRIAGE_ENABLED_RAW="$(cfg_flag "$WC" triage enabled)"
+TRIAGE_ENABLED=1
+case "$TRIAGE_ENABLED_RAW" in false|no|0|off) TRIAGE_ENABLED=0 ;; esac
 
-# ── Kubernetes triage readiness ───────────────────────────────────────────────────
-# A DOCTOR, not an installer: k8s_triage needs no configuration (it derives its targets from the
-# kubeconfig), but it does need a read-only identity bootstrapped per cluster and the right to
-# impersonate it — neither of which this machine can grant itself. The check reads only, prints
-# the exact command for each gap, and always exits 0, so a teammate who never touches Kubernetes
-# is not blocked by it. See scripts/k8s/README.md and docs/adr/0007.
-check_k8s_triage() {
-  local sh="$DIR/k8s/setup.sh"
-  [[ -x "$sh" ]] || return 0
-  step "Check the Kubernetes triage identity (read-only)"
-  if [[ "$DRY" -eq 1 ]]; then dim "would run scripts/k8s/setup.sh"; return 0; fi
-  if [[ "$VERBOSE" -eq 1 ]]; then "$sh"; else "$sh" --quiet; fi
+# Prints the stanza, or nothing. Never writes, never touches the network, safe under --dry-run.
+triage_stanza() {
+  [[ "$TRIAGE_ENABLED" -eq 1 ]] || return 0
+  local sh="$DIR/triage-mcp.sh" missing="" k8s_line=1
+  local mcp_line=""
+
+  if [[ -x "$sh" ]] && command -v jq >/dev/null 2>&1; then
+    missing="$("$sh" status 2>/dev/null | grep -c 'not registered' || true)"
+    [[ "${missing:-0}" -gt 0 ]] && mcp_line="${missing} of 3 read-only triage MCP(s) not registered — \`scripts/triage-mcp.sh sync\` (sync no longer does this)"
+  elif [[ ! -x "$sh" ]]; then
+    mcp_line="scripts/triage-mcp.sh is missing — the read-only triage MCPs cannot be registered"
+  fi
+
+  [[ -x "$DIR/k8s/setup.sh" ]] || k8s_line=0
+
+  [[ -n "$mcp_line" || "$k8s_line" -eq 1 ]] || return 0
+  printf '%sTriage:%s\n' "$c_warn" "$c_off"
+  [[ -n "$mcp_line" ]] && printf '  • %s\n' "$mcp_line"
+  [[ "$k8s_line" -eq 1 ]] && printf '  • %s\n' \
+    "Kubernetes triage identity is bootstrapped BY HAND, per cluster: \`scripts/k8s/setup.sh\` reports the gaps, a GCP project owner runs \`scripts/k8s/bootstrap-sa.sh --context <ctx>\`. \`aiworks doctor --deep\` scores it."
+  return 0
 }
 
 # Resolve the positional: a known products[].id is a product filter; anything else is a repo name.
@@ -456,14 +487,8 @@ prepare_adapter_env
 # once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
 seed_image_gen_settings
 
-# Register (or deregister) the read-only triage MCPs per triage.enabled, and migrate the pre-0005
-# names away. Reaching PRODUCTION stays a separate, per-machine opt-in (triage.prod) that the
-# servers enforce themselves, so staging triage works out of the box.
-seed_triage_mcps
-
-# k8s_triage carries no config, so there is nothing to seed — but its read-only identity has to
-# exist in each cluster. Report the gaps with the command that closes them; never fail sync.
-check_k8s_triage
+# NOTE: deployed-environment triage is deliberately NOT set up here — see triage_stanza() above
+# and docs/adr/0009. It is reported in the summary and scored by `aiworks doctor`.
 
 # ── SonarQube onboarding scaffold (quality_gate.provider: sonarqube) ─────────────
 # Read the provider once, then seed a minimal sonar-project.properties into each CODE repo so the
@@ -708,4 +733,8 @@ else
   fi
   printf '%sNext:%s `mani list projects` to see the set, then `cursor %s.code-workspace` to open every repo as its own Source Control panel. (The .claude/workflows/dev-cycle.js CONFIG and %s.code-workspace were regenerated from workspace.config.yaml automatically — no manual mirror needed.)\n' "$c_step" "$c_off" "$(basename "$ROOT")" "$(basename "$ROOT")"
 fi
+# Printed in EVERY branch, including a 0-repo run and a dry run: triage readiness has nothing to
+# do with how many repos matched the filter, so scoping it to the normal branch would hide it
+# from exactly the narrow re-sync (`aiworks sync --repo one-thing`) people run most often.
+triage_stanza
 [[ "$failed" -eq 0 ]]

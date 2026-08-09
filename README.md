@@ -153,11 +153,13 @@ carry it. Opt in with one line in your git-ignored `workspace.config.local.yaml`
 ```sh
 cp scripts/db/.env.example    scripts/db/.env      # read-only DSNs, per target and per env
 cp scripts/redis/.env.example scripts/redis/.env   # Redis targets (+ tunnel, if you need one)
-./aiworks setup                                    # or: scripts/triage-mcp.sh sync
+scripts/triage-mcp.sh sync                         # register the servers (local scope)
 scripts/triage-mcp.sh status                       # policy + what is registered
 ```
 
-`aiworks sync` registers both servers on every machine — **staging triage needs no opt-in**.
+Registration is a step **you** run: `aiworks sync` does not do it (`docs/adr/0009`) — it reports
+what is unregistered, and `aiworks doctor` fails on it with the same command attached. Once
+registered, **staging triage needs no opt-in**.
 **Production** does, and the servers enforce it themselves, so it is one line in your git-ignored
 `workspace.config.local.yaml` and takes effect immediately (no re-register, no restart):
 

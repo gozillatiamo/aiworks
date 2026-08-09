@@ -46,7 +46,8 @@ quietly proceeded down a pipe would clone repos inside a job that only asked for
 A fix is only automatable when running it unattended is the whole answer. Anything that opens
 an editor, anything whose fix is to go read something, and anything printed as `see: …` (an
 install this script has no business performing on your machine — a node switch moves the
-global bin dir; Docker Desktop is a GUI app) is listed under **needs you** instead.
+global bin dir; Docker Desktop is a GUI app; `scripts/k8s/bootstrap-sa.sh` grants IAM on a GCP
+project and needs an owner to run it) is listed under **needs you** instead.
 
 ## How a check is scored
 
@@ -65,7 +66,7 @@ every warning to a failure — use it in CI when you want drift to break the bui
 
 ## The groups
 
-Groups 1–7 run offline by default. 8–11 need `--deep`.
+Groups 1–8 run offline by default. 9–12 need `--deep`.
 
 | # | group | what it answers |
 |---|---|---|
@@ -76,10 +77,11 @@ Groups 1–7 run offline by default. 8–11 need `--deep`.
 | 5 | `agent-cfg` | every hook named in `.claude/settings.json` exists and is executable · `.claude/skills` installed · the Cursor mirror is projected |
 | 6 | `tooling` | the prerequisite binaries are on PATH, each missing one named with the installer that actually owns it |
 | 7 | `voice` | delegates `aiworks voice status` — skipped unless `voice.enabled` |
-| 8 | `mcp` | `--deep` · the shared MCP compose stack is up |
-| 9 | `services` | `--deep` · every host port published by `.superset/mcp-compose.yml` answers |
-| 10 | `credentials` | `--deep` · each adapter's own reader authenticates against the live API |
-| 11 | `disk` | `--deep` · delegates `aiworks gc` and reads its orphan **count** |
+| 8 | `triage` | the three read-only triage MCPs are registered (offline) · `--deep` · the Kubernetes triage identity reads and cannot write — skipped unless `triage.enabled` |
+| 9 | `mcp` | `--deep` · the shared MCP compose stack is up |
+| 10 | `services` | `--deep` · every host port published by `.superset/mcp-compose.yml` answers |
+| 11 | `credentials` | `--deep` · each adapter's own reader authenticates against the live API |
+| 12 | `disk` | `--deep` · delegates `aiworks gc` and reads its orphan **count** |
 
 Narrow with `--only` / `--skip`, or pass a repo name (`aiworks doctor your-app`) to look at
 one repo — the groups that are not repo-scoped then report as skipped.
