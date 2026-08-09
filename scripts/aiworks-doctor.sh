@@ -550,7 +550,7 @@ check_per_repo() {
     fi
     if [[ -f "$d/CLAUDE.md" ]]; then
       n="$(grep -c '' "$d/CLAUDE.md")"
-      [[ "$n" -gt 60 ]] && over="${over:+$over }$r($n)"
+      [[ "$n" -gt 100 ]] && over="${over:+$over }$r($n)"
     else
       no_claude="${no_claude:+$no_claude }$r"
     fi
@@ -596,8 +596,8 @@ check_per_repo() {
                                  "chmod +x $noexec_dev"
   [[ -z "$no_dev" && -z "$noexec_dev" ]] && pass $g "scripts/dev.sh" "$checked repos"
   [[ -n "$no_claude" ]] && warn $g "no CLAUDE.md" "$no_claude — agents get no repo instructions" "aiworks sync" slow
-  [[ -n "$over"      ]] && warn $g "CLAUDE.md over the 60-line budget" "$over" "\$EDITOR <repo>/CLAUDE.md"
-  [[ -z "$no_claude" && -z "$over" ]] && pass $g "per-repo CLAUDE.md budget" "$checked repos ≤60 lines"
+  [[ -n "$over"      ]] && warn $g "CLAUDE.md over the 100-line budget" "$over" "\$EDITOR <repo>/CLAUDE.md"
+  [[ -z "$no_claude" && -z "$over" ]] && pass $g "per-repo CLAUDE.md budget" "$checked repos ≤100 lines"
   [[ -n "$no_link"   ]] && fail $g "adapter link(s) missing in repo" "$no_link" "aiworks setup" \
                         || pass $g "adapter symlinks" "tracker + vcs in $checked repos"
   [[ -n "$no_cg"     ]] && warn $g "no .codegraph index" "$no_cg — codegraph queries answer from nothing" \
