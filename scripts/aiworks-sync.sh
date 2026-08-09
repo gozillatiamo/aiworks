@@ -585,7 +585,7 @@ check_artifacts_contract() {
 # nothing — scope the rule, or delete what a doc or a hook already owns. Reports, never
 # blocks: a sync is not the place to fail a repo over the size of its instruction.
 CLAUDEMD_MAX_ROOT=100   # a meta-repo indexing every repo, the adapter families and docs/
-CLAUDEMD_MAX_REPO=60    # the same cap aiworks-add.sh step 7 hands to /init
+CLAUDEMD_MAX_REPO=100   # the same cap aiworks-add.sh step 7 hands to /init
 check_claudemd_size() {
   local label="$1" dir="$2" max="$3" n
   [[ -f "$dir/CLAUDE.md" ]] || return 0
