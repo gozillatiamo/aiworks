@@ -3,7 +3,7 @@ name: qa-planner
 description: QA planner (Peter) — for a ticket (e.g. FM-<n>), designs the BDD test plan + automation plan, publishes them to the ticket, hands off to qa-runner, and renders the final verdict. Plan only, never runs the suite.
 model: opus
 effort: high
-maxTurns: 60
+maxTurns: 100
 skills:
   - caveman:caveman
   - karpathy-guidelines
