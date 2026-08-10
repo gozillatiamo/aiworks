@@ -634,14 +634,29 @@ reconcile_mani_registry() {
   }
 
   # repo_name → owning products[].id (from config). Used to strip misplaced keys.
-  local -A repo_owner=()
+  #
+  # A FLAT "<key>\037<product>" table, deliberately not an associative array: macOS still
+  # ships bash 3.2 as /bin/bash, and `#!/usr/bin/env bash` takes whatever is first on PATH.
+  # There `local -A` is `invalid option`, so the name stays a plain string — and then
+  # `repo_owner[$key]=` evaluates the subscript as ARITHMETIC, which turns a hyphenated repo
+  # name into a subtraction of variable names and kills the run under `set -u`
+  # (`your-batch-job` → `your: unbound variable`). Keep this 3.2-clean.
+  local repo_owner=''
   local prod url kind lang dist path desc key
   while IFS=$'\037' read -r prod url kind lang dist path desc; do
     [[ -n "$url" ]] || continue
     key="${url%.git}"; key="${key##*/}"; key="${key##*:}"
     # Mani project keys are always the URL-derived repo name (path: is only the clone dir).
-    [[ -n "$key" && -n "$prod" ]] && repo_owner["$key"]="$prod"
+    [[ -n "$key" && -n "$prod" ]] && repo_owner="${repo_owner}${key}"$'\037'"${prod}"$'\n'
   done < <(parse_repos)
+
+  owner_of() {  # $1=repo-key → its products[].id on stdout; empty when the config knows no such key
+    local k v
+    while IFS=$'\037' read -r k v; do
+      [[ "$k" == "$1" ]] && { printf '%s' "$v"; return 0; }
+    done <<< "$repo_owner"
+    return 1
+  }
 
   strip_mani_project() {  # $1=file $2=repo-key — drop `  <key>:` + indented fields
     local file="$1" repo="$2"
@@ -675,7 +690,7 @@ reconcile_mani_registry() {
     # Strip project keys that config assigns to a DIFFERENT product (rename / move leftovers).
     while IFS= read -r repo; do
       [[ -n "$repo" ]] || continue
-      owner="${repo_owner[$repo]:-}"
+      owner="$(owner_of "$repo" || true)"
       [[ -n "$owner" && "$owner" != "$base" ]] || continue
       if [[ "$DRY" -eq 1 ]]; then
         printf '    %swould strip project %s from mani.d/%s.yaml (owned by products[].id=%s)%s\n' \
