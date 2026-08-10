@@ -124,6 +124,10 @@
         "matcher": "Write|Edit"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-bash-portability.sh'",
+        "matcher": "Write|Edit"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh'",
         "timeout": 10
       },
