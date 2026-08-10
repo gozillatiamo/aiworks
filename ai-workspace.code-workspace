@@ -9,10 +9,6 @@
       "path": "turnover-commission-batch"
     },
     {
-      "name": "ofb-instruction",
-      "path": "ofb-instruction"
-    },
-    {
       "name": "agent-db",
       "path": "agent-db"
     },

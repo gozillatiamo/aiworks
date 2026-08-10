@@ -21,6 +21,10 @@
     "live-sub/target": true,
     "lotto-service/target": true,
     "turnover-commission-batch/target": true,
-    "game/target": true
+    "game/target": true,
+    "ofb-k6-loadtests/node_modules": true,
+    "ofb-k6-loadtests/dist": true,
+    "ofb-k6-loadtests/coverage": true,
+    "ofb-k6-loadtests/.expo": true
   }
 }
