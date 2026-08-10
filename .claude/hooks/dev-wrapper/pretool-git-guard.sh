@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 #
-# PreToolUse(Bash) hook — close the git side-doors that let an agent publish
+# PreToolUse(Bash) hook — close the VCS side-doors that let an agent publish
 # something its tool grant deliberately does NOT allow.
+#
+# 0. `glab mr create` / `gh pr merge` / `glab api --method POST` …
+#    The provider CLI reaches the forge directly, so it bypasses scripts/vcs/
+#    entirely — the adapter's title/body conventions, its provider-swappability
+#    (CONTEXT.md), and the workflow phase that owns PR/MR creation. Two agents in
+#    one dev-cycle run went down this exact road: the mandated adapter call was
+#    denied for being compound, they read that as a broken adapter, and reached
+#    for `glab mr create --yes` against the real remote instead. The prohibition
+#    was already written in CLAUDE.md, CONTEXT.md and three skills, and was
+#    enforced only in a delegation BRIEF (pretool-agent-brief-guard.sh) — never
+#    on the command an agent actually runs. Prose lost twice; this is the fix.
+#    READ-ONLY use stays allowed (`glab mr view`, `gh pr list`) — the point is
+#    that nothing MUTATES the forge except through the adapter.
 #
 # 1. `git push -o merge_request.create` (or --push-option=…)
 #    A GitLab *push option* creates a merge request server-side. It needs only
@@ -48,11 +61,43 @@ set -uo pipefail
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 [ -z "$cmd" ] && exit 0
-case "$cmd" in *git*) ;; *) exit 0 ;; esac
+# `gh` is only two letters and lives inside ordinary words (high, through, night), so this
+# fast path deliberately over-matches; command position is decided precisely below.
+case "$cmd" in *git*|*glab*|*gh*) ;; *) exit 0 ;; esac
 
 # Split the command into segments on ; && || | & so each git invocation is
 # inspected with only its own arguments in view.
 segments=$(printf '%s' "$cmd" | sed -E 's/(\|\||&&|[;|&])/\n/g')
+
+# A SECOND, QUOTE- AND HEREDOC-STRIPPED view of the same command, for the provider-CLI rule
+# only. `glab`/`gh` are words that legitimately appear inside prose an agent WRITES — a commit
+# message, a PR body, a doc paragraph about this very prohibition — and this guard's own commit
+# message names them. Deciding on the raw string would block writing about the rule. The git
+# rules below keep the RAW segments on purpose: they parse real path arguments, which are
+# routinely quoted, and stripping quotes would erase them.
+# (Both strippers are ported from pretool-adapter-pipe-guard.sh, which learned the same lesson.)
+nobody=$(printf '%s' "$cmd" | awk '
+  { if (intag != "" ) { if ($0 == intag || $0 == intag";") intag=""; next } }
+  { line=$0
+    if (match(line, /<<-?[[:space:]]*'"'"'?[A-Za-z_][A-Za-z0-9_]*'"'"'?/)) {
+      tag=substr(line, RSTART, RLENGTH); gsub(/^<<-?[[:space:]]*|'"'"'/, "", tag); intag=tag }
+    print line }')
+bare=$(printf '%s' "$nobody" | perl -e '
+  my $s = do { local $/; <STDIN> };
+  my ($SQ, $DQ, $BS) = (chr(39), chr(34), chr(92));
+  my ($out, $q, $i, $n) = ("", "", 0, length $s);
+  while ($i < $n) {
+    my $c = substr($s, $i, 1);
+    if    ($q eq ""  and ($c eq $SQ or $c eq $DQ))    { $q = $c; $out .= " " }
+    elsif ($q ne ""  and $c eq $q)                    { $q = "";  $out .= " " }
+    elsif ($q ne $SQ and $c eq $BS and $i + 1 < $n)   { $i++;     $out .= " " }
+    elsif ($q eq "")                                  { $out .= $c }
+    else                                              { $out .= " " }
+    $i++;
+  }
+  print $out;
+' 2>/dev/null) || bare="$cmd"
+bare_segments=$(printf '%s' "$bare" | sed -E 's/(\|\||&&|[;|&])/\n/g')
 
 # Honour an explicit `git -C <dir>` inside a segment; else the tool's own cwd.
 # awk, not sed: the obvious `sed -E 's/.*-C[[:space:]]+("?)([^"[:space:]]+)\1.*/\2/'`
@@ -79,6 +124,20 @@ is_git_sub() {
   printf '%s' "$1" | grep -qE "(^|[[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)*([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+$2([[:space:]]|$)"
 }
 
+# The provider CLI in COMMAND POSITION — the segment's first real word, past any leading
+# VAR=… assignments and the usual wrappers. Anything else (a path that ends in /gh, the
+# word "glab" inside a quoted message, `grep -n glab file`) is NOT an invocation and is
+# left alone: this guard blocks what RUNS, never what is merely mentioned.
+# Prints "<cli> <group> <verb>", or nothing.
+seg_provider() {
+  printf '%s' "$1" | awk '{
+    i = 1
+    while (i <= NF && ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || $i == "sudo" || $i == "env" ||
+                       $i == "command" || $i == "exec" || $i == "time" || $i == "nohup")) i++
+    if ($i == "glab" || $i == "gh") print $i, $(i+1), $(i+2)
+  }'
+}
+
 # `check-ignore -v` output is "<source-file>:<line>:<pattern>\t<path>"; a path
 # hidden only by info/exclude is dropped, leaving true .gitignore violations.
 gitignored_only() {  # <repo_dir> ; paths on stdin
@@ -89,6 +148,62 @@ gitignored_only() {  # <repo_dir> ; paths on stdin
 
 IFS='
 '
+IFS='
+'
+# Provider-CLI rule runs FIRST, over the quote/heredoc-stripped view.
+for seg in $bare_segments; do
+  # --------------------------------------------------- provider CLI (glab/gh)
+  prov=$(seg_provider "$seg")
+  if [ -n "$prov" ]; then
+    # awk again, not word-splitting: IFS is newline for the segment loop, so `set -- $prov`
+    # would hand back ONE field instead of three (the same trap seg_repo_dir documents).
+    cli=$(printf '%s' "$prov" | awk '{print $1}')
+    group=$(printf '%s' "$prov" | awk '{print $2}')
+    verb=$(printf '%s' "$prov" | awk '{print $3}')
+    deny=0; what=""
+    case "$group" in
+      # Forge objects. Fail CLOSED: an unrecognised verb denies rather than slips
+      # through, so a subcommand this list has never heard of cannot be the next
+      # side-door. Read-only verbs are the allowlist.
+      mr|pr|issue|release|repo|label|milestone|variable|schedule)
+        case "$verb" in
+          view|list|ls|diff|status|browse|search|todo|config|checkout|'') deny=0 ;;
+          *) deny=1; what="$cli $group $verb" ;;
+        esac ;;
+      # Raw API: only a mutating method is a side-door; a GET is just reading.
+      api)
+        if printf '%s' "$seg" | grep -qiE '(--method|-X)[[:space:]]*=?[[:space:]]*(POST|PUT|PATCH|DELETE)'; then
+          deny=1; what="$cli api with a mutating method"
+        fi ;;
+    esac
+    if [ "$deny" -eq 1 ]; then
+      {
+        echo "⛔ Blocked: $what — the provider CLI mutates the forge directly."
+        echo
+        echo "Every write to a PR/MR, issue or release goes through the VCS adapter,"
+        echo "so the provider stays swappable in one place and the workflow phase that"
+        echo "owns the action keeps owning it. Use the adapter instead:"
+        echo
+        echo "  open a PR/MR      scripts/vcs/open-pr.sh --base <base> --head <branch> --title \"…\" --body \"…\""
+        echo "  comment           scripts/vcs/pr-comment.sh <number> [--path <file> --line <n>] --body \"…\""
+        echo "  approve           scripts/vcs/pr-approve.sh <number> --body \"…\""
+        echo "  merge             scripts/vcs/merge-pr.sh <number> --subject \"…\""
+        echo "  close             scripts/vcs/close-pr.sh <number>"
+        echo "  read (allowed)    pr-view.sh · pr-comments.sh · pr-threads.sh · list-prs.sh · find-prs.sh"
+        echo
+        echo "⚠️  A WRITER must run BARE — its own command, no 'cd X && …', no pipe, no"
+        echo "    redirect. The compound form is denied and you get NO permission prompt,"
+        echo "    which reads exactly like a broken adapter. Enter the repo with a"
+        echo "    separate 'cd <absolute path>' call first; Bash cwd persists."
+        echo
+        echo "If the adapter itself fails, that IS the answer for this step — report the"
+        echo "command, its exit code and its stderr. Do not route around it."
+      } >&2
+      exit 2
+    fi
+  fi
+done
+
 for seg in $segments; do
   # ---------------------------------------------------------- push options
   if is_git_sub "$seg" push; then

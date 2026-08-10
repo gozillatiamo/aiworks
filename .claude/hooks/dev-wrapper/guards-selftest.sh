@@ -76,6 +76,25 @@ t "add -f mixed (one ignored) blocked"    2 pretool-git-guard.sh "$(j "git -C $T
 t "add -f . blocked (too broad)"          2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f .")"
 t "add -f glob blocked (unresolvable)"    2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f agent_logs/*.md")"
 t "add -f on a normal path allowed"       0 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f src/main.rs")"
+# Provider CLI — the same guard's rule 0. A mutating subcommand is a side-door around
+# scripts/vcs/; a read-only one is not. Unknown verbs fail CLOSED, and a mention (quoted
+# prose, a grep argument) is never an invocation — an agent has to be able to WRITE about
+# the prohibition it is under.
+t "glab mr create blocked"                2 pretool-git-guard.sh "$(j 'glab mr create --title x --yes')"
+t "gh pr merge blocked"                   2 pretool-git-guard.sh "$(j 'gh pr merge 42 --squash')"
+t "glab mr update blocked"                2 pretool-git-guard.sh "$(j 'glab mr update 20 --description y')"
+t "glab issue create blocked"             2 pretool-git-guard.sh "$(j 'glab issue create --title x')"
+t "unknown provider verb fails closed"    2 pretool-git-guard.sh "$(j 'glab mr frobnicate 7')"
+t "cd && glab mr update blocked"          2 pretool-git-guard.sh "$(j 'cd /tmp/x && glab mr update 20 --description y')"
+t "glab api POST blocked"                 2 pretool-git-guard.sh "$(j 'glab api --method POST projects/1/notes')"
+t "gh api -X DELETE blocked"              2 pretool-git-guard.sh "$(j 'gh api -X DELETE repos/o/r/issues/1')"
+t "glab mr view allowed"                  0 pretool-git-guard.sh "$(j 'glab mr view 20')"
+t "gh pr list allowed"                    0 pretool-git-guard.sh "$(j 'gh pr list')"
+t "glab api GET allowed"                  0 pretool-git-guard.sh "$(j 'glab api projects/123/merge_requests')"
+t "grep of a provider cmd allowed"        0 pretool-git-guard.sh "$(j 'grep -n glab scripts/vcs/gitlab.sh')"
+t "quoted mention allowed"                0 pretool-git-guard.sh "$(j 'echo "never run glab mr create by hand"')"
+t "adapter call itself allowed"           0 pretool-git-guard.sh "$(j 'scripts/vcs/open-pr.sh --title x --body y')"
+t "word containing gh allowed"            0 pretool-git-guard.sh "$(j 'echo the throughput is high tonight')"
 # -C must decide WHICH repo's ignore rules apply — same path, opposite verdicts.
 t "-C honoured: ignoring repo blocks"     2 pretool-git-guard.sh "$(j "git -C $TMP/svc   add -f agent_logs/x.md")"
 t "-C honoured: plain repo allows"        0 pretool-git-guard.sh "$(j "git -C $TMP/plain add -f agent_logs/x.md")"
@@ -422,6 +441,29 @@ t  "apostrophes around a pipe ok"    0 $P "$(j 'scripts/notify/send.sh --channel
 # A command substitution is compound wherever it starts, not only at character 0 — the
 # backtick arm of the case was the one written without its leading `*`.
 t  "backtick writer mid-cmd blocked" 2 $P "$(j 'echo `scripts/vcs/merge-pr.sh 11`')"
+
+echo "--- pretool-adapter-edit-guard ---"
+# A hermetic copy of the layout `aiworks add` §3.3 creates: real adapters at the workspace
+# root, a symlink into each repo. A fresh clone has no product repos, so testing against the
+# live workspace would pass by ABSENCE — the fixture is what keeps this suite honest.
+mkdir -p "$TMP/ws/scripts/vcs" "$TMP/ws/scripts/tracker" "$TMP/ws/repo/scripts" "$TMP/ws/repo/src"
+: > "$TMP/ws/workspace.config.yaml"; : > "$TMP/ws/scripts/vcs/gitlab.sh"; : > "$TMP/ws/scripts/tracker/jira.sh"
+ln -sf ../../scripts/vcs     "$TMP/ws/repo/scripts/vcs"
+ln -sf ../../scripts/tracker "$TMP/ws/repo/scripts/tracker"
+tae() { # tae <name> <expected-exit> <file_path>
+  local name=$1 want=$2 p=$3 got
+  got=$(jq -cn --arg p "$p" '{tool_name:"Write",tool_input:{file_path:$p}}' \
+        | CLAUDE_PROJECT_DIR="$TMP/ws" "$H/pretool-adapter-edit-guard.sh" >/dev/null 2>&1; echo $?)
+  if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else fail=$((fail+1)); printf 'FAIL %s (want exit %s, got %s)\n' "$name" "$want" "$got"; fi
+}
+tae "vcs via repo symlink blocked"     2 "$TMP/ws/repo/scripts/vcs/gitlab.sh"
+tae "tracker via repo symlink blocked" 2 "$TMP/ws/repo/scripts/tracker/jira.sh"
+tae "root adapter allowed"             0 "$TMP/ws/scripts/vcs/gitlab.sh"
+tae "root tracker allowed"             0 "$TMP/ws/scripts/tracker/jira.sh"
+tae "repo's own scripts/dev.sh ok"     0 "$TMP/ws/repo/scripts/dev.sh"
+tae "ordinary repo source ok"          0 "$TMP/ws/repo/src/main.rs"
+tae "missing dir fails open"           0 "$TMP/ws/nope/scripts/vcs/x.sh"
 
 echo
 echo "pass=$pass fail=$fail"
