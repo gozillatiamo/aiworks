@@ -8,7 +8,6 @@
 !backoffice/
 !ofb-backoffice-cypress/
 !front-end/
-!ofb-instruction/
 !customization-widget/
 !mock-agency-api/
 !commission-batch/

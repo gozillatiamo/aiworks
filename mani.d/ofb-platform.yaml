@@ -70,11 +70,6 @@ projects:
     url: git@gitlab.com:bluepicode/ofb/customization-widget.git
     path: ../customization-widget
     tags: [ofb-platform, next.js]
-  ofb-instruction:
-    desc: Instruction for setup the product for the first time.  
-    url: git@gitlab.com:bluepicode/ofb/ofb-instruction.git
-    path: ../ofb-instruction
-    tags: [ofb-platform, markdown]
   front-end:
     desc: The web app for player users, it's one of the player site theme(OHANABET) concept in platform.
     url: git@gitlab.com:bluepicode/ofb/front-end.git

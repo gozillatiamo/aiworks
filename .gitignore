@@ -57,7 +57,6 @@ workspace.config.local.yaml
 /backoffice/
 /ofb-backoffice-cypress/
 /front-end/
-/ofb-instruction/
 /customization-widget/
 *.code-workspace
 !ai-workspace.code-workspace

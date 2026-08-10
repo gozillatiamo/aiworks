@@ -145,10 +145,6 @@ products:
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection"
 
-      - url: git@gitlab.com:bluepicode/ofb/ofb-instruction.git
-        kind: document
-        desc: Instruction for setup the product for the first time.
-        lang: markdown
 
       - url: git@gitlab.com:bluepicode/ofb/agent-db.git
         kind: migration
@@ -185,6 +181,7 @@ products:
         lang: rust
         green: "unit tests + integration tests passed successfully"
         guardian_focus: "secrets, data-protection, input validation"
+        known_false_reds: "a full cargo test run is non-deterministic because the suite shares one test database, so an unrelated test can fail on ordering or leftover rows; re-run the scoped test in isolation against the base branch before calling it a real failure"
 
       - url: git@gitlab.com:bluepicode/qa/agent-paotung-cypress.git
         kind: test-suite
@@ -206,10 +203,11 @@ products:
         green: "tests via cypress and newman passed successfully"
 
       - url: git@gitlab.com:bluepicode/ofb/mock-agency-api.git
-        kind: backend
+        kind: mock
         desc: The mock API service that user for simulate the agency service for any site that using package S.
         lang: json
         green: "The service is running with healthy"
+        known_false_reds: "scripts/dev.sh test goes red with 'mock did not become ready' when port 3001 is already taken by an unrelated local server; check with lsof -nP -iTCP:3001 and re-run with DEV_PORT=<free port> before treating it as a real failure"
 
       - url: git@gitlab.com:bluepicode/ofb/commission-batch.git
         kind: backend

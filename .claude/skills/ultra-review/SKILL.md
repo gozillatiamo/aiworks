@@ -106,8 +106,9 @@ so they run concurrently and don't pollute each other's context. Into **each** b
   that repo's `green:` in workspace.config.yaml names them), never the raw toolchain, and
   run the WHOLE suite, not just the ticket's tests. Return the invocation + result as a
   receipt: I cannot post the ticket-wide approval without one. A red suite is a must-fix —
-  post it inline, after ruling out a known false-red (stale/shared test DB, submodule
-  branch drift, a suite already red on the target branch). If it genuinely cannot run,
+  post it inline, after ruling out a known false-red: each repo declares its own under
+  `known_false_reds:` in `workspace.config.yaml`, so read that repo's entry and re-run the
+  scoped test in isolation against the base branch first. If it genuinely cannot run,
   say so with what you tried and the exact unblocking command — the verdict is then
   UNVERIFIED, never a pass. ⚠️ The performance gate is reading this SAME clone in
   parallel: do NOT leave the checkout moved. Either restore the original ref, or run in a

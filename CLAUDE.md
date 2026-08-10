@@ -38,10 +38,11 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
   identity, so the **API server** rejects writes. ⚠️ `Bash(kubectl *)`/`Bash(gcloud *)` denied — ask for `!kubectl`.
 - **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in
   (`CYPRESS_ENV=staging`). Defer to each repo's default — never hardcode one in agents or workflows.
-- **Known false-reds:** before calling a test failure real, rule out a stale persistent test DB, submodule branch
-  drift, and dual-formatter conflicts on generated files — re-run the scoped test in isolation against the base
-  branch. When estimating, fetch the persisted story-point fields first (`/estimate-ticket`) rather than
-  concluding "no calibration history".
+- **Known false-reds:** rule one out before calling a failure real — each repo declares its own under
+  `known_false_reds:` in `workspace.config.yaml`; workspace-wide, also suspect a stale persistent test DB,
+  submodule branch drift, and dual-formatter conflicts on generated files. Re-run the scoped test in isolation
+  against the base branch. When estimating, fetch the persisted story-point fields first (`/estimate-ticket`)
+  rather than concluding "no calibration history".
 
 ## Provider adapters
 

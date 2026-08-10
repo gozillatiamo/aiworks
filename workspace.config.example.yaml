@@ -630,10 +630,16 @@ triage:
 #                config/capabilities.js should match it. Omit for non-mobile repos.
 #   kind       → a FREE-FORM, tech-agnostic dev-context LABEL (frontend, backend, web-app,
 #                service, migration, generic, …) — the tech goes in `lang`, NOT the kind.
-#                It selects one of two role/gate ARCHETYPES:
+#                It selects one of three role/gate ARCHETYPES:
 #                  test-suite   → qa-runner builds the test suite (E2E / API / load), no code
 #                                 review, provides the cross-repo test-suite (QA) gate. The ONE
 #                                 special kind name.
+#                  document |   → a SOURCELESS repo: the deliverable is prose, fixtures or mock
+#                  fixture |      responses. Still planned, built and reviewed by a human — but
+#                  mock           the static-analysis (guard) and performance gates are off,
+#                                 because a scanner has nothing to scan and a profiler nothing
+#                                 to profile. Turning them on does not add rigour; it adds a
+#                                 gate that cannot pass on its own terms.
 #                  <any other>  → a code repo: developer builds (TDD), code-reviewer reviews,
 #                                 guard+perf gates on (tune per repo via green / guardian_focus)
 #
@@ -653,6 +659,22 @@ products:
         # path: your-app                            # optional — clone dir (default: the repo name)
         # green: "<keep-it-green check, e.g. lint + unit tests>"   # optional override (else from kind)
         # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)
+        # known_false_reds: "<this repo's environment reds that are not real failures>"
+        #                                           # optional. The failures THIS repo's harness
+        #                                           # produces that LOOK like a real red — a port
+        #                                           # already in use, a persistent test DB left
+        #                                           # dirty by an earlier run, a shared fixture
+        #                                           # that makes the suite order-dependent, a
+        #                                           # formatter fighting a generated file. The
+        #                                           # code-reviewer and the test gates read this
+        #                                           # BEFORE calling a red real, so a known
+        #                                           # environment failure costs a re-run instead
+        #                                           # of a review round. It never excuses a red:
+        #                                           # it says which ones to re-check in isolation
+        #                                           # against the base branch first.
+        #                                           # Keep it here, per repo — a framework file
+        #                                           # that lists your repos' flakes is carrying
+        #                                           # org knowledge it cannot maintain.
       - url: git@github.com:your-org/your-tests.git
         kind: test-suite                            # the cross-repo QA suite (E2E / API / load)
         desc: Android/iOS E2E UI tests for the app.      # one-line repo responsibility
