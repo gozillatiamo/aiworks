@@ -316,7 +316,33 @@ fi
 
 # ── escape a value for a JS single-quoted string ─────────────────────────────────
 # backslash → \\, single-quote → \'. (Backticks are literal inside '…' so left as-is.)
-jsq() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\'/\\\'}"; printf "'%s'" "$s"; }
+# → a JS single-quoted string literal. Escaped CHARACTER BY CHARACTER, through variables
+# holding the two characters, on purpose. The obvious one-liner
+#
+#     s="${s//\'/\\\'}"
+#
+# is BASH-VERSION-DEPENDENT: bash 4+ substitutes the intended `\'`, bash 3.2 substitutes
+# `\\'` — two backslashes, which closes the JS string early. macOS ships 3.2 as /bin/bash,
+# so on any machine without a newer bash this generator silently wrote a dev-cycle.js that
+# the workflow engine cannot load, from a config file that was perfectly fine. Nothing in
+# `${var//…}` with a backslash in the replacement is safe to trust across versions.
+jsq() {
+  local s="$1" out='' c n i
+  local bs='\' q="'"                          # exactly one backslash · exactly one quote
+  n="${#s}"
+  for (( i=0; i<n; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      "$bs")  out="$out$bs$bs"   ;;
+      "$q")   out="$out$bs$q"    ;;
+      $'\n')  out="${out}${bs}n" ;;           # a raw newline would break the literal too
+      $'\r')  out="${out}${bs}r" ;;
+      $'\t')  out="${out}${bs}t" ;;
+      *)      out="$out$c"       ;;
+    esac
+  done
+  printf '%s%s%s' "$q" "$out" "$q"
+}
 # normalize a yaml scalar to a JS boolean literal (default given by $2). tr, not ${,,} (bash 3.2).
 jsbool() { case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     true|yes|1) printf 'true' ;; false|no|0) printf 'false' ;; *) printf '%s' "$2" ;; esac; }
@@ -684,6 +710,11 @@ commit_block() {   # <target-file> <body> <in-sync-msg> <changed-msg>
     else
       rm -f /tmp/aiworks-nodecheck.$$
     fi
+  else
+    # Say so. This is the ONE path that installs a workflow nobody has parsed, and it is the
+    # path a brand-new machine takes: `aiworks sync` runs this generator before the node
+    # toolchain is in place, so the check that exists silently does not happen.
+    warn "node is not on PATH — installed $base WITHOUT validating it; run 'aiworks config' again once node is present"
   fi
   if cmp -s "$tmp" "$target"; then
     rm -f "$tmp"
