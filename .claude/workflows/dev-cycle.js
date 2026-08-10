@@ -436,7 +436,19 @@ const prTitle = (rp) => `${ccType(rp.work_branch)}(${ticket}): ${rp.title ?? '<T
 const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory — OFB-2141):
 • ALWAYS HAND OFF. Ending WITHOUT calling StructuredOutput is a FAILURE. Even if the work is incomplete or the suite is red, you MUST end by returning the DEV_SCHEMA result with "status" set: "complete" (Definition of Done met — for the test-suite repo a red caused only by reported app bugs / expected pre-merge reds still counts as complete), "partial" (some slices landed, work remains), or "blocked" (cannot proceed). For "partial"/"blocked" put exactly WHAT REMAINS and WHY in "remaining". Never withhold the handoff to keep investigating.
 • NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
-• BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.`
+• BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.
+• LEAVE NO DIRTY TREE. The build ends in exactly ONE of two states: COMMITTED (your work is on the work branch as conventional commits) or PARKED. Ending with uncommitted changes and no record of them is a failure — the next run inherits them as an unexplained partial implementation and has to reverse-engineer your intent. If the work is not commit-ready, PARK it: prefer a WIP commit on the work branch (\`wip(<scope>): <what is unfinished> Refs ${ticket}\`); use \`git stash push -u -m "${ticket} <what>"\` only when a commit would break the branch for someone else. Then name WHICH you chose and WHERE the work now lives in "parked_at". \`git checkout .\`, \`git restore .\` and \`git reset --hard\` are FORBIDDEN — discarding work is a decision you were not asked to make. On ARRIVAL, if the tree is already dirty, account for it BEFORE writing new code (fold it into your plan or park it as above), and if the repo has a compile/typecheck step, get it passing before you add a new slice.
+• A NON-COMPLETE HANDOFF MUST BE ACTIONABLE. With status "partial"/"blocked", also fill "root_cause" (the MEASURED cause at file:line — never the word "unknown"), "commands_run" (each command you actually ran with its exit code), and "decision_needed" when the blocker is a fork only a human can settle. "needs human triage" on its own is not a handoff; it is the absence of one.`
+
+// Shared ADAPTER DISCIPLINE — appended to every prompt whose phase invokes a MUTATING adapter
+// (open-pr, pr-comment, pr-approve, merge-pr, the tracker + notify writers). Two agents in one
+// run read a guard-denied compound call as "the adapter is broken" and side-doored to
+// `glab mr create` — one of them editing scripts/vcs/gitlab.sh to get there. The guard denies
+// SILENTLY (no permission prompt ever reaches the agent), so prose has to name the bare form up
+// front and make an adapter failure a legitimate terminal answer rather than a detour.
+const ADAPTER_DISCIPLINE = ` ADAPTER DISCIPLINE (mandatory):
+• RUN A WRITER BARE. A mutating adapter call (scripts/{vcs,tracker,notify}/…) must be the WHOLE Bash command — no \`cd X && …\`, no pipe, no redirect, no \`env -C\`, no \`$( )\`, no heredoc. A compound form is DENIED SILENTLY: no permission prompt reaches you, so it reads as a broken adapter when it is not. Enter the repo with a SEPARATE standalone \`cd <absolute path>\` call first — Bash cwd persists between tool calls.
+• AN ADAPTER FAILURE IS A RESULT, NOT A DETOUR. If it still fails, return that as the answer for this step: the exact command, its exit code and its stderr. NEVER substitute \`glab\`/\`gh\`/curl against the provider API, and NEVER edit anything under scripts/vcs, scripts/tracker or scripts/notify — those paths are SYMLINKS to the shared workspace copy, so editing one from inside a repo rewrites the adapter for EVERY repo. A guard blocks both routes; reaching for either only burns the round.`
 
 // Appended to every test-suite gate prompt. The verdict is audited twice — the receipt must
 // describe a real command, and a SECOND agent reads the ticket for the result — because a run
@@ -552,6 +564,20 @@ const DEV_SCHEMA = {
     // fixture/seed, env). For partial|blocked, `remaining` MUST say what is left and why.
     status: { type: 'string', enum: ['complete', 'partial', 'blocked'] },
     remaining: { type: 'string' }, // what remains / why — required reading when status != complete
+    // A handoff that says only "needs human triage" costs the next run a full re-investigation:
+    // one later round found the real cause (a misplaced `#[async_trait]`) in a single pass. So a
+    // non-complete handoff must carry the THREE things that make it actionable without re-doing
+    // the work — what actually broke, the receipts, and the fork the agent could not settle.
+    root_cause: { type: 'string' },            // the measured cause, at file:line where known — never "unknown"
+    commands_run: {                            // receipts: what was actually executed, and what it returned
+      type: 'array',
+      items: {
+        type: 'object', required: ['command', 'exit_code'],
+        properties: { command: { type: 'string' }, exit_code: { type: 'number' }, summary_line: { type: 'string' } },
+      },
+    },
+    decision_needed: { type: 'string' },       // the fork a human must settle (e.g. keep the partial work vs reset)
+    parked_at: { type: 'string' },             // where uncommitted work now lives: a WIP commit sha, or a stash ref
   },
 }
 // Guardian & performance share one gate shape. A finding is triaged into ONE of three
@@ -873,7 +899,12 @@ On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY i
 // ──────────────────────────────────────────────────────────────────────────
 async function runRepoPipeline(rp, desc) {
   const R = rp.repo
-  const inRepo = `Work in the ${R} repo (cwd ${desc.path}/).`
+  // The agent's shell starts at the WORKSPACE ROOT, not in the repo — so "cwd <repo>/" was a
+  // cwd it did not have, and the only one-liner that fixes it (`cd <repo> && <writer>`) is the
+  // exact compound form the adapter guard denies silently. Hand it the absolute path and the
+  // cd-persists fact instead; that is the whole gap the two side-door incidents fell through.
+  const absRepo = haveAbs ? `${WORKSPACE_ROOT}/${desc.path}` : desc.path
+  const inRepo = `Work in the ${R} repo — its path is ${absRepo}. Your shell starts at the workspace root and Bash cwd PERSISTS between tool calls, so enter the repo with ONE standalone \`cd ${absRepo}\` call and stay there; never prefix a later command with \`cd … &&\`.`
 
   // BUILD — initial implementation from the plan. Code repos: developer (TDD).
   // The test-suite repo: qa-runner branches, implements POM, iterates SCOPED, then
@@ -893,7 +924,7 @@ async function runRepoPipeline(rp, desc) {
 6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, status="complete" (a green run, OR a red caused only by reported app bugs / expected pre-merge reds — both are a valid complete handoff for this phase) else "partial"/"blocked" with what's left in "remaining", and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
     : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /coding-feature (it loads this repo's CLAUDE.md + coding_standards AND the workspace coding-style — storytelling code, NO body comments — "read before your first edit", and its Step 4 drives the build test-first through /tdd's red-green-refactor loop) and /karpathy-guidelines, committing each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.`
   let dev = await safeAgent(
-    buildPrompt + BUILD_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE,
+    buildPrompt + BUILD_DISCIPLINE + ADAPTER_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE,
     { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
   )
   // CONVERGENCE RETRY (OFB-2141 §1.2) — a null build means the agent never produced a structured
@@ -904,19 +935,19 @@ async function runRepoPipeline(rp, desc) {
   if (!dev) {
     log(`⚠️ [${R}] build returned no structured handoff — retrying once (bounded: emit handoff now, no more work).`)
     dev = await safeAgent(
-      `${tag(R, desc.build, 'build', 1)} Your build of ${ticket} in the ${R} repo (branch ${rp.work_branch}, plan ${rp.plan_path}) did NOT return a structured handoff last time — you likely ran away triaging a red or reformatting. STOP doing work now: run NO more tests, fixes, or formatters. In ONE step, summarize the state you have ALREADY reached and END by calling StructuredOutput with the DEV_SCHEMA result — work_branch=${rp.work_branch}, a one-line summary, commit count, the files you touched in "fixed", status="complete" ONLY if the Definition of Done is genuinely met else "partial" (slices landed, work remains) or "blocked" (cannot proceed), and in "remaining" exactly what is left and why (name a flaky/non-deterministic suite or missing fixture/seed if that blocked you). Returning this handoff IS the task — emit it immediately.`,
+      `${tag(R, desc.build, 'build', 1)} Your build of ${ticket} in the ${R} repo (branch ${rp.work_branch}, plan ${rp.plan_path}) did NOT return a structured handoff last time — you likely ran away triaging a red or reformatting. ${inRepo} STOP doing work now: run NO more tests, fixes, or formatters. Two things only, in ONE step. FIRST, leave no dirty tree: \`git status --porcelain\` — if anything is uncommitted, PARK it (a \`wip(<scope>): … Refs ${ticket}\` commit on ${rp.work_branch}, or \`git stash push -u -m "${ticket} …"\`) and record where it went; NEVER \`git checkout .\`/\`git restore .\`/\`git reset --hard\`. SECOND, END by calling StructuredOutput with the DEV_SCHEMA result — work_branch=${rp.work_branch}, a one-line summary, commit count, the files you touched in "fixed", status="complete" ONLY if the Definition of Done is genuinely met else "partial" (slices landed, work remains) or "blocked" (cannot proceed). For partial/blocked also fill "remaining" (what is left and why), "root_cause" (the MEASURED cause at file:line — never "unknown"), "commands_run" (each command you ran + its exit code), "decision_needed" if a human must settle a fork, and "parked_at" (the WIP commit sha or stash ref). Returning this handoff IS the task — emit it immediately.`,
       { agentType: desc.build, model: 'opus', effort: 'high', phase: 'Build', label: `build-handoff:${ticket}:${R}`, schema: DEV_SCHEMA },
     )
   }
   if (!dev) {
     log(`⚠️ [${R}] build did not converge to a structured handoff even after the bounded retry — left mid-flight; downstream skipped.`)
-    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: 'blocked', summary: 'build agent never returned a structured handoff (2 attempts)', remaining: 'unknown — agent did not converge; needs human triage' } }
+    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: 'blocked', summary: 'build agent never returned a structured handoff (2 attempts)', remaining: `no handoff was produced, so nothing is known about what landed. Recover the state from the branch itself, in ${desc.path}: \`git log --oneline ${rp.base_branch}..${rp.work_branch}\` for what was committed, \`git status --porcelain\` for work left uncommitted, and \`git stash list\` for anything parked.`, decision_needed: 'whether to keep whatever is on the work branch and continue, or reset it and re-run the build from the plan' } }
   }
   // A converged-but-not-complete handoff (partial/blocked) is a CLEAN stop for THIS repo: the whole
   // change set must be ready before any merge, so we surface the handoff rather than pretend ready.
   if (dev.status && dev.status !== 'complete') {
     log(`⚠️ [${R}] build handoff status=${dev.status}: ${(dev.remaining || dev.summary || '(no detail)').slice(0, 140)} — repo not build-complete; downstream skipped.`)
-    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining } }
+    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining, root_cause: dev.root_cause, commands_run: dev.commands_run, decision_needed: dev.decision_needed, parked_at: dev.parked_at } }
   }
   log(`[${R}] initial build: ${dev.summary?.slice(0, 70) ?? 'done'}`)
   tick(`${R}:build`)
@@ -928,7 +959,7 @@ async function runRepoPipeline(rp, desc) {
     ? `${tag(R, desc.build, 'open-pr')} The ticket scope (spec(s) + regression specs) for ${ticket} is green in ${R}. ${inRepo} Ensure git status is clean, then open the PR/MR with the VCS adapter (it pushes ${rp.work_branch} for you): \`scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${prTitle(rp)}" --body "<what was automated + the scoped (ticket spec(s) + regression) green evidence>"\`. The title is Conventional Commits (\`<type>(${ticket}): <title>\`) — keep it exactly as given. Do NOT merge it — the workflow squash-merges in dependency order. Return the PR/MR URL (pr_url) + number (the adapter prints \`number=<n>\`).`
     : `${tag(R, desc.build, 'open-pr')} ${ticket} is built in ${R} — open the PR/MR now so the reviewers (code-reviewer + guardian + performance) can review it on the host. ${inRepo} Ensure git status is clean (commit any stray artifact), then run /open-pr ${ticket} to open the PR/MR for ${rp.work_branch} → ${rp.base_branch}, titled per Conventional Commits "${prTitle(rp)}". Do NOT merge it. Return the PR/MR URL + number.`
   const pr = await safeAgent(
-    openPrPrompt + LANGUAGE_DIRECTIVE,
+    openPrPrompt + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE,
     { agentType: desc.build, phase: 'Open PR', label: `open-pr:${ticket}:${R}`, schema: PR_SCHEMA },
   )
   if (!pr) {
@@ -1028,7 +1059,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       log(`⚠️  [${R}] guardian subagent could not complete (${msg}) — running checklist inline via neutral agent (backstop).`)
       try {
         const bk = await agent(
-          `${tag(R, 'general-purpose', 'guard-backstop', reviewRound)} Static code-quality pass over the diff of ${prRef}. ${inRepo} Read the diff (\`git diff ${rp.base_branch}...${rp.work_branch}\`) and check the CHANGED lines for: ${desc.guardianFocus}. Post each concrete file:line issue via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<issue + fix>"\` and list under "blocking" (no generic advice). Return passed:true when clean, else passed:false with the blocking list.` + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+          `${tag(R, 'general-purpose', 'guard-backstop', reviewRound)} Static code-quality pass over the diff of ${prRef}. ${inRepo} Read the diff (\`git diff ${rp.base_branch}...${rp.work_branch}\`) and check the CHANGED lines for: ${desc.guardianFocus}. Post each concrete file:line issue via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<issue + fix>"\` and list under "blocking" (no generic advice). Return passed:true when clean, else passed:false with the blocking list.` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
           { agentType: 'general-purpose', phase: 'Review', label: `guard-backstop:${ticket}:${R}#${reviewRound}`, schema: GATE_SCHEMA },
         )
         if (bk) return { ...bk, via_backstop: true }
@@ -1039,7 +1070,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     }
     const runReviewer = async (rv) => {
       try {
-        return await agent(promptFor(rv) + LANGUAGE_DIRECTIVE, { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
+        return await agent(promptFor(rv) + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE, { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
       } catch (e) {
         const msg = String(e?.message || e).slice(0, 200)
         if (rv.key === 'guard') return guardBackstop(msg)
@@ -1110,7 +1141,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
 
     // Developer fixes the WHOLE combined batch (every open reviewer's PR comments) in ONE pass, pushing to the PR.
     const fix = await safeAgent(
-      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + LANGUAGE_DIRECTIVE,
+      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}. In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE,
       { agentType: desc.build, phase: 'Review', label: `pr-fix:${ticket}:${R}#${reviewRound}`, schema: DEV_SCHEMA },
     )
     if (fix) fixPasses++
@@ -1362,8 +1393,11 @@ if (aborted.length) {
   const handoffs = aborted.map((id) => {
     const r = repoResults[id]
     const h = r?.handoff
-    log(`⚠️ [${id}] unresolved (${r?.status ?? 'no-result'})${h ? ` — handoff:${h.status}: ${h.remaining ?? h.summary ?? '(no detail)'}` : ''}`)
-    return `${id}: ${r?.status ?? 'no-result'}${h ? ` — handoff:${h.status}${h.remaining ? ` — remaining: ${h.remaining}` : ''}` : ''}`
+    // Surface the ACTIONABLE half of the handoff (cause / fork / where parked work went), not just
+    // `remaining` — a run that reports only "needs human triage" makes the next round re-investigate.
+    const detail = h && [h.root_cause && `root cause: ${h.root_cause}`, h.remaining && `remaining: ${h.remaining}`, h.decision_needed && `decision needed: ${h.decision_needed}`, h.parked_at && `parked at: ${h.parked_at}`].filter(Boolean).join(' — ')
+    log(`⚠️ [${id}] unresolved (${r?.status ?? 'no-result'})${h ? ` — handoff:${h.status}: ${detail || h.summary || '(no detail)'}` : ''}`)
+    return `${id}: ${r?.status ?? 'no-result'}${h ? ` — handoff:${h.status}${detail ? ` — ${detail}` : ''}` : ''}`
   })
   log(`⚠️ ${aborted.join(', ')} did not reach 'ready' — the whole change set must be ready before any merge; stopping. Handoffs: ${handoffs.join(' | ')}`)
   // A fix-caused regression flagged on re-visit is a LOUDER, distinct halt (human-action-required):
