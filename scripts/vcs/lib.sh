@@ -114,6 +114,11 @@ case "$(basename "${0:-}")" in
     fi ;;
 esac
 
+# Which remote a branch is pushed to before the PR/MR is opened. Normally `origin` — but a
+# FRAMEWORK repo contributed from an adopter's clone has origin pointing at the adopter's own
+# forge and the upstream as a second remote, so the branch would land on the wrong host.
+VCS_REMOTE="${VCS_REMOTE:-origin}"
+
 VCS_PROVIDER="${VCS_PROVIDER:-$(vcs_detect_provider)}"
 IMPL="$VCS_DIR/$VCS_PROVIDER.sh"
 [[ -f "$IMPL" ]] || die "unknown VCS_PROVIDER '$VCS_PROVIDER' (no $IMPL) — use 'github' or 'gitlab', or add $VCS_PROVIDER.sh"

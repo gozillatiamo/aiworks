@@ -23,10 +23,10 @@ vcs_open_pr() {
     return 0
   fi
   if [[ "$dry" -eq 1 ]]; then
-    printf 'DRY RUN — git push -u origin %q && gh pr create --base %q --head %q --title %q --body <…>\n' "$head" "$base" "$head" "$title"
+    printf 'DRY RUN — git push -u %s %q && gh pr create --base %q --head %q --title %q --body <…>\n' "$VCS_REMOTE" "$head" "$base" "$head" "$title"
     return 0
   fi
-  git push -u origin "$head" >/dev/null 2>&1 || true
+  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
   local url
   url="$(gh pr create --base "$base" --head "$head" --title "$title" --body "$body")"
   num="${url##*/}" # gh prints the PR URL; the number is the trailing path segment
