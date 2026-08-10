@@ -28,9 +28,14 @@
 #            Use in CI or after a sweep:  .claude/hooks/dev-wrapper/posttool-bash-portability.sh --scan
 set -uo pipefail
 
+# This script is the one file that carries the banned constructs as DATA — in the match
+# pattern and in the advice it prints — so it always has to exempt itself.
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+
 # construct → what to use on bash 3.2 instead
 report() {  # $1=file
   local f="$1" hits
+  [[ "$f" -ef "$SELF" ]] && return 0
   # Full-line comments are dropped: this very file, and the notes left beside each fix, all
   # NAME the banned constructs in prose. Matching those would make the check cry wolf forever.
   hits="$(grep -nE \
