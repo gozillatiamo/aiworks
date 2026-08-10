@@ -79,6 +79,11 @@ export const meta = {
 //   headings/labels + ALL code + commit messages + branch names + technical/domain terms English;
 //   code & checked-in repo docs are never Thai). 'en' (default) ⇒ no directive. See docs/agents/language.md.
 // ──────────────────────────────────────────────────────────────────────────
+// Regenerate with `scripts/aiworks config`. NOTE this block is snapshotted TWICE: once here,
+// and again when the engine persists a copy of this script per run — so a resumed run replays
+// the config it started with, and a change made since is invisible to it. Change the config ⇒
+// invoke the workflow BY NAME (a fresh run). Never edit a constant in a persisted run script:
+// docs/agents/workflow-resume.md says why, and what it cost.
 // >>> AIWORKS:CONFIG START — generated from workspace.config.yaml; do not edit by hand <<<
 const TICKET_PREFIX = 'OFB'
 const AUTO_MERGE = false        // from workspace.config.yaml vcs.auto_merge; per-repo override via REPOS[id].autoMerge

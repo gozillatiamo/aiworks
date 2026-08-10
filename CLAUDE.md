@@ -31,6 +31,8 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
   that value (keyed hash, never shape), leaving local and staging work untouched.
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace
   root · `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
+  `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit
+  a persisted run script ·
   `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per finding; `--fix` runs those.
 - `docs/agents/figma.md` · `image-generation.md` · `diagram-generation.md` — design, asset and diagram surfaces,
   each behind its own `enabled` flag (default OFF).
