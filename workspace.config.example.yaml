@@ -603,7 +603,19 @@ products:
   - id: <product-id>                          # → mani.d/<product-id>.yaml
     repos:
       - url: git@github.com:your-org/your-app.git   # ← all you must provide
-        kind: frontend                              # any dev-context label; test-suite = QA archetype
+        kind: frontend                              # any dev-context label. Three ARCHETYPES:
+                                                    #   test-suite            → the QA pipeline (below)
+                                                    #   document|fixture|mock → a SOURCELESS repo: the
+                                                    #     deliverable is prose, fixtures or mock
+                                                    #     responses. Still planned, built and reviewed
+                                                    #     by a human, but the static-analysis (guard)
+                                                    #     and performance gates are OFF — a scanner has
+                                                    #     nothing to scan and a profiler nothing to
+                                                    #     profile, so leaving them on does not add
+                                                    #     rigour, it adds a gate that cannot pass on
+                                                    #     its own terms.
+                                                    #   <anything else>       → a code repo: full
+                                                    #     plan→build→review with guard + perf on.
         desc: The mobile app — offline-first, UI only.   # one-line repo responsibility (anatomy at a glance)
         lang: dart                                  # the TECH lives here; else auto-detected from the clone.
                                                     #   Several stacks in one repo → a comma-separated list,
@@ -618,6 +630,21 @@ products:
         # path: your-app                            # optional — clone dir (default: the repo name)
         # green: "<keep-it-green check, e.g. lint + unit tests>"   # optional override (else from kind)
         # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)
+        # known_false_reds: "<this repo's environment reds that are not real failures>"
+                                                    # optional. The failures THIS repo's harness
+                                                    #   produces that LOOK like a real red — a port
+                                                    #   already in use, a persistent test DB left
+                                                    #   dirty by an earlier run, a shared fixture that
+                                                    #   makes the suite order-dependent, a formatter
+                                                    #   fighting a generated file. The code-reviewer
+                                                    #   and the test gates read this BEFORE calling a
+                                                    #   red real, so a known environment failure costs
+                                                    #   a re-run instead of a review round. It never
+                                                    #   excuses a red: it names which ones to re-check
+                                                    #   in isolation against the base branch first.
+                                                    #   Declare it per repo, here — a framework file
+                                                    #   listing your repos' flakes would be carrying
+                                                    #   knowledge it cannot maintain.
       - url: git@github.com:your-org/your-tests.git
         kind: test-suite                            # the cross-repo QA suite (E2E / API / load)
         desc: Android/iOS E2E UI tests for the app.      # one-line repo responsibility

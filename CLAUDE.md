@@ -31,6 +31,8 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
   that value (keyed hash, never shape), leaving local and staging work untouched.
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace
   root · `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
+  `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit
+  a persisted run script ·
   `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per finding; `--fix` runs those.
 - `docs/agents/figma.md` · `image-generation.md` · `diagram-generation.md` — design, asset and diagram surfaces,
   each behind its own `enabled` flag (default OFF).
@@ -38,9 +40,10 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
   identity, so the **API server** rejects writes. ⚠️ `Bash(kubectl *)`/`Bash(gcloud *)` denied — ask for `!kubectl`.
 - **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in
   (`CYPRESS_ENV=staging`). Defer to each repo's default — never hardcode one in agents or workflows.
-- **Known false-reds:** before calling a test failure real, rule out a stale persistent test DB, submodule branch
-  drift, and dual-formatter conflicts on generated files — re-run the scoped test in isolation against the base
-  branch. And when estimating, fetch the persisted story-point fields first (`/estimate-ticket`).
+- **Known false-reds:** rule one out before calling a failure real — each repo declares its own under
+  `known_false_reds:` in `workspace.config.yaml`; workspace-wide, also suspect a stale persistent test DB,
+  submodule branch drift, and dual-formatter conflicts on generated files. Re-run the scoped test in isolation
+  against the base branch. And when estimating, fetch the persisted story-point fields first (`/estimate-ticket`).
 
 ## Provider adapters
 

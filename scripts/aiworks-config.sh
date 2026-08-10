@@ -427,9 +427,16 @@ fi
 # ── 2. kind → role/gate DEFAULTS (the one authoritative table) ────────────────────
 # `kind` is a FREE-FORM, tech-agnostic development-context label (frontend, backend,
 # web-app, service, migration, generic, …) — the tech is captured by `lang`, NOT the kind.
-# Behaviour is decided by ARCHETYPE, and there are exactly two:
+# Behaviour is decided by ARCHETYPE, and there are exactly three:
 #   test-suite → QA pipeline: qa-planner/qa-runner build the suite, no code review, and this
 #                repo PROVIDES the cross-repo test-suite gate. The ONE behaviourally-special kind.
+#   document/  → a SOURCELESS repo: its deliverable is prose, fixtures or mock responses, so a
+#   fixture/     static-analysis scanner has nothing to scan and a profiler has nothing to
+#   mock         profile. Plan→build→review still applies (a human reviews the change); the
+#                guard + perf gates do not. Leaving them on is not caution, it is a gate that
+#                cannot pass on its own terms — and the guardian's scanner-relay prompt reads
+#                as a security review of, say, a mock's fault-injection fixtures, which has
+#                twice been enough to kill the agent mid-gate.
 #   * (any     → a "code" repo: plan→build→review (development-planner + developer + code-reviewer)
 #   other kind)  with the guard + perf gates on. Refine per repo via green / guardian_focus.
 # Echoes TAB-separated: plan build review guard perf testSuite base_feature base_fix
@@ -441,6 +448,11 @@ kind_defaults() {
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
         qa-planner qa-runner null false false true "$FIX_BASE" "$FIX_BASE" \
         'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand' \
+        '' ;;
+    document|documentation|fixture|mock|mocks)
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+        development-planner developer code-reviewer false false false "$FEATURE_BASE" "$FIX_BASE" \
+        'the change is reviewable and whatever check the repo does have passes' \
         '' ;;
     *)  # any code repo: frontend, backend, web-app, service, migration, generic, …
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
@@ -455,7 +467,7 @@ repos_body=""
 repo_count=0
 folders_tsv=""   # accumulates "<folder name>\t<folder path>\n" per repo, in declared order,
                  # for the multi-root <name>.code-workspace `folders` array (built in step 6).
-while IFS=$'\037' read -r url kind path dist green gf am sk; do   # \037 (US): empty fields preserved
+while IFS=$'\037' read -r url kind path dist green gf am sk kfr; do   # \037 (US): empty fields preserved
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
@@ -490,6 +502,11 @@ while IFS=$'\037' read -r url kind path dist green gf am sk; do   # \037 (US): e
   # suite_kind: which FLAVOUR of test-suite this is. 'load' arms the base-branch
   # non-degradation gate (docs/agents/loadtest-gate.md); absent ⇒ a plain pass/fail suite.
   [[ -n "$sk" ]] && entry+="    suiteKind: $(jsq "$sk"),"$'\n'
+  # known_false_reds: the environment failures THIS repo produces that look like a real red.
+  # Declared per repo because they are facts about one repo's harness, and they belong in the
+  # org's config rather than in framework prose — a reviewer that has to re-derive them burns
+  # a round per run, and a framework file that lists them is carrying org knowledge.
+  [[ -n "$kfr" ]] && entry+="    knownFalseReds: $(jsq "$kfr"),"$'\n'
   entry+="    distribute: ${local_dist},"$'\n'
   [[ -n "$am" ]] && entry+="    autoMerge: $(jsbool "$am" true),"$'\n'
   entry+="  },"$'\n'
@@ -504,9 +521,10 @@ done < <(
       if(k~/^url:/) url=val(k); else if(k~/^kind:/) kind=val(k)
       else if(k~/^path:/) path=val(k); else if(k~/^distribute:/) dist=val(k)
       else if(k~/^green:/) green=val(k); else if(k~/^guardian_focus:/) gf=val(k)
-      else if(k~/^auto_merge:/) am=val(k); else if(k~/^suite_kind:/) sk=val(k) }
-    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk }
-      url="";kind="";path="";dist="";green="";gf="";am="";sk="" }
+      else if(k~/^auto_merge:/) am=val(k); else if(k~/^suite_kind:/) sk=val(k)
+      else if(k~/^known_false_reds:/) kfr=val(k) }
+    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk,kfr }
+      url="";kind="";path="";dist="";green="";gf="";am="";sk="";kfr="" }
     /^products:[ \t]*$/ { inp=1; next }
     inp && /^  - id:/ { flush(); inrepos=0; next }
     inp && /^    repos:[ \t]*$/ { inrepos=1; next }
