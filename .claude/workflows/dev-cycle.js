@@ -1584,11 +1584,31 @@ for (const id of mergeOrder) {
     return { ticket, status: 'merge-skipped', haltedAt: id, repoResults, merges, testSuite, testSuiteRequested, testSuiteGateUnavailable, qualityGateUnavailable, loadtestGateUnavailable, summary, notify, spend }
   }
   // AUTO-MERGE ON → emit the `!` merge command (never dispatch the doomed agent; see above).
+  // TWO commands, not `cd X && writer`: merge-pr.sh is a mutating adapter, and the compound form
+  // is denied by the workspace guard — so the one-liner this phase used to emit could never run.
+  // Bash cwd persists between calls, so the cd stands on its own.
   const absRepo = haveAbs ? `${WORKSPACE_ROOT}/${desc.path}` : desc.path
-  const mergeCmd = `! cd ${absRepo} && scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<pr-number>'} --subject ${JSON.stringify(prTitle(rp))}`
+  const mergeCmd = `! cd ${absRepo}\n! scripts/vcs/merge-pr.sh ${rr.pr?.pr_number ?? '<pr-number>'} --subject ${JSON.stringify(prTitle(rp))}`
   merges[id] = { merged: false, handoff: true, base: rp.base_branch, pr: rr.pr?.pr_url, command: mergeCmd }
   shipSteps.push({ repo: id, kind: 'merge', pr_number: rr.pr?.pr_number ?? null, pr_url: rr.pr?.pr_url ?? null, base: rp.base_branch, command: mergeCmd })
-  log(`🫱 [${id}] MERGE → run in-session (only a human clears the auto-mode ship guard):\n    ${mergeCmd}`)
+  log(`🫱 [${id}] MERGE → run in-session (only a human clears the auto-mode ship guard):\n    ${mergeCmd.split('\n').join('\n    ')}`)
+
+  // POINTER BUMP — a downstream repo that VENDORS this one as a git submodule keeps pointing at
+  // the pre-merge commit until someone moves it, and nothing in this workflow ever did: the two
+  // places that mention it (docs/agents/submodules.md, pretool-submodule-guard.sh) both call it
+  // "a separate, deliberate step" without naming an owner. The cost is silent — the downstream
+  // repo's integration tests build their DB/fixtures from the submodule checkout, so they run
+  // green against a tree that does not contain the change they are meant to prove.
+  // Detected, not guessed: .gitmodules is ground truth, the same gate mani.yaml already uses.
+  for (const dsId of mergeOrder) {
+    if (dsId === id) continue
+    const dsDesc = REPOS[dsId]
+    if (!dsDesc || !haveAbs) continue
+    const dsAbs = `${WORKSPACE_ROOT}/${dsDesc.path}`
+    const bump = `! cd ${dsAbs}\n! git submodule status ${desc.path} 2>/dev/null && git -C ${desc.path} fetch origin && git -C ${desc.path} checkout <the ${id} merge sha> && git add ${desc.path} && git commit -m ${JSON.stringify(`chore(${desc.path}): bump to the merged ${ticket} commit\n\nRefs ${ticket}`)} && git push`
+    shipSteps.push({ repo: dsId, kind: 'submodule-bump', upstream: id, submodule_path: desc.path, after: `merge:${id}`, command_template: bump, resolve: `run only if ${dsAbs}/.gitmodules declares ${desc.path}; the main session fills <the ${id} merge sha> from the merge output` })
+    log(`🔗 [${dsId}] IF it vendors ${id} as a submodule → bump the pointer AFTER the ${id} merge lands (skip when .gitmodules does not declare it).`)
+  }
 }
 
 // 6. DISTRIBUTE + CLOSE sit downstream of a landed merge, so under the `!` hand-off they're human

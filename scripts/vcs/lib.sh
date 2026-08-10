@@ -92,6 +92,28 @@ vcs_media_asset_name() {
   printf '%s%s' "${key:+${key}-}" "$name"
 }
 
+# A WRITER run from the META-REPO root targets the WORKSPACE repo — almost never what the
+# caller meant. The adapters are symlinked into every product repo (scripts/vcs -> ../../scripts/vcs),
+# so the same relative path works from anywhere and NOTHING signals which repo you are actually
+# in: `git rev-parse --show-toplevel` inside the symlink answers with the meta-repo too. An agent
+# that forgets to cd therefore opens its MR against the workspace, silently and successfully.
+# Fail LOUD instead — the difference between "I misread this error as a broken adapter" and
+# "I cd into the repo and retry" is the whole distance between those two outcomes.
+# Framework work on the workspace's own repo is real: set VCS_ALLOW_META_REPO=1 deliberately.
+case "$(basename "${0:-}")" in
+  open-pr.sh|merge-pr.sh|close-pr.sh|pr-approve.sh|pr-comment.sh|pr-resolve-thread.sh|upload-media.sh)
+    if [[ "${VCS_ALLOW_META_REPO:-0}" != 1 ]]; then
+      _top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+      if [[ -n "$_top" && -f "$_top/workspace.config.yaml" ]]; then
+        die "$(basename "$0") was run from the WORKSPACE root ($_top), so it would act on the workspace repo itself, not on a product repo.
+  cd into the repo first — as its own command, since a writer must run BARE:
+      cd $_top/<repo>
+      scripts/vcs/$(basename "$0") …
+  If you really do mean the workspace repo (framework work), re-run with VCS_ALLOW_META_REPO=1."
+      fi
+    fi ;;
+esac
+
 VCS_PROVIDER="${VCS_PROVIDER:-$(vcs_detect_provider)}"
 IMPL="$VCS_DIR/$VCS_PROVIDER.sh"
 [[ -f "$IMPL" ]] || die "unknown VCS_PROVIDER '$VCS_PROVIDER' (no $IMPL) — use 'github' or 'gitlab', or add $VCS_PROVIDER.sh"
