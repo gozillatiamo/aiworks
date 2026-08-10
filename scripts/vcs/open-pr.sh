@@ -22,6 +22,10 @@ Options:
   --base   <branch> Target branch (default: the repo's default branch).
   --head   <branch> Source branch (default: the current branch).
   --body   <text>  PR/MR description (default: empty).
+  --body-file <path>  Same as --body, but read the Markdown from a file ("-" = stdin).
+                   Use this for anything longer than a line: a writer must run BARE, and
+                   --body "$(cat file)" is a command substitution, i.e. a compound command
+                   the adapter guard denies. Mirrors tracker/upsert-ticket-details.sh.
   --media  <ref>   A visual result to attach (image/video file, a directory of them,
                    or an http(s) URL). Repeatable. Each is hosted via the adapter and
                    appended to the body under a "## Visual results" section.
@@ -49,6 +53,9 @@ while [[ $# -gt 0 ]]; do
     --head)    need "${2:-}" "--head needs a value";  head="$2";   shift 2 ;;
     --title)   need "${2:-}" "--title needs a value"; title="$2";  shift 2 ;;
     --body)    body="${2:-}"; shift 2 ;;
+    --body-file) [[ -n "${2:-}" ]] || die "--body-file needs a path"
+                 if [[ "$2" == "-" ]]; then body="$(cat)"; else [[ -f "$2" ]] || die "--body-file: no such file: $2"; body="$(cat "$2")"; fi
+                 shift 2 ;;
     --media)   need "${2:-}" "--media needs a value"; media+=("$2"); shift 2 ;;
     --ticket)  need "${2:-}" "--ticket needs a value"; ticket="$2"; shift 2 ;;
     --dry-run) dry=1; shift ;;
