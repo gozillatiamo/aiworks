@@ -14,8 +14,8 @@
 //   echo "$url" | node capture-url.mjs out.png [--width 1280] [--height 800]
 //                                              [--wait-ms 3000] [--timeout 30000] [--full-page]
 //
-// Why a settle delay and not just `networkidle2`: these are game-replay canvases that finish
-// drawing after the last request completes. Without the extra wait the shot is a blank stage.
+// Why a settle delay and not just `networkidle2`: a canvas- or chart-drawn page finishes rendering
+// after its last request completes. Without the extra wait the shot is a blank stage.
 
 import fs from "node:fs";
 import path from "node:path";

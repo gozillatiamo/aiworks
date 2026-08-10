@@ -5,8 +5,8 @@
 #                                         [--wait-ms 3000] [--timeout 30000] [--full-page]
 #
 # The URL comes in on STDIN, not as an argument, and that is not a style choice: the pages this
-# exists for (a provider's game-replay screen) carry a single-use token in the query string, and
-# argv is readable by any process on the box through `ps`. Nothing here logs the query string.
+# exists for are reached through a single-use token in the query string, and argv is readable by any
+# process on the box through `ps`. Nothing here logs the query string.
 #
 # For rendering a LOCAL html/md document instead, use render.sh — same browser, different job.
 set -euo pipefail
