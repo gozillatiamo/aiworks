@@ -29,12 +29,24 @@ set -euo pipefail
 
 VCS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# .env carries the CREDENTIALS and the workspace's normal defaults. It must not, however, be able
+# to overrule a routing variable the CALLER set explicitly on the command line: aiming a call at a
+# different provider or remote is exactly how an UPSTREAM contribution is made from a clone whose
+# own remote is elsewhere —
+#     VCS_PROVIDER=github VCS_REMOTE=aiworks scripts/vcs/open-pr.sh …
+# — and `set -a; . .env` overwrites both, silently, so the call goes to the workspace's own forge
+# while reporting success. Snapshot the caller's values and put them back afterwards.
+_vcs_arg_provider="${VCS_PROVIDER:-}"
+_vcs_arg_remote="${VCS_REMOTE:-}"
 if [[ -f "$VCS_DIR/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
   . "$VCS_DIR/.env"
   set +a
 fi
+[[ -n "$_vcs_arg_provider" ]] && VCS_PROVIDER="$_vcs_arg_provider"
+[[ -n "$_vcs_arg_remote" ]] && VCS_REMOTE="$_vcs_arg_remote"
+unset _vcs_arg_provider _vcs_arg_remote
 
 die() { echo "error: $*" >&2; exit 1; }
 command -v git >/dev/null || die "git is required"
