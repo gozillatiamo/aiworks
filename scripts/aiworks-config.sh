@@ -77,8 +77,8 @@
 #   a failure) and one-directional: keys the example documents but this workspace omits are fine.
 #
 # Idempotent and safe: it replaces only the region between the AIWORKS:CONFIG markers in
-# dev-cycle.js, validates the result with `node --check` (when node is present), and restores
-# the file untouched on a genuine syntax error. A node --check KILLED BY A SIGNAL (exit >=128,
+# dev-cycle.js, validates that the result still LOADS AS A WORKFLOW (when node is present), and
+# restores the file untouched on a genuine syntax error. A node KILLED BY A SIGNAL (exit >=128,
 # e.g. SIGSEGV=139 / SIGTRAP=133 / SIGABRT=134 under memory pressure or an EDR/security agent)
 # is a transient, machine-side CRASH — NOT a CONFIG defect: validation is skipped with a clear
 # warning and the regenerated block is still installed (so the mirror can't silently drift).
@@ -667,11 +667,11 @@ if [[ "$DRY" -eq 1 ]]; then
 fi
 
 # ── 5. splice each BODY between its file's markers, validate, commit ───────────────
-# .js suffix so `node --check` validates the temp exactly as the real workflow is named:
-# the workflow mixes `export` with top-level `return` (the Workflow engine wraps it in an
-# async fn), which node accepts under .js but not under strict-ESM .mjs; an unknown/random
-# extension instead makes node's loader bail with ERR_UNKNOWN_FILE_EXTENSION.
-# node --check's EXIT STATUS is then CLASSIFIED, never just truthy-tested: 0 = valid; 1..127 =
+# Validation parses the spliced file in the engine's own context — a function BODY, `export`
+# stripped — because that is how a workflow is loaded and it is NOT what `node --check` on the
+# module checks. The two disagree in practice: a mis-escaped quote in a generated string exited
+# `node --check` 0 on a file the engine could not load at all.
+# node's EXIT STATUS is then CLASSIFIED, never just truthy-tested: 0 = valid; 1..127 =
 # a genuine syntax error (show stderr + abort — the CONFIG really is broken); >=128 = node was
 # KILLED BY A SIGNAL (sig = status-128) and CRASHED before it could judge the file (transient:
 # memory pressure / a security agent), so we never blame the CONFIG, warn + skip validation,
@@ -690,7 +690,7 @@ commit_block() {   # <target-file> <body> <in-sync-msg> <changed-msg>
   fi
   # Guard: the spliced file must still carry the END marker (otherwise markers were malformed).
   grep -qF "$END_RE" "$tmp" || { rm -f "$tmp"; die "lost the END marker while rewriting — left $base untouched"; }
-  # Validate JS if node is around; refuse to install a workflow with a REAL syntax error — but
+  # Validate if node is around; refuse to install a workflow with a REAL syntax error — but
   # branch on node's EXIT STATUS, never a bare truthiness test (see the note above the function):
   #   exit 0     → valid; fall through and install.
   #   exit >=128 → node was KILLED BY A SIGNAL (sig = status-128); it CRASHED, it did NOT find a
@@ -698,17 +698,37 @@ commit_block() {   # <target-file> <body> <in-sync-msg> <changed-msg>
   #                and still install the (mechanically-generated) block so the mirror can't drift.
   #   exit 1..127→ a genuine syntax error: show the captured stderr and abort, $base untouched.
   if command -v node >/dev/null 2>&1; then
-    local nrc
-    node --check "$tmp" 2>/tmp/aiworks-nodecheck.$$; nrc=$?
+    # Parse it the way the ENGINE loads a workflow, NOT the way node loads a module. The engine
+    # never `import`s the file: it takes the source and builds a function BODY from it, so the
+    # file has to parse in FUNCTION-BODY context. `node --check` parses the same file as a module
+    # instead, and the two genuinely disagree — a mis-escaped quote in a generated string exited
+    # `node --check` 0 while the workflow could not load at all. Same probe, and the same
+    # reasoning, as .claude/hooks/dev-wrapper/posttool-workflow-compile.sh uses for hand edits.
+    local nrc probe
+    probe="$(mktemp -t aiworks-wfcheck.XXXXXX)" && mv "$probe" "$probe.cjs" && probe="$probe.cjs" \
+      || { rm -f "$tmp"; die "mktemp failed while validating $base"; }
+    { printf '(async function(args,budget,phase,agent,log,parallel,pipeline,workflow){\n'
+      awk '!s && /^export /{ sub(/^export /,""); s=1 } { print }' "$tmp"
+      printf '\n})();\n'
+    } > "$probe"
+    node --check "$probe" 2>/tmp/aiworks-nodecheck.$$; nrc=$?
     if [[ "$nrc" -ge 128 ]]; then
-      warn "node --check was killed by signal $((nrc - 128)) (likely memory pressure or a security agent on this machine) — could not validate $base; proceeding without validation (the block is mechanically generated) — re-run 'aiworks config' to retry the check"
-      rm -f /tmp/aiworks-nodecheck.$$
+      warn "node was killed by signal $((nrc - 128)) (likely memory pressure or a security agent on this machine) — could not validate $base; proceeding without validation (the block is mechanically generated) — re-run 'aiworks config' to retry the check"
+      rm -f "$probe" /tmp/aiworks-nodecheck.$$
     elif [[ "$nrc" -ne 0 ]]; then
-      printf '%s%s%s\n' "$c_err" "$(cat /tmp/aiworks-nodecheck.$$ 2>/dev/null)" "$c_off" >&2
-      rm -f "$tmp" /tmp/aiworks-nodecheck.$$
-      die "generated CONFIG failed node --check — left $base untouched (this is a bug in aiworks-config.sh)"
+      # Report the WORKFLOW's own line numbers: the probe adds exactly one leading line, and node
+      # prints the probe's realpath, so match on its BASENAME rather than the full path.
+      printf '%s' "$c_err" >&2
+      awk -v pb="${probe##*/}" -v wf="$base" '
+        { i=index($0, pb); if (i) { rest=substr($0, i+length(pb));
+            if (match(rest, /^:[0-9]+/)) { n=substr(rest,2,RLENGTH-1)+0;
+              print wf ":" (n-1) substr(rest, RLENGTH+1); next } }
+          print }' /tmp/aiworks-nodecheck.$$ >&2
+      printf '%s\n' "$c_off" >&2
+      rm -f "$tmp" "$probe" /tmp/aiworks-nodecheck.$$
+      die "the generated CONFIG does not load as a workflow — left $base untouched (this is a bug in aiworks-config.sh)"
     else
-      rm -f /tmp/aiworks-nodecheck.$$
+      rm -f "$probe" /tmp/aiworks-nodecheck.$$
     fi
   else
     # Say so. This is the ONE path that installs a workflow nobody has parsed, and it is the

@@ -52,13 +52,20 @@ report() {  # $1=file
 if [[ "${1:-}" == "--scan" ]]; then
   root="$(cd "$(dirname "$0")/../../.." && pwd)"
   cd "$root" || exit 0
-  rc=0
+  rc=0 n=0
   while IFS= read -r f; do
     [[ -f "$f" ]] || continue
     case "$f" in */node_modules/*|*/vendor/*) continue ;; esac
+    n=$((n+1))
     report "$f" || rc=1
   done < <(git ls-files '*.sh' 'aiworks' 'scripts/aiworks' '.superset/*' 2>/dev/null)
-  [[ $rc -eq 0 ]] && printf 'bash portability: every tracked script is 3.2-clean\n'
+  # Say when the scan found nothing to scan. `git ls-files` is silent outside a checkout, and
+  # a check that could not run must never print as a check that passed.
+  if [[ "$n" -eq 0 ]]; then
+    printf 'bash portability: no tracked shell scripts found (not a git checkout?) — scanned nothing\n' >&2
+    exit 0
+  fi
+  [[ $rc -eq 0 ]] && printf 'bash portability: %d tracked script(s) are 3.2-clean\n' "$n"
   exit "$rc"
 fi
 
