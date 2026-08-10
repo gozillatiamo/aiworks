@@ -19,47 +19,11 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CACHE="$DIR/.cache"
-CFT_VERSION="${CFT_VERSION:-stable}"   # pin a concrete version here for full reproducibility
 
-die() { echo "error: $*" >&2; exit 1; }
-command -v node >/dev/null || die "node is required"
+# node deps + browser resolution live in resolve-browser.sh, shared with capture-url.sh.
+# shellcheck source=resolve-browser.sh
+source "$DIR/resolve-browser.sh"
+pdf_ensure_node_deps
+pdf_resolve_browser
 
-# 1. node deps (puppeteer-core, marked) — install once. puppeteer-core has no browser download.
-if [[ ! -d "$DIR/node_modules/puppeteer-core" || ! -d "$DIR/node_modules/marked" ]]; then
-  command -v npm >/dev/null || die "npm is required (to install puppeteer-core + marked)"
-  echo "[pdf] installing node deps…" >&2
-  ( cd "$DIR" && npm install --no-audit --no-fund --loglevel=error )
-fi
-
-# 2. browser resolution.
-resolve_browser() {
-  local c
-  for c in "${CHROME_PATH:-}" \
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-    "/Applications/Chromium.app/Contents/MacOS/Chromium" \
-    /usr/bin/google-chrome /usr/bin/google-chrome-stable \
-    /usr/bin/chromium /usr/bin/chromium-browser; do
-    [[ -n "$c" && -x "$c" ]] && { printf '%s' "$c"; return 0; }
-  done
-  if [[ -f "$CACHE/.chrome-path" ]]; then
-    c="$(cat "$CACHE/.chrome-path")"
-    [[ -x "$c" ]] && { printf '%s' "$c"; return 0; }
-  fi
-  return 1
-}
-
-if ! CHROME_BIN="$(resolve_browser)"; then
-  command -v npx >/dev/null || die "no browser found and npx unavailable — set CHROME_PATH or apt install chromium (see README Cloud/Docker)"
-  echo "[pdf] no system browser — fetching Chrome for Testing ($CFT_VERSION) into .cache/…" >&2
-  mkdir -p "$CACHE"
-  # `install` prints "<buildId> <executable-path>"; the path may contain spaces (mac CfT .app).
-  out="$(cd "$DIR" && npx --yes @puppeteer/browsers install "chrome@${CFT_VERSION}" --path "$CACHE" 2>/dev/null | tail -n1)"
-  CHROME_BIN="$(printf '%s' "$out" | sed 's/^[^ ]* //')"
-  [[ -n "$CHROME_BIN" && -x "$CHROME_BIN" ]] \
-    || die "Chrome-for-Testing auto-fetch failed (got: '$out'). Install a browser and set CHROME_PATH, or apt install chromium (see README Cloud/Docker)."
-  printf '%s' "$CHROME_BIN" > "$CACHE/.chrome-path"
-fi
-
-export CHROME_PATH="$CHROME_BIN"
 exec node "$DIR/pdf.mjs" "$@"
