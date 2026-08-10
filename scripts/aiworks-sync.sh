@@ -558,15 +558,23 @@ check_artifacts_contract() {
   [[ "$repokind" == "test-suite" ]] || return 0
   local dir="$ROOT/${reldir:-$key}"
   [[ -x "$dir/scripts/dev.sh" ]] || return 0        # no harness at all — step 10 already said so
-  local out rc=0
-  out="$( cd "$dir" && ./scripts/dev.sh artifacts 2>&1 )" || rc=$?
-  # rc 2 is "unknown command". rc 1 with a message ("no test run yet") is a healthy
-  # subcommand on a repo that simply hasn't run — that is a pass, not a finding.
-  if [[ "$rc" -eq 2 ]] || printf '%s' "$out" | grep -qiE 'unknown (sub)?command'; then
+  # stdout and stderr are kept APART on purpose. The rows are the stdout contract; the
+  # diagnostics ("no test run yet", "cannot parse run timestamp") go to stderr, and folding
+  # the two together made every diagnostic look like a malformed row.
+  local out err rc=0 errf
+  errf="$(mktemp)" || return 0
+  out="$( cd "$dir" && ./scripts/dev.sh artifacts 2>"$errf" )" || rc=$?
+  err="$(<"$errf")"; rm -f "$errf"
+  # rc 2 is "unknown command" — the subcommand is genuinely missing.
+  if [[ "$rc" -eq 2 ]] || printf '%s' "$err$out" | grep -qiE 'unknown (sub)?command'; then
     warn "$key: scripts/dev.sh has no 'artifacts' subcommand — QA reports on this repo will attach no evidence (see .claude/skills/report-test-results/SKILL.md §3)"
     return 0
   fi
-  # It answered. If it printed rows, every row must be the 3-column contract.
+  # Any OTHER non-zero exit is the healthy "nothing captured yet" answer, and it is what a
+  # FRESH CLONE always gives: no run log exists, so both the k6 and the Cypress harness say
+  # so on stderr and return 1. There are no rows to validate — a pass, not a finding.
+  [[ "$rc" -eq 0 ]] || return 0
+  # It answered with rows. Every row must be the 3-column contract.
   if [[ -n "$out" ]] && ! printf '%s' "$out" | awk -F'\t' 'NF!=3{bad=1} END{exit bad?1:0}'; then
     warn "$key: 'dev.sh artifacts' rows are not '<id><TAB><kind><TAB><path>' — QA reports cannot join them to scenarios"
   fi
