@@ -27,10 +27,10 @@ vcs_open_pr() {
     return 0
   fi
   if [[ "$dry" -eq 1 ]]; then
-    printf 'DRY RUN — git push -u origin %q && glab mr create -s %q -b %q -t %q -d <…> --squash-before-merge=true -y\n' "$head" "$head" "$base" "$title"
+    printf 'DRY RUN — git push -u %s %q && glab mr create -s %q -b %q -t %q -d <…> --squash-before-merge=true -y\n' "$VCS_REMOTE" "$head" "$head" "$base" "$title"
     return 0
   fi
-  git push -u origin "$head" >/dev/null 2>&1 || true
+  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
   local out
   out="$(glab mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)"
   url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)"

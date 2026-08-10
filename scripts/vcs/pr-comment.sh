@@ -31,7 +31,11 @@ usage() {
 Usage: pr-comment.sh <number> --body <text> [--path <file> --line <n>] [--dry-run]
 
 Options:
-  --body <text>  Comment body (required).
+  --body <text>  Comment body (required, unless --body-file is given).
+  --body-file <path>  Same as --body, but read the Markdown from a file ("-" = stdin).
+                 Use this for anything longer than a line: a writer must run BARE, and
+                 --body "$(cat file)" is a command substitution, i.e. a compound command
+                 the adapter guard denies. Mirrors tracker/upsert-ticket-details.sh.
   --path <file>  File to anchor an inline comment to (optional).
   --line <n|n-m> Line, or an inclusive range n-m that highlights the whole block
                  (optional; needs --path).
@@ -51,6 +55,9 @@ while [[ $# -gt 0 ]]; do
     --path)    need "${2:-}" "--path needs a value"; path="$2"; shift 2 ;;
     --line)    need "${2:-}" "--line needs a value"; line="$2"; shift 2 ;;
     --body)    need "${2:-}" "--body needs a value"; body="$2"; shift 2 ;;
+    --body-file) need "${2:-}" "--body-file needs a path"
+                 if [[ "$2" == "-" ]]; then body="$(cat)"; else [[ -f "$2" ]] || die "--body-file: no such file: $2"; body="$(cat "$2")"; fi
+                 shift 2 ;;
     --dry-run) dry=1; shift ;;
     -*)        die "unknown option: $1   (see -h)" ;;
     *)         num="$1"; shift ;;

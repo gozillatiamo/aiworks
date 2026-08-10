@@ -192,7 +192,14 @@ t "qa-runner told to merge allowed"    0 pretool-agent-brief-guard.sh "$(ja qa-r
 # Prose intent (above) only catches phrasings we thought of; these fire on the actual
 # command handed to the agent, so they generalise past PR/MR to every adapter.
 t "planner handed the notify adapter blocked" 2 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan APP-1, then announce it with scripts/notify/send.sh.')"
-t "code-reviewer may use notify"              0 pretool-agent-brief-guard.sh "$(ja code-reviewer 'Review the diff, then post the verdict with scripts/notify/send.sh.')"
+# The GATES no longer hold notify: announcing a verdict to chat is orchestrator-owned (the
+# dev-cycle Notify phase / ultra-review §4 gather every gate across every repo and send once).
+# A gate-owned announcement is non-deterministic — a gate that runs out of turns posts nothing —
+# and duplicates the digest the orchestrator sends anyway. This guard reads the grant straight
+# out of the agent definition, so dropping it there is what makes these two cases block.
+t "code-reviewer handed the notify adapter blocked" 2 pretool-agent-brief-guard.sh "$(ja code-reviewer 'Review the diff, then post the verdict with scripts/notify/send.sh.')"
+t "perf gate handed the notify adapter blocked"     2 pretool-agent-brief-guard.sh "$(ja performance-engineer 'Profile the MR, then thread the verdict with scripts/notify/send.sh.')"
+t "code-reviewer may still use vcs"           0 pretool-agent-brief-guard.sh "$(ja code-reviewer 'Review the diff, then post each finding with scripts/vcs/pr-comment.sh.')"
 t "product-owner handed the vcs adapter blocked" 2 pretool-agent-brief-guard.sh "$(ja product-owner 'Write the tickets, then run scripts/vcs/open-pr.sh for each.')"
 t "product-owner may use the tracker"         0 pretool-agent-brief-guard.sh "$(ja product-owner 'Create the tickets with scripts/tracker/upsert-ticket-details.sh.')"
 t "planner told to git commit blocked"        2 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan it, then git commit the result on the ticket branch.')"
