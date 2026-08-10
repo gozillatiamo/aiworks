@@ -14,28 +14,32 @@
 set -euo pipefail
 
 declare -a NAMES=(staging prod)
-declare -A VM=([staging]=ofb-staging-vm [prod]=agent-prod-redis-vm)
-declare -A PORT=([staging]=6378 [prod]=6377)
+
+# Lookup FUNCTIONS, not associative arrays — `declare -A` needs bash 4 and macOS ships 3.2
+# as /bin/bash (see the interpreter note in scripts/aiworks).
+vm_of() {   case "$1" in staging) printf 'ofb-staging-vm' ;; prod) printf 'agent-prod-redis-vm' ;; esac; }
+port_of() { case "$1" in staging) printf '6378' ;; prod) printf '6377' ;; esac; }
 
 listener_pids() { lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null || true; }
 
 status() {
   local any=0
   for name in "${NAMES[@]}"; do
-    local port=${PORT[$name]} pids
+    local port pids
+    port="$(port_of "$name")"
     pids=$(listener_pids "$port")
     if [ -n "$pids" ]; then
       any=1
-      echo "OPEN    $name  (${VM[$name]})  127.0.0.1:$port  pid(s): $(echo "$pids" | tr '\n' ' ')"
+      echo "OPEN    $name  ($(vm_of "$name"))  127.0.0.1:$port  pid(s): $(echo "$pids" | tr '\n' ' ')"
       # shellcheck disable=SC2086
       ps -o pid=,etime=,command= -p $(echo "$pids" | tr '\n' ' ') 2>/dev/null |
         sed 's/^/          /' | cut -c1-160
     else
-      echo "closed  $name  (${VM[$name]})  127.0.0.1:$port"
+      echo "closed  $name  ($(vm_of "$name"))  127.0.0.1:$port"
     fi
   done
   local strays
-  strays=$(pgrep -f "gcloud.*compute.*ssh.*(${VM[staging]}|${VM[prod]})" 2>/dev/null || true)
+  strays=$(pgrep -f "gcloud.*compute.*ssh.*($(vm_of staging)|$(vm_of prod))" 2>/dev/null || true)
   if [ -n "$strays" ]; then
     echo "note    gcloud ssh process(es) matching a redis VM: $(echo "$strays" | tr '\n' ' ')"
   fi
@@ -44,7 +48,8 @@ status() {
 }
 
 kill_one() {
-  local name=$1 port=${PORT[$name]} pids killed=0
+  local name=$1 port pids killed=0
+  port="$(port_of "$name")"
   pids=$(listener_pids "$port")
   for pid in $pids; do
     kill "$pid" 2>/dev/null && killed=1
@@ -62,7 +67,7 @@ case "${1:-status}" in
     shift || true
     if [ $# -gt 0 ]; then
       for name in "$@"; do
-        [ -n "${PORT[$name]:-}" ] || { echo "unknown target: $name (use staging|prod)" >&2; exit 2; }
+        [ -n "$(port_of "$name")" ] || { echo "unknown target: $name (use staging|prod)" >&2; exit 2; }
         kill_one "$name"
       done
     else

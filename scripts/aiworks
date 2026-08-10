@@ -22,6 +22,36 @@
 # Each subcommand has its own --help:  aiworks add -h  ·  aiworks sync -h  ·  aiworks remove -h
 #
 set -uo pipefail
+
+# ── interpreter ──────────────────────────────────────────────────────────────────
+# `#!/usr/bin/env bash` takes the FIRST bash on PATH, and on a stock Mac that is
+# /bin/bash — still 3.2.57, from 2007. So every script under scripts/ is written to run
+# on 3.2 (no `declare -A`, no `mapfile`, no `${v,,}`); the posttool-bash-portability.sh
+# hook fails the build if a bash-4-only construct is ever added back.
+#
+# Two safeguards on top of that, so a teammate never has to install anything:
+#   1. When the machine DOES have a newer bash, re-exec into it once — a teammate's run
+#      then uses the same interpreter the workspace is developed on.
+#   2. Below 3.2, stop with a NAMED error. Without this, a bash-4-ism surfaces as
+#      `local: -A: invalid option` a few hundred lines into a subcommand.
+# $AIWORKS_BASH carries the resolved interpreter to every subcommand below, so the whole
+# tree runs one bash instead of each script re-resolving `env bash` on its own.
+if [[ -z "${AIWORKS_BASH_PINNED:-}" && "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  for _b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [[ -x "$_b" ]] || continue
+    export AIWORKS_BASH_PINNED=1
+    exec "$_b" "$0" "$@"
+  done
+fi
+if [[ "${BASH_VERSINFO[0]}" -lt 3 ]] \
+   || { [[ "${BASH_VERSINFO[0]}" -eq 3 ]] && [[ "${BASH_VERSINFO[1]}" -lt 2 ]]; }; then
+  printf 'aiworks: needs bash 3.2 or newer, got %s (%s)\n' \
+    "${BASH_VERSION:-unknown}" "${BASH:-?}" >&2
+  printf '  fix: brew install bash   (then reopen the shell)\n' >&2
+  exit 1
+fi
+export AIWORKS_BASH="${BASH:-$(command -v bash)}"
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 usage() {
@@ -177,20 +207,22 @@ superset_hook() {
     printf '  create a .superset/%s.sh (see .superset/setup.sh for the pattern).\n' "$name" >&2
     exit 1
   fi
-  if [[ -x "$script" ]]; then exec "$script" "$@"; else exec bash "$script" "$@"; fi
+  # $AIWORKS_BASH, not the shebang: the hooks are bash and must run the interpreter this
+  # launcher already resolved (see the interpreter note at the top).
+  exec "$AIWORKS_BASH" "$script" "$@"
 }
 
 cmd="${1:-}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
-  doctor)         exec "$DIR/aiworks-doctor.sh" "$@" ;;
-  add)            exec "$DIR/aiworks-add.sh" "$@" ;;
-  sync)           exec "$DIR/aiworks-sync.sh" "$@" ;;
-  remove|rm)      exec "$DIR/aiworks-remove.sh" "$@" ;;
-  config)         exec "$DIR/aiworks-config.sh" "$@" ;;
-  cursor)         exec "$DIR/aiworks-cursor.sh" "$@" ;;
-  update)         exec "$DIR/aiworks-update.sh" "$@" ;;
-  voice)          exec "$DIR/aiworks-voice.sh" "$@" ;;
-  gc)             exec "$DIR/aiworks-gc.sh" "$@" ;;
+  doctor)         exec "$AIWORKS_BASH" "$DIR/aiworks-doctor.sh" "$@" ;;
+  add)            exec "$AIWORKS_BASH" "$DIR/aiworks-add.sh" "$@" ;;
+  sync)           exec "$AIWORKS_BASH" "$DIR/aiworks-sync.sh" "$@" ;;
+  remove|rm)      exec "$AIWORKS_BASH" "$DIR/aiworks-remove.sh" "$@" ;;
+  config)         exec "$AIWORKS_BASH" "$DIR/aiworks-config.sh" "$@" ;;
+  cursor)         exec "$AIWORKS_BASH" "$DIR/aiworks-cursor.sh" "$@" ;;
+  update)         exec "$AIWORKS_BASH" "$DIR/aiworks-update.sh" "$@" ;;
+  voice)          exec "$AIWORKS_BASH" "$DIR/aiworks-voice.sh" "$@" ;;
+  gc)             exec "$AIWORKS_BASH" "$DIR/aiworks-gc.sh" "$@" ;;
   setup)          superset_hook setup "$@" ;;
   run)            superset_hook run "$@" ;;
   teardown)       superset_hook teardown "$@" ;;

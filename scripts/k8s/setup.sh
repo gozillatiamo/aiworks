@@ -42,7 +42,13 @@ fi
 
 # Targets, derived the same way the MCP derives them: from each context's CLUSTER reference
 # (gke_<project>_<region>_<cluster>), never from the context's personal alias.
-mapfile -t ROWS < <(kubectl config view -o json 2>/dev/null | python3 -c '
+# Read with a while-loop, not `mapfile` — that builtin arrived in bash 4 and macOS ships 3.2
+# as /bin/bash (see the interpreter note in scripts/aiworks).
+ROWS=(); NROWS=0
+while IFS= read -r _row || [[ -n "$_row" ]]; do   # `|| [[ -n ]]` keeps a last line with no trailing \n
+  [[ -n "$_row" ]] || continue
+  ROWS+=("$_row"); NROWS=$((NROWS+1))
+done < <(kubectl config view -o json 2>/dev/null | python3 -c '
 import json, sys
 try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
@@ -60,16 +66,16 @@ for c in d.get("contexts") or []:
             break
 ' | sort -u)
 
-if [[ ${#ROWS[@]} -eq 0 ]]; then
+if [[ $NROWS -eq 0 ]]; then
   [[ $QUIET -eq 1 ]] || dim "no GKE clusters in this kubeconfig — nothing to check"
   exit 0
 fi
 
 say ""
-say "Kubernetes triage — $((${#ROWS[@]})) target(s) derived from kubeconfig"
+say "Kubernetes triage — $NROWS target(s) derived from kubeconfig"
 
 problems=0
-for row in "${ROWS[@]}"; do
+for row in "${ROWS[@]+"${ROWS[@]}"}"; do
   IFS=$'\t' read -r PRODUCT ENV PROJECT CLUSTER ALIAS <<<"$row"
   SA="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
   say ""
