@@ -1,7 +1,8 @@
 ---
 name: decompose-ticket
-description: Split an oversized ticket (total Dev+QA points over 24) into smaller tickets that can each be built and shipped in parallel (no hard cross-piece dependency), then re-estimate every piece — parallel independence is first-class; only a truly huge ticket (over 36) may instead split along hard 'is blocked by' dependencies, and a ticket with no valid parallel cut is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs right after /estimate-ticket whenever the total exceeds 24, including inside the /prd workflow. Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
+description: Split an oversized ticket (total Dev+QA points over 24) into smaller tickets that can each be built and shipped in parallel (no hard cross-piece dependency), then re-estimate every piece — parallel independence is first-class; only a truly huge ticket (over 36) may instead split along hard 'is blocked by' dependencies, and a ticket with no valid parallel cut is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs only when a human invokes it — no pipeline auto-runs it (the /prd workflow deliberately has no points ceiling and never splits or flags an oversized ticket). Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
 argument-hint: "<KEY> (e.g. APP-1952) [advise|execute]"
+disable-model-invocation: true
 model: opus
 effort: high
 allowed-tools:
@@ -120,13 +121,14 @@ Execute: in the output). A big-but-honest ticket beats fake independence.
 - **Advise** (the **CTO**, solution-finding / consulting) — assess splittability and **propose**
   the decomposition; write **no** tickets. This is the CTO's consulting voice: find the seams,
   name the independent slices, rough-size each, and give the build order + cross-repo touches.
-  The proposal is handed to the Product Owner. Default here when the caller is the CTO, when the
-  invocation says `advise`, or inside `/prd`'s Consult stage.
+  The proposal is handed to the Product Owner. Default here when the caller is the CTO or when the
+  invocation says `advise`. Note `/prd` never reaches this branch — that workflow has no points
+  ceiling and its CTO stage is instructed not to propose splits at all.
 - **Execute** (the **Product Owner**, writing tickets) — take the CTO's proposal (or, standalone,
   derive the slices yourself against the bar above), then **create** the pieces through the
   adapter, **re-estimate each**, wire the split structure, and reconcile the original. Default
-  when the caller is the Product Owner, when the invocation says `execute`, or inside `/prd`'s
-  Ticketing stage.
+  when the caller is the Product Owner or when the invocation says `execute` — including when a
+  human runs this skill on a ticket a `/prd` run just wrote.
 
 ---
 
@@ -309,7 +311,8 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
 
 ## Output
 
-Return a compact summary the caller (CTO consult / PO ticketing / `/prd`) can carry forward:
+Return a compact summary the caller (the human who invoked this, or the CTO/PO acting for them) can
+carry forward:
 
 ```
 original:    <KEY>  (total <T> > 24)
