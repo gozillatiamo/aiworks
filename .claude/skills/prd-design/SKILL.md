@@ -106,7 +106,9 @@ a pure-capability run. The `existing` / `anchorKey` / `revampKeys` fields are th
 non-empty `revampKeys` means the board ALREADY covers this and the Ticketing stage must REVAMP those
 tickets in place, not create new ones. Keep `features`, `ctoFindings`, `bugInvestigations`, **and
 the three Recon fields** verbatim — you pass them all back in step 3 untouched (this skill never
-edits or interprets them, just carries them across the in-session design gap). If `uiFeatures` is
+edits or interprets them, just carries them across the in-session design gap). Pass `existing` back
+even though it looks redundant: the Ticketing stage derives the WRITABLE set from the statuses it
+carries (a done ticket is held read-only), so dropping it would let a shipped ticket be rewritten. If `uiFeatures` is
 empty, skip step 2 entirely (spec-only mission) and go to step 3 with an empty `figmaByFeature`.
 
 ### 2. DESIGN (in-session — this is where you take control)

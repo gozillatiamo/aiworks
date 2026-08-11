@@ -23,6 +23,15 @@ The end-to-end delivery Workflow for a single ticket: plan → build → PR/MR �
 **prd** / **brd**:
 Workflows that produce a Product / Business Requirements Document from a brief.
 
+**Reference ticket**:
+A ticket the board has already finished (status *done*). It counts as coverage and as the
+estimation calibration set, and agents read it freely — but no automated run rewrites,
+re-parents, re-sprints or re-estimates one. Shipped work is a record, not a work item.
+
+**Writable ticket**:
+A ticket an automated run may write to: any covering ticket that is not a **reference ticket**,
+plus a key a human named explicitly. The distinction is enforced in code, not by instruction.
+
 **Skill**:
 A packaged, named instruction set (`.claude/skills/`) invoked to do one kind of task the repo's
 way — the reusable procedure a Workflow or agent steps through.
