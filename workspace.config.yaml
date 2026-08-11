@@ -135,6 +135,13 @@ triage:
   enabled: true
   prod: false
 
+monitoring:
+  targets:
+    agent/staging: agent-384510
+    agent/prod: agent-384510
+    onegame/staging: onegame-427115
+    onegame/prod: onegame-427115
+
 products:
   - id: ofb-platform
     repos:

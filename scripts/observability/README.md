@@ -59,9 +59,12 @@ A clustered result rules out steady causes (request content, an always-wrong bra
 rules out episodic causes (a deploy, an eviction). The output says which it found. `/root-cause-deployed`
 drives this.
 
-> ⚠️ **ISO-8601 arguments are read as LOCAL time; SigNoz timestamps are UTC.** Passing a trace's
-> clock time straight back queries the wrong hour and returns a confidently wrong answer — pass
-> **epoch ms** when correlating against a trace.
+> **Time is unambiguous or refused.** `--since`/`--until` take `-Nm`/`-Nh`/`-Nd`, epoch ms, or an
+> ISO-8601 string **carrying its offset** (`2026-08-10T22:00:00+07:00`, `2026-08-10T15:00:00Z` —
+> the same instant). A bare `2026-08-10T22:00:00` is rejected rather than read as the shell's
+> timezone. It used to be read as local time, which was the quietest possible bug: SigNoz stores
+> UTC, so passing a trace's own clock time straight back shifted the window seven hours under
+> Asia/Bangkok and returned a confident, well-formed answer about the wrong hours.
 
 > **Not every attribute is populated by every emitter.** APISIX-lua fills `http.target` /
 > `apisix.route_name`, not SigNoz's normalized `httpUrl` / `httpHost`, so a `--by` on the wrong key

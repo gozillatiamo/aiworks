@@ -111,6 +111,20 @@ for row in "${ROWS[@]+"${ROWS[@]}"}"; do
     problems=$((problems + 1))
   fi
 
+  # The same identity also carries Cloud Monitoring (docs/adr/0010). Checked here rather than in a
+  # second doctor: one identity, one place that says whether it is whole. Without this a project
+  # bootstrapped before 0010 reports "ready" while every monitoring_triage read returns 403.
+  if gcloud projects get-iam-policy "$PROJECT" --flatten="bindings[].members" \
+       --filter="bindings.members:serviceAccount:$SA AND bindings.role:roles/monitoring.viewer" \
+       --format="value(bindings.role)" 2>/dev/null | grep -q .; then
+    ok "roles/monitoring.viewer granted — Cloud Monitoring triage ready"
+  else
+    warn "roles/monitoring.viewer is MISSING — monitoring_triage will 403 on every read"
+    dim "an owner of $PROJECT re-runs:  scripts/k8s/bootstrap-sa.sh --context $ALIAS$([[ $ENV == prod ]] && echo ' --allow-prod')"
+    dim "  (it skips what is already granted, so a re-run only adds the new role)"
+    problems=$((problems + 1))
+  fi
+
   # CRD groups drift: the extra ClusterRole was generated from the groups present at bootstrap.
   # Both counts are forced to a single integer: a fallback `|| echo 0` on a command that already
   # printed would make this "0\n0" and turn the comparison below into an arithmetic error.
