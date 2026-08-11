@@ -130,13 +130,20 @@ for this org's ticket-id format, status names, and any read-only fields.
    **Assumptions** block for anything inferred.) When refining an existing ticket, the
    template is a **skeleton, not a reset** — fold the step-1 content into its matching
    fields per `templates.md` (nothing dropped); the rewrite then goes through `--body`,
-   which preserves the ticket's images. **When a flow, relationship, lifecycle, or
-   structure in the spec would land more clearly as a picture than more prose**,
-   invoke `/diagram-ticket` before finalizing the body — it renders a Mermaid diagram,
-   attaches it, and returns a reference line + live-editor link to fold into the
-   template's top-level text (never nested inside a list; see its own gotchas). It's a
-   no-op enhancement, not a requirement: `diagrams.enabled=false` (the default) makes
-   it return `skipped` immediately, and plenty of tickets clarify fine with text alone.
+   which preserves the ticket's images. **Diagram test — apply it, do not weigh it.**
+   Read back the spec you just rendered and check for these four. If **any one** is
+   present, invoke `/diagram-ticket` before finalizing the body:
+   - three or more steps that happen in sequence,
+   - a state or status transition,
+   - two or more entities with a relationship between them,
+   - a lifecycle that outlives one request (a queue, a stream, a scheduled job).
+
+   It renders a Mermaid diagram, attaches it, and returns a reference line + live-editor
+   link to fold into the template's **top-level** text — never nested inside a list item,
+   where a fence flattens and eats underscores (see its own gotchas). None of the four
+   present ⇒ skip it silently. The `diagrams.enabled` gate decides whether it can run at
+   all, and a disabled gate returns `skipped` at no cost, so this test is the only
+   judgement you make — do not also re-litigate whether a picture is *worth* it.
 6. **Create the ticket with its spec in the body** (only if step 3 found no duplicate).
    One call — `--description` is the one-line summary, `--body` is the full rendered spec,
    `--issuetype` carries the step-2 Type classification onto the actual field (mapped to the
