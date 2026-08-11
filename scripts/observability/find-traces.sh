@@ -22,15 +22,18 @@
 #   --operation <name>  span name / operation
 #   --tag k=v           any span attribute; repeatable (e.g. --tag http.target=/AMBPG/PGSOFT/settleBets)
 #   --min-duration <ms> only spans slower than this
-#   --since <when>      -Nm/-Nh/-Nd, ISO-8601 (LOCAL time), or epoch ms. Default -7d.
+#   --since <when>      -Nm/-Nh/-Nd, epoch ms, or ISO-8601 CARRYING ITS OFFSET. Default -7d.
 #   --until <when>      same formats. Default now.
 #   --by <key>          group the count by a span attribute
 #   --interval <dur>    bucket the count over time (30m, 1h, 6h, 1d)
 #   --list              return matching trace ids instead of a count
 #
-# ⚠️ ISO-8601 arguments are read as LOCAL time (the shell's `date`), not UTC. A trace timestamp
-# from SigNoz is UTC, so passing its clock time back verbatim silently queries the wrong window —
-# pass epoch ms when correlating against a trace, which is unambiguous.
+# Time is unambiguous or refused. `2026-08-10T22:00:00+07:00` and `2026-08-10T15:00:00Z` are both
+# accepted and mean the same instant; a bare `2026-08-10T22:00:00` is REJECTED rather than read as
+# whatever the shell's timezone happens to be. This used to be read as local time, which is the
+# quietest possible bug: SigNoz stores UTC, so passing a trace's own clock time back verbatim
+# shifted the window (seven hours, under Asia/Bangkok) and returned a confident, well-formed
+# answer about the wrong hours. Epoch ms remains the option that cannot be misread.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -78,7 +81,22 @@ _epoch_ms() {
            *) echo "unrecognized offset: $w" >&2; exit 1 ;;
          esac ;;
     ''|*[!0-9]*)
-         secs="$(date -j -f '%Y-%m-%dT%H:%M:%S' "$w" +%s 2>/dev/null || date -d "$w" +%s 2>/dev/null)" \
+         # An ISO-8601 timestamp is honoured only when it names its own offset. Without one there
+         # is no correct reading — `date` would apply the shell's zone, which is how a window
+         # silently moves seven hours — so this refuses instead of guessing.
+         local norm=""
+         case "$w" in
+           *Z)                       norm="${w%Z}+0000" ;;
+           *[+-][0-9][0-9]:[0-9][0-9]) norm="${w%??:??}${w: -5:2}${w: -2}" ;;
+           *[+-][0-9][0-9][0-9][0-9]) norm="$w" ;;
+           *) echo "refusing an ambiguous time: $w" >&2
+              echo "  It names no timezone, and reading it as local time would query the wrong" >&2
+              echo "  hours without failing. Pass epoch ms, or add an offset:" >&2
+              echo "    --since '${w}+07:00'   (Asia/Bangkok)   --since '${w}Z'   (UTC)" >&2
+              exit 1 ;;
+         esac
+         # BSD date wants %z as +0700; GNU date reads the original string, colon and all.
+         secs="$(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$norm" +%s 2>/dev/null || date -d "$w" +%s 2>/dev/null)" \
            || { echo "unrecognized time: $w" >&2; exit 1; } ;;
     *)   echo "$w"; return ;;   # already epoch ms
   esac
@@ -102,8 +120,17 @@ _is_column() {
     *) echo false ;;
   esac
 }
-_key_json() { jq -n --arg k "$1" --argjson c "$(_is_column "$1")" \
-  '{key:$k,dataType:"string",type:(if $c then "tag" else "tag" end),isColumn:$c}'; }
+# SigNoz also type-checks the key: a NUMERIC column declared as a string is rejected outright with
+# "error in builder queries", which is what made --min-duration fail on every invocation. The
+# dataType is therefore looked up, not assumed.
+_data_type() {
+  case "$1" in
+    durationNano) echo float64 ;;
+    *)            echo string ;;
+  esac
+}
+_key_json() { jq -n --arg k "$1" --arg d "$(_data_type "$1")" --argjson c "$(_is_column "$1")" \
+  '{key:$k,dataType:$d,type:(if $c then "tag" else "tag" end),isColumn:$c}'; }
 
 items="[]"
 _add() {  # key op value

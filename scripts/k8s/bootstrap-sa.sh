@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 #
-# bootstrap-sa.sh — create the READ-ONLY Kubernetes triage identity for one cluster.
+# bootstrap-sa.sh — create the READ-ONLY deployed-environment triage identity for one cluster.
 #
-# The k8s_triage MCP never uses your own kubeconfig credential. It impersonates a dedicated
-# service account whose permissions come from the cluster's RBAC, so "read-only" is enforced by
-# the API server rather than by the MCP's own code. This script is what creates that identity.
-# See docs/adr/0007.
+# The triage MCPs never use your own kubeconfig credential. They impersonate a dedicated service
+# account whose permissions come from the cluster's RBAC and from project IAM, so "read-only" is
+# enforced by the API server and by Google rather than by the MCPs' own code. This script is what
+# creates that identity. See docs/adr/0007 and docs/adr/0010.
+#
+# ONE identity serves every read-only deployed-environment surface we have — a second account
+# would double this ceremony for the same trust boundary, and every role below is a viewer:
 #
 #   identity   k8s-triage@<project>.iam.gserviceaccount.com   (one per GCP project, by convention)
 #   authn      roles/container.clusterViewer on the project   (reach the control plane, nothing more)
+#              roles/monitoring.viewer on the project         (Cloud Monitoring — scripts/monitoring/)
 #   authz      ClusterRoleBinding -> the upstream `view` ClusterRole
 #              ClusterRoleBinding -> `k8s-triage-extra` (nodes, metrics, CRDs — generated here)
 #
@@ -16,8 +20,10 @@
 # grants them back: `k8s-triage-extra` names only non-core API groups plus nodes and metrics, so
 # there is no rule under which the identity can read a Secret or open a shell.
 #
-# RUN AS A HUMAN, ONCE PER CLUSTER. It WRITES: a service account, a project IAM binding, and two
+# RUN AS A HUMAN, ONCE PER CLUSTER. It WRITES: a service account, two project IAM bindings, and two
 # ClusterRoleBindings. Everything it writes is read-only in effect and removable (see `revoke`).
+# Re-running is safe and is how an already-bootstrapped project picks up a newly added role: each
+# grant checks for an existing binding first and reports it rather than rewriting it.
 #
 # Usage:
 #   scripts/k8s/bootstrap-sa.sh --context <ctx> [--grant <email>] [-n]
@@ -168,23 +174,30 @@ else
   fi
 fi
 
-# ── 2. authn: reach the control plane, nothing more ───────────────────────────────
-if gcloud projects get-iam-policy "$PROJECT" --flatten="bindings[].members" \
-     --filter="bindings.members:serviceAccount:$SA_EMAIL AND bindings.role:roles/container.clusterViewer" \
-     --format="value(bindings.role)" 2>/dev/null | grep -q .; then
-  ok "roles/container.clusterViewer already granted"
-else
+# ── 2. authn: reach the control plane, and read what GCP measures ────────────────
+# Two project roles on the SAME identity, granted the same way. One triage identity per project
+# carries every read-only deployed-environment capability we have (docs/adr/0010): a second
+# service account would double this ceremony for the same trust boundary, and both roles are
+# viewers — the marginal reach of holding them together is a metric read.
+grant_project_role() {
+  local role="$1" why="$2"
+  if gcloud projects get-iam-policy "$PROJECT" --flatten="bindings[].members" \
+       --filter="bindings.members:serviceAccount:$SA_EMAIL AND bindings.role:$role" \
+       --format="value(bindings.role)" 2>/dev/null | grep -q .; then
+    ok "$role already granted"
+    return 0
+  fi
   # Retried, because IAM propagation after the SA is created is eventually consistent and the
   # first attempt can fail with a "does not exist" that resolves itself seconds later.
-  granted=0; last=""
+  local granted=0 last="" attempt
   for attempt in $(seq 1 10); do
     if [[ $DRY -eq 1 ]]; then
-      dim "would run: gcloud projects add-iam-policy-binding $PROJECT --member serviceAccount:$SA_EMAIL --role roles/container.clusterViewer"
+      dim "would grant $role to $SA_EMAIL on $PROJECT"
       granted=1; break
     fi
     last="$(gcloud projects add-iam-policy-binding "$PROJECT" \
       --member "serviceAccount:$SA_EMAIL" \
-      --role roles/container.clusterViewer \
+      --role "$role" \
       --condition=None --quiet 2>&1 >/dev/null)"
     if [[ $? -eq 0 ]]; then granted=1; break; fi
     case "$last" in
@@ -195,12 +208,15 @@ else
   if [[ $granted -eq 0 ]]; then
     case "$last" in
       *PERMISSION_DENIED*|*"setIamPolicy"*|*"Permission "*)
-        die "could not grant roles/container.clusterViewer — this needs resourcemanager.projects.setIamPolicy (owner). roles/editor is NOT enough; ask an owner of $PROJECT to run this script." ;;
-      *) die "could not grant roles/container.clusterViewer: $last" ;;
+        die "could not grant $role — this needs resourcemanager.projects.setIamPolicy (owner). roles/editor is NOT enough; ask an owner of $PROJECT to run this script." ;;
+      *) die "could not grant $role: $last" ;;
     esac
   fi
-  did "roles/container.clusterViewer granted"
-fi
+  did "$role granted  ($why)"
+}
+
+grant_project_role roles/container.clusterViewer "reach the control plane, nothing more"
+grant_project_role roles/monitoring.viewer "read Cloud Monitoring time series — scripts/monitoring/"
 
 # ── 3. authz: view + the generated extra role ─────────────────────────────────────
 # Non-core API groups only. Secrets live in the core ("") group, which is never named here, so

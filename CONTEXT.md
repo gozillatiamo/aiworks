@@ -95,6 +95,25 @@ spend). It does not reach the Slack voice note (`voice.notify_voice.enabled`, au
 dictation. There is deliberately no automatic call detection: a browser meeting has no process to
 find, so an auto-detect would cover some calls and silently miss others.
 
+**triage server**:
+One of the four read-only MCPs over a DEPLOYED environment — `pg_triage`, `redis_triage`,
+`k8s_triage`, `monitoring_triage`. All four share one production gate (`triage.prod`, per machine)
+and one teardown habit (`disconnect`). The first three read what **we** produce: our rows, our
+keys, our cluster objects. The fourth reads what the **cloud provider** measures for us.
+
+**plateau**:
+The tell that an investigation has reached the infrastructure boundary: our own instrumentation
+says the operation executed in microseconds while the caller waited hundreds of milliseconds, and
+the surrounding spans never moved. The gap is invisible to the thing that was waiting — it is
+scheduling, queueing or throttling — so no amount of further tracing explains it. A plateau is
+what sends you to `monitoring-triage`.
+
+**saturation metric**:
+A metric whose type reads as a utilization or a ratio, and which must therefore be aligned with
+the **maximum**, never the mean. A resource pinned at its ceiling for twenty minutes of a one-hour
+window averages out to comfortable, which is the exact opposite of the finding. `monitoring_triage`
+derives this from the metric descriptor rather than trusting a caller to remember it.
+
 ## Repos
 
 **Product**:

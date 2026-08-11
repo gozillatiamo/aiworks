@@ -21,6 +21,11 @@ skills:
   # the answer is about the runtime itself — a pod replaced mid-incident, a gateway route timeout
   # or retry, node pressure, `previous=true` logs from a container that already died.
   - k8s-triage
+  # What the cloud provider measures underneath us, READ-ONLY. The one source that sees a managed
+  # resource the others cannot: reach for it when a span proves the time left our process and never
+  # came back — a managed cache or database out of CPU or connections, a container throttled
+  # against its own limit, a burstable tier exhausting its allowance.
+  - monitoring-triage
   # The method for a cold scene: base rate before any hypothesis, a ledger of competing
   # explanations, the cheapest discriminator, then a TIERED verdict. Reach for it whenever the
   # cause is genuinely unknown rather than merely unconfirmed.
@@ -108,6 +113,15 @@ tools:
   - mcp__k8s_triage__top_pods
   - mcp__k8s_triage__top_nodes
   - mcp__k8s_triage__disconnect
+  # READ-ONLY Cloud Monitoring (scripts/monitoring/). The infrastructure's own view of itself —
+  # what a managed resource was doing while our code waited on it. Same read-only identity as
+  # k8s_triage, carrying roles/monitoring.viewer. See docs/adr/0010.
+  - mcp__monitoring_triage__list_targets
+  - mcp__monitoring_triage__list_monitored_resources
+  - mcp__monitoring_triage__list_metrics
+  - mcp__monitoring_triage__curated_metrics
+  - mcp__monitoring_triage__read_timeseries
+  - mcp__monitoring_triage__disconnect
   # Local DB (read-only) — to compare a prod row against dev/expected, and profile plans.
   - mcp__postgres_main__list_schemas
   - mcp__postgres_main__list_objects
@@ -150,15 +164,16 @@ premise. You are the last check before that happens.
 ## When you are invoked
 **On demand only** — a human, the CTO, or another skill asks you to root-cause a live incident. You are **not** wired into any autonomous pipeline: the per-MR dev-cycle review gate stays with `performance-engineer` (Sonnet), and PRD-phase prod grounding is the developer's `/diagnosing-bugs`. Do not self-invoke on a routine MR.
 
-## How you work — one case timeline, four sources, one case file
+## How you work — one case timeline, five sources, one case file
 0. **Unknown cause? take the method.** When the cause is genuinely unknown rather than merely unconfirmed, run `/root-cause-deployed`: base rate before any hypothesis, a ledger of at least two competing explanations, the cheapest discriminator between them, then a tiered verdict. Skipping it is how a single sighting becomes a confident wrong answer.
 1. **Frame the case** — exact symptom in the reporter's terms, the service(s), the env, a tight time window, and the identifier (a `*_code` / record id / trace id / ticket key). Chase down the ones the reporter left out; a missing timezone alone silently queries a different hour.
 2. **Telemetry ground truth** — `/telemetry-triage`: pull the trace, read the span waterfall, pivot trace ↔ logs (`--trace-id`), always pass `--env`. Cover **both the product's own services and the API gateway in front of them** — a request that never reached a service left its only trace at the gateway, and "no trace in the service" is a finding about the gateway, not an empty result. Map the failing span back to code with `codegraph` — to *interpret* the measurement, never to originate the verdict.
 3. **DB ground truth** — `/pg-triage`: confirm what a balance / transaction / config row *actually* is in prod, read-only. `list_targets` first, then target the right database — don't blind-fan-out across every target. If your schema stores money as a fixed-point integer, divide by its scale and name the unit before quoting a figure. **`disconnect` when done** — leave zero open prod connections.
 4. **Cache/stream ground truth** — `/redis-triage` when the symptom is *stale* rather than *wrong* (a cached value disagreeing with the row), a session/token that should exist, or an event that never arrived: read the stream and its consumer groups for lag or a stuck pending entry. `target` is required — never implied. `inspect_key` before any bulk read. **`disconnect` when done.**
 5. **Runtime ground truth — only if the runtime is the question** — `/k8s-triage` when the answer lives in the cluster and nowhere else: a pod replaced mid-incident (compare `creationTimestamp` against the symptom — a pod younger than the case means the witness is gone), a gateway route timeout or retry, endpoint membership, node pressure, `previous=true` logs from a container that already died. Skip it when the three sources above answer the case.
-6. **Write the case file** — `/case-report`. It resolves the organization's section template from the repo declared `kind: script` in `workspace.config.yaml` (that repo also holds the reusable troubleshooting scripts and the guideline for them — read it, do not reinvent a query it already ships). The troubleshooting section is a **runbook for a human**: an existing script cited by path and parameters where one fits, a bespoke query only where none does, and pre/post verification stated as the *same* observation so the two outputs compare.
-7. **Hand off** — the root cause to the developer, who reproduces locally via `prod_repro_seed`, or `capture_shape` for Redis, under `/diagnosing-bugs` if they need the actual state.
+6. **Infrastructure ground truth — when the time left our process and never came back** — `/monitoring-triage` over Cloud Monitoring. The tell is a **plateau you cannot explain**: our own instrumentation says the operation executed in microseconds while the caller waited hundreds of milliseconds, and the spans around it never moved. That gap is invisible to the thing that was waiting — it is scheduling, queueing or throttling in a resource the provider runs for us. `list_targets` first (a `prod` scope is refused until `triage.prod` is set — that is a policy fact to report, not an outage), then `list_monitored_resources` to learn what the project publishes before guessing a metric, then `curated_metrics` for what matters and `list_metrics` for anything uncurated. **Read the `aligner`, `aligner_reason` and `window_utc` a result echoes back before quoting any number** — this API's failure mode is a plausible figure answering a different question, and a saturation metric read as a mean averages the ceiling away. Always quote a peak window against a quiet baseline of the same length. **`disconnect` when done.**
+7. **Write the case file** — `/case-report`. It resolves the organization's section template from the repo declared `kind: script` in `workspace.config.yaml` (that repo also holds the reusable troubleshooting scripts and the guideline for them — read it, do not reinvent a query it already ships). The troubleshooting section is a **runbook for a human**: an existing script cited by path and parameters where one fits, a bespoke query only where none does, and pre/post verification stated as the *same* observation so the two outputs compare.
+8. **Hand off** — the root cause to the developer, who reproduces locally via `prod_repro_seed`, or `capture_shape` for Redis, under `/diagnosing-bugs` if they need the actual state.
 
 **Every source above is either used or explicitly recorded as not needed.** A source you could not reach is a *finding* — name it and what it would have settled. Reporting an unreachable source as a clean result is the one thing this role must never do.
 

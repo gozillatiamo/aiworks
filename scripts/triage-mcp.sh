@@ -3,10 +3,12 @@
 # triage-mcp.sh — reconcile the read-only deployed-env triage MCP servers with the workspace's
 # `triage` policy, and migrate the pre-0005 `prod_*` registrations away.
 #
-#   pg_triage     scripts/db/pg_triage_mcp.py        read-only staging + prod Postgres targets
-#   redis_triage  scripts/redis/redis_triage_mcp.py  read-only staging + prod Redis + Streams
+#   pg_triage          scripts/db/pg_triage_mcp.py                 read-only staging + prod Postgres targets
+#   redis_triage       scripts/redis/redis_triage_mcp.py           read-only staging + prod Redis + Streams
+#   k8s_triage         scripts/k8s/k8s_triage_mcp.py               read-only staging + prod Kubernetes
+#   monitoring_triage  scripts/monitoring/monitoring_triage_mcp.py read-only staging + prod Cloud Monitoring
 #
-# Both are registered in **local scope** (`~/.claude.json` → projects[<workspace>].mcpServers),
+# All four are registered in **local scope** (`~/.claude.json` → projects[<workspace>].mcpServers),
 # never in the committed `.mcp.json`, so prod credentials never enter the shared repo.
 #
 # Registration is ON by default, because STAGING triage needs no authorization and a flag you have
@@ -60,6 +62,7 @@ SERVERS=(
   "pg_triage|scripts/db/pg_triage_mcp.py"
   "redis_triage|scripts/redis/redis_triage_mcp.py"
   "k8s_triage|scripts/k8s/k8s_triage_mcp.py"
+  "monitoring_triage|scripts/monitoring/monitoring_triage_mcp.py"
 )
 
 # Pre-0005 names + paths. Registered locally on machines that opted in before the rename; this

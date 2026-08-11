@@ -206,6 +206,31 @@ triage:
                                    #   The pre-0005 key `prod_triage.enabled` is REMOVED and never
                                    #   honoured; `scripts/triage-mcp.sh status` reports a leftover.
 
+# ── Cloud Monitoring scopes (read-only monitoring_triage) ──────────────────────
+# WHICH cloud projects the monitoring-triage MCP may read, as `<product>/<env>: <project-id>`.
+# Unlike the Kubernetes server — which DERIVES its targets from the kubeconfig, because the cluster
+# reference is written identically on every machine — a Cloud Monitoring scope is just a project
+# id, discoverable from nothing. So it is declared here, once, as ORG data: the same on every
+# teammate's machine, unlike the per-person `triage:` keys above.
+#
+# The `<env>` half of each key is load-bearing, not decoration: it is what the PRODUCTION gate
+# reads. An `.../prod` target is refused until `triage.prod` is true on this machine; a
+# `.../staging` target needs no opt-in. There is no second flag — `triage.prod` governs every
+# triage server (docs/adr/0005, docs/adr/0010).
+#
+# One project commonly holds both environments; two keys pointing at the same id is normal and
+# correct — they still gate differently. Omit the block and the server starts, then reports
+# "no targets declared" rather than guessing at a project.
+#
+# Declare one entry per project you may need to READ, not per cluster: `roles/monitoring.viewer`
+# is granted at the project level, so one `scripts/k8s/bootstrap-sa.sh` run per project covers
+# every environment in it. A service and the managed resource it talks to can live in DIFFERENT
+# projects — miss one and its metrics are simply invisible, with no error to say so.
+monitoring:
+  targets:
+    app/staging: my-project-123456   # <product>/<env>: <cloud-project-id>
+    app/prod: my-project-123456
+
 # ── Artifacts (publishing an interactive doc as a shareable Claude Artifact) ────
 artifacts:
   enabled: false                   # MASTER switch (default OFF). false → an interactive doc
