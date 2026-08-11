@@ -32,6 +32,14 @@ re-parents, re-sprints or re-estimates one. Shipped work is a record, not a work
 A ticket an automated run may write to: any covering ticket that is not a **reference ticket**,
 plus a key a human named explicitly. The distinction is enforced in code, not by instruction.
 
+**Deferred scope**:
+Part of a ticket's scope that a repo's build cannot finish because it belongs to another owner — a
+repo outside this workspace, or an access only a person holds. It is not unfinished work: what the
+repo owns is green. A build that reports it hands back **deferred**, and the run carries on to
+review and the test gate, naming the deferral on the PR/MR and the ticket rather than merging over
+it in silence. Unfinished work of the repo's own is **partial**, and that still stops the repo. The
+distinction is enforced in code, not by instruction.
+
 **Skill**:
 A packaged, named instruction set (`.claude/skills/`) invoked to do one kind of task the repo's
 way — the reusable procedure a Workflow or agent steps through.

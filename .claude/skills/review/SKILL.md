@@ -69,6 +69,10 @@ with the codegraph instrument (`basis.md` §3).
 
 Find the originating requirements, in this order:
 
+0. **A bar the caller already handed you** — acceptance criteria quoted in your own brief.
+   That IS the spec source: use it and skip the search. A caller that resolved the bar for
+   you may also lack a tracker grant to re-fetch it, so hunting for the ticket anyway either
+   wastes a round trip or dead-ends at a door you cannot open.
 1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) —
    fetch via the workflow in `docs/agents/issue-tracker.md`.
 2. A path the user passed as an argument.
