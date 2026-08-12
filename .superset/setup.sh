@@ -111,12 +111,16 @@ fi
 # pnpm so step 5 can install deps for the pnpm-based repos (else node_install skips them); dap
 # (Debug Adapter Protocol client) for the debugging-code skill. Best-effort — guarded so a failure
 # never aborts setup.
-log "Ensuring host tooling (jq, ngrok, glab, pnpm, dap)…"
+log "Ensuring host tooling (jq, ngrok, glab, pnpm, dap, headroom)…"
 ensure_jq || true
 ensure_ngrok || true
 ensure_glab || true
 ensure_pnpm || true
 ensure_dap || true
+# The headroom compression engine, BEFORE the plugin below: the plugin's hooks and MCP launcher
+# shell out to this binary, and a plugin installed without it fails open (no compression, no
+# badge, no error). Gated by headroom.enabled in workspace.config.yaml.
+ensure_headroom || true
 # Claude plugins declared in .claude/settings.json, installed at USER scope so they hold in a
 # repo-only session too. Declaring is not installing — measured: a repo whose settings.json
 # carried enabledPlugins still answered NOT-FOUND for caveman:caveman until the install ran.

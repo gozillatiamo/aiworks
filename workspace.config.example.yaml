@@ -256,6 +256,26 @@ artifacts:
                                    #   transform. The artifact is published PRIVATE; sharing it
                                    #   with the org stays a manual click in its share menu.
 
+# ── Headroom (input-side context compression) ──────────────────────────────────
+# Compresses a large STRUCTURED file before its bytes enter context — `hcat <file>` in
+# Bash instead of Read/cat, plus a PreToolUse gate that redirects a big Read there once.
+# Measured 93.9% on a 37.7 KB workspace manifest.json. Nothing rewrites conversation
+# history: the compressing PROXY is deliberately NOT adopted (it is fail-closed, so a
+# dead daemon would break every session), so all compression stays explicit and
+# file-scoped. See docs/agents/headroom.md and ADR 0014.
+headroom:
+  enabled: true                    # MASTER switch (default ON — it only ever SAVES tokens).
+                                   #   Gates provisioning, not the plugin: `aiworks doctor`
+                                   #   stops checking for the engine, `.superset/setup.sh`
+                                   #   stops installing it, and the statusline is left alone.
+                                   #   false on an already-provisioned machine ⇒ also run
+                                   #   `claude plugin uninstall headroom-usage-indicator@headroom-tools`.
+  statusline: true                 # append the savings badge (`● headroom · ~2.4k tok · $0.01`)
+                                   #   to this machine's existing statusLine. Edits a
+                                   #   MACHINE-GLOBAL user file (~/.claude/settings.json), so it
+                                   #   is the per-person half — set it in workspace.config.local.yaml
+                                   #   to opt out without touching the shared file.
+
 # ── Design (governs ALL Figma usage across the workspace) ──────────────────────
 # How the team works with Figma — see docs/agents/figma.md for the full convention.
 design:

@@ -67,8 +67,11 @@ case "$tool" in
       printf '%s' "$seg" | grep -Eq "$ENV_TOKEN" || continue
       printf '%s' "$seg" | grep -Eq '\.env\.example\b' && continue
 
-      # cat/head/tail/less/more/sed -n always print file contents.
-      if printf '%s' "$seg" | grep -Eq "\\b(cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
+      # cat/head/tail/less/more/sed -n always print file contents. `hcat` is
+      # the headroom plugin's compress-at-the-source reader: a RENAMED `cat`,
+      # so it needs its own alternative — `\bcat\b` cannot match "hcat" (the
+      # leading h is a word char, so there is no boundary before "cat").
+      if printf '%s' "$seg" | grep -Eq "\\b(hcat|cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
         deny "command dumps a .env file: $cmd"
       fi
       # grep prints matching lines (leaks values) UNLESS it is quiet:

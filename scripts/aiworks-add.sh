@@ -979,7 +979,7 @@ mkdir -p "$REPO_DIR/.claude"
 # A COPY, not a symlink: each repo is an independent clone, so a link up to the
 # workspace root dangles for anyone who clones the repo on its own. Same call as
 # the Cursor hook-shim (see scripts/cursor/hook-shim.template.sh).
-WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh)
+WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh)
 if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
   mkdir -p "$REPO_DIR/.claude/hooks/dev-wrapper"
   hooks_new=(); hooks_upd=()
@@ -1004,7 +1004,15 @@ SETTINGS_FILE="$REPO_DIR/.claude/settings.json"
 read -r -d '' BASE_SETTINGS <<'JSON'
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "HCAT_GATE_BYTES": "65536",
+    "HCAT_GATE_NO_SNIFF": "1",
+    "DANGI_NUDGE_BYTES": "32768",
+    "DANGI_NO_NOTIFY": "1",
+    "HEADROOM_UPDATE_CHECK": "off",
+    "HF_HUB_OFFLINE": "1"
+  },
   "enabledMcpjsonServers": ["codegraph"],
   "permissions": {
     "defaultMode": "acceptEdits",
@@ -1033,6 +1041,7 @@ read -r -d '' BASE_SETTINGS <<'JSON'
       { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
       { "matcher": "Bash",  "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
       ] },
       { "matcher": "Read",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 } ] }
@@ -1074,8 +1083,20 @@ if have jq; then
   # a repo that enables its own plugins keeps them and gains caveman. (Arrays, by
   # contrast, are replaced wholesale — which is precisely why `permissions` stays out.)
   # A repo with no settings.json yet still gets the whole baseline (the `else` below).
+  #
+  # `env` converges for its HEADROOM knobs ONLY, by key prefix. Those knobs are part of the same
+  # shared safety net as the hooks: HCAT_GATE_BYTES/NO_SNIFF tune the headroom plugin's
+  # PreToolUse gate, and at the plugin's own defaults that gate denies a Read of any structured
+  # file over 16 KB — which in this workspace means a repo-only session gets its settings.json
+  # and lockfiles redirected to a LOSSY rendering of a file it may need to edit exactly. The rest
+  # of `env` does not converge: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is a baseline for a NEW repo,
+  # not something to switch on across 21 existing ones. `env` is an OBJECT, so `*` deep-merges it
+  # and a repo's own variables survive.
   if [[ -f "$SETTINGS_FILE" ]]; then
-    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '{hooks, enabledPlugins, extraKnownMarketplaces}')"
+    base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '
+      {hooks, enabledPlugins, extraKnownMarketplaces}
+      + {env: ((.env // {}) | with_entries(select(.key | test("^(HCAT_|DANGI_|HEADROOM_|HF_HUB_OFFLINE)"))))}
+    ')"
   else
     base_for_merge="$BASE_SETTINGS"
   fi
