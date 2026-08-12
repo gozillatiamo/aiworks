@@ -39,6 +39,10 @@
       "type": "stdio",
       "command": "codegraph",
       "args": ["serve", "--mcp"]
+    },
+    "graphify_docs": {
+      "type": "stdio",
+      "command": "graphify-mcp"
     }
   }
 }
