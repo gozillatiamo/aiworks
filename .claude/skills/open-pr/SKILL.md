@@ -39,6 +39,12 @@ out the branch and running the app just to see what changed.
    - `feature/<KEY>` → base = `branch_model.feature_base` (default **`develop`**); type = **`feat`**.
    - `fix/<KEY>` → base = `branch_model.fix_base` (default **`main`**); type = **`fix`**.
 
+   **A stated base wins.** When the invocation names the target branch, use it verbatim and skip
+   this derivation — the branch model answers "where does a `feature/` branch usually go", which is
+   a different question from "where does THIS work go". A fast-track or hotfix branch is named like
+   any other, so deriving over a stated base silently retargets the MR. The type still comes from
+   the branch prefix.
+
 2. **Resolve the ticket title** if not supplied:
    ```bash
    scripts/tracker/get-ticket-details.sh <KEY>   # first line is "<KEY> — <title>"
