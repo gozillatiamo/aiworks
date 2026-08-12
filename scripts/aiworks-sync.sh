@@ -120,6 +120,60 @@ ensure_codegraph() {
   else warn "could not install codegraph automatically (need npm or curl + network) — install it by hand (https://github.com/colbymchenry/codegraph); repos' index steps will SKIP until then"; fi
 }
 
+# ── graphify: install it once for the whole sweep if missing ──────────────────────
+# graphify (https://github.com/Graphify-Labs/graphify) builds the META REPO's doc graph —
+# prose only: docs/, docs/adr/ and the markdown under .claude/ and scripts/. It is NOT a
+# per-repo tool and never indexes product code: codegraph owns code because it returns a
+# symbol's verbatim source in one call, which graphify structurally cannot (its nodes carry
+# a start line and no text). The split is recorded in docs/adr/0013.
+# Python 3.12 is pinned deliberately — graphify's Leiden clustering will not run on 3.13+.
+# Best-effort like codegraph above: a failed install is reported and the doc-graph step
+# SKIPs, never aborting the sweep.
+ensure_graphify() {
+  step "Ensure graphify is installed (the meta repo's doc graph — prose only, ADR-0013)"
+  if command -v graphify >/dev/null 2>&1; then ok "graphify already on PATH ($(command -v graphify))"; return 0; fi
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould install graphify (uv tool install --python 3.12 "graphifyy[leiden,svg,sql]")%s\n' "$c_dim" "$c_off"
+    return 0
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    dim 'uv tool install --python 3.12 "graphifyy[leiden,svg,sql]"'
+    uv tool install --python 3.12 "graphifyy[leiden,svg,sql]" >/dev/null 2>&1 || true
+  elif command -v pipx >/dev/null 2>&1; then
+    dim 'pipx install "graphifyy[leiden,svg,sql]"'
+    pipx install "graphifyy[leiden,svg,sql]" >/dev/null 2>&1 || true
+  fi
+  # uv tool and pipx both drop console scripts into ~/.local/bin without editing PATH —
+  # surface it so this sweep and the child `aiworks add` runs (which inherit our env) see it.
+  local gf_bin="$HOME/.local/bin"
+  if [[ -x "$gf_bin/graphify" ]]; then case ":$PATH:" in *":$gf_bin:"*) ;; *) export PATH="$gf_bin:$PATH" ;; esac; fi
+  if command -v graphify >/dev/null 2>&1; then ok "graphify installed ($(command -v graphify))"
+  else warn "could not install graphify automatically (need uv or pipx + network) — install it by hand (uv tool install --python 3.12 'graphifyy[leiden,svg,sql]'); the doc-graph step will SKIP until then"; fi
+}
+
+# ── the meta repo's doc graph: report, never silently rebuild ─────────────────────
+# graph.json + GRAPH_REPORT.md are COMMITTED, so a fresh clone already has the map and a
+# sync must not spend the semantic pass again (~1.3M input tokens over 192 prose files,
+# serialised — graphify forces concurrency 1 on the claude-cli backend). So this step only
+# reports, and hands over the one command that refreshes it. It also installs the git merge
+# driver, which is what stops two people committing graph.json in parallel from landing
+# conflict markers in it.
+sync_doc_graph() {
+  step "Check the meta repo's doc graph (reports only — never re-spends the semantic pass)"
+  command -v graphify >/dev/null 2>&1 || { warn "graphify not on PATH — doc graph not checked"; return 0; }
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould run graphify check-update . and graphify hook install%s\n' "$c_dim" "$c_off"
+    return 0
+  fi
+  if [[ ! -f "graphify-out/graph.json" ]]; then
+    warn "no doc graph yet — build it once with: graphify extract . --backend claude-cli"
+    return 0
+  fi
+  graphify hook install >/dev/null 2>&1 || true   # post-commit rebuild + graph.json merge driver
+  if graphify check-update . >/dev/null 2>&1; then ok "doc graph present and current"
+  else warn "doc graph is stale — refresh with: graphify extract . --backend claude-cli"; fi
+}
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ADD="$DIR/aiworks-add.sh"
 [[ -x "$ADD" ]] || die "aiworks-add.sh not found/executable next to aiworks-sync.sh ($ADD)"
@@ -475,6 +529,12 @@ sel="${PRODUCT:+ (product: $PRODUCT)}${REPO_FILTER:+ (repo: $REPO_FILTER)}"
 # Ensure codegraph is installed once for the whole sweep (so the per-repo index steps don't
 # each skip on a missing CLI). The child `aiworks add` runs inherit our PATH, so this covers them.
 ensure_codegraph
+
+# The meta repo's own half: graphify for prose, since codegraph indexes no shell and no
+# markdown — 63% of this repo is invisible to it (docs/adr/0013). Install, then report on
+# the committed doc graph without re-spending its semantic pass.
+ensure_graphify
+sync_doc_graph
 
 # Seed the adapter .env files (idempotent; never overwrites an existing .env) before the
 # per-repo work, so the adapters the onboarded repos link to are already configured.
