@@ -7,8 +7,8 @@ git op. Repos are declared under `products[].repos[]` in `workspace.config.yaml`
 
 ⚠️ **Never read `.env` / `.env.*`** (any adapter's `scripts/*/.env`, or anything matched by the blanket `.env*`
 gitignore rule) — **except `.env.example`** templates, which hold no real values. No `Read`, no
-`cat`/`grep`/`sed`/`head`/`tail`, no `rtk read`/`rtk pipe`/`rtk diff` (rtk renames the reading verbs, so the
-renamed form is no way past this), and no `bash -x`/`set -x` around code that sources one. To prove a var is set
+`cat`/`grep`/`sed`/`head`/`tail` (nor any tool that renames those reading verbs — a renamed form is no way past
+this), and no `bash -x`/`set -x` around code that sources one. To prove a var is set
 without exposing it use `grep -q '^VAR=.\+' .env` — exit code only, never a form that echoes the value. Enforced
 by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter secret is a live credential.
 

@@ -214,9 +214,9 @@ t "gh pr create blocked"                      2 pretool-agent-brief-guard.sh "$(
 t "glab mr create blocked"                    2 pretool-agent-brief-guard.sh "$(ja qa-runner 'Then glab mr create --source-branch x.')"
 
 echo "--- pretool-env-guard ---"
-# This guard had no cases at all, which is how `rtk read <.env>` walked past it:
-# the suite only ever proved the verbs someone had already thought of. The .env
-# literals are assembled from $E so that editing this file through a shell
+# This guard once had no cases at all, which is how a renamed reading verb walked
+# past it: the suite only ever proved the verbs someone had already thought of. The
+# .env literals are assembled from $E so that editing this file through a shell
 # heredoc cannot trip the guard on the suite's own text.
 E='.env'
 t "cat .env blocked"                2 pretool-env-guard.sh "$(j "cat scripts/tracker/$E")"
@@ -226,21 +226,13 @@ t "grep -q .env allowed (no print)" 0 pretool-env-guard.sh "$(j "grep -q '^SLACK
 t "Read of .env blocked"            2 pretool-env-guard.sh "$(jr "$TMP/svc/$E")"
 t ".env.example readable"           0 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example")"
 t "bash -x near scripts/ blocked"   2 pretool-env-guard.sh "$(j 'bash -x scripts/observability/get-trace.sh TRACE')"
-# rtk renames the reading verbs; the rtk hook rewrites `cat X` into `rtk read X`,
-# so these are shapes the model reads back out of its own transcript.
-t "rtk read .env blocked"           2 pretool-env-guard.sh "$(j "rtk read scripts/tracker/$E")"
-t "rtk pipe < .env blocked"         2 pretool-env-guard.sh "$(j "rtk pipe < scripts/tracker/$E")"
-t "rtk diff of two .env blocked"    2 pretool-env-guard.sh "$(j "rtk diff scripts/tracker/$E scripts/notify/$E")"
-t "rtk read with a flag blocked"    2 pretool-env-guard.sh "$(j "rtk --ultra-compact read scripts/tracker/$E")"
-t "rtk read .env.example allowed"   0 pretool-env-guard.sh "$(j "rtk read scripts/tracker/$E.example")"
 # Names-only verbs stay allowed: over-blocking them buys no secrecy and the first
 # person a guard annoys is the person who turns it off.
-t "rtk find by name allowed"        0 pretool-env-guard.sh "$(j "rtk find . -name '*$E'")"
-t "rtk ls of the dir allowed"       0 pretool-env-guard.sh "$(j 'rtk ls -la scripts/tracker')"
-t "rtk wc of .env allowed"          0 pretool-env-guard.sh "$(j "rtk wc scripts/tracker/$E")"
+t "find by name allowed"            0 pretool-env-guard.sh "$(j "find . -name '*$E'")"
+t "ls of the dir allowed"           0 pretool-env-guard.sh "$(j 'ls -la scripts/tracker')"
+t "wc of .env allowed"              0 pretool-env-guard.sh "$(j "wc -l scripts/tracker/$E")"
 # `read` and `diff` unanchored are ordinary words — blocking them would be noise.
 t "bare diff of .env.example ok"    0 pretool-env-guard.sh "$(j "diff a/$E.example b/$E.example")"
-t "unrelated rtk read allowed"      0 pretool-env-guard.sh "$(j 'rtk read src/main.rs')"
 
 echo "== pretool-agent-context: the spawn brief carries the resolved language =="
 # This hook REWRITES rather than blocks, so exit-code cases prove nothing on their own —

@@ -315,35 +315,16 @@ render_glance() {
 # Accumulates TOK_*. Returns claude's (or timeout's) rc.
 claude_run() {
   local prompt="$1"; shift
-  # rtk's own PreToolUse hook (see rtk RTK.md / this repo's .claude/settings.json) rewrites
-  # plain commands it recognizes (ls, find, grep, git, gh, ...) into `rtk <cmd>` but never sets
-  # "permissionDecision":"allow" in its hook output — so Claude Code always demands a fresh
-  # interactive approval for the rewritten command, ignoring permissions.allow AND
-  # --dangerously-skip-permissions/--permission-mode. Headless has no one to approve it, so the
-  # run hangs on the first ls/find it makes. Confirmed via isolated repro: identical `ls -la`
-  # call denied with rtk on PATH, allowed instantly with rtk off PATH. Shadow rtk with a no-op
-  # stub (prepended ahead of the real one on PATH) for just this subprocess, so its hook's own
-  # `command -v rtk || exit 0` guard finds a binary but the hook body does nothing — real
-  # rtk-adjacent tools (timeout, gtimeout, ...) stay reachable since we only shadow the one
-  # name, not the whole directory. Interactive sessions (real rtk first on PATH there) are
-  # unaffected.
-  local run_path="$PATH"
-  if have rtk; then
-    local shim_dir; shim_dir="$(mktemp -d -t aiworks-rtk-shim.XXXXXX)"
-    printf '#!/bin/sh\nexit 0\n' > "$shim_dir/rtk"
-    chmod +x "$shim_dir/rtk"
-    run_path="$shim_dir:$PATH"
-  fi
   # `env` carries PATH plus is a harmless no-op prefix so the array is never empty (set -u
   # safe); swap in timeout/gtimeout when present and a positive CLAUDE_TIMEOUT is set.
   # CLAUDE_UNDER_TIMEOUT records whether the child runs under `timeout` so the caller's
   # classify_rc can tell a timeout grace-kill (124 / 137 / 143) apart from a real crash (other
   # 128+sig).
-  local -a TO=(env "PATH=$run_path")
+  local -a TO=(env "PATH=$PATH")
   CLAUDE_UNDER_TIMEOUT=0
   if [[ "${CLAUDE_TIMEOUT:-0}" -gt 0 ]]; then
-    if   have timeout;  then TO=(env "PATH=$run_path" timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
-    elif have gtimeout; then TO=(env "PATH=$run_path" gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
+    if   have timeout;  then TO=(env "PATH=$PATH" timeout  -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1
+    elif have gtimeout; then TO=(env "PATH=$PATH" gtimeout -k 10 "$CLAUDE_TIMEOUT"); CLAUDE_UNDER_TIMEOUT=1; fi
   fi
   # stdin ← /dev/null: a headless `claude -p` must never read the terminal, or it eats the
   # keystrokes meant for our own prompts (step 7) and muddies Ctrl+C handling.
@@ -978,7 +959,7 @@ else skip "8. /setup-matt-pocock-skills $(claude_fail_hint 'auth? was step 6 abl
 # ── 9. hooks + permissions baseline (HARDCODED, sonar-free) ────────────────────
 # No reference repo: the hooks come from the workspace's own .claude/hooks (the dev-wrapper,
 # modeled on a Flutter app baseline minus sonar) and settings.json is written from a hardcoded, stack-
-# agnostic, rtk-guarded baseline. We jq-MERGE settings so any plugin enablement added by
+# agnostic baseline. We jq-MERGE settings so any plugin enablement added by
 # steps 5/6 is preserved (never clobbered).
 step "9. Seed Claude hooks + settings (hardcoded baseline, sonar-free)"
 mkdir -p "$REPO_DIR/.claude"
@@ -1029,7 +1010,7 @@ read -r -d '' BASE_SETTINGS <<'JSON'
     "defaultMode": "acceptEdits",
     "allow": [
       "Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write", "Edit",
-      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)", "Bash(rtk *)"
+      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)"
     ],
     "deny": [
       "Bash(rm -rf *)", "Bash(rm -fr *)",
@@ -1048,18 +1029,17 @@ read -r -d '' BASE_SETTINGS <<'JSON'
   },
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
-      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
+      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
+      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
       { "matcher": "Bash",  "hooks": [
-          { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude" },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
       ] },
       { "matcher": "Read",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 } ] }
     ],
     "PostToolUse": [
-      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
-      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v rtk >/dev/null 2>&1 || exit 0; rtk codegraph sync" } ] },
+      { "matcher": "Write", "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
+      { "matcher": "Edit",  "hooks": [ { "type": "command", "command": "command -v codegraph >/dev/null 2>&1 || exit 0; codegraph sync" } ] },
       { "matcher": "Bash",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-output-warden.sh", "timeout": 30 } ] }
     ]
   }
@@ -1080,7 +1060,7 @@ if have jq; then
   # On an EXISTING settings.json the baseline asserts only the keys that are meant to
   # CONVERGE workspace-wide. It used to assert everything, which made the first
   # content-aware sync also push the baseline's `permissions` into 21 repos — quietly
-  # granting Write/Edit and Bash(rtk *) wherever a repo had chosen a narrower set. Hooks
+  # granting Write/Edit and Bash(mkdir *) wherever a repo had chosen a narrower set. Hooks
   # are the shared safety net and SHOULD converge; permissions are that repo's own call.
   #
   # `enabledPlugins` + `extraKnownMarketplaces` converge for the same reason as hooks: a
