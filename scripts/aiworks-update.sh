@@ -21,6 +21,7 @@
 #   gcloud     gcloud components update.
 #   claude     claude update — the Claude Code CLI.
 #   codegraph  codegraph upgrade — the per-repo code index CLI.
+#   graphify   uv tool upgrade graphifyy — this repo's doc-graph CLI (prose only).
 #   plugins    claude plugin marketplace update, then `claude plugin update` for every plugin in
 #              .claude/settings.json enabledPlugins. Needs a Claude Code restart to take effect.
 #   skills     npx skills update -p — the third-party Agent Skills declared in skills-lock.json
@@ -75,7 +76,7 @@ cd "$ROOT"
 # shellcheck source=/dev/null
 . "$ROOT/.superset/lib.sh"
 
-ALL_GROUPS="brew rust pnpm gcloud claude codegraph plugins skills mcp"
+ALL_GROUPS="brew rust pnpm gcloud claude codegraph graphify plugins skills mcp"
 
 # ── args ─────────────────────────────────────────────────────────────────────────
 DRY=0 CHECK_DEPS=0 ONLY="" SKIP=""
@@ -242,6 +243,22 @@ if want codegraph; then
     upgrade "codegraph upgrade" "codegraph" codegraph upgrade
   else
     record "codegraph" "skipped" "absent" "-"
+  fi
+fi
+
+# ── graphify ─────────────────────────────────────────────────────────────────────
+# Unlike codegraph, graphify has no self-update subcommand — it is a uv tool, so the
+# upgrade goes through uv. `--python 3.12` is NOT repeated here: uv keeps the interpreter
+# the tool was installed with, and graphify's Leiden clustering still needs < 3.13.
+# After an upgrade the git hooks must be reinstalled: `graphify hook install` embeds the
+# interpreter path at install time, so a version bump silently breaks the post-commit
+# rebuild until they are refreshed.
+if want graphify; then
+  if command -v graphify >/dev/null 2>&1; then
+    upgrade "uv tool upgrade graphifyy" "graphify" uv tool upgrade graphifyy
+    command -v graphify >/dev/null 2>&1 && graphify hook install >/dev/null 2>&1 || true
+  else
+    record "graphify" "skipped" "absent" "-"
   fi
 fi
 

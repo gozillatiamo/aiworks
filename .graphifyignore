@@ -1,0 +1,69 @@
+# The doc graph covers PROSE only — see docs/adr/0013.
+#
+# codegraph already owns code, and it owns it better: it returns a symbol's verbatim
+# source in one call, which graphify structurally cannot (its nodes carry a start line
+# and no text). codegraph in turn indexes neither shell nor markdown, which is most of
+# what lives in THIS repo — hence the split. So this graph deliberately indexes no code
+# at all, and the two never overlap. Everything here EXCLUDES; a .graphifyignore can only
+# ever narrow, never re-include what .gitignore already dropped.
+#
+# Already excluded for free by .gitignore, so nothing below repeats them: the product repo
+# clones (one anchored /<repo>/ line each, maintained by `aiworks add` / `aiworks remove`),
+# node_modules/, agent_logs/, docs/brd/, mani.d/, the generated .cursor rule mirror, and
+# the skill eval workspaces.
+
+# ── everything that is not prose ───────────────────────────────────────────────
+# Excluding by TYPE rather than by directory is what keeps scripts/*/README.md and the
+# other adapter docs in the graph while their shell and .env neighbours stay out. Those
+# READMEs turn out to be the densest part of the graph, so a directory blacklist would
+# cost more than it saves.
+*.sh
+*.py
+*.js
+*.mjs
+*.cjs
+*.ts
+*.json
+*.yaml
+*.yml
+*.toml
+*.lock
+*.html
+*.css
+*.txt
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.lua
+*.mp3
+*.mp4
+*.pdf
+
+# Extensionless shell scripts a type glob cannot catch.
+/aiworks
+/scripts/aiworks
+
+# ── environment files ──────────────────────────────────────────────────────────
+# Belt and braces. .gitignore already drops .env and .env.*, and graphify honours it;
+# restating the deny here means the boundary does not depend on one file. NOT negated for
+# .env.example: a template holds no values, but it holds no prose worth a node either.
+# .envrc is direnv's loader, which typically sources a real .env — it matches NEITHER
+# `.env` nor `.env.*` (no dot after "env"), so nothing above catches it. graphify's own
+# sensitive-file heuristic does flag it, but a heuristic in a pre-1.0 dependency is not a
+# boundary worth relying on.
+.env
+.env.*
+.envrc
+
+# ── generated and archived duplicates ──────────────────────────────────────────
+# .agents/ is the generated mirror of .claude/ (`aiworks cursor`). Indexing both would put
+# two nodes on every skill and invent edges between a file and its own copy.
+.agents/
+.cursor/
+
+# ── runtime state ──────────────────────────────────────────────────────────────
+.superset/
+.aiworks/
+graphify-out/
+.codegraph/

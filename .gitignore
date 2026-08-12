@@ -34,6 +34,25 @@ __pycache__/
 .superset/products/*.sh
 !.superset/products/example.sh
 
+# The doc graph (graphify — docs/adr/0013). graph.json, manifest.json and GRAPH_REPORT.md
+# ARE committed, so a teammate's first pull gets the map without re-spending the semantic
+# pass. These are not:
+#   cache/                   the semantic-extraction cache; rebuildable and by far the bulk
+#   cost.json                this machine's token/cost tally for its own runs
+#   .graphify_python         an absolute path to THIS machine's interpreter
+#   .graphify_root           an absolute path to THIS checkout
+#   .graphify_semantic_marker  this machine's output-token tally
+#   graph.html               derived visualisation; `graphify cluster-only .` regenerates it
+#   graphify-out/<date>/     pre-rebuild backups of graph.json + manifest.json
+# No trailing comments on the patterns below — gitignore treats them as part of the pattern.
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+graphify-out/.graphify_semantic_marker
+graphify-out/graph.html
+graphify-out/20*/
+
 # logs
 agent_logs/
 docs/brd/

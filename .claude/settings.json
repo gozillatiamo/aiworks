@@ -4,7 +4,8 @@
     "postgres_main",
     "postgres_secondary",
     "sonarqube",
-    "redis"
+    "redis",
+    "graphify_docs"
   ],
   "disabledMcpjsonServers": [
     "mcp-image"
@@ -22,6 +23,7 @@
       "Bash(git *)",
       "Bash(mkdir *)",
       "Bash(codegraph *)",
+      "Bash(graphify *)",
       "Bash(npm ci)",
       "Bash(npm install)",
       "Bash(npm run *)",
@@ -48,6 +50,7 @@
       "Bash(*scripts/vcs/pr-approve.sh*)",
       "Bash(*git remote get-url*)",
       "mcp__codegraph",
+      "mcp__graphify_docs",
       "mcp__sonarqube",
       "mcp__postgres_secondary",
       "mcp__postgres_main",

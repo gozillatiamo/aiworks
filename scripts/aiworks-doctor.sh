@@ -346,6 +346,24 @@ check_workspace() {
   else
     warn $g "no root CLAUDE.md" "agents start this workspace with no instructions"
   fi
+
+  # This repo's doc graph (graphify — prose only, docs/adr/0013). The workspace's own half
+  # of the index: codegraph covers the product repos' code and indexes neither shell nor
+  # markdown, which is most of what lives here. graph.json is committed, so a fresh clone
+  # should already have one — an absent graph means either the commit is missing or someone
+  # ran `graphify uninstall --purge`. Never offer a rebuild as a cheap fix: the semantic
+  # pass is the most expensive step in the toolchain and it is serialised, so the owner
+  # command is deliberately the explicit one.
+  if [[ ! -f "$ROOT/.graphifyignore" ]]; then
+    warn $g "no .graphifyignore" "the doc graph would index shell, config and generated mirrors" \
+         "\$EDITOR .graphifyignore"
+  elif [[ -f "$ROOT/graphify-out/graph.json" ]]; then
+    local dn; dn="$(grep -o '"label"' "$ROOT/graphify-out/graph.json" 2>/dev/null | grep -c . || true)"
+    pass $g "doc graph" "${dn:-0} nodes"
+  else
+    warn $g "no doc graph" "prose queries answer from nothing — codegraph indexes no shell and no markdown" \
+         "graphify extract . --backend claude-cli" slow
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -876,6 +894,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
     docker)                    printf 'see: install Docker Desktop — https://docker.com/products/docker-desktop' ;;
     claude)                    printf 'see: https://claude.com/claude-code — then re-run aiworks update --only claude' ;;
     codegraph)                 printf 'see: %s is installed outside this workspace; reinstall it the way you first did' "$1" ;;
+    graphify)                  printf 'uv tool install --python 3.12 "graphifyy[leiden,svg,sql]"' ;;
     *)                         printf 'see: install %s' "$1" ;;
   esac
 }
@@ -883,7 +902,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
 check_tooling() {
   local g=tooling b
   local hard="git jq curl awk mani"
-  local soft="node pnpm docker claude codegraph dap k6 yq"
+  local soft="node pnpm docker claude codegraph graphify dap k6 yq"
 
   local miss=""
   for b in $hard; do command -v "$b" >/dev/null 2>&1 || miss="${miss:+$miss }$b"; done

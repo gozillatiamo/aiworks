@@ -207,6 +207,17 @@ each of which **must** carry `-p $CLAUDE_PROJECT_DIR/<repo>` as an absolute path
 because a relative one resolves against a cwd that persists between tool calls and
 makes codegraph answer from the wrong repo with exit 0. Enforced by
 `pretool-codegraph-guard.sh`; kept current by `posttool-codegraph-sync.sh`.
+Reads code only — never shell or prose, which is the **doc graph**'s half.
+→ [ADR-0013](docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md)
+
+**Doc graph**:
+This repo's graph over prose — `docs/`, `docs/adr/`, and the markdown under
+`.claude/` and `scripts/`. Concept and rationale nodes joined by cross-document
+edges, carrying no source text: it answers *where a thing is decided*, never
+*what a symbol contains*. The codegraph index's counterpart, for the shell and
+markdown the code index does not read.
+_Avoid_: knowledge graph, graphify index
+→ [ADR-0013](docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md)
 
 ## Editors
 
