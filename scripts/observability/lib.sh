@@ -31,6 +31,65 @@ die() { echo "error: $*" >&2; exit 1; }
 command -v curl >/dev/null || die "curl is required"
 command -v jq   >/dev/null || die "jq is required (brew install jq)"
 
+# obs_epoch_ms WHEN -> epoch milliseconds. Accepts `now`, a relative offset (-30m/-2h/-7d),
+# epoch seconds or milliseconds, and ISO-8601 **carrying its own offset** (`…Z`, `…+07:00`,
+# `…+0700`).
+#
+# A bare `2026-08-11T15:52:41` is REFUSED, on purpose. `date` would read it in the shell's
+# timezone, so under Asia/Bangkok the window silently moved seven hours and the query returned
+# a confident, well-formed answer about the wrong hours — the quietest possible bug, and the
+# one that made every caller hand-convert with python3 first. Refusing costs one retry with an
+# offset; guessing costs a wrong verdict nobody can see is wrong. This lives here, not in each
+# entry script, because two copies of a time parser is how one of them stays broken.
+obs_epoch_ms() {
+  local w="$1" secs norm
+  case "$w" in
+    now)
+      echo "$(( $(date +%s) * 1000 ))"; return ;;
+    -*)
+      local n unit; n="${w%[mhd]}"; n="${n#-}"; unit="${w: -1}"
+      case "$unit" in
+        m) secs=$(( $(date +%s) - n*60 )) ;;
+        h) secs=$(( $(date +%s) - n*3600 )) ;;
+        d) secs=$(( $(date +%s) - n*86400 )) ;;
+        *) die "unrecognized relative offset: $w (use -30m / -2h / -7d)" ;;
+      esac ;;
+    ''|*[!0-9]*)
+      norm=""
+      case "$w" in
+        *Z)                         norm="${w%Z}+0000" ;;
+        *[+-][0-9][0-9]:[0-9][0-9]) norm="${w%??:??}${w: -5:2}${w: -2}" ;;
+        *[+-][0-9][0-9][0-9][0-9])  norm="$w" ;;
+        *)
+          echo "refusing an ambiguous time: $w" >&2
+          echo "  It names no timezone, and reading it as local time would query the wrong" >&2
+          echo "  hours without failing. Pass epoch ms, or add an offset:" >&2
+          echo "    '${w}+07:00'   (Asia/Bangkok)      '${w}Z'   (UTC)" >&2
+          exit 1 ;;
+      esac
+      # BSD date wants %z as +0700; GNU date reads the original string, colon and all.
+      secs="$(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$norm" +%s 2>/dev/null || date -d "$w" +%s 2>/dev/null)" \
+        || die "unrecognized time: $w" ;;
+    *)
+      # All digits: epoch already. 13+ digits is milliseconds, anything shorter is seconds.
+      if [[ ${#w} -ge 13 ]]; then printf '%s' "$w"; return 0; fi
+      secs="$w" ;;
+  esac
+  echo "$(( secs * 1000 ))"
+}
+
+# obs_duration_s DURATION -> seconds. Accepts 30s / 5m / 2h / 1d.
+obs_duration_s() {
+  local d="$1" n="${1%[smhd]}" unit="${1: -1}"
+  case "$unit" in
+    s) echo "$n" ;;
+    m) echo $(( n*60 )) ;;
+    h) echo $(( n*3600 )) ;;
+    d) echo $(( n*86400 )) ;;
+    *) die "unrecognized duration: $d (use 30s / 5m / 2h / 1d)" ;;
+  esac
+}
+
 # Which observability backend this workspace uses. Defaults to signoz (the only provider today).
 OBSERVABILITY_PROVIDER="${OBSERVABILITY_PROVIDER:-signoz}"
 IMPL="$OBSERVABILITY_DIR/$OBSERVABILITY_PROVIDER/impl.sh"

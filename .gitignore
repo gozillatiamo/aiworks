@@ -43,8 +43,10 @@ docs/*.html
 
 # Runtime cache of the resolved output language, written by the resolve-language hook so
 # non-interactive tooling (the tracker adapter's language gate) reads the same resolution.
-# Derived state, per-machine — never committed.
+# Derived state, per-machine — never committed. The case-report sibling is the same hook's
+# resolution of `case_report_language` (docs/adr/0012), and is derived state for the same reason.
 .claude/.resolved-language
+.claude/.resolved-case-report-language
 
 # Personal, non-shared workspace-config overrides — the workspace-config analogue of
 # .claude/settings.local.json. workspace.config.local.yaml overrides workspace.config.yaml
