@@ -31,6 +31,11 @@ Detect the default (parent) branch once and reuse it:
 base="$(scripts/vcs/default-branch.sh)"
 ```
 
+**A stated base wins.** When the invocation names the branch to build on — `off <branch>`,
+`--base <branch>`, "branch from main" — that is `base`, and auto-detection is skipped.
+`default-branch.sh` reads `origin/HEAD`, which answers a different question than "what does
+this work target", so detecting over a stated base silently builds on the wrong branch.
+
 ## START — branch before coding
 
 Goal: a clean feature branch off the newest default branch, so coding never happens on the base.
@@ -38,8 +43,8 @@ Goal: a clean feature branch off the newest default branch, so coding never happ
 1. Confirm the repo root. If the working tree has changes you don't intend to carry onto the new branch, stop and have them committed/stashed/cleaned first.
 2. Sync the base: `git fetch origin && git switch "$base" && git pull --ff-only origin "$base"`.
 3. Create the branch named for the ticket: `git switch -c "feature/<KEY>"`.
-   - The branch name is **`feature/` + the ticket key** — e.g. `feature/FM-9`, `feature/APP-123`. Normalize the key to uppercase; no slug, no description.
-4. Report the new branch and its base, then hand back so coding can start.
+   - The branch name is **`feature/` + the ticket key** — e.g. `feature/FM-9`, `feature/APP-123`. Normalize the key to uppercase; no slug, no description. A prefix stated by the caller (`fix/`, a hotfix name) wins over `feature/`, exactly as a stated base does.
+4. Prove the branch sits on that base before handing back: `git rev-parse HEAD` equals `git rev-parse "origin/$base"`, and `git log --oneline "origin/$base"..HEAD` prints nothing. Report the branch, its base, and that proof — a branch reported without it may be sitting on the wrong base.
 
 ## FINISH — PR/MR + self squash-merge (only after ALL tests pass)
 
