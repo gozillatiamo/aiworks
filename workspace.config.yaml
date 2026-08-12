@@ -3,6 +3,7 @@ org:
   product: "OFB"
 
 language: en
+case_report_language: th
 
 vcs:
   provider: gitlab

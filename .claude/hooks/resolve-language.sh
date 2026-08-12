@@ -30,10 +30,18 @@ root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 local_file="$root/workspace.config.local.yaml"
 default_file="$root/workspace.config.yaml"
 
-extract_language() {
-  grep -m1 -E '^language:' "$1" 2>/dev/null \
-    | sed -E 's/^language:[[:space:]]*"?'"'"'?([a-zA-Z_-]+)"?'"'"'?.*/\1/'
+# extract_key FILE KEY -> the scalar value of a top-level `KEY:` line, or empty.
+# One parser for both keys on purpose: a second copy is how the two resolutions drift apart.
+extract_key() {
+  local line val
+  line=$(grep -m1 -E "^$2:" "$1" 2>/dev/null) || return 0
+  [ -z "$line" ] && return 0
+  val="${line#*:}"          # drop the key
+  val="${val%%#*}"          # drop any trailing comment
+  printf '%s' "$val" | tr -d "[:space:]\"'"
 }
+
+extract_language() { extract_key "$1" language; }
 
 lang=""
 source_file=""
@@ -48,6 +56,23 @@ if [ -z "$lang" ] && [ -f "$default_file" ]; then
   [ -n "$lang" ] && source_file="workspace.config.yaml"
 fi
 
+# `case_report_language` — the language of a DEPLOYED-ENVIRONMENT CASE REPORT, independently of
+# the session language. A case report is read and acted on by whoever reported the case (support,
+# an operator), who is frequently not the person running the session and frequently does not read
+# the session's language. Same precedence as `language`; unset = follow `language`.
+#
+# Keyed on the ARTIFACT, not on which agent produced it: an identical report must not arrive in a
+# different language depending on whether it came from a spawned oncall agent or was answered
+# inline, an implementation detail the reader cannot see.
+case_lang=""
+if [ -f "$local_file" ]; then
+  case_lang=$(extract_key "$local_file" case_report_language)
+fi
+if [ -z "$case_lang" ] && [ -f "$default_file" ]; then
+  case_lang=$(extract_key "$default_file" case_report_language)
+fi
+[ -z "$case_lang" ] && case_lang="$lang"
+
 if [ -z "$lang" ]; then
   lang="en"
   source_file="default (no language: line found in either config)"
@@ -61,7 +86,18 @@ fi
 # write must never break the hook.
 if mkdir -p "$root/.claude" 2>/dev/null; then
   printf '%s\n' "$lang" > "$root/.claude/.resolved-language" 2>/dev/null || true
+  printf '%s\n' "$case_lang" > "$root/.claude/.resolved-case-report-language" 2>/dev/null || true
 fi
+
+# lang_name CODE -> a name to write in the injected prose. Unknown codes pass through as the code,
+# so a new language needs no change here to work.
+lang_name() {
+  case "$1" in
+    th) printf 'Thai' ;;
+    en) printf 'English' ;;
+    *)  printf '%s' "$1" ;;
+  esac
+}
 
 if [ "$lang" = "th" ]; then
   full_policy="English spine, Thai prose: write prose in Thai; keep titles, headings, labels/enum values, all code + code comments + git commit messages + branch names, and technical/domain/proper-noun terms in English. Code and checked-in repo docs (docs/, README, ADRs, PRD/BRD) stay English."
@@ -69,6 +105,17 @@ if [ "$lang" = "th" ]; then
 else
   full_policy="Unchanged — respond in English, no localization applied."
   brief_policy="respond in English — no localization applied."
+fi
+
+# The case-report exception, appended only when it actually differs from the session language.
+# Without this the session directive ("authoritative regardless of the user's input language") and
+# a localized case report contradict each other every turn, and the directive wins — which is the
+# same drift this hook was added on 2026-07-16 to stop. Making the exception part of the injected
+# policy is what keeps it mechanical instead of a matter of remembering.
+if [ "$case_lang" != "$lang" ]; then
+  case_name="$(lang_name "$case_lang")"
+  full_policy="$full_policy EXCEPTION — deployed-environment CASE REPORTS: the verdict, evidence and runbook of a live-environment investigation, as relayed in chat, plus the chat/Slack message handing it over, are written in $case_name prose with the same English spine (identifiers, amounts, table/column names, code, headings stay English and Arabic numerals). This holds however the report was produced — a spawned oncall agent or answered inline — because it is keyed on the artifact, not the agent. The \`.md\` case file itself stays English, like every other \`.md\`. Tickets (Jira) stay in the session language."
+  brief_policy="$brief_policy EXCEPTION: a deployed-environment case report relayed in chat, and its chat notification, are written in $case_name prose (English spine)."
 fi
 
 # SessionStart fires once per session (full explanation). UserPromptSubmit fires on
