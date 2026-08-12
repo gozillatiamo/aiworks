@@ -57,6 +57,22 @@ language: en                       # en (default) | th
                                    #   technical/transliterated/domain terms + proper nouns. Code and
                                    #   checked-in repo docs (docs/, README, ADRs, committed PRD/BRD files)
                                    #   are ALWAYS English. Numerals/dates stay Arabic. Default en = no change.
+case_report_language: th           # OPTIONAL. en | th — omit to follow `language`.
+                                   # The language of a DEPLOYED-ENVIRONMENT CASE REPORT only: the verdict,
+                                   #   evidence and runbook of a live-environment investigation as relayed in
+                                   #   chat, plus the chat message handing it over. Exists because that
+                                   #   artifact is read and acted on by whoever reported the case — support, an
+                                   #   operator — who is usually not the person running the session and often
+                                   #   does not read the session's language. `language: en` with
+                                   #   `case_report_language: th` is the normal combination: work in English,
+                                   #   hand the answer over in the reporter's language.
+                                   # Keyed on the ARTIFACT, not the agent: the same report must not arrive in a
+                                   #   different language depending on whether an investigator agent was spawned
+                                   #   or the question was answered inline. The English spine still applies
+                                   #   (identifiers, amounts, table/column names, headings, code), the `.md`
+                                   #   case file stays English like every other `.md`, and tracker tickets stay
+                                   #   in `language`. Resolved by .claude/hooks/resolve-language.sh; rationale
+                                   #   in docs/adr/0012-case-reports-are-localized-for-their-reader.md.
 
 # ── Observability (the traces/logs the perf + triage agents read) ──────────────
 # Where the performance-engineer and oncall agents get ground truth about a

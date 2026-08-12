@@ -85,6 +85,7 @@ The test the agent runs on each token: **is it on the English spine? → English
 | Plans, PRDs, summaries — the **`.html` interactive render** (via `/write-interactive-docs`) | English | Thai prose (English spine) |
 | Plan/PRD/summary content **posted into a ticket body or comment** | English | Thai prose (English spine) |
 | Slack / chat notifications | English | Thai prose (English spine) |
+| **Deployed-env case report** relayed in chat, and the chat message handing it over | governed by `case_report_language` — see below | governed by `case_report_language` — see below |
 | **Code & code comments** | English | English — never Thai |
 | **Git commit messages & branch names** | English | English — never Thai |
 | **ANY `.md` file you author** — plans, testcases, PRD/BRD/summary Markdown in `agent_logs/`, and every checked-in repo doc (`docs/`, `README`, `docs/adr/` ADRs, `CONTEXT.md`, PRD/BRD committed into a product repo) | English | English — never Thai |
@@ -96,6 +97,33 @@ bodies & comments, PR/MR descriptions & review discussion, Slack, and the `.html
 interactive render. So the *same* plan/PRD splits by output form: its `.md` is English (a stable
 artifact the next-phase agent reads); the same content posted into a ticket body or rendered to
 `.html` is Thai prose.
+
+### The case-report exception
+
+One surface does **not** follow `language`: a **deployed-environment case report** — the verdict,
+evidence and runbook of a live-environment investigation as relayed in chat, plus the chat message
+that hands the case over. It follows `case_report_language` instead, which defaults to `language`
+when unset.
+
+The reason is the reader. Every other surface in the table above is read by whoever set the config —
+you, your teammates, the agents. A case report is read and acted on by whoever *reported* the case:
+a support agent, an operator, someone on shift who is not in this session and often does not read
+the session's language. `language: en` with `case_report_language: th` is the normal pairing —
+investigate in English, hand the answer over in the reporter's language, with no human translating
+in between.
+
+Three boundaries hold regardless:
+
+- **The English spine still applies** — identifiers, amounts, `table.column` names, headings, code.
+- **The `.md` case file stays English**, like every other `.md`. Only the *relayed report* is
+  localized; the artifact a future agent reads is not.
+- **Tracker tickets stay in `language`.** A ticket is read by developers and outlives the case.
+
+It is keyed on the **artifact, not the agent**. The same report must not arrive in a different
+language depending on whether an investigator agent was spawned or the question was answered inline —
+that is an implementation detail the reader cannot see. Resolved mechanically by
+`.claude/hooks/resolve-language.sh`, which appends the exception to the policy it injects on every
+turn. Rationale: [ADR-0012](../adr/0012-case-reports-are-localized-for-their-reader.md).
 
 ## 4. How it's enforced
 

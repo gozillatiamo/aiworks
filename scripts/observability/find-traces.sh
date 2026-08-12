@@ -24,26 +24,30 @@
 #   --min-duration <ms> only spans slower than this
 #   --since <when>      -Nm/-Nh/-Nd, epoch ms, or ISO-8601 CARRYING ITS OFFSET. Default -7d.
 #   --until <when>      same formats. Default now.
+#   --at <when>         bracket an instant instead of a range: [at - window, at + window].
+#   --window <dur>      half-width for --at (30s/5m/2h/1d). Default 5m.
 #   --by <key>          group the count by a span attribute
 #   --interval <dur>    bucket the count over time (30m, 1h, 6h, 1d)
 #   --list              return matching trace ids instead of a count
 #
-# Time is unambiguous or refused. `2026-08-10T22:00:00+07:00` and `2026-08-10T15:00:00Z` are both
-# accepted and mean the same instant; a bare `2026-08-10T22:00:00` is REJECTED rather than read as
-# whatever the shell's timezone happens to be. This used to be read as local time, which is the
-# quietest possible bug: SigNoz stores UTC, so passing a trace's own clock time back verbatim
-# shifted the window (seven hours, under Asia/Bangkok) and returned a confident, well-formed
-# answer about the wrong hours. Epoch ms remains the option that cannot be misread.
+# Time is unambiguous or refused, and the parsing lives in lib.sh (obs_epoch_ms) so this script
+# and get-logs.sh cannot drift apart. `2026-08-10T22:00:00+07:00` and `2026-08-10T15:00:00Z` are
+# both accepted and mean the same instant; a bare `2026-08-10T22:00:00` is REJECTED rather than
+# read as whatever the shell's timezone happens to be. That reading is the quietest possible bug:
+# SigNoz stores UTC, so passing a trace's own clock time back verbatim shifted the window (seven
+# hours, under Asia/Bangkok) and returned a confident, well-formed answer about the wrong hours.
+# Epoch ms remains the option that cannot be misread.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 . "$HERE/lib.sh"
 
-usage() { sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '3,32p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 SERVICE=""; STATUS=""; OPERATION=""; ONLY_ERR=0; MIN_MS=""
 SINCE="-7d"; UNTIL="now"; BY=""; INTERVAL=""; LIST=0; LIMIT=20; RAW=0
+AT=""; WINDOW="5m"; RANGE_SET=0
 TAGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -54,8 +58,10 @@ while [[ $# -gt 0 ]]; do
     --error)        ONLY_ERR=1; shift ;;
     --tag)          TAGS+=("${2:-}"); shift 2 ;;
     --min-duration) MIN_MS="${2:-}"; shift 2 ;;
-    --since|--from) SINCE="${2:-}"; shift 2 ;;
-    --until|--to)   UNTIL="${2:-}"; shift 2 ;;
+    --since|--from) SINCE="${2:-}"; RANGE_SET=1; shift 2 ;;
+    --until|--to)   UNTIL="${2:-}"; RANGE_SET=1; shift 2 ;;
+    --at)           AT="${2:-}"; shift 2 ;;
+    --window)       WINDOW="${2:-}"; shift 2 ;;
     --by|--group-by) BY="${2:-}"; shift 2 ;;
     --interval)     INTERVAL="${2:-}"; shift 2 ;;
     --list)         LIST=1; shift ;;
@@ -69,47 +75,18 @@ done
 obs_require_config
 
 # --- time -----------------------------------------------------------------------------------
-_epoch_ms() {
-  local w="$1" secs
-  case "$w" in
-    now) echo "$(( $(date +%s) * 1000 ))"; return ;;
-    -*)  local n unit; n="${w%[mhd]}"; n="${n#-}"; unit="${w: -1}"
-         case "$unit" in
-           m) secs=$(( $(date +%s) - n*60 )) ;;
-           h) secs=$(( $(date +%s) - n*3600 )) ;;
-           d) secs=$(( $(date +%s) - n*86400 )) ;;
-           *) echo "unrecognized offset: $w" >&2; exit 1 ;;
-         esac ;;
-    ''|*[!0-9]*)
-         # An ISO-8601 timestamp is honoured only when it names its own offset. Without one there
-         # is no correct reading — `date` would apply the shell's zone, which is how a window
-         # silently moves seven hours — so this refuses instead of guessing.
-         local norm=""
-         case "$w" in
-           *Z)                       norm="${w%Z}+0000" ;;
-           *[+-][0-9][0-9]:[0-9][0-9]) norm="${w%??:??}${w: -5:2}${w: -2}" ;;
-           *[+-][0-9][0-9][0-9][0-9]) norm="$w" ;;
-           *) echo "refusing an ambiguous time: $w" >&2
-              echo "  It names no timezone, and reading it as local time would query the wrong" >&2
-              echo "  hours without failing. Pass epoch ms, or add an offset:" >&2
-              echo "    --since '${w}+07:00'   (Asia/Bangkok)   --since '${w}Z'   (UTC)" >&2
-              exit 1 ;;
-         esac
-         # BSD date wants %z as +0700; GNU date reads the original string, colon and all.
-         secs="$(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$norm" +%s 2>/dev/null || date -d "$w" +%s 2>/dev/null)" \
-           || { echo "unrecognized time: $w" >&2; exit 1; } ;;
-    *)   echo "$w"; return ;;   # already epoch ms
-  esac
-  echo "$(( secs * 1000 ))"
-}
-_dur_s() {
-  local d="$1" n="${1%[mhd]}" unit="${1: -1}"
-  case "$unit" in m) echo $(( n*60 )) ;; h) echo $(( n*3600 )) ;; d) echo $(( n*86400 )) ;;
-    *) echo "unrecognized interval: $d" >&2; exit 1 ;; esac
-}
-
-START="$(_epoch_ms "$SINCE")"; END="$(_epoch_ms "$UNTIL")"
-STEP=60; [[ -n "$INTERVAL" ]] && STEP="$(_dur_s "$INTERVAL")"
+# Parsing and the bare-ISO refusal live in lib.sh (obs_epoch_ms / obs_duration_s). They used to
+# live here as a private copy, which is exactly how get-logs.sh kept the local-time bug for
+# months after this script was fixed.
+if [[ -n "$AT" ]]; then
+  [[ $RANGE_SET -eq 1 ]] && { echo "--at brackets an instant and cannot be combined with --since/--until" >&2; exit 1; }
+  at_ms="$(obs_epoch_ms "$AT")"
+  half_ms=$(( $(obs_duration_s "$WINDOW") * 1000 ))
+  START=$(( at_ms - half_ms )); END=$(( at_ms + half_ms ))
+else
+  START="$(obs_epoch_ms "$SINCE")"; END="$(obs_epoch_ms "$UNTIL")"
+fi
+STEP=60; [[ -n "$INTERVAL" ]] && STEP="$(obs_duration_s "$INTERVAL")"
 
 # --- filters --------------------------------------------------------------------------------
 # SigNoz promotes some span attributes to first-class columns; everything else is a plain tag.
