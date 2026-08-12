@@ -8,10 +8,6 @@
         "matcher": "Read"
       },
       {
-        "command": "./.cursor/hooks/hook-shim.sh 'command -v rtk >/dev/null 2>&1 || exit 0; rtk hook claude'",
-        "matcher": "Shell"
-      },
-      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh'",
         "timeout": 30,
         "matcher": "Shell"

@@ -18,9 +18,8 @@
 # The payloads are near-identical (`tool_name`, `tool_input.file_path`,
 # `tool_input.command`, `session_id` all match); only a few things differ. This
 # shim translates those few things in both directions so the hooks under
-# .claude/hooks/ stay single-source and unmodified, and so third-party hooks
-# that only speak Claude (`rtk hook claude`, `sonar hook claude-pre-tool-use`)
-# keep working too.
+# .claude/hooks/ stay single-source and unmodified, and so a third-party hook
+# that only speaks Claude (`sonar hook claude-pre-tool-use`) keeps working too.
 #
 #   in   Cursor -> Claude   hook_event_name camelCase -> PascalCase
 #                           tool_name Shell -> Bash

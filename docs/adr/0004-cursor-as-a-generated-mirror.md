@@ -49,9 +49,9 @@ four small ways: the event names are camelCase, the shell tool is `Shell` and th
 than on stderr.
 
 `scripts/cursor/hook-shim.template.sh` translates those in both directions and execs the real hook
-unchanged. That keeps every hook single-source and Claude-shaped, and it is the only way the
-third-party hooks (`rtk hook claude`, `sonar hook claude-pre-tool-use`) work under Cursor at all,
-since those binaries only speak Claude.
+unchanged. That keeps every hook single-source and Claude-shaped, and it is the only way a
+third-party hook (`sonar hook claude-pre-tool-use`) works under Cursor at all, since that binary
+only speaks Claude.
 
 The shim is **copied** into each repo rather than symlinked. `.cursor/` is committed so that a
 standalone clone of one repo still works; a symlink from inside a repo up to the workspace root

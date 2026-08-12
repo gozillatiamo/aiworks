@@ -42,7 +42,6 @@
       "Shell(pnpm test:*)",
       "Shell(python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py:*)",
       "Shell(python3 .claude/skills/ui-ux-pro-max/scripts/search.py:*)",
-      "Shell(rtk *)",
       "Shell(scripts/dev.sh *)",
       "Shell(scripts/guard.sh *)",
       "Shell(scripts/perf.sh *)",

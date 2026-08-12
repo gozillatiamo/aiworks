@@ -875,7 +875,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
     node)                      printf 'see: nvm install --lts --reinstall-packages-from=current (a node switch moves the global bin dir)' ;;
     docker)                    printf 'see: install Docker Desktop — https://docker.com/products/docker-desktop' ;;
     claude)                    printf 'see: https://claude.com/claude-code — then re-run aiworks update --only claude' ;;
-    codegraph|rtk)             printf 'see: %s is installed outside this workspace; reinstall it the way you first did' "$1" ;;
+    codegraph)                 printf 'see: %s is installed outside this workspace; reinstall it the way you first did' "$1" ;;
     *)                         printf 'see: install %s' "$1" ;;
   esac
 }
@@ -883,7 +883,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
 check_tooling() {
   local g=tooling b
   local hard="git jq curl awk mani"
-  local soft="node pnpm docker claude codegraph dap rtk k6 yq"
+  local soft="node pnpm docker claude codegraph dap k6 yq"
 
   local miss=""
   for b in $hard; do command -v "$b" >/dev/null 2>&1 || miss="${miss:+$miss }$b"; done
@@ -920,7 +920,7 @@ check_tooling() {
   else
     local behind
     behind="$(brew outdated --quiet 2>/dev/null \
-              | grep -xE 'mani|glab|gh|jq|dap|rtk|k6|pnpm|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
+              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
     if [[ -n "$behind" ]]; then
       warn $g "brew-owned tool(s) behind" "$behind" "aiworks update --only brew" slow
     else
