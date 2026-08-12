@@ -358,7 +358,10 @@ check_workspace() {
     warn $g "no .graphifyignore" "the doc graph would index shell, config and generated mirrors" \
          "\$EDITOR .graphifyignore"
   elif [[ -f "$ROOT/graphify-out/graph.json" ]]; then
-    local dn; dn="$(grep -o '"label"' "$ROOT/graphify-out/graph.json" 2>/dev/null | grep -c . || true)"
+    # Count "norm_label", not "label": every node carries norm_label and nothing else does,
+    # whereas "label" also appears on community labels and hyperedges (it over-counted by 40
+    # on a 750-node graph).
+    local dn; dn="$(grep -o '"norm_label"' "$ROOT/graphify-out/graph.json" 2>/dev/null | grep -c . || true)"
     pass $g "doc graph" "${dn:-0} nodes"
   else
     warn $g "no doc graph" "prose queries answer from nothing — codegraph indexes no shell and no markdown" \
