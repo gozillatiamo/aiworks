@@ -114,14 +114,14 @@ is "a quoted -p operand still resolves" \
    "$(cmdof "$(run 'codegraph query Foo -p "web"')")"
 
 echo "== a shell wrapper's quotes are code, not inert text =="
-# `bash -c '...'` / `eval` / `xargs` / `rtk run|proxy` execute what they quote, so
-# stripping there would wave an unaddressed query straight through.
+# `bash -c '...'` / `eval` / `xargs` execute what they quote, so stripping there
+# would wave an unaddressed query straight through.
 is "bash -c hiding an unaddressed query"  2 "$(rc 'bash -c "cd svc && codegraph query Foo"')"
 is "eval hiding an unaddressed query"     2 "$(rc "eval 'cd svc && codegraph query Foo'")"
 # The word opening the quoted string: `"codegraph` is not the token `codegraph`, so
 # this shape slipped through even with the carve-out until both tokens were trimmed.
 is "bash -c with the word right after the quote" 2 "$(rc 'bash -c "codegraph explore Foo"')"
-is "rtk run hiding an unaddressed query"  2 "$(rc "rtk run 'codegraph explore Foo'")"
+is "xargs hiding an unaddressed query"    2 "$(rc "xargs 'codegraph explore Foo'")"
 
 echo "== blocked, because resolving it would mean guessing =="
 is "no -p, cwd outside any repo"      2 "$(rc 'codegraph explore Foo')"

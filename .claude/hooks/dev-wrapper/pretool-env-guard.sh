@@ -71,19 +71,6 @@ case "$tool" in
       if printf '%s' "$seg" | grep -Eq "\\b(cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
         deny "command dumps a .env file: $cmd"
       fi
-      # rtk renames the reading verbs, and a renamed verb dumps just the same.
-      # This is not hypothetical: the rtk PreToolUse hook rewrites `cat X` into
-      # `rtk read X`, so `rtk read` is a shape the model sees in its own
-      # transcript all day and will type directly — at which point none of the
-      # verbs above match and the file goes to the transcript in full.
-      # Measured against a throwaway key=value file: `rtk read` and `rtk pipe`
-      # print it verbatim, `rtk diff` prints every changed line with its value.
-      # (`rtk smart`/`rtk log`/`rtk wc` emit only a summary and `rtk ls|tree|find`
-      # list names, so they stay allowed.) The verb is anchored to `rtk` on
-      # purpose: bare `read` and `diff` are far too ordinary to block on sight.
-      if printf '%s' "$seg" | grep -Eq "\\brtk\\b([[:space:]]+-[^[:space:]]+)*[[:space:]]+(read|pipe|diff)\\b[^|;&]*$ENV_TOKEN"; then
-        deny "rtk would print .env contents: $cmd"
-      fi
       # grep prints matching lines (leaks values) UNLESS it is quiet:
       # -q/--quiet/--silent only sets the exit code, printing nothing —
       # that is the sanctioned "is this var set?" idiom, so allow it.

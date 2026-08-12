@@ -65,9 +65,9 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)
 # copy no longer holds it.
 #
 # EXCEPT when the command hands that quoted text to a shell — `bash -c '...'`,
-# `sh -c`, `eval`, `xargs`, `rtk run`, `rtk proxy`. There the quotes are not inert:
-# the text IS the command, and stripping it would let an unaddressed query through.
-# Those keep the raw command, exactly as before.
+# `sh -c`, `eval`, `xargs`. There the quotes are not inert: the text IS the command,
+# and stripping it would let an unaddressed query through. Those keep the raw
+# command, exactly as before.
 #
 # Still over-blocked, on purpose: a heredoc body that mentions the word. Stripping
 # heredocs too would be a real FALSE NEGATIVE, because whether the body is inert
@@ -75,7 +75,7 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)
 # the wrapper test above cannot see the second one (no `-c`). Over-blocking a doc is
 # the cheap direction; use Write/Edit for the file, which is not a Bash call at all.
 probe="$cmd"
-if ! printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(])([a-z]*sh[[:space:]]+-[a-zA-Z]*c[a-zA-Z]*|eval|xargs|rtk[[:space:]]+(run|proxy))([[:space:]]|$)'; then
+if ! printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(])([a-z]*sh[[:space:]]+-[a-zA-Z]*c[a-zA-Z]*|eval|xargs)([[:space:]]|$)'; then
   probe=$(printf '%s' "$cmd" | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g')
 fi
 
