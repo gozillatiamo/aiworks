@@ -102,3 +102,15 @@ the secret is added by hand.
 scripts/notify/send.sh --delete 'https://<team>.slack.com/archives/<CHANNEL>/p1700000000000000'
 scripts/notify/send.sh --delete 1700000000.000000 --channel <CHANNEL> --dry-run
 ```
+
+- **`--lookup-user <query>`** — search workspace members by name/email fragment
+  (case-insensitive substring against real_name/display_name/email); prints one
+  `<id>\t<real_name>\t<display_name>\t<email>` line per match. Read-only, its own mode.
+  Needs a **bot token + the `users:read`** scope (`users:read.email` too, or the email
+  column is always empty). A bot token can't call `users.search`, so this pages once
+  through `users.list` — good for a known name/email fragment, not fuzzy people-search.
+  Exits non-zero with no output when nothing matches.
+
+```sh
+scripts/notify/send.sh --lookup-user gem
+```

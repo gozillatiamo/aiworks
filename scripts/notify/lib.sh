@@ -11,6 +11,7 @@
 #   notify_delete CHANNEL TS [DRY]          — retract a message THIS bot posted. Prints "ok=1" + "deleted=<ts>". Bot-token only; a provider can only delete its own message
 #   notify_parse_permalink URL              — print "<channel> <ts>" for a message permalink, else nothing (so a retraction can be driven by the URL the send printed)
 #   notify_find_thread CHANNEL KEY          — print the ts of the newest message containing KEY (the review-request), else nothing (caller SKIPS). Best-effort; a provider that can't search returns empty
+#   notify_lookup_user QUERY                — print one "<id>\t<real_name>\t<display_name>\t<email>" line per member matching QUERY (case-insensitive substring), else nothing. Best-effort; a provider with no member directory returns empty
 #
 # CHANNEL is provider-neutral: an id, a #name, or empty (fall back to NOTIFY_CHANNEL, then
 # whatever the provider's default destination is — e.g. a webhook's bound channel).
