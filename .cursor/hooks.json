@@ -23,6 +23,11 @@
         "matcher": "Shell"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-git-guard.sh'",
         "timeout": 10,
         "matcher": "Shell"

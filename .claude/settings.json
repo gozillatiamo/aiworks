@@ -158,6 +158,11 @@
           },
           {
             "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-git-guard.sh",
             "timeout": 10
           },
@@ -449,7 +454,8 @@
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "caveman@caveman": true,
-    "debugging-code@debug-skill-marketplace": true
+    "debugging-code@debug-skill-marketplace": true,
+    "headroom-usage-indicator@headroom-tools": true
   },
   "extraKnownMarketplaces": {
     "karpathy-skills": {
@@ -469,6 +475,20 @@
         "source": "github",
         "repo": "AlmogBaku/debug-skill"
       }
+    },
+    "headroom-tools": {
+      "source": {
+        "source": "github",
+        "repo": "Ship-Wright/headroom-plugin"
+      }
     }
+  },
+  "env": {
+    "HCAT_GATE_BYTES": "65536",
+    "HCAT_GATE_NO_SNIFF": "1",
+    "DANGI_NUDGE_BYTES": "32768",
+    "DANGI_NO_NOTIFY": "1",
+    "HEADROOM_UPDATE_CHECK": "off",
+    "HF_HUB_OFFLINE": "1"
   }
 }

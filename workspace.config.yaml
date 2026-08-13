@@ -62,6 +62,10 @@ diagrams:
 artifacts:
   enabled: false
 
+headroom:
+  enabled: true
+  statusline: true
+
 voice:
   enabled: false
   tts:
