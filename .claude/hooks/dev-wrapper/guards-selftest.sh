@@ -261,6 +261,22 @@ t "hcat .env.example allowed"       0 pretool-env-guard.sh "$(j "hcat scripts/tr
 t "hcat of ordinary json allowed"   0 pretool-env-guard.sh "$(j 'hcat build/report.json')"
 # A word merely ENDING in cat must not inherit the verb match in either direction.
 t "whcat is not a reading verb"     0 pretool-env-guard.sh "$(j "./whcat report.json")"
+# A template is any path ENDING in .example, not just the exact `.env.example`.
+# Real files here: .env.amb.example and .env.local.example — both were blocked as
+# secrets by an exemption that matched one literal string. They hold no values, and
+# over-blocking is how a guard gets switched off. `.env.example.bak` is NOT a
+# template (it does not end in .example) and must stay blocked.
+t "hcat .env.amb.example allowed"    0 pretool-env-guard.sh "$(j "hcat dev-script/x/$E.amb.example")"
+t "hcat .env.local.example allowed"  0 pretool-env-guard.sh "$(j "hcat app/$E.local.example")"
+t "cat .env.local.example allowed"   0 pretool-env-guard.sh "$(j "cat app/$E.local.example")"
+t "Read .env.amb.example allowed"    0 pretool-env-guard.sh "$(jr "$TMP/svc/$E.amb.example")"
+t "Read .env.local.example allowed"  0 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local.example")"
+t "proxy.env.example allowed"        0 pretool-env-guard.sh "$(jr "$TMP/svc/proxy${E#.}.example")"
+t "env.config.example.json allowed"  0 pretool-env-guard.sh "$(jr "$TMP/svc/${E#.}.config.example.json")"
+# ...and the variants they were confused with are still secrets.
+t "hcat .env.amb blocked"            2 pretool-env-guard.sh "$(j "hcat dev-script/x/$E.amb")"
+t "Read .env.local blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local")"
+t "Read .env.example.bak blocked"    2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example.bak")"
 
 echo "--- pretool-hcat-size-guard ---"
 # hcat has no upper bound of its own, and headroom passes content through UNCHANGED when
