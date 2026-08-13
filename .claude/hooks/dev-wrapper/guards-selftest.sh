@@ -71,6 +71,24 @@ t "push -o merge_request.create blocked"  2 pretool-git-guard.sh "$(j 'git push 
 t "push --push-option= blocked"           2 pretool-git-guard.sh "$(j 'git push --push-option=merge_request.create origin x')"
 t "plain push -u allowed"                 0 pretool-git-guard.sh "$(j 'git push -u origin feature/APP-1')"
 t "add -f past .gitignore blocked"        2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f agent_logs/APP-1-svc-plan.md")"
+# Untracking a file that JUST became ignored is the one flow the ignored-path commit
+# check must not block: `git rm --cached` stages a DELETION, which removes the path
+# from the index rather than committing it. Before --diff-filter=d the guard saw the
+# staged path, matched it against .gitignore, and made the untrack commit impossible.
+# Its own repo, not svc: these two cases MUTATE the index, and a shared fixture would
+# leak that state into whatever case runs next.
+IGN="$TMP/ignoretrack"
+mkdir -p "$IGN/agent_logs" && git -C "$IGN" init -q
+printf 'agent_logs/\n' > "$IGN/.gitignore"
+git -C "$IGN" add .gitignore && git -C "$IGN" commit -q -m base
+: > "$IGN/agent_logs/legacy.md"
+git -C "$IGN" add -f agent_logs/legacy.md && git -C "$IGN" commit -q -m "tracked before the rule"
+git -C "$IGN" rm -q --cached agent_logs/legacy.md
+t "untrack of a newly-ignored path allowed"  0 pretool-git-guard.sh "$(j "git -C $IGN commit -m untrack")"
+# ...while ADDING an ignored path is still blocked, which is what the guard is for.
+: > "$IGN/agent_logs/fresh.md"
+git -C "$IGN" add -f agent_logs/fresh.md
+t "commit that ADDS an ignored path blocked" 2 pretool-git-guard.sh "$(j "git -C $IGN commit -m add-ignored")"
 t "add -f past info/exclude allowed"      0 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f localonly/wrapper.sh")"
 t "add -f mixed (one ignored) blocked"    2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f localonly/wrapper.sh agent_logs/APP-1-svc-plan.md")"
 t "add -f . blocked (too broad)"          2 pretool-git-guard.sh "$(j "git -C $TMP/svc add -f .")"

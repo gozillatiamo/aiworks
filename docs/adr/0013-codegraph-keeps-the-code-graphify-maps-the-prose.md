@@ -138,3 +138,10 @@ turned off (`codegraph telemetry off`). Graphify has none.
   same rule the test-suite gates already follow.
 - Round-trip count is now a recorded cost metric, not an intuition. Any future tool that trades one
   call for several should be measured against the ~32,000-tokens-per-turn figure before adoption.
+- **graphify is TWO installs, and the second is keyless.** `graphify hook install` is git plumbing;
+  `graphify install --platform claude` ships the `/graphify` skill, which is where the LLM work
+  happens — through the host assistant, never an API key. A workspace with only the first reads as
+  "graphify demands a credential", which is what the CLI's headless `--backend=` path wants and the
+  skill does not. Operating the graph — that split, the post-checkout hook that must be removed, and
+  the positional-label trap that silently rots community names — is
+  [docs/agents/graphify.md](../agents/graphify.md).
