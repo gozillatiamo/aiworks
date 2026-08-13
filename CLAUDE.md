@@ -16,11 +16,11 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so it is already in context. Keys documented
   in `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither — the rule beside it.
-- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0014`).
+- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0015`).
 - `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`):
   author on the Claude side, never hand-edit `.cursor/`, and open the `.code-workspace` **file**, not the folder.
-- `docs/agents/language.md` · `caveman.md` · `voice.md` · `stagehand.md` — the always-on output conventions,
-  summarized in their own sections below.
+- `docs/agents/language.md` · `caveman.md` · `ponytail.md` · `voice.md` · `stagehand.md` — the always-on
+  conventions, summarized in their own sections below.
 - `docs/agents/issue-tracker.md` — reading and writing tickets: the adapter, status names, id format.
 - `docs/agents/human-review.md` — a `Human:` review comment is a blocking directive the agents auto-route and
   resolve; a `Human:` **reply on an agent's own must-fix CLEARS it** — approve and advance, never re-open it.
@@ -32,8 +32,8 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace
   root · `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
   `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit
-  a persisted run script ·
-  `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per finding; `--fix` runs those.
+  a persisted run script · `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per
+  finding; `--fix` runs those.
 - `docs/agents/figma.md` · `image-generation.md` · `diagram-generation.md` — design, asset and diagram surfaces,
   each behind its own `enabled` flag (default OFF) · `headroom.md` — `hcat`, not `Read`/`cat`, for a big data file.
 - `scripts/k8s/README.md` — READ-ONLY Kubernetes triage (`k8s_triage` MCP) through a `view`-only impersonated
@@ -56,13 +56,15 @@ permission classifier, and is denied **silently, without prompting anyone**. Pip
 1-4 lines; redirect to a file if a later step needs the output. Readers and any `--dry-run` may be piped freely.
 Enforced by `pretool-adapter-pipe-guard.sh`.
 
-## Language and compression
+## Language, compression and code
 
-Both are injected mechanically every session, so this section carries only what those injections do **not** say.
-If the language directive is ever missing (a stripped session), read the config yourself before your first
-output; under `th`, **any `.md` file you author is still English — always**. And ⚠️ **compression is an OUTPUT
-rule: the first brief that spawns an agent is INPUT and goes in FULL** — that one message is the agent's whole
-world. Everything after it is caveman, style never content, so a follow-up's NEW facts still go in complete.
+All three are injected mechanically, so this section carries only what those injections do **not** say. If the
+language directive is ever missing (a stripped session), read the config yourself first; under `th`, **any `.md`
+file you author is still English — always**. ⚠️ **Compression is an OUTPUT rule: the first brief that spawns an
+agent is INPUT and goes in FULL** — that one message is the agent's whole world; everything after it is caveman,
+style never content, so a follow-up's NEW facts still go in complete. **Ponytail is that rule for code** — YAGNI,
+reuse, stdlib/native before a dependency — and it stops at three things: a repo's own test suite, a ticket's
+acceptance criteria, the adapters. It shortens the implementation, never the requirement (`ponytail.md`).
 
 ## Speaking and showing
 

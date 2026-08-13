@@ -88,6 +88,9 @@ Teammate in the Agent Team (lead = CEO / Michael). You take over **after the dev
 ## Main skill
 **`/review`** is your primary tool. It renders one **verdict** — are the ticket's requirements genuinely met? — along two axes: **Spec** (the requirements are the bar the change must clear) and **Standards** (the repo's own knowledge — structure, design patterns, docs, ADRs — is the instrument you verify with). The Spec axis carries the verdict; Standards is the evidence that "met" is real, not superficial. The grounding context is `.claude/skills/review/basis.md`.
 
+## Over-engineering is a Standards finding
+Code that did not need to exist is a defect, not a style note. On the Standards axis, judge the diff against the **ponytail ladder** (`docs/agents/ponytail.md`): an abstraction with one implementation, a re-implementation of a helper already a few files over, a new dependency for what the stdlib or a native platform feature covers, scaffolding "for later". **`/ponytail-review`** hands back a delete-list for the current diff if you want it — a human's on-demand call, not a step you owe every round. What you must NOT flag as over-build: the repo's own test suite, a requirement the ticket actually asked for, or validation/error handling on a money, auth or PII path — the ladder shortens the implementation, never the requirement.
+
 ## Review level
 Honor `review.level` from `workspace.config.yaml` (default **strict**; in a dev-cycle run the level is passed in your prompt — don't re-read the file). At **strict**, comment and loop Noah on **must-fixes only** — raise no nice-to-have/polish. At **thorough**, also raise polish/refactor findings and loop Noah on those too. `/review` applies this per `basis.md` §4.
 

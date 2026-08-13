@@ -457,6 +457,7 @@
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "caveman@caveman": true,
+    "ponytail@ponytail": true,
     "debugging-code@debug-skill-marketplace": true,
     "headroom-usage-indicator@headroom-tools": true
   },
@@ -484,6 +485,12 @@
         "source": "github",
         "repo": "Ship-Wright/headroom-plugin"
       }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
     }
   },
   "env": {
@@ -492,6 +499,8 @@
     "DANGI_NUDGE_BYTES": "32768",
     "DANGI_NO_NOTIFY": "1",
     "HEADROOM_UPDATE_CHECK": "off",
-    "HF_HUB_OFFLINE": "1"
+    "HF_HUB_OFFLINE": "1",
+    "PONYTAIL_DEFAULT_MODE": "full",
+    "PONYTAIL_SUBAGENT_MATCHER": "^(developer|development-planner|qa-runner|code-reviewer|guardian-engineer|general-purpose|claude|plan)$|cavecrew-builder"
   }
 }

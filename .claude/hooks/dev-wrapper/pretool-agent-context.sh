@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# PreToolUse(Agent) hook — bake the resolved OUTPUT LANGUAGE, and the output-compression
-# rule, into the spawn brief itself instead of hoping the subagent resolves them.
+# PreToolUse(Agent) hook — bake the resolved OUTPUT LANGUAGE, the output-compression rule, and
+# the workspace's code-minimalism carve-outs into the spawn brief itself instead of hoping the
+# subagent resolves them.
 #
 # This is the last hole in a fix that has now been attempted four times. `language` lives
 # in workspace.config.yaml, overridden by a personal, git-ignored workspace.config.local.yaml
@@ -79,6 +80,39 @@ if [ "$needs_caveman" -eq 1 ]; then
   case "$prompt" in
     *CAVEMAN_DIRECTIVE*) ;;                            # a workflow already baked it in
     *) add="$add CAVEMAN_DIRECTIVE — invoke \`/caveman:caveman\` and write every report, comment, and reply ultra-compressed: drop articles/filler/pleasantries/hedging, fragments are fine, technical accuracy stays FULL, and code + identifiers + error strings stay verbatim. It governs how you WRITE, never what you DO: never skip a tool call, never skip a tool-availability check, and never claim a tool or shell is unavailable without first actually running it. It never applies to your INPUT either: the brief that spawned you stands in FULL — do not compress or summarize it away. If you spawn or message another agent, its FIRST brief goes out in FULL for the same reason, while every follow-up after that spawn IS compressed (the context already landed; a follow-up is a pointer, not a context transfer) — style only, so any NEW fact in a follow-up still goes in complete." ;;
+  esac
+fi
+
+# Code minimalism: the LADDER itself is not our text to carry. The ponytail plugin ships its own
+# SubagentStart hook, so every spawn whose agent_type matches PONYTAIL_SUBAGENT_MATCHER already
+# receives the measured ruleset verbatim — re-stating it here would be ~1.5 KB of duplicate tokens
+# in the one place we are trying to make cheaper. What the plugin cannot know is where this
+# workspace refuses to be lazy, so that is all this injects.
+#
+# Gated on the SAME matcher the plugin reads, so the two can never disagree about who is a
+# code-shaping agent: an oncall or designer spawn that gets no ladder must not get carve-outs for
+# a ladder it never received. Unset matcher = the plugin injects everywhere, so we do too. A regex
+# grep cannot parse (exit >= 2) fails OPEN — carve-outs on a spawn that did not need them cost
+# tokens; a money path built without them costs more.
+agent_matches_ponytail() {
+  [ -n "${PONYTAIL_SUBAGENT_MATCHER:-}" ] || return 0
+  [ -n "$agent" ] || return 0
+  printf '%s' "$agent" | grep -Eiq "$PONYTAIL_SUBAGENT_MATCHER" 2>/dev/null
+  case $? in 0) return 0 ;; 1) return 1 ;; *) return 0 ;; esac
+}
+
+# Suppressed by the literal token, NOT by the word "ponytail". A definition is free to mention
+# `/ponytail-review` as a review lens without thereby waiving the carve-outs — that is the
+# opposite of what naming ponytail there means. Today no definition carries the token, so this
+# hook is the sole carrier for every named agent; it exists so one CAN opt out later.
+needs_ponytail=1
+if [ -n "$agent" ] && [ -f "$agent_file" ] && grep -q 'PONYTAIL_GUARDRAILS' "$agent_file" 2>/dev/null; then
+  needs_ponytail=0
+fi
+if [ "$needs_ponytail" -eq 1 ] && agent_matches_ponytail; then
+  case "$prompt" in
+    *PONYTAIL_GUARDRAILS*) ;;                          # a workflow already baked it in
+    *) add="$add PONYTAIL_GUARDRAILS — ponytail (\`/ponytail:ponytail\`, in Cursor \`/ponytail\`) governs HOW MUCH CODE you write: YAGNI, reuse what this repo already has, stdlib and native platform features before a new dependency, one line before fifty. Three things about THIS workspace it cannot know, and they win wherever they collide with it. (1) TESTS — the repo's own suite (Cypress/Newman/k6, \`cargo test\`, \`scripts/dev.sh test\`) is standing scope, never the single \"one runnable check\" ponytail settles for, and a gate NEVER fails open: no receipt means recorded as not run (docs/agents/loadtest-gate.md). (2) SCOPE — a ticket's acceptance criteria are the contract. The ladder shortens the implementation, never the requirement; anything genuinely out of scope leaves through the handoff \`deferred\`/\`partial\` channel with evidence, never a one-line aside in a reply. (3) ADAPTERS — rung 5 (\"an installed dependency solves it\") never means calling \`gh\`/\`glab\`/the Jira, Slack or SigNoz API directly: the adapter under \`scripts/{vcs,tracker,notify,observability}/\` IS the installed dependency here. Money, auth and PII paths keep their validation and error handling in FULL — laziness stops at the trust boundary. Full text: docs/agents/ponytail.md." ;;
   esac
 fi
 
