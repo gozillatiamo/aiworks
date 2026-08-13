@@ -1011,7 +1011,9 @@ read -r -d '' BASE_SETTINGS <<'JSON'
     "DANGI_NUDGE_BYTES": "32768",
     "DANGI_NO_NOTIFY": "1",
     "HEADROOM_UPDATE_CHECK": "off",
-    "HF_HUB_OFFLINE": "1"
+    "HF_HUB_OFFLINE": "1",
+    "PONYTAIL_DEFAULT_MODE": "full",
+    "PONYTAIL_SUBAGENT_MATCHER": "^(developer|development-planner|qa-runner|code-reviewer|guardian-engineer|general-purpose|claude|plan)$|cavecrew-builder"
   },
   "enabledMcpjsonServers": ["codegraph"],
   "permissions": {
@@ -1029,11 +1031,15 @@ read -r -d '' BASE_SETTINGS <<'JSON'
     ]
   },
   "enabledPlugins": {
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "ponytail@ponytail": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
       "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
+    },
+    "ponytail": {
+      "source": { "source": "github", "repo": "DietrichGebert/ponytail" }
     }
   },
   "hooks": {
@@ -1074,8 +1080,8 @@ if have jq; then
   # are the shared safety net and SHOULD converge; permissions are that repo's own call.
   #
   # `enabledPlugins` + `extraKnownMarketplaces` converge for the same reason as hooks: a
-  # repo-only session is a first-class way to work here, and caveman (output compression) is
-  # supposed to hold in one. These two keys DECLARE and enable the plugin; they do NOT
+  # repo-only session is a first-class way to work here, and caveman (output compression) plus
+  # ponytail (code minimalism) are supposed to hold in one. These two keys DECLARE and enable the plugin; they do NOT
   # install it — measured, because the opposite reads as working: a repo carrying both keys
   # still answered NOT-FOUND for `caveman:caveman` while the workspace root answered
   # AVAILABLE under the same probe. The install is a machine-local step, done once at USER
@@ -1093,10 +1099,17 @@ if have jq; then
   # of `env` does not converge: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is a baseline for a NEW repo,
   # not something to switch on across 21 existing ones. `env` is an OBJECT, so `*` deep-merges it
   # and a repo's own variables survive.
+  #
+  # `PONYTAIL_` converges for the same reason. Those two knobs are not preferences: DEFAULT_MODE
+  # pins the benchmarked `full` level so a stray ~/.config/ponytail/config.json on one machine
+  # cannot quietly hand a money path the `ultra` persona, and SUBAGENT_MATCHER is the cost lever —
+  # unset, the plugin injects its ~1.5 KB ruleset into EVERY subagent, including the read-only ones
+  # that never write a line of code. Both have to hold in a repo-only session too, or the pinning
+  # holds in the workspace root and nowhere else. See docs/agents/ponytail.md.
   if [[ -f "$SETTINGS_FILE" ]]; then
     base_for_merge="$(printf '%s' "$BASE_SETTINGS" | jq '
       {hooks, enabledPlugins, extraKnownMarketplaces}
-      + {env: ((.env // {}) | with_entries(select(.key | test("^(HCAT_|DANGI_|HEADROOM_|HF_HUB_OFFLINE)"))))}
+      + {env: ((.env // {}) | with_entries(select(.key | test("^(HCAT_|DANGI_|HEADROOM_|HF_HUB_OFFLINE|PONYTAIL_)"))))}
     ')"
   else
     base_for_merge="$BASE_SETTINGS"
