@@ -100,4 +100,9 @@ workspace.config.local.yaml
 /.claude/skills/caveman-review
 /.claude/skills/frontend-design
 /.claude/skills/skill-creator
+/.claude/skills/ponytail-audit
+/.claude/skills/ponytail-debt
+/.claude/skills/ponytail-gain
+/.claude/skills/ponytail-help
+/.claude/skills/ponytail-review
 # <<< aiworks cursor: plugin-skill links

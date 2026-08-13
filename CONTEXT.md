@@ -49,6 +49,22 @@ The roles that run the pipeline (CEO, CPO, CTO, developer, code-reviewer, QA, �
 `.claude/agents/*.md` definition reused by *both* the Agent tool and the headless Workflows.
 → `.claude/agents/`
 
+**Code-shaping agent**:
+The subset of the agent team whose output becomes code — planner, developer, reviewer, guardian,
+qa-runner, and the def-less builders. The only spawns **ponytail** is injected into; named by
+`PONYTAIL_SUBAGENT_MATCHER`. → `docs/agents/ponytail.md`
+
+**Ponytail** / **the ladder**:
+The code-minimalism baseline (`ponytail:ponytail`; `/ponytail` in Cursor). Before writing code an
+agent stops at the first rung that holds: YAGNI → reuse → stdlib → native platform feature →
+installed dependency → one line → minimum that works. Governs *what gets built*, as **caveman**
+governs *what gets said*. → `docs/agents/ponytail.md`
+
+**Carve-out** (ponytail):
+One of the three places this workspace overrides ponytail — a repo's own **test suite**, a ticket's
+**acceptance criteria**, and the provider **adapters**. Injected beside the ladder on every spawn
+path; the ladder shortens the implementation, never the requirement.
+
 **mani**:
 The cross-repo CLI (`sync` · `list projects` · `exec` · `run`) driven by the generated
 `mani.d/<product>.yaml` files.

@@ -554,9 +554,9 @@ do_target() {
 # ── plugin skills → PROJECT scope (.claude/skills) ────────────────────────────
 # Plugin skills live under ~/.claude/plugins/marketplaces/<mp>/skills/<name>/, which is
 # NOT a path Cursor scans (it reads .cursor/skills and ~/.agents/skills). This workspace
-# expects every agent to write through one of them — `caveman` — so an unlinked plugin
-# skill is not a missing nicety: it is 16 agent definitions pointing at a skill that
-# cannot resolve.
+# expects every agent to write through one of them — `caveman` — and every code-writing one
+# to build through `ponytail`, so an unlinked plugin skill is not a missing nicety: it is 16
+# agent definitions pointing at a skill that cannot resolve.
 #
 # PROJECT scope, not ~/.agents/skills (what `--user` used to do). .claude/skills already
 # reaches Cursor through the .cursor/skills directory link, so ONE symlink per plugin skill
@@ -601,16 +601,17 @@ GI_PLUGIN_END='# <<< aiworks cursor: plugin-skill links'
 #
 # Two lists, because the dependency differs by target. The ROOT holds the agent
 # definitions, so it vendors everything they reference. A REPO clone has no agent
-# definitions of its own — only the mandated output-compression baseline has to hold in a
-# repo-only session, and `debugging-code` there is a human's on-demand call, served by the
-# plugin itself in Claude Code.
+# definitions of its own — only the two mandated baselines have to hold in a repo-only
+# session (caveman for output compression, ponytail for code minimalism), and
+# `debugging-code` there is a human's on-demand call, served by the plugin itself in
+# Claude Code.
 #
 # Derived by hand on purpose: `grep -rl` over the definitions would be cleverer, but
 # anyone auditing a committed third-party copy needs to see WHY it is committed. Add a name
 # here when a definition starts depending on it (references today: caveman 18 files,
-# debugging-code 3).
-VENDOR_ROOT="caveman debugging-code"
-VENDOR_REPO="caveman"
+# ponytail 7, debugging-code 3).
+VENDOR_ROOT="caveman ponytail debugging-code"
+VENDOR_REPO="caveman ponytail"
 
 plugin_skill_src_for() { # plugin_skill_src_for <skill-name> -> path, or empty
   local want="$1" p

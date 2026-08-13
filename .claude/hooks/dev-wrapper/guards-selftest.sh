@@ -355,6 +355,44 @@ t "agent-context never blocks"      0 pretool-agent-context.sh "$(ja general-pur
 t "agent-context on empty prompt"   0 pretool-agent-context.sh "$(ja general-purpose '')"
 has "unknown agent type treated as def-less" yes "$(ac th no-such-agent 'Find X.')" 'CAVEMAN_DIRECTIVE'
 
+echo "== pretool-agent-context: ponytail carve-outs reach the code-shaping agents only =="
+# The LADDER is the ponytail plugin's own SubagentStart injection and is not this hook's job.
+# What is asserted here is the workspace half: who gets the carve-outs, and who must not.
+for r in th en; do
+  printf 'skills:\n  - caveman:caveman\n' > "$TMP/$r/.claude/agents/ponytailagent.md"
+  printf 'PONYTAIL_GUARDRAILS carried inline by this definition.\n' >> "$TMP/$r/.claude/agents/ponytailagent.md"
+  printf 'skills:\n  - caveman:caveman\nRun /ponytail-review on the diff.\n' > "$TMP/$r/.claude/agents/reviewmention.md"
+done
+PT_M='^(developer|ponytailagent|reviewmention)$|cavecrew-builder'
+
+acm() { # acm <root> <matcher> <subagent_type> <prompt> -> the rewritten prompt
+  jq -cn --arg a "$3" --arg p "$4" \
+    '{tool_name:"Agent",tool_input:{subagent_type:$a,description:"d",prompt:$p}}' \
+  | PONYTAIL_SUBAGENT_MATCHER="$2" CLAUDE_PROJECT_DIR="$TMP/$1" "$H/pretool-agent-context.sh" 2>/dev/null \
+  | jq -r '.hookSpecificOutput.updatedInput.prompt // ""' 2>/dev/null
+}
+
+has "matcher: code-shaping type gets carve-outs" yes "$(acm th "$PT_M" developer 'Build X.')" 'PONYTAIL_GUARDRAILS'
+# The cost lever. An oncall/designer/planner spawn receives no ladder from the plugin, so
+# handing it carve-outs for a ladder it never got is pure tokens — and the two must agree.
+has "matcher: non-code type gets none"           no  "$(acm th "$PT_M" oncall 'Investigate X.')" 'PONYTAIL_GUARDRAILS'
+has "matcher: plugin agent type matches"         yes "$(acm th "$PT_M" 'caveman:cavecrew-builder' 'Edit X.')" 'PONYTAIL_GUARDRAILS'
+# Unset matcher = the plugin injects into every subagent, so the carve-outs follow it there.
+has "no matcher: everyone gets carve-outs"       yes "$(acm th '' documentor 'Write X.')" 'PONYTAIL_GUARDRAILS'
+# A regex grep cannot parse must fail OPEN: carve-outs where they were not needed cost
+# tokens, a money path built without them costs more.
+has "unparseable matcher fails open"             yes "$(acm th '*[' developer 'Build X.')" 'PONYTAIL_GUARDRAILS'
+# Idempotence — dev-cycle bakes its own copy into the plan/build/pr-fix prompts.
+has "already-injected brief untouched (ponytail)" no "$(acm th "$PT_M" developer 'X PONYTAIL_GUARDRAILS — …')" 'ponytail (`/ponytail:ponytail`'
+# Opt-out is the literal TOKEN, never the word: a definition naming /ponytail-review as a
+# review lens is asking for MORE ponytail, not waiving the carve-outs.
+has "definition carrying the token opts out"     no  "$(acm th "$PT_M" ponytailagent 'Do X.')" 'PONYTAIL_GUARDRAILS —'
+has "mentioning /ponytail-review does not"       yes "$(acm th "$PT_M" reviewmention 'Review X.')" 'PONYTAIL_GUARDRAILS'
+# Language and compression are unaffected by any of it.
+out=$(acm th "$PT_M" developer 'Build X.')
+has "carve-outs coexist with language"           yes "$out" 'OUTPUT LANGUAGE = th'
+has "original brief still intact"                yes "$out" 'Build X.'
+
 echo "--- pretool-submodule-guard ---"
 #
 # Fixture: a real superproject with a real submodule mount, built in the temp dir so
