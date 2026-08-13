@@ -233,6 +233,36 @@ t "ls of the dir allowed"           0 pretool-env-guard.sh "$(j 'ls -la scripts/
 t "wc of .env allowed"              0 pretool-env-guard.sh "$(j "wc -l scripts/tracker/$E")"
 # `read` and `diff` unanchored are ordinary words — blocking them would be noise.
 t "bare diff of .env.example ok"    0 pretool-env-guard.sh "$(j "diff a/$E.example b/$E.example")"
+# hcat is the headroom plugin's compress-at-the-source reader: a RENAMED cat, and exactly the
+# case the comment above warns about. It needs its OWN alternative because `\bcat\b` cannot
+# match "hcat" — the leading h is a word character, so there is no boundary before "cat".
+t "hcat .env blocked"               2 pretool-env-guard.sh "$(j "hcat scripts/tracker/$E")"
+t "hcat quoted .env blocked"        2 pretool-env-guard.sh "$(j "hcat \"scripts/notify/$E\"")"
+t "hcat .env after && blocked"      2 pretool-env-guard.sh "$(j "cd /tmp && hcat $E")"
+t "hcat .env.example allowed"       0 pretool-env-guard.sh "$(j "hcat scripts/tracker/$E.example")"
+t "hcat of ordinary json allowed"   0 pretool-env-guard.sh "$(j 'hcat build/report.json')"
+# A word merely ENDING in cat must not inherit the verb match in either direction.
+t "whcat is not a reading verb"     0 pretool-env-guard.sh "$(j "./whcat report.json")"
+
+echo "--- pretool-hcat-size-guard ---"
+# hcat has no upper bound of its own, and headroom passes content through UNCHANGED when
+# compression would not help — measured on a 250 MB log: 0.0% saved, 262 MB printed, 80s.
+# The size guard is the ceiling. Fixtures are sparse files so the suite stays instant.
+mkdir -p "$TMP/big"
+: > "$TMP/big/small.json"; printf '{"a":1}' > "$TMP/big/small.json"
+dd if=/dev/zero of="$TMP/big/huge.log" bs=1 count=0 seek=3145728 2>/dev/null   # 3 MiB > the 2 MiB cap
+jc() { jq -cn --arg c "$1" --arg d "$TMP/big" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+t "hcat of a 3 MiB file blocked"    2 pretool-hcat-size-guard.sh "$(jc "hcat $TMP/big/huge.log")"
+t "hcat quoted huge blocked"        2 pretool-hcat-size-guard.sh "$(jc "hcat \"$TMP/big/huge.log\"")"
+t "hcat huge relative to cwd blocked" 2 pretool-hcat-size-guard.sh "$(jc 'hcat huge.log')"
+t "hcat huge after && blocked"      2 pretool-hcat-size-guard.sh "$(jc "cd /tmp && hcat $TMP/big/huge.log")"
+t "hcat of a small file allowed"    0 pretool-hcat-size-guard.sh "$(jc "hcat $TMP/big/small.json")"
+# Scope is the verb this workspace introduced. A bare `cat` of a huge file is pre-existing
+# behaviour that posttool-output-warden.sh already reports on.
+t "plain cat of huge allowed"       0 pretool-hcat-size-guard.sh "$(jc "cat $TMP/big/huge.log")"
+t "missing file fails open"         0 pretool-hcat-size-guard.sh "$(jc 'hcat /nonexistent/x.json')"
+t "the word hcat alone allowed"     0 pretool-hcat-size-guard.sh "$(jc 'echo hcat')"
+t "non-Bash tool ignored"           0 pretool-hcat-size-guard.sh "$(jr "$TMP/big/huge.log")"
 
 echo "== pretool-agent-context: the spawn brief carries the resolved language =="
 # This hook REWRITES rather than blocks, so exit-code cases prove nothing on their own —

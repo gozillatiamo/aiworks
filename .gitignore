@@ -113,6 +113,7 @@ workspace.config.local.yaml
 
 /turnover-commission-batch/
 
+
 # >>> aiworks cursor: plugin-skill links (generated — do not edit by hand)
 # Symlinks into ~/.claude/plugins — absolute, per-machine paths, so committing one
 # gives every teammate a dangling skill dir. Cursor still READS an ignored skill
@@ -124,4 +125,6 @@ workspace.config.local.yaml
 /.claude/skills/caveman-help
 /.claude/skills/caveman-review
 /.claude/skills/frontend-design
+/.claude/skills/doctor
+/.claude/skills/headroom-usage-indicator
 # <<< aiworks cursor: plugin-skill links

@@ -456,6 +456,72 @@ ensure_dap() {
   return 0
 }
 
+# Read headroom.<key> out of the workspace config, personal override first. A tiny reader
+# rather than a dependency on aiworks-doctor's cfg(): setup.sh runs before anything else and
+# must not need another script sourced. Only reaches into the `headroom:` block, so a same-named
+# key under another top-level block cannot answer for it. macOS bash 3.2 safe.
+_headroom_cfg() {  # <key> [default]
+  local f v
+  for f in "$PWD/workspace.config.local.yaml" "$PWD/workspace.config.yaml"; do
+    [[ -f "$f" ]] || continue
+    v="$(awk -v k="$1" '
+      /^[A-Za-z_]/ { inblk = ($0 ~ /^headroom:[[:space:]]*$/) }
+      inblk && $1 == k":" { print $2; exit }
+    ' "$f" 2>/dev/null)"
+    [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
+  done
+  printf '%s' "${2:-}"
+}
+
+# Ensure the headroom compression ENGINE is on PATH. The plugin
+# (headroom-usage-indicator@headroom-tools, installed by ensure_claude_plugins below) is only a
+# gauge and a set of hooks — `hcat`, the MCP launcher and the savings badge all shell out to
+# this binary, and without it the gate silently fails open and the badge sits red forever.
+#
+# Extra is [mcp], NOT [all]: [all] drags in torch/ONNX/LLMLingua for the ML relevance models and
+# the proxy, none of which this workspace uses — we run no proxy (see docs/agents/headroom.md)
+# and headroom passes code through by design, so the ML tiers buy nothing but install time and
+# disk. [mcp] is ~289 MB and covers `mcp serve` + the SmartCrusher/Kompress pipeline hcat needs.
+#
+# Best-effort + idempotent. macOS bash 3.2 safe.
+ensure_headroom() {
+  case "$(_headroom_cfg enabled true | tr '[:upper:]' '[:lower:]')" in
+    false|no|0|off) log "headroom.enabled is off — skipping the compression engine."; return 0 ;;
+  esac
+  if command -v headroom >/dev/null 2>&1; then
+    log "headroom already installed ($(headroom --version 2>/dev/null | head -1))."
+    return 0
+  fi
+  log "headroom not found — installing…"
+  if command -v uv >/dev/null 2>&1; then
+    run_glance "headroom: uv tool install" uv tool install --python 3.13 "headroom-ai[mcp]" \
+      || warn "uv tool install headroom-ai[mcp] failed."
+  elif command -v pipx >/dev/null 2>&1; then
+    run_glance "headroom: pipx install" pipx install "headroom-ai[mcp]" \
+      || warn "pipx install headroom-ai[mcp] failed."
+  elif command -v python3 >/dev/null 2>&1; then
+    # ~/.headroom-venv is the plugin's own documented last-resort location — its mcp-launcher.sh
+    # and bin/hcat both fall back to exactly this path, so a venv here is found without config.
+    run_glance "headroom: venv install" sh -c \
+      'python3 -m venv "$HOME/.headroom-venv" && "$HOME/.headroom-venv/bin/pip" install -q "headroom-ai[mcp]"' \
+      || warn "venv install of headroom-ai[mcp] failed."
+  else
+    warn "no uv, pipx or python3 — cannot install headroom. Install it by hand: uv tool install --python 3.13 'headroom-ai[mcp]'"
+    return 0
+  fi
+  # Surface the common user-local bin dirs so the check below sees the binary in THIS shell.
+  local d
+  for d in "$HOME/.local/bin" "$HOME/bin" "$HOME/.headroom-venv/bin"; do
+    if [[ -x "$d/headroom" && ":$PATH:" != *":$d:"* ]]; then export PATH="$d:$PATH"; fi
+  done
+  if command -v headroom >/dev/null 2>&1; then
+    log "headroom installed ($(headroom --version 2>/dev/null | head -1))."
+  else
+    warn "headroom still not on PATH after install — hcat and the headroom MCP will fail open (no compression, no badge). Install by hand: uv tool install --python 3.13 'headroom-ai[mcp]', then open a new shell."
+  fi
+  return 0
+}
+
 # Ensure every plugin this workspace declares in .claude/settings.json `enabledPlugins` is
 # actually INSTALLED, at USER scope. Best-effort + idempotent. macOS bash 3.2 safe.
 #

@@ -7,8 +7,8 @@ git op. Repos are declared under `products[].repos[]` in `workspace.config.yaml`
 
 ⚠️ **Never read `.env` / `.env.*`** (any adapter's `scripts/*/.env`, or anything matched by the blanket `.env*`
 gitignore rule) — **except `.env.example`** templates, which hold no real values. No `Read`, no
-`cat`/`grep`/`sed`/`head`/`tail` (nor any tool that renames those reading verbs — a renamed form is no way past
-this), and no `bash -x`/`set -x` around code that sources one. To prove a var is set
+`cat`/`grep`/`sed`/`head`/`tail`/`hcat` (nor any tool that renames those reading verbs — a renamed form is no
+way past this), and no `bash -x`/`set -x` around code that sources one. To prove a var is set
 without exposing it use `grep -q '^VAR=.\+' .env` — exit code only, never a form that echoes the value. Enforced
 by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter secret is a live credential.
 
@@ -16,7 +16,7 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so it is already in context. Keys documented
   in `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither — the rule beside it.
-- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0008`).
+- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0014`).
 - `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`):
   author on the Claude side, never hand-edit `.cursor/`, and open the `.code-workspace` **file**, not the folder.
 - `docs/agents/language.md` · `caveman.md` · `voice.md` · `stagehand.md` — the always-on output conventions,
@@ -35,7 +35,7 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
   a persisted run script ·
   `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per finding; `--fix` runs those.
 - `docs/agents/figma.md` · `image-generation.md` · `diagram-generation.md` — design, asset and diagram surfaces,
-  each behind its own `enabled` flag (default OFF).
+  each behind its own `enabled` flag (default OFF) · `headroom.md` — `hcat`, not `Read`/`cat`, for a big data file.
 - `scripts/k8s/README.md` — READ-ONLY Kubernetes triage (`k8s_triage` MCP) through a `view`-only impersonated
   identity, so the **API server** rejects writes. ⚠️ `Bash(kubectl *)`/`Bash(gcloud *)` denied — ask for `!kubectl`.
 - **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in

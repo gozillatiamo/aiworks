@@ -82,7 +82,7 @@ ROOT="$(cd "$DIR/.." && pwd)"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 
-ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice triage mcp services credentials disk"
+ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice headroom triage mcp services credentials disk"
 DEEP_GROUPS="mcp services credentials disk"
 
 # ── args ──────────────────────────────────────────────────────────────────────────
@@ -322,7 +322,8 @@ check_workspace() {
   # deliberate one. Every feature switch is checked the same way.
   local sw
   for sw in voice.enabled stagehand.enabled diagrams.enabled artifacts.enabled \
-            figma.enabled image_generation.enabled loadtest.enabled; do
+            figma.enabled image_generation.enabled loadtest.enabled \
+            headroom.enabled headroom.statusline; do
     local raw; raw="$(cfg "$sw")"
     [[ -z "$raw" ]] && continue
     cfg_bool "$sw"
@@ -973,7 +974,141 @@ check_voice() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 8 · triage
+# 8 · headroom
+# ══════════════════════════════════════════════════════════════════════════════════
+# Input-side context compression: `hcat <file>` renders a big structured file compressed so its
+# raw bytes never enter context, and a PreToolUse gate redirects an oversized Read there once.
+# The plugin ships the hooks and the badge; the ENGINE is a separate binary everything shells
+# out to. Both halves fail OPEN by design — a missing engine means no compression, no badge and
+# no error — so "silently doing nothing" is exactly the shape this group exists to make visible.
+#
+# The env-guard item is the one that is not about savings. `hcat` is a RENAMED `cat`: it prints
+# any file it is given, so it is a .env read the guard must recognise. `\bcat\b` cannot match
+# "hcat" (no word boundary after the leading h), so the coverage is a separate alternative that
+# a future edit to that alternation could drop without any test going red here. Asserted at the
+# root AND in the per-repo copies, because the guard is mirrored into all 21 by aiworks-add's
+# WIRED_HOOKS and a stale copy is a live hole in that repo only.
+check_headroom() {
+  local g=headroom
+  cfg_bool headroom.enabled true
+  case $? in
+    1) skip $g "headroom" "headroom.enabled is false"; return ;;
+    2) warn $g "headroom.enabled is not a boolean" "resolved to the default (on)" \
+            "\$EDITOR workspace.config.yaml" ;;
+  esac
+
+  # ── the two guards hcat needs (root + every mirrored per-repo copy) ──
+  # Checked FIRST and independent of whether headroom is installed: the holes are in OUR hooks,
+  # and they are open the moment anyone on the team has hcat, not the moment this machine does.
+  local hooks_rel=".claude/hooks/dev-wrapper" stale rp
+  local env_rel="$hooks_rel/pretool-env-guard.sh" size_rel="$hooks_rel/pretool-hcat-size-guard.sh"
+
+  # A workspace with no dev-wrapper hooks at all is a different SHAPE, not a regression — and
+  # "the guard settings.json wires is missing" is already group 5's (agent-cfg) finding. Skipping
+  # here keeps this group about hcat and keeps a fixture/foreign workspace from reading as broken.
+  if [[ ! -d "$ROOT/$hooks_rel" ]]; then
+    skip $g "hcat guards" "no .claude/hooks/dev-wrapper in this workspace"
+  elif [[ ! -f "$ROOT/$env_rel" ]]; then
+    skip $g "hcat guards" "no dev-wrapper env guard to extend"
+  elif ! grep -q 'hcat' "$ROOT/$env_rel"; then
+    fail $g "env guard does not cover hcat" \
+         "hcat prints any file it is given, so it is a .env read — and \\bcat\\b cannot match it" \
+         "see: restore the hcat alternative in $env_rel (see docs/agents/headroom.md)" slow
+  else
+    stale=0
+    for rp in $SELECTED; do
+      repo_ready "$rp" || continue
+      [[ -f "$ROOT/$rp/$env_rel" ]] || continue
+      grep -q 'hcat' "$ROOT/$rp/$env_rel" || stale=$((stale+1))
+    done
+    if [[ $stale -gt 0 ]]; then
+      fail $g "$stale repo(s) carry a pre-hcat .env guard" \
+           "the mirrored copy is stale, so hcat can dump a .env in those repos" "aiworks sync" slow
+    else
+      pass $g "env guard covers hcat" "root + mirrored copies"
+    fi
+  fi
+
+  # The size guard is the ceiling the headroom plugin's own gate does not have. Measured: hcat on
+  # a 250 MB .log passed the content through unchanged and printed 262 MB in 80s — the gate turns
+  # a `cat` of that file INTO that, so without this hook the protection is the flood.
+  if [[ ! -d "$ROOT/$hooks_rel" ]]; then
+    :                                    # same shape reason as above; already reported once
+  elif [[ ! -f "$ROOT/$size_rel" ]]; then
+    fail $g "hcat size guard missing" \
+         "hcat has no upper bound of its own — a huge file is passed through in full" \
+         "aiworks sync" slow
+  else
+    stale=0
+    for rp in $SELECTED; do
+      repo_ready "$rp" || continue
+      [[ -f "$ROOT/$rp/$size_rel" ]] || stale=$((stale+1))
+    done
+    if [[ $stale -gt 0 ]]; then
+      fail $g "$stale repo(s) have no hcat size guard" "the mirrored copy is missing" "aiworks sync" slow
+    else
+      pass $g "hcat size guard present" "root + mirrored copies"
+    fi
+  fi
+
+  # ── the engine ──
+  if command -v headroom >/dev/null 2>&1; then
+    pass $g "headroom engine" "$(headroom --version 2>/dev/null | head -1)"
+  else
+    # [mcp], not [all]: we run no proxy and headroom passes code through, so the ML/proxy extras
+    # are install time and disk for nothing. See docs/agents/headroom.md.
+    local inst
+    if command -v uv >/dev/null 2>&1; then
+      inst="uv tool install --python 3.13 'headroom-ai[mcp]'"
+    elif command -v pipx >/dev/null 2>&1; then
+      inst="pipx install 'headroom-ai[mcp]'"
+    else
+      inst="see: install uv (brew install uv), then uv tool install --python 3.13 'headroom-ai[mcp]'"
+    fi
+    warn $g "headroom engine not installed" \
+         "hcat, the headroom MCP and the savings badge all fail open without it" "$inst" slow
+  fi
+
+  # ── the plugin (hooks + badge) ──
+  local key="headroom-usage-indicator@headroom-tools"
+  local reg="$HOME/.claude/plugins/installed_plugins.json"
+  if ! command -v jq >/dev/null 2>&1; then
+    skip $g "headroom plugin" "jq not on PATH — cannot read the plugin registry"
+  elif [[ -f "$reg" ]] && jq -e --arg k "$key" \
+         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
+    pass $g "headroom plugin" "installed at user scope"
+  else
+    warn $g "headroom plugin not installed" \
+         "declared in .claude/settings.json enabledPlugins, but declaring is not installing" \
+         "claude plugin install $key -s user" slow
+  fi
+
+  # ── the savings badge (per-person: it edits a MACHINE-GLOBAL user settings file) ──
+  cfg_bool headroom.statusline true
+  if [[ $? == 1 ]]; then
+    skip $g "savings badge" "headroom.statusline is false"
+    return
+  fi
+  local user_settings="$HOME/.claude/settings.json" sl=""
+  if ! command -v jq >/dev/null 2>&1; then
+    skip $g "savings badge" "jq not on PATH — cannot read the statusLine"
+    return
+  fi
+  [[ -f "$user_settings" ]] && sl="$(jq -r '.statusLine.command // empty' "$user_settings" 2>/dev/null)"
+  if printf '%s' "$sl" | grep -q 'headroom-statusline'; then
+    pass $g "savings badge" "wired into the user statusLine"
+  else
+    # The plugin's own doctor owns this: its merge is the one that chains an EXISTING statusLine
+    # command and keeps the original under _headroomStatusLineBackup (with a .bak). Hand-editing
+    # ~/.claude/settings.json here would fight it and lose whatever bar is already installed.
+    warn $g "savings badge not wired" \
+         "no headroom badge in the user statusLine — compression would run unmeasured" \
+         "see: run /headroom-usage-indicator:doctor in Claude Code and accept the statusLine fix" slow
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 9 · triage
 # ══════════════════════════════════════════════════════════════════════════════════
 # Deployed-environment triage is the one capability workspace bring-up deliberately does NOT
 # install: `aiworks sync` only reports it, and the identity behind k8s_triage can be created
@@ -1176,7 +1311,7 @@ run_group() {
   # A repo-narrowed run has nothing to say about machine-wide groups. Checked BEFORE the
   # --deep skip, because "you asked about one repo" is the more specific reason of the two.
   if [[ $NARROWED == 1 ]]; then
-    case "$g" in tooling|voice|triage|mcp|services|credentials|disk)
+    case "$g" in tooling|voice|headroom|triage|mcp|services|credentials|disk)
       skip "$g" "$g" "not repo-scoped"; return 0 ;;
     esac
   fi
@@ -1189,6 +1324,7 @@ run_group() {
     agent-cfg)   check_agent_cfg ;;
     tooling)     check_tooling ;;
     voice)       check_voice ;;
+    headroom)    check_headroom ;;
     triage)      check_triage ;;
     mcp)         check_mcp ;;
     services)    check_services ;;
