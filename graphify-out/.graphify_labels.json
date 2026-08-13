@@ -19,8 +19,8 @@
   "17": "Read-Only Deployed Access ADRs",
   "18": "Incremental Update",
   "19": "ux-ui-designer agent (Jane)",
-  "20": "graphify Extraction Rules",
-  "21": "graphify Pipeline and Merge",
+  "20": "Extraction Subagent Prompt",
+  "21": "graphify Skill Pipeline",
   "22": "Coding Skills and Plan Logs",
   "23": "graphify Query and Traversal",
   "24": "Gitflow and Config Conventions",
@@ -29,7 +29,7 @@
   "27": "qa-planner agent (Peter)",
   "28": "TDD and Test Design",
   "29": "Review Verdict Basis",
-  "30": "Semantic Extraction",
+  "30": "graphify — operating the doc graph",
   "31": "Cursor Mirror and Compression",
   "32": "Production Case Reporting",
   "33": "Test Result Reporting",
@@ -60,5 +60,6 @@
   "58": "Browser Tab Reuse",
   "59": "Optional Export Flags",
   "60": "Binary Uploads Refused, Never Rewritten",
-  "61": "Inner-System Identity Always Survives"
+  "61": "Inner-System Identity Always Survives",
+  "62": "AST Structural Extraction"
 }

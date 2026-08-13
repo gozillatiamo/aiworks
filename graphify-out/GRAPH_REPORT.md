@@ -1,16 +1,16 @@
 # Graph Report - ai-workspace  (2026-08-13)
 
 ## Corpus Check
-- 206 files · ~226,612 words
+- 207 files · ~227,444 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 869 nodes · 1234 edges · 62 communities (52 shown, 10 thin omitted)
+- 878 nodes · 1242 edges · 63 communities (53 shown, 10 thin omitted)
 - Extraction: 92% EXTRACTED · 7% INFERRED · 1% AMBIGUOUS · INFERRED: 88 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2d10ba3d`
+- Built from commit: `a9f96e42`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -35,8 +35,8 @@
 - Read-Only Deployed Access ADRs
 - Incremental Update
 - ux-ui-designer agent (Jane)
-- graphify Extraction Rules
-- graphify Pipeline and Merge
+- Extraction Subagent Prompt
+- graphify Skill Pipeline
 - Coding Skills and Plan Logs
 - graphify Query and Traversal
 - Gitflow and Config Conventions
@@ -45,7 +45,7 @@
 - qa-planner agent (Peter)
 - TDD and Test Design
 - Review Verdict Basis
-- Semantic Extraction
+- graphify — operating the doc graph
 - Cursor Mirror and Compression
 - Production Case Reporting
 - Test Result Reporting
@@ -77,11 +77,12 @@
 - Optional Export Flags
 - Binary Uploads Refused, Never Rewritten
 - Inner-System Identity Always Survives
+- AST Structural Extraction
 
 ## God Nodes (most connected - your core abstractions)
 1. `qa-runner agent (Peter)` - 29 edges
-2. `qa-planner agent (Peter)` - 24 edges
-3. `graphify Skill Pipeline` - 24 edges
+2. `graphify Skill Pipeline` - 24 edges
+3. `qa-planner agent (Peter)` - 24 edges
 4. `Noah — Senior Fullstack Developer Agent` - 22 edges
 5. `bluePi Workspace CLAUDE.md` - 20 edges
 6. `brand skill` - 19 edges
@@ -91,8 +92,8 @@
 10. `Extraction Subagent Prompt` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Native CLAUDE.md Integration` --references--> `bluePi Workspace CLAUDE.md`  [AMBIGUOUS]
-  .claude/skills/graphify/references/hooks.md → CLAUDE.md
+- `Disposable Subagent For Huge Files` --semantically_similar_to--> `Parallel Subagent Dispatch`  [INFERRED] [semantically similar]
+  docs/agents/headroom.md → .claude/skills/graphify/SKILL.md
 - `Never Read .env Files (AGENTS.md)` --semantically_similar_to--> `Never Read .env Files`  [INFERRED] [semantically similar]
   AGENTS.md → CLAUDE.md
 - `env Guard hcat Coverage` --semantically_similar_to--> `Adapter Pipe Guard`  [INFERRED] [semantically similar]
@@ -128,15 +129,15 @@
 - **Provider-dispatch adapter pattern (lib.sh + swappable impls)** — scripts_tracker_readme_lib_sh, scripts_vcs_readme_lib_sh, scripts_tracker_readme_tracker_provider_interface, scripts_vcs_readme_vcs_provider_interface, scripts_voice_readme [INFERRED 0.85]
 - **Tracker-adapter ticket lifecycle (estimate → plan → automate → gate → PR → notify)** — _claude_skills_estimate_ticket_skill_estimate_ticket, _claude_skills_plan_testcases_skill_plan_testcases, _claude_skills_plan_automate_skill_plan_automate, _claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate, _claude_skills_open_pr_skill_open_pr, _claude_skills_notify_skill_notify, _claude_skills_diagram_ticket_skill_diagram_ticket [INFERRED 0.85]
 
-## Communities (62 total, 10 thin omitted)
+## Communities (63 total, 10 thin omitted)
 
 ### Community 0 - "Agent Roster and Dev Harness"
 Cohesion: 0.07
 Nodes (65): Michael — CEO Agent (conductor only), Daniel — Code Reviewer Agent (merge gate), Emily — CPO Agent, Thomas — CTO Agent, Noah — Senior Fullstack Developer Agent, prod_repro_seed.py — Sanctioned Masked Prod-data Seed, replay_shape.py — Synthetic Redis Shape Replay, scripts/dev.sh — Uniform Per-repo Dev Harness (+57 more)
 
 ### Community 1 - "bluePi Workspace CLAUDE.md"
-Cohesion: 0.06
-Nodes (56): Query Token Budget, Honesty Rules, Parallel Subagent Dispatch, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions, Adapter Pipe Guard, caveman Output Compression (+48 more)
+Cohesion: 0.05
+Nodes (60): Native CLAUDE.md Integration, Query Token Budget, Honesty Rules, No API Key Required, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions, Adapter Pipe Guard (+52 more)
 
 ### Community 2 - "Prod PII Vault (HMAC digests only)"
 Cohesion: 0.08
@@ -210,13 +211,13 @@ Nodes (12): URL Ingest (graphify add), Post-Commit Auto-Rebuild Hook, save-resul
 Cohesion: 0.22
 Nodes (15): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, workspace.config.yaml, caveman skill (+7 more)
 
-### Community 20 - "graphify Extraction Rules"
-Cohesion: 0.18
-Nodes (13): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Language Rule, Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, Extraction Subagent Prompt, Hyperedges, Node ID Format (+5 more)
+### Community 20 - "Extraction Subagent Prompt"
+Cohesion: 0.20
+Nodes (12): Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, DEEP_MODE Aggressive Inference, Extraction Subagent Prompt, Hyperedges, Rationale As Node Attribute, Semantic Similarity Edges, Vision Extraction Rules (+4 more)
 
-### Community 21 - "graphify Pipeline and Merge"
-Cohesion: 0.17
-Nodes (13): Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, Native CLAUDE.md Integration, Cumulative Cost Tracker, Fast Path On Existing Graph, GRAPH_REPORT.md, graphify Skill Pipeline (+5 more)
+### Community 21 - "graphify Skill Pipeline"
+Cohesion: 0.22
+Nodes (10): Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, Cumulative Cost Tracker, Fast Path On Existing Graph, GRAPH_REPORT.md, graphify Skill Pipeline, .graphify_python Interpreter Sidecar (+2 more)
 
 ### Community 22 - "Coding Skills and Plan Logs"
 Cohesion: 0.21
@@ -250,9 +251,9 @@ Nodes (11): Deep modules, Interface design for testability, Mock at system bound
 Cohesion: 0.27
 Nodes (10): docs/agents/issue-tracker.md, The basis for a review verdict, Codegraph callers/impact blast radius, §2 Coding standards are the bottom line, §3 The repo's knowledge is your instrument, §1 The requirements are the bar, §4 Review level (strict / thorough), review skill (+2 more)
 
-### Community 30 - "Semantic Extraction"
-Cohesion: 0.33
-Nodes (6): DEEP_MODE Aggressive Inference, Gemini Semantic Backend, No API Key Required, Semantic Extraction, Semantic Extraction Cache, claude-cli Backend
+### Community 30 - "graphify — operating the doc graph"
+Cohesion: 0.22
+Nodes (8): Adding docs to the graph, `graphify install` overreaches — review before committing, ⚠️ graphify needs no API key. The skill IS the LLM., graphify — operating the doc graph, It is TWO installs, and the second is the one people miss, ⚠️ Labels are positional — regenerate the `.sig`, ⚠️ Remove the post-checkout hook, What is committed, and what is not
 
 ### Community 31 - "Cursor Mirror and Compression"
 Cohesion: 0.25
@@ -338,24 +339,28 @@ Nodes (3): pr-comments.sh, pr-resolve-thread.sh, pr-threads.sh
 Cohesion: 0.40
 Nodes (6): FalkorDB Export, GraphML Export, Neo4j Export, Optional Export Flags, SVG Export, Token Reduction Benchmark
 
+### Community 62 - "AST Structural Extraction"
+Cohesion: 0.33
+Nodes (6): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Language Rule, Node ID Format, Code-Only Update Fast Path, AST Structural Extraction
+
 ## Ambiguous Edges - Review These
 - `design (skill)` → `diagram-ticket (skill)`  [AMBIGUOUS]
   .claude/skills/diagram-ticket/SKILL.md · relation: conceptually_related_to
+- `bluePi Workspace CLAUDE.md` → `Native CLAUDE.md Integration`  [AMBIGUOUS]
+  .claude/skills/graphify/references/hooks.md · relation: references
 - `HTML slide template` → `Tailwind responsive design`  [AMBIGUOUS]
   .claude/skills/slides/references/html-template.md · relation: conceptually_related_to
+- `graphify MCP Stdio Server` → `read_source MCP Tool Proposal`  [AMBIGUOUS]
+  .claude/skills/graphify/references/exports.md · relation: references
 - `ship skill` → `report-test-results skill`  [AMBIGUOUS]
   .claude/skills/ship/SKILL.md · relation: conceptually_related_to
 - `identity.sh (worktree identity prefix)` → `get-ticket-details.sh`  [AMBIGUOUS]
   scripts/voice/README.md · relation: calls
 - `handoff (skill)` → `karpathy-guidelines (skill)`  [AMBIGUOUS]
   .claude/skills/karpathy-guidelines/SKILL.md · relation: conceptually_related_to
-- `bluePi Workspace CLAUDE.md` → `Native CLAUDE.md Integration`  [AMBIGUOUS]
-  .claude/skills/graphify/references/hooks.md · relation: references
-- `graphify MCP Stdio Server` → `read_source MCP Tool Proposal`  [AMBIGUOUS]
-  .claude/skills/graphify/references/exports.md · relation: references
 
 ## Knowledge Gaps
-- **247 isolated node(s):** `Persistence`, `The ladder`, `Rules`, `Output`, `Intensity` (+242 more)
+- **254 isolated node(s):** `It is TWO installs, and the second is the one people miss`, `⚠️ graphify needs no API key. The skill IS the LLM.`, `⚠️ Remove the post-checkout hook`, `⚠️ Labels are positional — regenerate the `.sig``, `What is committed, and what is not` (+249 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **10 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -364,15 +369,15 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `design (skill)` and `diagram-ticket (skill)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+- **What is the exact relationship between `bluePi Workspace CLAUDE.md` and `Native CLAUDE.md Integration`?**
+  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `HTML slide template` and `Tailwind responsive design`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+- **What is the exact relationship between `graphify MCP Stdio Server` and `read_source MCP Tool Proposal`?**
+  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `ship skill` and `report-test-results skill`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `identity.sh (worktree identity prefix)` and `get-ticket-details.sh`?**
   _Edge tagged AMBIGUOUS (relation: calls) - confidence is low._
 - **What is the exact relationship between `handoff (skill)` and `karpathy-guidelines (skill)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **What is the exact relationship between `bluePi Workspace CLAUDE.md` and `Native CLAUDE.md Integration`?**
-  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
-- **What is the exact relationship between `graphify MCP Stdio Server` and `read_source MCP Tool Proposal`?**
-  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._

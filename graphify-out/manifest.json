@@ -5,7 +5,7 @@
     "semantic_hash": "c71c3fdae864d8fcc88b40248b8824e4"
   },
   ".claude/agents/code-reviewer.md": {
-    "mtime": 1786589886.9720733,
+    "mtime": 1786593207.5072134,
     "ast_hash": "a1ef3f8bf29c3605ad57f4c5051df1a7",
     "semantic_hash": ""
   },
@@ -45,12 +45,12 @@
     "semantic_hash": "2b8ecd132e6f83bf1c56dd3976a05e8c"
   },
   ".claude/agents/oncall.md": {
-    "mtime": 1786541983.221296,
+    "mtime": 1786595714.5619617,
     "ast_hash": "f598a9063f33dd92b56e46b334fd08a3",
     "semantic_hash": "f598a9063f33dd92b56e46b334fd08a3"
   },
   ".claude/agents/performance-engineer.md": {
-    "mtime": 1786541983.221622,
+    "mtime": 1786595714.5623925,
     "ast_hash": "d936076b5d3a60149a280aa5949616f3",
     "semantic_hash": "d936076b5d3a60149a280aa5949616f3"
   },
@@ -235,7 +235,7 @@
     "semantic_hash": "771dbdfffb075ee329138a351d26bab9"
   },
   ".claude/skills/decompose-ticket/SKILL.md": {
-    "mtime": 1786541983.2258954,
+    "mtime": 1786595714.5651445,
     "ast_hash": "63182f95fe74bb0cd65bdf9f57cc274c",
     "semantic_hash": "63182f95fe74bb0cd65bdf9f57cc274c"
   },
@@ -650,17 +650,17 @@
     "semantic_hash": "0908828b5a6bc07e1d945916ef6d347d"
   },
   "AGENTS.md": {
-    "mtime": 1786590123.3236752,
+    "mtime": 1786595714.5712373,
     "ast_hash": "6568b84eba467ee21442f5ac42ab33eb",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1786590123.3236752,
+    "mtime": 1786595714.5712373,
     "ast_hash": "6568b84eba467ee21442f5ac42ab33eb",
     "semantic_hash": ""
   },
   "CONTEXT.md": {
-    "mtime": 1786589861.1945455,
+    "mtime": 1786595714.5716333,
     "ast_hash": "8c5ad7b1e4df9b41fe3ede27182129f1",
     "semantic_hash": ""
   },
@@ -775,22 +775,22 @@
     "semantic_hash": "3d47a9c86e90010bb591570d2da4795a"
   },
   "docs/adr/0010-cloud-monitoring-triage-shares-the-read-only-identity.md": {
-    "mtime": 1786541983.2345572,
+    "mtime": 1786595714.5720913,
     "ast_hash": "e97784f6fa66b21ee30e3ddb5508ce06",
     "semantic_hash": "e97784f6fa66b21ee30e3ddb5508ce06"
   },
   "docs/adr/0011-deferred-scope-does-not-stop-a-run.md": {
-    "mtime": 1786541983.2348456,
+    "mtime": 1786595714.5725904,
     "ast_hash": "0acfe1ba7d70769e093e2965f58da20b",
     "semantic_hash": "0acfe1ba7d70769e093e2965f58da20b"
   },
   "docs/adr/0012-case-reports-are-localized-for-their-reader.md": {
-    "mtime": 1786541983.2351296,
+    "mtime": 1786595714.5729198,
     "ast_hash": "4d104f968975b3fb9fbedb5d0a962622",
     "semantic_hash": "4d104f968975b3fb9fbedb5d0a962622"
   },
   "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md": {
-    "mtime": 1786542837.9351196,
+    "mtime": 1786595714.5734718,
     "ast_hash": "58997eec6b6bd89cee50ecd7de0789d4",
     "semantic_hash": "58997eec6b6bd89cee50ecd7de0789d4"
   },
@@ -810,7 +810,7 @@
     "semantic_hash": "ab38246aad908032a855901a785debe5"
   },
   "docs/agents/doctor.md": {
-    "mtime": 1786592370.1281996,
+    "mtime": 1786593207.513049,
     "ast_hash": "80281eddb643394e51c25f978cd2f07c",
     "semantic_hash": ""
   },
@@ -835,7 +835,7 @@
     "semantic_hash": "9b02a0fe0d926665dccf03961754d4d5"
   },
   "docs/agents/language.md": {
-    "mtime": 1786541983.2365134,
+    "mtime": 1786595714.575415,
     "ast_hash": "9e4a85edd7331bce6c696899822587fc",
     "semantic_hash": "9e4a85edd7331bce6c696899822587fc"
   },
@@ -895,7 +895,7 @@
     "semantic_hash": "9f04e715fbc7fcf518d300b9012f6e94"
   },
   "scripts/monitoring/README.md": {
-    "mtime": 1786541983.2467349,
+    "mtime": 1786595714.5794213,
     "ast_hash": "36ea980e2ffe674b0706eca497f89fa9",
     "semantic_hash": "36ea980e2ffe674b0706eca497f89fa9"
   },
@@ -1005,28 +1005,33 @@
     "semantic_hash": "9378bd03d56baaf78bd738ab3848f142"
   },
   "docs/adr/0014-compression-is-explicit-and-file-scoped.md": {
-    "mtime": 1786580389.4400876,
+    "mtime": 1786595714.5738223,
     "ast_hash": "670339fbe3065ca607a5473a1a7702b6",
     "semantic_hash": "670339fbe3065ca607a5473a1a7702b6"
   },
   "docs/agents/headroom.md": {
-    "mtime": 1786580389.4402695,
+    "mtime": 1786595714.5746317,
     "ast_hash": "1aed0f1d2b02df99f10c589d16ece31c",
     "semantic_hash": "1aed0f1d2b02df99f10c589d16ece31c"
   },
   ".claude/skills/ponytail/SKILL.md": {
-    "mtime": 1786589934.1075797,
+    "mtime": 1786593207.509442,
     "ast_hash": "421e40917db6cc732864011799da3235",
     "semantic_hash": ""
   },
   "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md": {
-    "mtime": 1786589834.6904795,
+    "mtime": 1786595714.5743794,
     "ast_hash": "dc71d37db647e3133f6f1b51d5e1ed61",
     "semantic_hash": ""
   },
   "docs/agents/ponytail.md": {
-    "mtime": 1786592378.6649506,
+    "mtime": 1786595714.5758722,
     "ast_hash": "eda1e9785c3fdbba109b172140c01f92",
+    "semantic_hash": ""
+  },
+  "docs/agents/graphify.md": {
+    "mtime": 1786593518.8869884,
+    "ast_hash": "5fca6c97529baf1277f6cb1d2ffa8d52",
     "semantic_hash": ""
   }
 }

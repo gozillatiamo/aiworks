@@ -347,15 +347,114 @@
   },
   "nodes": [
     {
+      "label": "graphify.md",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_graphify",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "graphify.md"
+    },
+    {
+      "label": "Adding docs to the graph",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L93",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_adding_docs_to_the_graph",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "adding docs to the graph"
+    },
+    {
+      "label": "`graphify install` overreaches \u2014 review before committing",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L84",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_graphify_install_overreaches_review_before_committing",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "`graphify install` overreaches \u2014 review before committing"
+    },
+    {
+      "label": "\u26a0\ufe0f graphify needs no API key. The skill IS the LLM.",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "\u26a0\ufe0f graphify needs no api key. the skill is the llm."
+    },
+    {
+      "label": "graphify \u2014 operating the doc graph",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "graphify \u2014 operating the doc graph"
+    },
+    {
+      "label": "It is TWO installs, and the second is the one people miss",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "it is two installs, and the second is the one people miss"
+    },
+    {
+      "label": "\u26a0\ufe0f Labels are positional \u2014 regenerate the `.sig`",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L53",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_labels_are_positional_regenerate_the_sig",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "\u26a0\ufe0f labels are positional \u2014 regenerate the `.sig`"
+    },
+    {
+      "label": "\u26a0\ufe0f Remove the post-checkout hook",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L36",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_remove_the_post_checkout_hook",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "\u26a0\ufe0f remove the post-checkout hook"
+    },
+    {
+      "label": "What is committed, and what is not",
+      "file_type": "document",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L70",
+      "_origin": "ast",
+      "id": "docs_agents_graphify_what_is_committed_and_what_is_not",
+      "community": 30,
+      "community_name": "graphify \u2014 operating the doc graph",
+      "norm_label": "what is committed, and what is not"
+    },
+    {
       "label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "file_type": "document",
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md"
+      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt"
     },
     {
       "label": "Code minimalism is a plugin, scoped by agent, not a prompt",
@@ -363,10 +462,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt"
+      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
     },
     {
       "label": "What ponytail offers",
@@ -374,10 +473,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L12",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what ponytail offers"
+      "norm_label": "what ponytail offers",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
     },
     {
       "label": "What was rejected",
@@ -385,10 +484,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L95",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what was rejected"
+      "norm_label": "what was rejected",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
     },
     {
       "label": "Why not on every agent",
@@ -396,10 +495,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L52",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why not on every agent"
+      "norm_label": "why not on every agent",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
     },
     {
       "label": "Why the level is pinned",
@@ -407,10 +506,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L68",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the level is pinned"
+      "norm_label": "why the level is pinned",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
     },
     {
       "label": "Why the plugin rather than our own prose",
@@ -418,10 +517,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L34",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the plugin rather than our own prose"
+      "norm_label": "why the plugin rather than our own prose",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
     },
     {
       "label": "Why three carve-outs, and only three",
@@ -429,10 +528,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L78",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why three carve-outs, and only three"
+      "norm_label": "why three carve-outs, and only three",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
     },
     {
       "label": "ponytail.md",
@@ -440,10 +539,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "ponytail.md"
+      "norm_label": "ponytail.md",
+      "id": "docs_agents_ponytail"
     },
     {
       "label": "Code minimalism (ponytail)",
@@ -451,10 +550,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_code_minimalism_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism (ponytail)"
+      "norm_label": "code minimalism (ponytail)",
+      "id": "docs_agents_ponytail_code_minimalism_ponytail"
     },
     {
       "label": "Commands",
@@ -462,10 +561,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L101",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_commands",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "commands"
+      "norm_label": "commands",
+      "id": "docs_agents_ponytail_commands"
     },
     {
       "label": "How it reaches each spawn path",
@@ -473,10 +572,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L30",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "how it reaches each spawn path"
+      "norm_label": "how it reaches each spawn path",
+      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
     },
     {
       "label": "Installing it",
@@ -484,10 +583,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L112",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_installing_it",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "installing it"
+      "norm_label": "installing it",
+      "id": "docs_agents_ponytail_installing_it"
     },
     {
       "label": "The ladder",
@@ -495,10 +594,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L14",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_the_ladder",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "the ladder"
+      "norm_label": "the ladder",
+      "id": "docs_agents_ponytail_the_ladder"
     },
     {
       "label": "Where it stops",
@@ -506,10 +605,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L75",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_where_it_stops",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "where it stops"
+      "norm_label": "where it stops",
+      "id": "docs_agents_ponytail_where_it_stops"
     },
     {
       "label": "Who gets it, and why not everyone",
@@ -517,10 +616,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L51",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "who gets it, and why not everyone"
+      "norm_label": "who gets it, and why not everyone",
+      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
     },
     {
       "label": "SKILL.md",
@@ -528,10 +627,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "skill.md"
+      "norm_label": "skill.md",
+      "id": "claude_skills_ponytail_skill"
     },
     {
       "label": "Boundaries",
@@ -539,10 +638,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L114",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_boundaries",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "boundaries"
+      "norm_label": "boundaries",
+      "id": "claude_skills_ponytail_skill_boundaries"
     },
     {
       "label": "Intensity",
@@ -550,10 +649,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L77",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_intensity",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "intensity"
+      "norm_label": "intensity",
+      "id": "claude_skills_ponytail_skill_intensity"
     },
     {
       "label": "Output",
@@ -561,10 +660,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L66",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_output",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "output"
+      "norm_label": "output",
+      "id": "claude_skills_ponytail_skill_output"
     },
     {
       "label": "Persistence",
@@ -572,10 +671,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L26",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_persistence",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "persistence"
+      "norm_label": "persistence",
+      "id": "claude_skills_ponytail_skill_persistence"
     },
     {
       "label": "Ponytail",
@@ -583,10 +682,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L20",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_ponytail",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "ponytail"
+      "norm_label": "ponytail",
+      "id": "claude_skills_ponytail_skill_ponytail"
     },
     {
       "label": "Rules",
@@ -594,10 +693,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L56",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_rules",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "rules"
+      "norm_label": "rules",
+      "id": "claude_skills_ponytail_skill_rules"
     },
     {
       "label": "The ladder",
@@ -605,10 +704,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L32",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_the_ladder",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "the ladder"
+      "norm_label": "the ladder",
+      "id": "claude_skills_ponytail_skill_the_ladder"
     },
     {
       "label": "When NOT to be lazy",
@@ -616,10 +715,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L90",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "when not to be lazy"
+      "norm_label": "when not to be lazy",
+      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy"
     },
     {
       "label": "design (skill)",
@@ -1627,6 +1726,21 @@
       "id": "readme_triage_authorization"
     },
     {
+      "label": "Native CLAUDE.md Integration",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "native claude.md integration",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_hooks_claude_md_integration"
+    },
+    {
       "label": "Query Token Budget",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/references/query.md",
@@ -1852,6 +1966,21 @@
       "id": "context_hook_shim"
     },
     {
+      "label": "claude-cli Backend",
+      "file_type": "concept",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "claude-cli backend",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_claude_cli_backend"
+    },
+    {
       "label": "codegraph",
       "file_type": "concept",
       "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
@@ -1895,6 +2024,21 @@
       "norm_label": "codegraph telemetry disabled",
       "_origin": "semantic",
       "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_codegraph_telemetry_disabled"
+    },
+    {
+      "label": "graphify (Doc Graph Tool)",
+      "file_type": "concept",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "graphify (doc graph tool)",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_graphify"
     },
     {
       "label": "hcat (ADR 0014)",
@@ -2122,7 +2266,7 @@
       "id": "_claude_skills_graphify_skill_honesty_rules"
     },
     {
-      "label": "Parallel Subagent Dispatch",
+      "label": "No API Key Required",
       "file_type": "rationale",
       "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
@@ -2132,9 +2276,9 @@
       "contributor": null,
       "community": 1,
       "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "parallel subagent dispatch",
+      "norm_label": "no api key required",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_parallel_subagent_dispatch"
+      "id": "_claude_skills_graphify_skill_no_api_key_required"
     },
     {
       "label": "Never Read .env Files (AGENTS.md)",
@@ -2300,6 +2444,21 @@
       "norm_label": "graphify stores a map, not the text",
       "_origin": "semantic",
       "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_graphify_stores_map_not_text"
+    },
+    {
+      "label": "Query Logging Default Off",
+      "file_type": "rationale",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "query logging default off",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_query_log_default_off"
     },
     {
       "label": "Round-Trip Cost Metric",
@@ -5842,19 +6001,19 @@
       "id": "scripts_redis_readme_no_seed_tool"
     },
     {
-      "label": "Watch Mode Auto-Rebuild",
+      "label": "DEEP_MODE Aggressive Inference",
       "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
-      "norm_label": "watch mode auto-rebuild",
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "deep_mode aggressive inference",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_add_watch_watch_mode"
+      "id": "_claude_skills_graphify_references_extraction_spec_deep_mode"
     },
     {
       "label": "Extraction Subagent Prompt",
@@ -5866,7 +6025,7 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
+      "community_name": "Extraction Subagent Prompt",
       "norm_label": "extraction subagent prompt",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_extraction_subagent_prompt"
@@ -5881,7 +6040,7 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
+      "community_name": "Extraction Subagent Prompt",
       "norm_label": "hyperedges",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_hyperedges"
@@ -5896,7 +6055,7 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
+      "community_name": "Extraction Subagent Prompt",
       "norm_label": "semantic similarity edges",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_semantic_similarity_edges"
@@ -5911,13 +6070,13 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
+      "community_name": "Extraction Subagent Prompt",
       "norm_label": "vision extraction rules",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_vision_extraction_rules"
     },
     {
-      "label": "AST Structural Extraction",
+      "label": "Gemini Semantic Backend",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
@@ -5926,40 +6085,25 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
-      "norm_label": "ast structural extraction",
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "gemini semantic backend",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_ast_structural_extraction"
+      "id": "_claude_skills_graphify_skill_gemini_backend"
     },
     {
-      "label": "Watch Debounce",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "label": "Semantic Extraction",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
-      "norm_label": "watch debounce",
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "semantic extraction",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_add_watch_debounce"
-    },
-    {
-      "label": "Call Edge Direction And Language Rule",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 20,
-      "community_name": "graphify Extraction Rules",
-      "norm_label": "call edge direction and language rule",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_call_edge_direction_rule"
+      "id": "_claude_skills_graphify_skill_semantic_extraction"
     },
     {
       "label": "Discrete Confidence Score Rubric",
@@ -5971,7 +6115,7 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
+      "community_name": "Extraction Subagent Prompt",
       "norm_label": "discrete confidence score rubric",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_confidence_score_rubric"
@@ -5986,25 +6130,10 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
+      "community_name": "Extraction Subagent Prompt",
       "norm_label": "extracted/inferred/ambiguous taxonomy",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_confidence_taxonomy"
-    },
-    {
-      "label": "Node ID Format",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 20,
-      "community_name": "graphify Extraction Rules",
-      "norm_label": "node id format",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_node_id_format"
     },
     {
       "label": "Rationale As Node Attribute",
@@ -6016,25 +6145,40 @@
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
+      "community_name": "Extraction Subagent Prompt",
       "norm_label": "rationale as node attribute",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_rationale_attribute"
     },
     {
-      "label": "Code-Only Update Fast Path",
+      "label": "Parallel Subagent Dispatch",
       "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 20,
-      "community_name": "graphify Extraction Rules",
-      "norm_label": "code-only update fast path",
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "parallel subagent dispatch",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_update_code_only_fast_path"
+      "id": "_claude_skills_graphify_skill_parallel_subagent_dispatch"
+    },
+    {
+      "label": "Semantic Extraction Cache",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 20,
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "semantic extraction cache",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_semantic_extraction_cache"
     },
     {
       "label": "Cross-Repo Graph Merge",
@@ -6046,7 +6190,7 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "cross-repo graph merge",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_github_and_merge_cross_repo_merge"
@@ -6061,25 +6205,10 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "github repo clone",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_github_and_merge_repo_clone"
-    },
-    {
-      "label": "Native CLAUDE.md Integration",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/hooks.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Pipeline and Merge",
-      "norm_label": "native claude.md integration",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_hooks_claude_md_integration"
     },
     {
       "label": "Cumulative Cost Tracker",
@@ -6091,7 +6220,7 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "cumulative cost tracker",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_cost_tracker"
@@ -6106,7 +6235,7 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "graphify skill pipeline",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_graphify"
@@ -6121,7 +6250,7 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "html graph visualization",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_html_visualization"
@@ -6136,25 +6265,10 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "obsidian vault export",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_obsidian_vault"
-    },
-    {
-      "label": "graphify (Doc Graph Tool)",
-      "file_type": "concept",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Pipeline and Merge",
-      "norm_label": "graphify (doc graph tool)",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_graphify"
     },
     {
       "label": "GRAPH_REPORT.md",
@@ -6166,7 +6280,7 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "graph_report.md",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_graph_report"
@@ -6181,7 +6295,7 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "monorepo subfolder extraction",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_github_and_merge_monorepo_subfolder_extraction"
@@ -6196,7 +6310,7 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": "fast path on existing graph",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_fast_path_existing_graph"
@@ -6211,25 +6325,10 @@
       "author": null,
       "contributor": null,
       "community": 21,
-      "community_name": "graphify Pipeline and Merge",
+      "community_name": "graphify Skill Pipeline",
       "norm_label": ".graphify_python interpreter sidecar",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_graphify_python_interpreter_sidecar"
-    },
-    {
-      "label": "Query Logging Default Off",
-      "file_type": "rationale",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Pipeline and Merge",
-      "norm_label": "query logging default off",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_query_log_default_off"
     },
     {
       "label": "scripts/dev.sh per-repo harness",
@@ -8285,96 +8384,6 @@
       "_origin": "semantic",
       "community_name": "speak.sh",
       "id": "scripts_voice_readme_heartbeat_sh"
-    },
-    {
-      "label": "DEEP_MODE Aggressive Inference",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 30,
-      "community_name": "Semantic Extraction",
-      "norm_label": "deep_mode aggressive inference",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_deep_mode"
-    },
-    {
-      "label": "Gemini Semantic Backend",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 30,
-      "community_name": "Semantic Extraction",
-      "norm_label": "gemini semantic backend",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_gemini_backend"
-    },
-    {
-      "label": "Semantic Extraction",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 30,
-      "community_name": "Semantic Extraction",
-      "norm_label": "semantic extraction",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_semantic_extraction"
-    },
-    {
-      "label": "claude-cli Backend",
-      "file_type": "concept",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 30,
-      "community_name": "Semantic Extraction",
-      "norm_label": "claude-cli backend",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_claude_cli_backend"
-    },
-    {
-      "label": "No API Key Required",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 30,
-      "community_name": "Semantic Extraction",
-      "norm_label": "no api key required",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_no_api_key_required"
-    },
-    {
-      "label": "Semantic Extraction Cache",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 30,
-      "community_name": "Semantic Extraction",
-      "norm_label": "semantic extraction cache",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_semantic_extraction_cache"
     },
     {
       "label": "Orchestrator-owned notify (combined verdict)",
@@ -11842,6 +11851,96 @@
       "id": "docs_agents_pii_provenance_always_survives"
     },
     {
+      "label": "Watch Mode Auto-Rebuild",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 62,
+      "community_name": "AST Structural Extraction",
+      "norm_label": "watch mode auto-rebuild",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_add_watch_watch_mode"
+    },
+    {
+      "label": "AST Structural Extraction",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 62,
+      "community_name": "AST Structural Extraction",
+      "norm_label": "ast structural extraction",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_ast_structural_extraction"
+    },
+    {
+      "label": "Watch Debounce",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 62,
+      "community_name": "AST Structural Extraction",
+      "norm_label": "watch debounce",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_add_watch_debounce"
+    },
+    {
+      "label": "Call Edge Direction And Language Rule",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 62,
+      "community_name": "AST Structural Extraction",
+      "norm_label": "call edge direction and language rule",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_extraction_spec_call_edge_direction_rule"
+    },
+    {
+      "label": "Node ID Format",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 62,
+      "community_name": "AST Structural Extraction",
+      "norm_label": "node id format",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_extraction_spec_node_id_format"
+    },
+    {
+      "label": "Code-Only Update Fast Path",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 62,
+      "community_name": "AST Structural Extraction",
+      "norm_label": "code-only update fast path",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_update_code_only_fast_path"
+    },
+    {
       "label": "pretool-agent-context.sh (PreToolUse Agent hook)",
       "file_type": "code",
       "source_file": "docs/agents/language.md",
@@ -13290,9 +13389,9 @@
       "source_location": "L20",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill",
-      "target": "claude_skills_ponytail_skill_ponytail",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_ponytail"
     },
     {
       "relation": "contains",
@@ -13301,9 +13400,9 @@
       "source_location": "L114",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_boundaries",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_boundaries"
     },
     {
       "relation": "contains",
@@ -13312,9 +13411,9 @@
       "source_location": "L26",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_persistence",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_persistence"
     },
     {
       "relation": "contains",
@@ -13323,9 +13422,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_the_ladder",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_the_ladder"
     },
     {
       "relation": "contains",
@@ -13334,9 +13433,9 @@
       "source_location": "L56",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_rules",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_rules"
     },
     {
       "relation": "contains",
@@ -13345,9 +13444,9 @@
       "source_location": "L66",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_output",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_output"
     },
     {
       "relation": "contains",
@@ -13356,9 +13455,9 @@
       "source_location": "L77",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_intensity",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_intensity"
     },
     {
       "relation": "contains",
@@ -13367,9 +13466,9 @@
       "source_location": "L90",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy"
     },
     {
       "relation": "contains",
@@ -13378,9 +13477,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
     },
     {
       "relation": "contains",
@@ -13389,9 +13488,9 @@
       "source_location": "L12",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
     },
     {
       "relation": "contains",
@@ -13400,9 +13499,9 @@
       "source_location": "L34",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
     },
     {
       "relation": "contains",
@@ -13411,9 +13510,9 @@
       "source_location": "L52",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
     },
     {
       "relation": "contains",
@@ -13422,9 +13521,9 @@
       "source_location": "L68",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
     },
     {
       "relation": "contains",
@@ -13433,9 +13532,9 @@
       "source_location": "L78",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
     },
     {
       "relation": "contains",
@@ -13444,8 +13543,96 @@
       "source_location": "L95",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify",
+      "target": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L16",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "target": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L36",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "target": "docs_agents_graphify_remove_the_post_checkout_hook",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "target": "docs_agents_graphify_labels_are_positional_regenerate_the_sig",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L6",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "target": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L70",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "target": "docs_agents_graphify_what_is_committed_and_what_is_not",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L84",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "target": "docs_agents_graphify_graphify_install_overreaches_review_before_committing",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/graphify.md",
+      "source_location": "L93",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "target": "docs_agents_graphify_adding_docs_to_the_graph",
       "confidence_score": 1.0
     },
     {
@@ -13455,9 +13642,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail",
-      "target": "docs_agents_ponytail_code_minimalism_ponytail",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_code_minimalism_ponytail"
     },
     {
       "relation": "contains",
@@ -13466,9 +13653,9 @@
       "source_location": "L101",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_commands",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_commands"
     },
     {
       "relation": "contains",
@@ -13477,9 +13664,9 @@
       "source_location": "L112",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_installing_it",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_installing_it"
     },
     {
       "relation": "contains",
@@ -13488,9 +13675,9 @@
       "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_the_ladder",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_the_ladder"
     },
     {
       "relation": "contains",
@@ -13499,9 +13686,9 @@
       "source_location": "L30",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
     },
     {
       "relation": "contains",
@@ -13510,9 +13697,9 @@
       "source_location": "L51",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
     },
     {
       "relation": "contains",
@@ -13521,9 +13708,9 @@
       "source_location": "L75",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_where_it_stops",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_where_it_stops"
     },
     {
       "relation": "references",
@@ -13532,9 +13719,9 @@
       "source_location": "L82",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_agents_ponytail",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail"
     },
     {
       "relation": "references",
@@ -27200,5 +27387,5 @@
       "source_file": ".claude/skills/estimate-ticket/SKILL.md"
     }
   ],
-  "built_at_commit": "2d10ba3da8efc34088438d71fe9af2cbc414f47f"
+  "built_at_commit": "a9f96e4291b79ca4525bdcbfb3665b87a23b97a8"
 }
