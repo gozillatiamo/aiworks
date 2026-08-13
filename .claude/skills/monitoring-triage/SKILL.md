@@ -43,9 +43,14 @@ and it is not a lesser path, just a longer one. A metric type that does not exis
 on the descriptor lookup, so a wrong guess costs a round-trip, never a wrong answer.
 
 **4. Read the window, then read what the result says about itself.** `read_timeseries` echoes
-back the UTC window, the aligner it chose and why, and the alignment period. **Read those three
-before quoting any number.** They are there because the failure mode of this API is not an error —
-it is a plausible figure answering a question you did not ask.
+back the UTC window, the aligner it chose and why, the alignment period, and `series_dropped`.
+**Read those four before quoting any number.** They are there because the failure mode of this API
+is not an error — it is a plausible figure answering a question you did not ask.
+
+`series_dropped > 0` means your filter matched more series than the cap and you are holding a
+**sample**, kept in the API's own order rather than by size — so the largest series you can see is
+not the largest that exists. Rank nothing until you have narrowed the filter or collapsed series
+with `group_by`; cross-check the total against the matching `aggregate/*` metric where one exists.
 
 Two contracts the server enforces so you cannot get them silently wrong:
 
