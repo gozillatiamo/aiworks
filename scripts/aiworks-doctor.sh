@@ -26,7 +26,8 @@
 #    4 per-repo     scripts/dev.sh · CLAUDE.md budget · .claude/ · adapter symlinks
 #                   (tracker + vcs — the two `aiworks add` links) · .codegraph/ index ·
 #                   skills-lock.json · a rules file scoped with `globs:` and no `paths:`
-#    5 agent-cfg    every hook in .claude/settings.json exists and is executable · AGENTS.md
+#    5 agent-cfg    every hook in .claude/settings.json exists and is executable · every declared
+#                   plugin is actually INSTALLED (sync only declares it) · AGENTS.md
 #                   and .cursor/ present per repo (CURSOR DRIFT is --deep: the real detector,
 #                   `aiworks cursor --check`, walks every repo and takes ~8s)
 #    6 tooling      the prerequisite binaries are on PATH, each missing one named with the
@@ -814,7 +815,7 @@ EOF
     # physical (`cd … && pwd`) while the registry stores whatever path the session was opened
     # with — on macOS a /var/… symlink of /private/var/… is the same directory spelled two ways,
     # and a string compare silently matches nothing. Caught by the selftest, not by inspection.
-    local pkey projscoped="" dup=0 uv pv ep ev rootp
+    local pkey projscoped="" missing="" dup=0 uv pv ep ev rootp
     rootp="$(cd "$ROOT" 2>/dev/null && pwd -P)" || rootp="$ROOT"
     while IFS= read -r pkey; do
       [[ -z "$pkey" ]] && continue
@@ -828,9 +829,31 @@ $(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "pro
 INNER
       [[ -n "$pv" ]] && dup=$((dup+1))
       [[ -n "$uv" && -n "$pv" && "$uv" != "$pv" ]] && projscoped="${projscoped:+$projscoped }$pkey"
+      # DECLARED BUT NOT INSTALLED. `$uv` is already the user-scope version, so its absence IS
+      # the test — no second registry read, no second loop.
+      [[ -z "$uv" ]] && missing="${missing:+$missing }$pkey"
     done <<EOF
 $(jq -r '(.enabledPlugins // {}) | keys[]' "$settings" 2>/dev/null)
 EOF
+    # "Declared" reads as done and is not. `aiworks sync` converges enabledPlugins +
+    # extraKnownMarketplaces into the root and every declared repo, and stops there — the install is
+    # `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls. Nothing else
+    # reports the gap, and nothing looks broken while it is open: the skills still resolve,
+    # because `aiworks cursor` vendors and links them independently of the plugin. What is
+    # silently absent is the plugin's HOOKS — which for caveman and ponytail is the entire
+    # point, since that is how the ruleset reaches a session and its subagents at all.
+    # Reported separately from the scope block below: a machine can be missing one plugin while
+    # another has drifted, and collapsing them would hide whichever lost the branch.
+    if [[ -n "$missing" ]]; then
+      # The owner is ensure_claude_plugins, not a hand-written pair of claude commands: it
+      # already adds the marketplace from extraKnownMarketplaces BEFORE installing, and a bare
+      # `claude plugin install` without that step fails with "not found in marketplace" —
+      # measured 2026-08-13. Sourcing lib.sh keeps the write in the one script that owns it.
+      warn $g "declared plugin(s) not installed" \
+           "$missing — declaring is not installing: no SessionStart/SubagentStart hooks on this machine" \
+           "bash -c '. .superset/lib.sh && ensure_claude_plugins'" slow
+    fi
+
     if [[ -n "$projscoped" ]]; then
       # The uninstall ALSO deletes the plugin's line from the committed settings.json, which is
       # the very file lib.sh reads to install it user-scope everywhere — so the restore is part
@@ -843,7 +866,9 @@ EOF
            "for p in $projscoped; do claude plugin uninstall \"\$p\" -s project -y; done; git checkout -- .claude/settings.json"
     elif [[ $dup -gt 0 ]]; then
       pass $g "plugin scope" "$dup project-scope duplicate(s), all matching user scope"
-    else
+    elif [[ -z "$missing" ]]; then
+      # Only claim this when every declared plugin is actually there — a "user-scope only" pass
+      # beside a not-installed warn would read as the plugins being fine.
       pass $g "plugin scope" "declared plugins are user-scope only"
     fi
   fi

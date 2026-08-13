@@ -407,6 +407,21 @@ rm -f "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
 ck "no activation marker skips rather than warns" "ABSENT:updated since the last activation" "$OUT"
 
+# A DECLARED plugin with no user-scope entry at all. This is the state `aiworks sync` leaves —
+# it converges enabledPlugins everywhere and never installs — and nothing else reported it, so a
+# teammate ran sync, saw the skills resolve, and had no hooks. The pass line has to disappear
+# with it: "declared plugins are user-scope only" printed beside the warn would read as fine.
+cat > "$FH/.claude/plugins/installed_plugins.json" <<'JSON'
+{"version":1,"plugins":{"caveman@caveman":[
+ {"scope":"project","projectPath":"/nowhere","version":"OLD111","lastUpdated":"2026-07-01T00:00:00.000Z"}]}}
+JSON
+OUT="$(run_ps)"
+ck "a declared-but-uninstalled plugin is a finding" "declared plugin(s) not installed" "$OUT"
+ck "the finding names the plugin"                   "caveman@caveman"                   "$OUT"
+ck "it does not also claim the scope is clean"      "ABSENT:user-scope only"            "$OUT"
+JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
+ck "the fix runs the one script that owns the install" "ensure_claude_plugins" "$JOUT"
+
 # ── 20 · triage: sync reports it, doctor scores it, a human bootstraps it ─────────
 # `aiworks sync` no longer registers the triage MCPs and no longer probes GKE (docs/adr/0009),
 # which makes this group the only thing that scores either. So it has to stay quiet on a machine

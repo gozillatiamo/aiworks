@@ -118,5 +118,17 @@ through `aiworks-add.sh`, in every repo — so a repo-only session (`cd <repo> &
 list. A repo carrying both keys with no install answers NOT-FOUND for `ponytail:ponytail` — measured
 for caveman, and the same trap here.
 
+`aiworks sync` **does not close it**: sync converges the settings into every repo and stops. The
+skills still resolve, because `aiworks cursor` vendors and links them independently of the plugin —
+so nothing looks broken while the **hooks** are absent, which is the entire point of the plugin.
+`aiworks doctor` reports the gap by name under `agent-cfg`, and `--fix` runs
+`ensure_claude_plugins` for you. For a teammate the whole sequence is:
+
+```
+git pull && aiworks sync && aiworks doctor --fix
+```
+
+…then restart Claude Code.
+
 A plugin update needs a Claude Code **restart**: a running session keeps the old cache directory's
 rules.
