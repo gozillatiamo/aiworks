@@ -441,6 +441,34 @@ ck_exit "a disabled triage keeps exit 0"  0 "$RC"
 ck "a disabled triage reads as skipped"   "triage.enabled is false"          "$OUT"
 ck "a disabled triage checks nothing"     "ABSENT:kubernetes triage identity" "$OUT"
 
+# ── 21 · the savings badge can be wired and still measure nothing ─────────────────
+# The plugin's doctor copies scripts/statusline.sh to ~/.claude but never scripts/lib/, and the
+# statusline's compute() returns zeros without attribution.jq beside it — silently. Measured on a
+# real machine: ~35 session caches all n=0 saved=0 missed=0, no .totals ever written, and the
+# plugin's own doctor reporting 14/14 ok throughout. So "wired" must NOT be the whole test.
+W="$T/hrbadge"; make_ws "$W"; stage "$W"
+FH="$T/hrhome"; mkdir -p "$FH/.claude"
+printf '{"statusLine":{"type":"command","command":"bash ~/.claude/headroom-statusline.sh"}}\n' \
+  > "$FH/.claude/settings.json"
+
+run_hr() { HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only headroom -v 2>&1; }
+
+OUT="$(run_hr)"
+ck "a wired badge with no lib is a finding"   "savings badge measures nothing" "$OUT"
+ck "the finding names the missing files"      "attribution.jq"                 "$OUT"
+ck "it does not also report the badge as ok"  "ABSENT:attribution lib beside"  "$OUT"
+
+: > "$FH/.claude/attribution.jq"; : > "$FH/.claude/headroom-state.sh"
+OUT="$(run_hr)"
+ck "the lib present clears the finding"       "ABSENT:measures nothing"        "$OUT"
+ck "and the pass line says why it passed"     "attribution lib beside the copy" "$OUT"
+
+# An unwired badge keeps its own separate finding — the lib check must not swallow it.
+printf '{"statusLine":{"type":"command","command":"bash /my/own/bar.sh"}}\n' > "$FH/.claude/settings.json"
+OUT="$(run_hr)"
+ck "an unwired badge still reports as unwired" "savings badge not wired"       "$OUT"
+ck "an unwired badge is not a lib finding"     "ABSENT:measures nothing"       "$OUT"
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]
