@@ -79,7 +79,10 @@ ENV_PROD = "prod"
 ENV_STAGING = "staging"
 
 # A Cloud Monitoring page can be enormous. Every tool bounds its own output and REPORTS what it
-# dropped, so a truncated answer can never read as a complete one.
+# dropped, so a truncated answer can never read as a complete one. The series cap is the one that
+# has to shout loudest: a filter matching hundreds of series (per-query Query Insights is the live
+# example) keeps the first 20 the API happens to return and drops the rest, which looks exactly
+# like a complete small answer unless series_dropped says otherwise.
 MAX_SERIES = 20
 MAX_POINTS = 1500
 MAX_DESCRIPTORS = 200
@@ -483,9 +486,11 @@ def curated_metrics(resource_type: str | None = None) -> dict:
         catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
         return {"error": f"could not read {CATALOG_PATH.name}: {exc}", "curated": []}
+    # `_`-prefixed keys are the catalog's own prose (_readme), not resource types to offer back.
+    types = sorted(k for k in catalog if not k.startswith("_"))
     if not resource_type:
         return {
-            "curated_resource_types": sorted(catalog),
+            "curated_resource_types": types,
             "note": "Anything not listed here is still reachable via list_metrics — the catalog is "
             "a shortcut for the resources we run, never the limit of what can be read.",
         }
@@ -494,7 +499,7 @@ def curated_metrics(resource_type: str | None = None) -> dict:
         return {
             "resource_type": resource_type,
             "curated": [],
-            "curated_resource_types": sorted(catalog),
+            "curated_resource_types": types,
             "note": "Not curated. Use list_monitored_resources + list_metrics to discover it.",
         }
     return {"resource_type": resource_type, **entry}
@@ -548,7 +553,7 @@ def read_timeseries(
             "REDUCE_MAX" if chosen == "ALIGN_MAX" else "REDUCE_MEAN"
         )
 
-    series, pages, dropped_pages = _timeseries_paged(t, params)
+    series, pages, dropped_pages, dropped_series = _timeseries_paged(t, params)
 
     shaped = []
     for s in series:
@@ -585,19 +590,34 @@ def read_timeseries(
             "filter": params["filter"],
             "series": shaped,
             "series_returned": len(shaped),
+            "series_dropped": dropped_series,
             "pages_fetched": pages,
-            "series_truncated": dropped_pages,
-            "note": (
-                f"stopped at the {MAX_PAGES}-page cap — this window is INCOMPLETE; narrow it or "
-                f"raise alignment_period_s"
-            )
-            if dropped_pages
-            else None,
+            "series_truncated": bool(dropped_pages or dropped_series),
+            "note": _read_note(dropped_pages, dropped_series),
         },
     )
 
 
-def _timeseries_paged(target: dict, params: dict) -> tuple[list, int, bool]:
+def _read_note(dropped_pages: bool, dropped_series: int) -> str | None:
+    """Say what was dropped, in the terms a reader would otherwise get wrong."""
+    notes = []
+    if dropped_series:
+        notes.append(
+            f"{dropped_series} series past the {MAX_SERIES}-series cap were DROPPED — this is a "
+            f"PARTIAL sample, not the whole filter. The kept series are the ones the API returned "
+            f"first, in ITS order (for Query Insights, alphabetical by querystring) — NOT the "
+            f"largest, so never read the biggest of them as the top series. Narrow "
+            f"resource_filter, or group_by fewer labels so series collapse into one"
+        )
+    if dropped_pages:
+        notes.append(
+            f"stopped at the {MAX_PAGES}-page cap — this window is INCOMPLETE; narrow it or "
+            f"raise alignment_period_s. While this holds, series_dropped is a LOWER bound"
+        )
+    return " | ".join(notes) or None
+
+
+def _timeseries_paged(target: dict, params: dict) -> tuple[list, int, bool, int]:
     """Follow nextPageToken and merge the pages into whole series.
 
     Cloud Monitoring paginates a timeSeries read by POINTS as well as by series: a single series
@@ -607,9 +627,11 @@ def _timeseries_paged(target: dict, params: dict) -> tuple[list, int, bool]:
     fifth of a window is not the maximum of the window, and nothing in the response says so.
 
     Series identity is the resource + metric label pair, which is what makes two pages the same
-    line on a chart.
+    line on a chart — and what makes a DROPPED series countable: the same over-cap series recurs
+    on every page it has points on, so the distinct keys are counted, never the sightings.
     """
     merged: dict[tuple, dict] = {}
+    dropped: set[tuple] = set()
     token, pages = None, 0
     while pages < MAX_PAGES:
         page = _get(target, "timeSeries", {**params, "pageToken": token} if token else params)
@@ -623,10 +645,13 @@ def _timeseries_paged(target: dict, params: dict) -> tuple[list, int, bool]:
                 merged[key].setdefault("points", []).extend(s.get("points", []))
             elif len(merged) < MAX_SERIES:
                 merged[key] = s
+            else:
+                dropped.add(key)  # the series cap is a CAP, and a cap has to be reported
         token = page.get("nextPageToken") or None
         if not token:
-            return list(merged.values()), pages, False
-    return list(merged.values()), pages, True  # hit the page cap — reported, never implied complete
+            return list(merged.values()), pages, False, len(dropped)
+    # hit the page cap — reported, never implied complete
+    return list(merged.values()), pages, True, len(dropped)
 
 
 def _point_value(value: dict):
@@ -730,6 +755,36 @@ def _selftest() -> int:
     check("saturation gauge aligns MAX", _aligner(gauge, None)[0] == "ALIGN_MAX")
     check("counter aligns RATE", _aligner(counter, None)[0] == "ALIGN_RATE")
     check("caller override honoured", _aligner(gauge, "ALIGN_MIN")[0] == "ALIGN_MIN")
+
+    # The series cap must never read as a complete answer. Regression guard for the real failure:
+    # a per-query Query Insights read kept 20 series, dropped the rest, and said truncated: false.
+    real_get = _get
+    try:
+        one_page = {
+            "timeSeries": [
+                {"resource": {"labels": {"i": str(n)}}, "metric": {"labels": {}}, "points": []}
+                for n in range(MAX_SERIES + 5)
+            ]
+        }
+        globals()["_get"] = lambda *_a, **_k: one_page
+        kept, pages, page_capped, dropped = _timeseries_paged({}, {})
+        check("series cap keeps its bound", len(kept) == MAX_SERIES, f"kept={len(kept)}")
+        check("series past the cap are counted", dropped == 5, f"series_dropped={dropped}")
+        check("a series cap is not a page cap", page_capped is False and pages == 1)
+        check("dropped series force series_truncated", bool(page_capped or dropped))
+        check("the note names the series cap", "DROPPED" in (_read_note(False, dropped) or ""))
+        check("no note when nothing dropped", _read_note(False, 0) is None)
+        # The same over-cap series recurs on every page it has points on: count keys, not sightings.
+        two_pages = iter([{**one_page, "nextPageToken": "p2"}, one_page])
+        globals()["_get"] = lambda *_a, **_k: next(two_pages)
+        _, pages2, _, dropped2 = _timeseries_paged({}, {})
+        check(
+            "a re-seen dropped series is counted once",
+            dropped2 == 5 and pages2 == 2,
+            f"series_dropped={dropped2} over {pages2} pages",
+        )
+    finally:
+        globals()["_get"] = real_get
 
     prod_ok, source = triage_policy.resolve("prod")
     print(f"  ..   triage.prod = {str(prod_ok).lower()} ({source})")
