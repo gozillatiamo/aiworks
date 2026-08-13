@@ -77,7 +77,19 @@ Every result echoes the resolved UTC window, the aligner, the reason it was chos
 alignment period. Quote a number without reading those and you are guessing.
 
 Output is bounded (`MAX_SERIES`, `MAX_POINTS`, `MAX_DESCRIPTORS`) and anything dropped is
-reported as `truncated` / `returned`, so a partial answer can never read as a complete one.
+reported as `truncated` / `returned`, so a partial answer can never read as a complete one. The
+series cap is the one to read first: a filter matching more series than the cap returns
+`series_dropped > 0` with `series_truncated: true`, and the series you got back are **the API's own
+order, not the largest** — so the biggest of them is not the top series. Narrow `resource_filter`,
+or `group_by` fewer labels so series collapse. Measured on a per-query Query Insights read: 20
+series kept, 81 dropped, 11.4% of the execution time visible.
+
+**Resolve the resource type before the metric.** One service can publish across several monitored
+resources — Cloud SQL splits instance-level metrics (`cloudsql_database`) from per-statement Query
+Insights (`cloudsql_instance_database`), each addressed by different labels. Filtering with the
+wrong type's labels returns `HTTP 400: The supplied filter does not specify a valid combination of
+metric and monitored resource descriptors`, which reads like a bad metric name. Run
+`list_monitored_resources` first; it is the whole point of the discovery step.
 
 ## The catalog
 
