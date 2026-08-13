@@ -20,6 +20,7 @@ Usage: send.sh [--channel <id|#name>] [text] [--dry-run]
        send.sh --review <ticket-key> [--title <text>] [--channel <ch>] [--dry-run]
        send.sh --reply <ticket-key> [text] [--channel <ch>] [--dry-run]
        send.sh --delete <permalink|ts> [--channel <ch>] [--dry-run]
+       send.sh --lookup-user <name|email fragment>
 
 Post a message to the configured chat provider (NOTIFY_PROVIDER: slack).
 
@@ -67,6 +68,12 @@ Options:
                   sent; a deleted message is gone for readers but they may have seen it, so say
                   so in the thread if it mattered. Needs a bot token; cannot combine with any
                   other mode.
+  --lookup-user <q>  Search workspace members by name/email fragment (case-insensitive
+                  substring against real_name/display_name/email); prints one
+                  "<id>\t<real_name>\t<display_name>\t<email>" line per match. Read-only — its
+                  own mode, cannot combine with any other. Needs a bot token + the users:read
+                  scope (users:read.email too, or the email column is empty). Exits non-zero
+                  with no output when nothing matches.
   --channel <ch>  Target channel (id or #name). Default: $NOTIFY_CHANNEL from .env.
                   Ignored by providers whose destination is fixed (e.g. a Slack webhook).
   --dry-run       Print what would be sent instead of sending it.
@@ -238,16 +245,17 @@ outbound_gate() {
   printf '%s' "$file"
 }
 
-channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""; file_path=""; delete_ref=""
+channel="${NOTIFY_CHANNEL:-}"; text=""; have_text=0; dry=0; review_key=""; review_title=""; reply_key=""; thread_ts_arg=""; file_path=""; delete_ref=""; lookup_query=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --channel)   channel="${2:-}";      shift 2 ;;
-    --review)    review_key="${2:-}";   shift 2 ;;
-    --reply)     reply_key="${2:-}";    shift 2 ;;
-    --thread-ts) thread_ts_arg="${2:-}"; shift 2 ;;
-    --file)      file_path="${2:-}";    shift 2 ;;
-    --delete)    delete_ref="${2:-}";   shift 2 ;;
-    --title)     review_title="${2:-}"; shift 2 ;;
+    --channel)     channel="${2:-}";      shift 2 ;;
+    --review)      review_key="${2:-}";   shift 2 ;;
+    --reply)       reply_key="${2:-}";    shift 2 ;;
+    --thread-ts)   thread_ts_arg="${2:-}"; shift 2 ;;
+    --file)        file_path="${2:-}";    shift 2 ;;
+    --delete)      delete_ref="${2:-}";   shift 2 ;;
+    --lookup-user) lookup_query="${2:-}"; shift 2 ;;
+    --title)       review_title="${2:-}"; shift 2 ;;
     --dry-run) dry=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*)        die "unknown option: $1   (see -h)" ;;
@@ -259,6 +267,17 @@ done
 
 if [[ -n "$thread_ts_arg" && ( -n "$review_key" || -n "$reply_key" ) ]]; then
   die "--thread-ts can't combine with --review/--reply (those choose their own thread)"
+fi
+
+# Lookup mode: a read-only search, not a send. Handled first, same reasoning as delete mode —
+# there is no message to compose and combining it with a send mode is always a mistake.
+if [[ -n "$lookup_query" ]]; then
+  [[ -z "$review_key$reply_key$file_path$thread_ts_arg$delete_ref" && "$have_text" -eq 0 ]] || \
+    die "--lookup-user is its own mode — don't combine it with text/--review/--reply/--file/--thread-ts/--delete"
+  matches="$(notify_lookup_user "$lookup_query")"
+  [[ -n "$matches" ]] || die "no workspace member matched '$lookup_query'"
+  printf '%s\n' "$matches"
+  exit 0
 fi
 
 # Delete mode: a retraction, not a send. Handled before any message-composition path — there is

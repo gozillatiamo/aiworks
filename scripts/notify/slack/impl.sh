@@ -13,6 +13,38 @@ notify_require_config() {
     die "slack notify needs SLACK_BOT_TOKEN or SLACK_WEBHOOK_URL in scripts/notify/.env"
 }
 
+# notify_lookup_user QUERY -> prints one "<id>\t<real_name>\t<display_name>\t<email>" line per
+# match, case-insensitive substring against real_name/display_name/email. Bot token only (a
+# webhook has no Web API access) and needs the `users:read` scope (`users:read.email` too, or
+# the email column is always empty). A bot token can't call users.search, so this pages once
+# through users.list (limit=1000, same ceiling _slack_channel_id already uses elsewhere in this
+# file) rather than the org's full membership — good enough for a known name/email fragment,
+# not a fuzzy people-search. Deleted/deactivated accounts are filtered out.
+notify_lookup_user() {
+  local query="$1" resp
+  [[ -n "${SLACK_BOT_TOKEN:-}" ]] || die "slack user lookup needs SLACK_BOT_TOKEN (a webhook has no Web API access)"
+  [[ -n "$query" ]] || die "notify_lookup_user needs a query"
+  resp="$(curl -sS "https://slack.com/api/users.list?limit=1000" \
+    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null)" || die "slack request failed (network)"
+  if [[ "$(printf '%s' "$resp" | jq -r '.ok')" != true ]]; then
+    local err; err="$(printf '%s' "$resp" | jq -r '.error // "unknown"')"
+    [[ "$err" == "missing_scope" ]] && \
+      die "slack rejected users.list: missing_scope — the bot needs the users:read scope; add it to slack-app-manifest.yaml and reinstall the app"
+    die "slack rejected users.list: $err"
+  fi
+  printf '%s' "$resp" | jq -r --arg q "$query" '
+    ($q | ascii_downcase) as $needle
+    | .members[]?
+    | select(.deleted != true)
+    | select(
+        ((.real_name // "") | ascii_downcase | contains($needle)) or
+        ((.profile.display_name // "") | ascii_downcase | contains($needle)) or
+        ((.profile.email // "") | ascii_downcase | contains($needle))
+      )
+    | [.id, (.real_name // ""), (.profile.display_name // ""), (.profile.email // "")] | @tsv
+  '
+}
+
 # notify_send CHANNEL TEXT [DRY] [THREAD_TS] -> prints "ok=1" + "permalink=<url>" on success,
 # else dies. A non-empty THREAD_TS posts the message as a reply UNDER that thread (the review
 # conclusion lands beneath the review-request), never broadcast to the channel.

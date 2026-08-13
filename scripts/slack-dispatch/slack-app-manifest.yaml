@@ -5,8 +5,9 @@
 #     paste this, then Install to Workspace.
 #   • Extend the existing notify app: mirror the settings below onto it — enable Socket
 #     Mode, add the app_mention event subscription, add the app_mentions:read scope (plus
-#     files:read + files:write + users:read for attachment + file-reply support), and
-#     generate an app-level token with connections:write.
+#     files:read + files:write + users:read for attachment + file-reply support, and
+#     users:read.email if scripts/notify/send.sh --lookup-user should also match by email),
+#     and generate an app-level token with connections:write.
 #
 # After install you need TWO tokens for .env:
 #   SLACK_BOT_TOKEN — OAuth & Permissions → Bot User OAuth Token (xoxb-…)
