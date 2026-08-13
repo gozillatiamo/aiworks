@@ -141,7 +141,13 @@ seg_provider() {
 # `check-ignore -v` output is "<source-file>:<line>:<pattern>\t<path>"; a path
 # hidden only by info/exclude is dropped, leaving true .gitignore violations.
 gitignored_only() {  # <repo_dir> ; paths on stdin
-  git -C "$1" check-ignore -v --stdin 2>/dev/null \
+  # --no-index is what makes this work on a path that is ALREADY STAGED. Without it
+  # `check-ignore` exempts anything in the index, so a force-added ignored file reads
+  # as "not ignored" at commit time — which silently reduced the commit check below to
+  # firing on staged DELETIONS only, i.e. to pure false positives. Measured both ways.
+  # The `git add -f` caller is unaffected: its operands are not in the index yet, so
+  # both forms already agreed there.
+  git -C "$1" check-ignore -v --no-index --stdin 2>/dev/null \
     | grep -v '/info/exclude:' \
     | sed -E 's/^[^:]*:[0-9]*:[^\t]*\t//'
 }
@@ -274,7 +280,14 @@ for seg in $segments; do
   # -------------------------------------------- commit of an ignored path
   if is_git_sub "$seg" commit; then
     repo_dir=$(seg_repo_dir "$seg")
-    staged=$(git -C "$repo_dir" diff --cached --name-only 2>/dev/null) || continue
+    # --diff-filter=d EXCLUDES deletions. A staged deletion REMOVES a path from the
+    # index, so it can never "commit an ignored path" — and `git rm --cached <f>`
+    # right after adding <f> to .gitignore is the sanctioned way to untrack a file
+    # that just became ignored. Without this the guard blocked exactly that flow:
+    # the newly-ignored path is staged (as a deletion) AND matches .gitignore, so
+    # the untrack commit could never be made. Additions and modifications of an
+    # ignored path are still caught, which is the case this guard exists for.
+    staged=$(git -C "$repo_dir" diff --cached --name-only --diff-filter=d 2>/dev/null) || continue
     [ -z "$staged" ] && continue
     ignored=$(printf '%s\n' "$staged" | gitignored_only "$repo_dir")
     if [ -n "$ignored" ]; then

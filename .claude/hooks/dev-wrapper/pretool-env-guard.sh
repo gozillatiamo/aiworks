@@ -18,9 +18,16 @@ tool=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)
 
 is_env_path() {
   # $1 = path/string to test. True (0) if it looks like a real secret .env
-  # file (.env or .env.<suffix>) and NOT .env.example.
+  # file (.env or .env.<suffix>) and NOT a template.
+  #
+  # A trailing `.example` is the template marker, wherever it sits: the workspace
+  # carries .env.example, .env.amb.example and .env.local.example, and only the
+  # first was recognised while the other two were blocked as secrets. They hold
+  # no values by definition. Matching the SUFFIX rather than the exact string
+  # covers every `.env.<variant>.example`, and something like `.env.example.bak`
+  # still reads as a secret because it does not end in `.example`.
   case "$1" in
-    *.env.example) return 1 ;;
+    *.example) return 1 ;;
     *.env|*.env.*) return 0 ;;
   esac
   return 1
@@ -65,7 +72,10 @@ case "$tool" in
       [ -z "$seg" ] && continue
       # segment must name a .env; a .env.example segment is a safe template.
       printf '%s' "$seg" | grep -Eq "$ENV_TOKEN" || continue
-      printf '%s' "$seg" | grep -Eq '\.env\.example\b' && continue
+      # `.env.<variant>.example` is a template too — .env.amb.example and
+      # .env.local.example both exist here and were blocked by an exemption that
+      # only matched the exact `.env.example`. Same suffix rule as is_env_path.
+      printf '%s' "$seg" | grep -Eq '\.env[A-Za-z0-9_.-]*\.example\b' && continue
 
       # cat/head/tail/less/more/sed -n always print file contents. `hcat` is
       # the headroom plugin's compress-at-the-source reader: a RENAMED `cat`,

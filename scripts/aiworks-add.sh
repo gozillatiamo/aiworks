@@ -1018,9 +1018,10 @@ read -r -d '' BASE_SETTINGS <<'JSON'
     "defaultMode": "acceptEdits",
     "allow": [
       "Read", "Grep", "Glob", "WebSearch", "WebFetch", "Write", "Edit",
-      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)"
+      "Bash(git *)", "Bash(scripts/dev.sh *)", "Bash(mkdir *)", "Bash(hcat *)"
     ],
     "deny": [
+      "Bash(hcat *.env)", "Bash(hcat *.env.*)",
       "Bash(rm -rf *)", "Bash(rm -fr *)",
       "Bash(git push --force *)", "Bash(git push -f *)",
       "Bash(git reset --hard *)", "Bash(git clean -fdx *)",
@@ -1101,7 +1102,25 @@ if have jq; then
     base_for_merge="$BASE_SETTINGS"
   fi
   existing="{}"; [[ -f "$SETTINGS_FILE" ]] && existing="$(cat "$SETTINGS_FILE")"
-  if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" | jq -s '.[0] * .[1]' 2>/dev/null)"; then
+  # `hcat` permissions are UNIONED in after the `*` merge, never merged through it. Arrays are
+  # REPLACED wholesale by `*`, which is exactly why `permissions` stays out of base_for_merge —
+  # pushing the baseline's arrays would overwrite whatever narrower set a repo chose. A union
+  # adds only what is missing and preserves the repo's own entries and their order.
+  #
+  # Why these two rules travel with the hooks rather than being each repo's call: `hcat` is the
+  # headroom plugin's reader, and the plugin is installed at USER scope, so it is live in a
+  # repo-only session whether or not that repo knows about it. The deny half is the one that
+  # matters — it is defense in depth beside pretool-env-guard.sh for the same reason
+  # Read(**/.env) is denied even though the hook already blocks it. The allow half only buys
+  # determinism over the auto-mode classifier.
+  hcat_allow='["Bash(hcat *)"]'
+  hcat_deny='["Bash(hcat *.env)","Bash(hcat *.env.*)"]'
+  if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" \
+        | jq -s --argjson ha "$hcat_allow" --argjson hd "$hcat_deny" '
+            (.[0] * .[1])
+            | .permissions.allow = ((.permissions.allow // []) as $a | $a + ($ha - $a))
+            | .permissions.deny  = ((.permissions.deny  // []) as $d | $d + ($hd - $d))
+          ' 2>/dev/null)"; then
     if [[ -f "$SETTINGS_FILE" ]] && [[ "$merged" == "$(cat "$SETTINGS_FILE")" ]]; then
       skip "9. .claude/settings.json already matches the baseline"
     elif printf '%s\n' "$merged" > "$SETTINGS_FILE"; then
