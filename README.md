@@ -217,8 +217,7 @@ backoffice, **one** player site, AMB aggregator):
 ```
 
 **6. Claim your admin & agent accounts.** The DB ships with placeholder accounts —
-point them at your own Google account. Full steps in
-[`ofb-instruction/README.md`](ofb-instruction/README.md); the short version:
+point them at your own Google account:
 
 <details>
 <summary><strong>Show the claim steps (one-time)</strong></summary>
@@ -335,6 +334,5 @@ branch + tests + MR per repo, not a maintenance chore). Restart Claude Code afte
 - [`docs/aiworks.html`](docs/aiworks.html) — the full walkthrough (setup, CLI, dev-cycle)
 - [`CONTEXT.md`](CONTEXT.md) — the workspace glossary (ubiquitous language, one place)
 - [`docs/adr/`](docs/adr/) — architecture decision records (why the workspace is shaped this way)
-- [`ofb-instruction/README.md`](ofb-instruction/README.md) — full local-env guide (DBs, Redis, games, accounts)
 - [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) — how agents read/write Jira tickets
 - [`scripts/tracker/README.md`](scripts/tracker/README.md) · [`scripts/vcs/README.md`](scripts/vcs/README.md) — adapter details
