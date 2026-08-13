@@ -121,7 +121,7 @@ observability:
 
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
-  provider: notion                 # notion | jira
+  provider: notion                 # notion | jira | linear
   ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+)
   base_url: ""                     # the board's web root, e.g. https://your-org.atlassian.net — used
                                    #   to turn a bare ticket key into a link (stagehand opens

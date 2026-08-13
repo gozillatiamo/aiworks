@@ -351,6 +351,7 @@ prepare_adapter_env() {
   case "$tracker_provider" in
     jira)   tkv+=(JIRA_PROJECT_KEY  "$ticket_prefix") ;;   # ticket_prefix == the Jira project key
     notion) tkv+=(NOTION_STATUS_DONE "$status_done") ;;    # the "done" status name find-tickets uses
+    linear) tkv+=(LINEAR_TEAM_KEY   "$ticket_prefix") ;;   # ticket_prefix == the Linear team key
   esac
   seed_env_file "$DIR/tracker" "${tkv[@]}"
 

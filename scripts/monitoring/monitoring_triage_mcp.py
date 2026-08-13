@@ -692,9 +692,15 @@ def _selftest() -> int:
     check("no passthrough tool exposed", "def execute" not in body)  # selftest-allow
 
     targets = _targets()
-    check("targets declared", bool(targets), " | ".join(sorted(targets)) or "none in config")
-    for name, t in sorted(targets.items()):
-        check(f"target {name} names a project", bool(t["project"]), t["project"])
+    if targets:
+        print(f"  ..   targets declared — {' | '.join(sorted(targets))}")
+        for name, t in sorted(targets.items()):
+            check(f"target {name} names a project", bool(t["project"]), t["project"])
+    else:
+        print(
+            "  ..   no targets declared — add a `monitoring.targets` block to "
+            "workspace.config.yaml (see workspace.config.example.yaml)"
+        )
 
     for bad in ("2026-08-10T22:00:00", "yesterday", ""):
         try:
