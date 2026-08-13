@@ -138,8 +138,12 @@ seg_provider() {
   }'
 }
 
-# `check-ignore -v` output is "<source-file>:<line>:<pattern>\t<path>"; a path
-# hidden only by info/exclude is dropped, leaving true .gitignore violations.
+# `check-ignore -v` output is "<source-file>:<line>:<pattern>\t<path>"; a path hidden only
+# by info/exclude is dropped, and so is a NEGATED pattern (a leading `!`, e.g. `!.env.example`
+# re-including a template past the blanket `.env*` rule) — a negation match means the path is
+# NOT ignored, the opposite of what this function reports. Leaving it in falsely blocked every
+# commit touching scripts/notify/.env.example (a real repo file, never ignored) as though it
+# were a force-added secret. What remains are true .gitignore violations.
 gitignored_only() {  # <repo_dir> ; paths on stdin
   # --no-index is what makes this work on a path that is ALREADY STAGED. Without it
   # `check-ignore` exempts anything in the index, so a force-added ignored file reads
@@ -149,6 +153,7 @@ gitignored_only() {  # <repo_dir> ; paths on stdin
   # both forms already agreed there.
   git -C "$1" check-ignore -v --no-index --stdin 2>/dev/null \
     | grep -v '/info/exclude:' \
+    | grep -vE '^[^:]*:[0-9]+:!' \
     | sed -E 's/^[^:]*:[0-9]*:[^\t]*\t//'
 }
 
