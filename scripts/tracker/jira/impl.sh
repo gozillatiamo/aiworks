@@ -220,8 +220,13 @@ tracker_upsert() {
   # already in it must be carried across a rewrite or they are lost for good (APP-1952).
   # Fetch the existing description's media blocks first; re-appended below. Only relevant
   # when we are actually rewriting the body (--body / --body-file).
+  # `--no-carry-media` turns the net off, for the one case it works against: DELIBERATELY
+  # replacing or dropping an embedded image. With the net on, the image the new body no
+  # longer references is re-appended from the old description — so a re-rendered diagram
+  # leaves its predecessor sitting under the divider, and writing the body again cannot
+  # clear it (the carry-over reads the description it just wrote).
   local existing_media='[]'
-  if [[ -n "$body_md" ]]; then
+  if [[ -n "$body_md" ]] && [[ "$(printf '%s' "$fields" | jq -r '.no_carry_media // empty')" != "true" ]]; then
     local _cur
     _cur="$(jira_api GET "/rest/api/3/issue/$key?fields=description" 2>/dev/null || true)"
     existing_media="$(printf '%s' "$_cur" | jq -L "$JIRA_IMPL_DIR" -c 'include "jira"; ((.fields.description // {}) | adf_media_blocks)' 2>/dev/null || echo '[]')"

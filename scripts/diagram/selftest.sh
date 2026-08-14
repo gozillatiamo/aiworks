@@ -72,6 +72,26 @@ if "$DIR/live-link.sh" --check "pako:$nested" >/dev/null 2>&1
 then bad "--check rejects a non-string mermaid field" "it passed a blank-rendering state"
 else ok "--check rejects a non-string mermaid field"; fi
 
+# The rendered image must be OPAQUE by default. mermaid.ink renders a transparent
+# background, and a transparent PNG takes the colour of whatever the viewer puts behind
+# it — Jira's full-screen media viewer is near-black, which turned a diagram's own dark
+# text and edges unreadable on a real ticket. Checked via --dry-run so this stays offline.
+url="$(printf '%s' "$SRC" | "$DIR/render.sh" - out.png --dry-run)"
+case "$url" in
+  *bgColor=FFFFFF*) ok "render defaults to an opaque background" ;;
+  *) bad "render defaults to an opaque background" "no bgColor in: $url" ;;
+esac
+url="$(printf '%s' "$SRC" | "$DIR/render.sh" - out.png --bg transparent --dry-run)"
+case "$url" in
+  *bgColor*) bad "--bg transparent omits bgColor" "still set: $url" ;;
+  *) ok "--bg transparent omits bgColor" ;;
+esac
+url="$(printf '%s' "$SRC" | "$DIR/render.sh" - out.png --bg '!white' --dry-run)"
+case "$url" in
+  *bgColor=\!white*) ok "--bg passes a !name through" ;;
+  *) bad "--bg passes a !name through" "got: $url" ;;
+esac
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]

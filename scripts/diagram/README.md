@@ -7,7 +7,7 @@ ticket can carry: a rendered image, or a browser link a human can open and edit.
 
 | Script | Does |
 |---|---|
-| `render.sh <mermaid-file\|-> <out.png\|out.svg> [--theme name]` | Render Mermaid source to a local image file |
+| `render.sh <mermaid-file\|-> <out.png\|out.svg> [--theme name] [--bg color]` | Render Mermaid source to a local image file (opaque background by default) |
 | `live-link.sh <mermaid-file\|-> [--theme name]` | Print a `mermaid.live` edit-in-browser URL for the same source |
 | `live-link.sh --check <url\|fragment\|->` | Decode an existing link and confirm the editor can open it |
 

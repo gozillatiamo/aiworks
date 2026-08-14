@@ -32,19 +32,27 @@ _pako_encode() {
   python3 "$DIAGRAM_DIR/mermaid-ink/pako_encode.py" "$theme"
 }
 
-# diagram_render SOURCE_FILE OUT_FILE FORMAT THEME
+# diagram_render SOURCE_FILE OUT_FILE FORMAT THEME [BGCOLOR] [DRY]
+# BGCOLOR is a mermaid.ink bgColor value — a bare hex (FFFFFF) or a `!name` (!white).
+# It defaults OPAQUE, because mermaid.ink renders a transparent background by default and
+# a transparent PNG takes on whatever the VIEWER puts behind it: Jira's full-screen media
+# viewer is near-black, so the diagram's dark labels and edges turned unreadable on a
+# ticket. An image that only reads on a light page is a broken deliverable — pass
+# `--bg transparent` explicitly when a caller really wants alpha.
 diagram_render() {
-  local source_file="$1" out_file="$2" format="$3" theme="$4"
-  local text b64 path url http_code
+  local source_file="$1" out_file="$2" format="$3" theme="$4" bg="${5:-FFFFFF}" dry="${6:-0}"
+  local text b64 path url http_code bg_q=""
   text="$(diagram_read_source "$source_file")"
   [[ -n "$text" ]] || die "empty Mermaid source — nothing to render"
   b64="$(printf '%s' "$text" | _b64url)"
+  [[ "$bg" == "transparent" ]] || bg_q="&bgColor=${bg}"
 
   case "$format" in
-    png) path="img"; url="https://mermaid.ink/${path}/${b64}?type=png&theme=${theme}" ;;
-    svg) path="svg"; url="https://mermaid.ink/${path}/${b64}?theme=${theme}" ;;
+    png) path="img"; url="https://mermaid.ink/${path}/${b64}?type=png&theme=${theme}${bg_q}" ;;
+    svg) path="svg"; url="https://mermaid.ink/${path}/${b64}?theme=${theme}${bg_q}" ;;
     *)   die "unknown format '$format' (use png or svg)" ;;
   esac
+  if [[ "$dry" -eq 1 ]]; then printf '%s\n' "$url"; return 0; fi
 
   http_code="$(curl -fsSL -o "$out_file" -w '%{http_code}' "$url" 2>/dev/null)" \
     || die "mermaid.ink render failed (network error or invalid Mermaid syntax) — url: $url"

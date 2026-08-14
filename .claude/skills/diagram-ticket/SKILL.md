@@ -56,6 +56,11 @@ deliverable. Only continue past this point when it's `true`.
    `render.sh` always runs when invoked (the gate check in step 0 is what you already
    did) — a non-zero exit means invalid Mermaid syntax or a network error, not a
    disabled feature; fix the source or report the failure, don't retry blindly.
+   The background is **opaque** (`--bg`, default `FFFFFF`) and should stay that way: a
+   transparent PNG takes the colour of whatever the viewer puts behind it, and Jira's
+   full-screen media viewer is near-black, which makes the diagram's own dark text and
+   edges unreadable — it reads fine in the body and turns to mush the moment a human
+   clicks it to look closer.
 4. **Get the edit link** (no network call — pure local encode):
    ```sh
    printf '%s' "<mermaid source>" | "$CLAUDE_PROJECT_DIR"/scripts/diagram/live-link.sh -
@@ -93,6 +98,12 @@ deliverable. Only continue past this point when it's `true`.
      `upsert-ticket-details.sh` (`adf_append_media`, the APP-1952 fix), so a rewrite
      cannot silently drop them — but they land in an "Attachments (carried over)"
      section at the end, not where they were.
+   - **Replacing** a diagram you rendered earlier (re-rendered, fixed labels) needs
+     `--no-carry-media` on that write, or the superseded image is re-appended under that
+     same divider — and writing the body again will not clear it, because the carry-over
+     reads the description it just wrote. The stale ATTACHMENT still sits in the panel
+     after that; leave it, or ask the ticket's owner before deleting (a delete is
+     irreversible and any other comment embedding it would be left pointing at nothing).
    **Don't add a `codeBlock` with the raw Mermaid source** — the live-editor link already
    carries the full source (verified in step 7), so a second copy is pure noise. Don't
    post the link as a comment either: it is already in-body on the reference line.

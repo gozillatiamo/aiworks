@@ -59,7 +59,9 @@ only the fallback for one you deleted from the text. Going the other way — put
 image in the body in the first place — that same token is the whole mechanism: alone on
 its line it becomes a `mediaSingle`, and `add-ticket-attachment.sh <KEY> <file>
 --embed-id` (or the embed line `get-ticket-attachments.sh` prints per image) hands you
-the media uuid it needs.
+the media uuid it needs. To REPLACE or drop an embedded image, add `--no-carry-media` —
+otherwise the safety net re-appends the one your new body left out, and writing again
+cannot clear it (the carry-over reads the description it just wrote).
 
 **Comments render Markdown too:** `add-ticket-comment.sh` no longer posts raw Markdown —
 it converts it to each tracker's native style so headers, bullets, tables and inline

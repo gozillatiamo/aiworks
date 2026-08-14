@@ -70,6 +70,13 @@ Options:
                        Supports headings, bullet/numbered/to-do lists, quotes,
                        dividers and fenced code blocks.
   --body-file <path>   Same as --body, but read the Markdown from a file ("-" = stdin).
+  --no-carry-media     (Jira) Don't re-append images the new body leaves out. By default a
+                       body rewrite carries the old description's images across under an
+                       "Attachments (carried over)" divider, so a rewrite cannot lose a
+                       pasted screenshot. Pass this when you are deliberately REPLACING or
+                       dropping an embedded image (e.g. a re-rendered diagram) — otherwise
+                       the predecessor keeps coming back, and writing the body again cannot
+                       clear it, since the carry-over reads the description it just wrote.
   --dry-run            Print the request body instead of sending it.
   -h, --help           Show this help and exit.
 
@@ -125,6 +132,7 @@ while [[ $# -gt 0 ]]; do
     --body-file)   need "${2:-}" "--body-file needs a path";
                    if [[ "$2" == "-" ]]; then body_md="$(cat)"; else [[ -f "$2" ]] || die "--body-file: no such file: $2"; body_md="$(cat "$2")"; fi
                    have_body=1; shift 2 ;;
+    --no-carry-media) setf no_carry_media true; shift ;;
     --dry-run)     dry=1; shift ;;
     -h|--help)     usage; exit 0 ;;
     -*)            die "unknown option: $1   (see -h)" ;;
