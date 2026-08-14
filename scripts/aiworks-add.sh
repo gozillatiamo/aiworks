@@ -979,7 +979,7 @@ mkdir -p "$REPO_DIR/.claude"
 # A COPY, not a symlink: each repo is an independent clone, so a link up to the
 # workspace root dangles for anyone who clones the repo on its own. Same call as
 # the Cursor hook-shim (see scripts/cursor/hook-shim.template.sh).
-WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh)
+WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh pretool-hrun-pipe-guard.sh)
 if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
   mkdir -p "$REPO_DIR/.claude/hooks/dev-wrapper"
   hooks_new=(); hooks_upd=()
@@ -1049,6 +1049,7 @@ read -r -d '' BASE_SETTINGS <<'JSON'
       { "matcher": "Bash",  "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh", "timeout": 10 },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
       ] },
       { "matcher": "Read",  "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 } ] }

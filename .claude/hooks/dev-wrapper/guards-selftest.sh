@@ -298,6 +298,53 @@ t "missing file fails open"         0 pretool-hcat-size-guard.sh "$(jc 'hcat /no
 t "the word hcat alone allowed"     0 pretool-hcat-size-guard.sh "$(jc 'echo hcat')"
 t "non-Bash tool ignored"           0 pretool-hcat-size-guard.sh "$(jr "$TMP/big/huge.log")"
 
+echo "--- pretool-hrun-pipe-guard ---"
+# hrun prints a RENDERING, not data: above its threshold the output carries hcat's receipt header
+# and may be a compressed body. Measured: `hrun cat t.json > y.json` yields a y.json no JSON parser
+# accepts, silently. hrun cannot detect this itself — under the Bash tool stdout is never a TTY
+# whether the output is about to be read or about to be swallowed — so the shape is judged here.
+t "hrun bare allowed"                  0 pretool-hrun-pipe-guard.sh "$(j 'hrun cargo test')"
+t "hrun redirected to a file blocked"  2 pretool-hrun-pipe-guard.sh "$(j 'hrun cat t.json > y.json')"
+t "hrun appended to a file blocked"    2 pretool-hrun-pipe-guard.sh "$(j 'hrun ls >> out.txt')"
+t "hrun piped blocked"                 2 pretool-hrun-pipe-guard.sh "$(j 'hrun git diff | head -20')"
+t "hrun in \$() blocked"                2 pretool-hrun-pipe-guard.sh "$(j 'X=$(hrun cat f.json)')"
+# Backticks are an ACCEPTED MISS, not an oversight. When they counted, the guard blocked its own
+# commit — the message quoted the hazard in backticks. Prose about the verb outnumbers legacy
+# backtick substitution of it, and a guard that blocks writing about a tool gets switched off.
+t "backtick substitution is a known miss" 0 pretool-hrun-pipe-guard.sh "$(j 'X=`hrun cat f.json`')"
+t "prose quoting hrun in backticks ok"    0 pretool-hrun-pipe-guard.sh "$(j 'git commit -m "explains `hrun x > y` is unsafe"')"
+t "modern \$() substitution still blocked" 2 pretool-hrun-pipe-guard.sh "$(j 'X=$(scripts/hrun cat f.json)')"
+# stdin going INTO hrun is untouched passthrough — it is hrun's own stdout that must not be eaten.
+t "piping INTO hrun allowed"           0 pretool-hrun-pipe-guard.sh "$(j 'cat f | hrun grep needle')"
+# hrun merges stderr into stdout itself, so a numbered redirect changes nothing — denying it would
+# be a false positive, and a guard that cries wolf gets switched off.
+t "numbered redirect allowed"          0 pretool-hrun-pipe-guard.sh "$(j 'hrun cargo test 2>/dev/null')"
+t "the word hrun alone allowed"        0 pretool-hrun-pipe-guard.sh "$(j 'echo hrun')"
+t "hrunner is not hrun"                0 pretool-hrun-pipe-guard.sh "$(j 'hrunner --list | head')"
+# MENTION vs CALL. `\bhrun\b` matches inside "pretool-hrun-pipe-guard.sh", so grepping for this
+# guard's own filename got blocked for "piping hrun" — the first real command after it was written.
+# Command position is the test; a hyphen after the name is not whitespace, so a filename cannot
+# qualify. Same failure class as the adapter pipe guard's.
+t "grep for the guard's filename ok"   0 pretool-hrun-pipe-guard.sh "$(j 'grep -n "hrun-pipe-guard" scripts/aiworks-add.sh | head')"
+# hrun ships at scripts/hrun and is documented to be called that way, so a bare-name-only rule
+# left this guard inert on every real invocation. Found by piping scripts/hrun in its own test.
+t "path-prefixed hrun piped blocked"   2 pretool-hrun-pipe-guard.sh "$(j 'scripts/hrun cat big.log | head -1')"
+t "./-prefixed hrun redirect blocked"  2 pretool-hrun-pipe-guard.sh "$(j './scripts/hrun ls > out.txt')"
+t "absolute-path hrun piped blocked"   2 pretool-hrun-pipe-guard.sh "$(j '/usr/local/bin/hrun ls | wc -l')"
+t "path-prefixed hrun bare allowed"    0 pretool-hrun-pipe-guard.sh "$(j 'scripts/hrun cargo test')"
+t "ls of the guard file ok"            0 pretool-hrun-pipe-guard.sh "$(j 'ls .claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh | head -1')"
+t "hrun quoted inside echo ok"         0 pretool-hrun-pipe-guard.sh "$(j 'echo "run hrun bare, never hrun x | y"')"
+# The escape hatch has to be read off the command string: a VAR=1 prefix never reaches this hook's
+# own environment, so an env-only check would document a hatch that does not work.
+t "inline HRUN_ALLOW_PIPE opts out"    0 pretool-hrun-pipe-guard.sh "$(j 'HRUN_ALLOW_PIPE=1 hrun ls | head')"
+t "non-Bash tool ignored"              0 pretool-hrun-pipe-guard.sh "$(jr /tmp/x.json)"
+
+echo "--- pretool-env-guard: hrun is a reading verb too ---"
+# hrun runs ANY command and prints what it printed, so `hrun cat .env` leaks exactly as `cat .env`
+# does — and unlike hcat its name contains no "cat" for the existing alternation to catch.
+t "hrun cat .env blocked"              2 pretool-env-guard.sh "$(j 'hrun cat scripts/notify/.env')"
+t "hrun cat .env.example allowed"      0 pretool-env-guard.sh "$(j 'hrun cat scripts/notify/.env.example')"
+
 echo "== pretool-agent-context: the spawn brief carries the resolved language =="
 # This hook REWRITES rather than blocks, so exit-code cases prove nothing on their own —
 # every case here asserts what came out. A fixture root per language, because the real
