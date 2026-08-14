@@ -206,13 +206,14 @@ def _adf_table($rows; $ctx):
 #     ~300px of blank above and below it. The editor stamps every image a human
 #     pastes with the file's real pixel size; a token can carry the same as `@<W>x<H>`,
 #     appended by tracker_add_attachment — the last place that still has the file.
-# With both, the block is exactly the image at the width we ask for: 604px measured,
-# where the sizeless form gave 250×149. 80% of the column, not 100%: a human's own pasted
-# screenshot renders at 592-616 (the editor's default resize), so an agent's evidence
-# reads at the same scale instead of shouting over it — 100% was tried first and came out
-# 760px, too big. An image narrower than that is upscaled, the right trade for evidence:
-# soft but legible beats sharp and unreadable. A size that cannot be read degrades to
-# letterboxed-but-visible, never to the stamp.
+# With both, the block is exactly the image at the width we ask for: 446px measured, where
+# the sizeless form gave 250×149. 60% of the column, settled on by eye against a real
+# report — 100% came out 760px (too big) and 80% 604px (level with a human's own pasted
+# 592-616). Deliberately a step under a person's paste: one comment carries six of these
+# and the reader scrolls past them to the table. The whole knob is this one number. An
+# image narrower than that is upscaled, the right trade for evidence: soft but legible
+# beats sharp and unreadable. A size that cannot be read degrades to letterboxed-but-
+# visible, never to the stamp.
 def _md_image_specs($l):
   [ $l | scan("!\\[([^\\]]*)\\]\\(attachment:([^)]+)\\)")
        | { alt: .[0], ref: .[1] }
@@ -230,7 +231,7 @@ def _adf_media($m):
              + (if (($m.alt // "") | length) > 0 then { alt:$m.alt } else {} end) ) };
 def _adf_media_node($ms):
   if ($ms | length) == 1
-  then { type:"mediaSingle", attrs: {layout:"center", width:80, widthType:"percentage"},
+  then { type:"mediaSingle", attrs: {layout:"center", width:60, widthType:"percentage"},
          content:[ _adf_media($ms[0]) ] }
   else { type:"mediaGroup", content:( $ms | map(_adf_media(.)) ) }
   end;

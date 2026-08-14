@@ -108,8 +108,8 @@ a block-level image rather than literal text:
 ### TC001 — Sign in with a wrong password
 ![TC001 fail](attachment:6f1c4a64-2b90-4d7e-9f11-0c3a5e7b81d4@1859x1053)
 ```
-One image on a line renders wide — 80% of the comment column (~604px), the same scale a
-human's own pasted screenshot lands at; several on **one** line render as a thumbnail
+One image on a line renders wide — 60% of the comment column (~446px), a step smaller than a
+human's own pasted screenshot; several on **one** line render as a thumbnail
 strip. Use the wide form for a failure a human must actually look at, and a strip for
 pass evidence that is proof-of-record.
 

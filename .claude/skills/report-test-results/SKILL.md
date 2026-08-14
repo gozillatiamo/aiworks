@@ -59,7 +59,7 @@ Read **`report-template.md`** (next to this skill), fill every `{{ … }}` place
 
 Attaching and embedding is **`/update-ticket`'s** job — read its §4 for the exact moves (rename → upload with `--embed-id` → `![alt](attachment:<id>)` alone on a line, the id used **whole** including the `@<W>x<H>` size the uploader prints, or the screenshot renders as a 250×200 stamp) rather than improvising them here. What this skill decides is **which** files go up and **how they lay out**:
 
-- **A failing `TC`** → its `fail-screenshot`, **alone on its own line** inside that TC's Failures block, so it renders wide (~604px). A reviewer has to actually look at this one.
+- **A failing `TC`** → its `fail-screenshot`, **alone on its own line** inside that TC's Failures block, so it renders wide (~446px). A reviewer has to actually look at this one.
 - **Passing `TC`s** → their `screenshot`s, **all on ONE line** under the Results table, so they render as a thumbnail strip. This is proof-of-record, not something anyone reads one by one.
 - **The rendered run report** (§3) → one line under Coverage.
 - **Video** → attach only when a failure is a sequence a still cannot show. It is large and rarely opened.

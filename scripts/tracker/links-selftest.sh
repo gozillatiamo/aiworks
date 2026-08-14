@@ -107,24 +107,24 @@ echo "--- jira: md_to_adf image SIZE (a screenshot must not render as a 250x200 
 # A readable size takes BOTH halves: a width on the mediaSingle (or the block is the
 # renderer's 250x200 fallback box) and width/height on the media node (or that box keeps
 # the fallback RATIO and letterboxes the picture). `@<W>x<H>` on the id carries the size.
-# 80% of the column ≈ 604px measured, the scale a human's own pasted screenshot renders at
-# (592-616); the sizeless form gave 250x149, and 100% read as too big at 760.
+# 60% of the column = 446px measured, settled on by eye a step under a human's own pasted
+# 592-616; the sizeless form gave 250x149, 100% came out 760 and 80% 604.
 SIZE='[.. | objects | select(.type=="mediaSingle" or .type=="mediaGroup")
        | {n:.type, w:.attrs.width, wt:.attrs.widthType, m:[.content[].attrs | {id, width, height, alt}]}]'
 t "single image is full width, sized" \
-  '[{"n":"mediaSingle","w":80,"wt":"percentage","m":[{"id":"f902c88f","width":1859,"height":1053,"alt":"TC004 fail"}]}]' \
+  '[{"n":"mediaSingle","w":60,"wt":"percentage","m":[{"id":"f902c88f","width":1859,"height":1053,"alt":"TC004 fail"}]}]' \
   "$SIZE" '![TC004 fail](attachment:f902c88f@1859x1053)'
 t "no size still asks for full width" \
-  '[{"n":"mediaSingle","w":80,"wt":"percentage","m":[{"id":"f902c88f","width":null,"height":null,"alt":"TC004 fail"}]}]' \
+  '[{"n":"mediaSingle","w":60,"wt":"percentage","m":[{"id":"f902c88f","width":null,"height":null,"alt":"TC004 fail"}]}]' \
   "$SIZE" '![TC004 fail](attachment:f902c88f)'
 t "size survives in a group too" \
   '[{"n":"mediaGroup","w":null,"wt":null,"m":[{"id":"a1","width":800,"height":600,"alt":"TC001"},{"id":"a2","width":null,"height":null,"alt":"TC002"}]}]' \
   "$SIZE" '![TC001](attachment:a1@800x600) ![TC002](attachment:a2)'
 t "empty alt is omitted, not empty-stringed" \
-  '[{"n":"mediaSingle","w":80,"wt":"percentage","m":[{"id":"a1","width":800,"height":600,"alt":null}]}]' \
+  '[{"n":"mediaSingle","w":60,"wt":"percentage","m":[{"id":"a1","width":800,"height":600,"alt":null}]}]' \
   "$SIZE" '![](attachment:a1@800x600)'
 t "a malformed size stays part of the id (no half-parse)" \
-  '[{"n":"mediaSingle","w":80,"wt":"percentage","m":[{"id":"a1@800x","width":null,"height":null,"alt":"x"}]}]' \
+  '[{"n":"mediaSingle","w":60,"wt":"percentage","m":[{"id":"a1@800x","width":null,"height":null,"alt":"x"}]}]' \
   "$SIZE" '![x](attachment:a1@800x)'
 
 echo "--- jira: md_to_adf snake_case survives (intraword _ is not emphasis) ---"
