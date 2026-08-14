@@ -600,18 +600,34 @@ tracker_add_attachment() {
 # List a ticket's attachments (filename, id, size, mime type) — the ground truth for
 # what a consumer (e.g. the CPO in /prd) must fetch and view before treating a ticket
 # as understood. This is the top-level `attachment` field (separate downloadable
-# files), NOT the inline `[image/attachment]` markers adf_to_text prints for images
-# pasted into the description body (those are covered by tracker_get_details' own
+# files), NOT the inline `![alt](attachment:<id>)` tokens adf_to_text prints for images
+# embedded in the description body (those are covered by tracker_get_details' own
 # "embedded image" warning) — a ticket can carry either or both.
 tracker_get_attachments() {
-  local key issue
+  local key issue embeds att_id media_id
   key="$(jira_key "$1")"
   issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
-  printf '%s' "$issue" | jq -r '
+  # Resolve each IMAGE's Media Services UUID so an already-attached file can still be
+  # embedded in a body/description/comment. `![alt](attachment:<id>)` needs that uuid,
+  # a disjoint id space from the REST attachment id printed here (see
+  # jira_attachment_media_uuid), and only the upload path (--embed-id) used to hand it
+  # back — so a diagram or screenshot attached by an earlier step could never be moved
+  # in-body without re-uploading it. Images only: they are what gets embedded, and each
+  # uuid costs one extra request.
+  embeds='{}'
+  for att_id in $(printf '%s' "$issue" | jq -r '
+      (.fields.attachment // [])[] | select((.mimeType // "") | startswith("image/")) | .id'); do
+    media_id="$(jira_attachment_media_uuid "$att_id")"
+    [[ -n "$media_id" ]] && embeds="$(printf '%s' "$embeds" | jq -c --arg i "$att_id" --arg u "$media_id" '.[$i] = $u')"
+  done
+  printf '%s' "$issue" | jq -r --argjson embeds "$embeds" '
     (.fields.attachment // []) as $a
     | if ($a | length) == 0 then "No attachments on this issue."
       else "Attachments (\($a | length)):\n"
-        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]") | join("\n") )
+        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]"
+                     + ( ($embeds[(.id|tostring)] // "") as $u
+                         | if $u == "" then "" else "\n      embed in a body or comment with: ![" + .filename + "](attachment:" + $u + ")" end ))
+              | join("\n") )
         + "\n\nDownload one with: download-ticket-attachment.sh '"$key"' <filename-or-id> <local-path>"
       end'
 }

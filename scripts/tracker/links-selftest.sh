@@ -150,6 +150,28 @@ rb "bare url not double-wrapped" 'doc https://x.com/a' \
 rb "round-trip keeps both hrefs" '["https://example.com/x","https://x.com/a"]' \
    'md_to_adf | adf_to_text | md_to_adf | [.. | objects | select(.type=="text") | .marks[]? | select(.type=="link") | .attrs.href] | tojson' \
    '[label](https://example.com/x) and https://x.com/a'
+echo "--- read-back: an embedded image must survive a read-then-rewrite, in place ---"
+# A diagram or screenshot embedded in the description is lost from its position if the
+# read hands back an opaque marker: the next upsert rewrites the whole field, so the
+# image only survives via adf_append_media's carried-over section at the bottom.
+rb "image round-trips in place" '[{"i":0,"n":"heading"},{"i":1,"n":"mediaSingle","ids":["7"]},{"i":2,"n":"paragraph"}]' \
+   'md_to_adf | adf_to_text | md_to_adf
+    | [.content | to_entries[] | {i:.key, n:.value.type} + (if .value.type=="mediaSingle" then {ids:[.value.content[].attrs.id]} else {} end)]
+    | tojson' \
+   '## Flow Diagram
+![flow.png](attachment:7)
+[View / edit this diagram](https://mermaid.live/edit#pako:abc)'
+# ...and must not then be appended a SECOND time by the carry-over safety net.
+rb "carry-over skips media already in body" '[{"n":"mediaSingle","ids":["7"]}]' \
+   'md_to_adf as $doc
+    | ($doc | adf_append_media([{type:"mediaSingle", attrs:{layout:"center"}, content:[{type:"media", attrs:{type:"file", id:"7", collection:""}}]}]))
+    | [.. | objects | select(.type=="mediaSingle") | {n:.type, ids:[.content[].attrs.id]}] | tojson' \
+   '![shot](attachment:7)'
+rb "carry-over still rescues absent media" '[{"n":"mediaSingle","ids":["9"]}]' \
+   'md_to_adf | adf_append_media([{type:"mediaSingle", attrs:{layout:"center"}, content:[{type:"media", attrs:{type:"file", id:"9", collection:""}}]}])
+    | [.. | objects | select(.type=="mediaSingle") | {n:.type, ids:[.content[].attrs.id]}] | tojson' \
+   'Body with no image at all.'
+
 nrb() {
   local name=$1 want=$2 json=$3 got
   got=$(printf '%s' "$json" | jq -L "$N" -r 'include "notion"; rich_to_text' 2>&1)

@@ -80,10 +80,12 @@ for this org's ticket-id format, status names, and any read-only fields.
    verbatim; the clarified spec **carries it forward and may sharpen it, but drops
    nothing**. **Attachments/images:** when the read output ends in a `⚠ N embedded
    image/attachment(s)` line, the description holds editor-pasted images. The adapter
-   carries those media across automatically on a `--body` rewrite (they re-appear under an
-   *"Attachments (carried over)"* divider), so you never manually re-embed them — but keep
-   any surrounding prose that references them (`"see screenshot"`, callouts) so the text
-   still makes sense next to the picture.
+   carries those media across automatically on a `--body` rewrite, so you never manually
+   re-embed them: the read hands each one back as an `![alt](attachment:<id>)` line, and
+   keeping that line in your rewritten body keeps the image exactly where it was (drop the
+   line and it still survives, but only under an *"Attachments (carried over)"* divider at
+   the bottom). Keep any surrounding prose that references them (`"see screenshot"`,
+   callouts) so the text still makes sense next to the picture.
 2. **Classify.** Type (bug / feature / polish), Priority (map a finding's severity),
    Effort (hardening tweaks are usually small) — use the org's real values from
    `issue-tracker.md` / `workspace.config.yaml`. Classify **before** dedup below — a

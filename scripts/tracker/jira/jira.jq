@@ -27,7 +27,15 @@ def adf_to_text:
       elif $t == "mention"     then ($n.attrs.text // "@user")
       elif $t == "emoji"       then ($n.attrs.text // $n.attrs.shortName // "")
       elif $t == "inlineCard"  then ($n.attrs.url // "")
-      elif $t == "mediaSingle" or $t == "media" then "[image/attachment]"
+      # An embedded image renders as the SAME `![alt](attachment:<id>)` token md_to_adf
+      # parses, alone on its line — so a description read out, edited and written back
+      # keeps its images exactly where the author put them (the link case above does this
+      # for the same reason). A bare `[image/attachment]` marker used to make that
+      # round-trip lose the position, leaving adf_append_media to rescue the image into a
+      # "carried over" section at the bottom.
+      elif $t == "media"       then "![attachment](attachment:\($n.attrs.id // ""))\n"
+      elif $t == "mediaSingle" or $t == "mediaGroup"
+                               then ( ($n.content // []) | map(node) | join("") )
       else ( ($n.content // []) | map(node) | join("") )
       end;
   if . == null then "" elif (type == "string") then . else node end
@@ -48,12 +56,18 @@ def adf_media_blocks:
 
 # Re-append preserved media blocks to a freshly rendered ADF doc, under a divider +
 # heading so it reads as carried-over rather than authored anew. No-op when empty.
+# Media the new body ALREADY embeds (the author kept the `![](attachment:<id>)` token
+# adf_to_text now hands back) is dropped from the carry-over: appending it again would
+# show the same image twice, once in place and once under the heading.
 def adf_append_media($media):
-  if ($media | length) == 0 then .
-  else .content += ([ {type:"rule"},
-                      {type:"heading", attrs:{level:3},
-                       content:[{type:"text", text:"Attachments (carried over)"}]} ] + $media)
-  end;
+  ([ .. | objects | select((.type // "") == "media") | .attrs.id // empty ] | map({(.):true}) | add // {}) as $have
+  | ( $media | map(select([ .. | objects | select((.type // "") == "media") | .attrs.id // empty ]
+                          | any(. as $id | $have[$id] // false) | not)) ) as $fresh
+  | if ($fresh | length) == 0 then .
+    else .content += ([ {type:"rule"},
+                        {type:"heading", attrs:{level:3},
+                         content:[{type:"text", text:"Attachments (carried over)"}]} ] + $fresh)
+    end;
 
 # `text_to_adf` (a minimal doc from a one-line/plain string) is defined further down,
 # after `_adf_para`, because it shares the same inline parser — a URL must come out
