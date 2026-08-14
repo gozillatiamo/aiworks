@@ -194,23 +194,25 @@ def _adf_table($rows; $ctx):
 # paragraph, and a silent drop would lose the evidence without saying so.
 #
 # Two block shapes, because they read differently:
-#   one image on a line  → mediaSingle, full width — for a failure a human must SEE.
+#   one image on a line  → mediaSingle, wide (see SIZE) — for a failure a human must SEE.
 #   many images on a line → mediaGroup, a thumbnail strip — for pass evidence that is
 #                           proof-of-record, not something anyone reads one by one.
 #
-# SIZE — "full width" has to be asked for TWICE, and asking once is not enough:
-#   `width: 100` + `widthType: "percentage"` on the mediaSingle — without a width the
-#     block IS the renderer's 250×200 fallback box, an unreadable stamp of a full-page
-#     screenshot.
+# SIZE — a readable size has to be asked for TWICE, and asking once is not enough:
+#   `width` + `widthType` on the mediaSingle — without a width the block IS the
+#     renderer's 250×200 fallback box, an unreadable stamp of a full-page screenshot.
 #   `width`/`height` on the media node — without them that box keeps the fallback
-#     250×200 RATIO, so a wide screenshot sits letterboxed inside a full-width block,
-#     with ~300px of blank above and below it. The editor stamps every image a human
+#     250×200 RATIO, so a wide screenshot sits letterboxed inside the block, with
+#     ~300px of blank above and below it. The editor stamps every image a human
 #     pastes with the file's real pixel size; a token can carry the same as `@<W>x<H>`,
 #     appended by tracker_add_attachment — the last place that still has the file.
-# With both, the block is exactly the image at exactly the column width: measured 760×364
-# rendered where the sizeless form gave 250×149. An image NARROWER than the column is
-# upscaled by the 100%, the right trade for evidence — soft but legible beats sharp and
-# unreadable. A size that cannot be read degrades to letterboxed-but-big, never the stamp.
+# With both, the block is exactly the image at the width we ask for: 604px measured,
+# where the sizeless form gave 250×149. 80% of the column, not 100%: a human's own pasted
+# screenshot renders at 592-616 (the editor's default resize), so an agent's evidence
+# reads at the same scale instead of shouting over it — 100% was tried first and came out
+# 760px, too big. An image narrower than that is upscaled, the right trade for evidence:
+# soft but legible beats sharp and unreadable. A size that cannot be read degrades to
+# letterboxed-but-visible, never to the stamp.
 def _md_image_specs($l):
   [ $l | scan("!\\[([^\\]]*)\\]\\(attachment:([^)]+)\\)")
        | { alt: .[0], ref: .[1] }
@@ -228,7 +230,7 @@ def _adf_media($m):
              + (if (($m.alt // "") | length) > 0 then { alt:$m.alt } else {} end) ) };
 def _adf_media_node($ms):
   if ($ms | length) == 1
-  then { type:"mediaSingle", attrs: {layout:"center", width:100, widthType:"percentage"},
+  then { type:"mediaSingle", attrs: {layout:"center", width:80, widthType:"percentage"},
          content:[ _adf_media($ms[0]) ] }
   else { type:"mediaGroup", content:( $ms | map(_adf_media(.)) ) }
   end;
