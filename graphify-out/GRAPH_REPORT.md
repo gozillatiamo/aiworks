@@ -1,7 +1,7 @@
-# Graph Report - ai-workspace  (2026-08-13)
+# Graph Report - ai-workspace  (2026-08-14)
 
 ## Corpus Check
-- 207 files · ~227,444 words
+- 207 files · ~227,721 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a9f96e42`
+- Built from commit: `30be2ee3`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -21,15 +21,15 @@
 - speak.sh
 - scripts/notify/send.sh
 - Jira Tracker Adapter Internals
-- Interactive Doc Authoring
+- export-data island
 - Output Language Policy
 - Stagehand Window Placement
 - Design and Slide References
-- Brand Assets and Design Tokens
+- brand skill
 - Logo and Corporate Identity
 - ui-styling skill
 - Ticket Estimation
-- Ticket Skills and Templates
+- clarifying-ticket skill
 - Doc-Only Graphify Scope
 - Kubernetes and Cloud Triage
 - Read-Only Deployed Access ADRs
@@ -37,7 +37,7 @@
 - ux-ui-designer agent (Jane)
 - Extraction Subagent Prompt
 - graphify Skill Pipeline
-- Coding Skills and Plan Logs
+- coding-automate skill
 - graphify Query and Traversal
 - Gitflow and Config Conventions
 - Deployed Root-Cause Method
@@ -50,13 +50,13 @@
 - Production Case Reporting
 - Test Result Reporting
 - Load Gate and Plan Artifacts
-- Ultra-Review Gate Orchestration
+- ultra-review skill
 - Token Usage Reporting
 - Load-Test Noise Floor Comparison
 - QA Sub-Tasks and BDD
 - Redis Triage and PII Egress
 - Code minimalism is a plugin, scoped by agent, not a prompt
-- Debug Adapter Tooling
+- debugging-code skill
 - Diagram Attachment to Tickets
 - Ticket Approval Rules
 - Coding and Test Standards
@@ -155,7 +155,7 @@ Nodes (37): notify outbound_gate / redact_prod_pii, PII_GATE auto/on/off Knobs, 
 Cohesion: 0.07
 Nodes (35): add-ticket-comment.sh, Markdown to ADF renderer, Attachment carry-over on body rewrite, Dedup before filing, jira/discover-fields.sh, find-tickets.sh, get-ticket-comments.sh, get-ticket-details.sh (+27 more)
 
-### Community 6 - "Interactive Doc Authoring"
+### Community 6 - "export-data island"
 Cohesion: 0.07
 Nodes (33): Comparison block, Component library reference, decision-data island, The export contract (two readers), export-data island, Steps / Implementation Plan block, UI preview block, Diagrams reference (+25 more)
 
@@ -171,7 +171,7 @@ Nodes (33): Two Coordinate Traps (NSScreen vs AX, size-then-position), Focus Phr
 Cohesion: 0.13
 Nodes (32): Banner Sizes & Art Direction Styles, Design Routing Guide, Icon Design Reference, Slides Reference, Copywriting Formulas, Slides Create (invocation stub), HTML Slide Template, Slide Layout Patterns (+24 more)
 
-### Community 10 - "Brand Assets and Design Tokens"
+### Community 10 - "brand skill"
 Cohesion: 0.12
 Nodes (28): assets/design-tokens.css, assets/design-tokens.json, ai-artist skill, ai-multimodal skill, assets-organizing skill, Banner sizes & art direction styles, banner-design skill, Asset approval checklist (+20 more)
 
@@ -187,7 +187,7 @@ Nodes (24): Copywriting formulas (PAS/AIDA/FAB/BAB), slides create subcommand, C
 Cohesion: 0.12
 Nodes (20): scripts/tracker/add-ticket-comment.sh, Board calibration set (10 recent Done), Dev+QA points written, total derived, estimate-ticket (skill), scripts/tracker/find-tickets.sh, scripts/tracker/get-ticket-comments.sh, scripts/tracker/get-ticket-details.sh, scripts/tracker/upsert-ticket-details.sh (+12 more)
 
-### Community 14 - "Ticket Skills and Templates"
+### Community 14 - "clarifying-ticket skill"
 Cohesion: 0.16
 Nodes (20): Attachment embed-id vs numeric id, update-ticket skill, clarifying-ticket skill, Clarified ticket templates, decompose-ticket skill, Decomposition piece-spec templates, diagram-ticket skill, estimate-ticket skill (+12 more)
 
@@ -219,7 +219,7 @@ Nodes (12): Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxon
 Cohesion: 0.22
 Nodes (10): Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, Cumulative Cost Tracker, Fast Path On Existing Graph, GRAPH_REPORT.md, graphify Skill Pipeline, .graphify_python Interpreter Sidecar (+2 more)
 
-### Community 22 - "Coding Skills and Plan Logs"
+### Community 22 - "coding-automate skill"
 Cohesion: 0.21
 Nodes (13): agent_logs/<KEY>-automation-plan.md, agent_logs/<KEY>-bugs.md, Submodule checkout write ban, Bug log template, coding-automate skill, coding-feature skill, Workspace coding style, Ground truth first (+5 more)
 
@@ -271,7 +271,7 @@ Nodes (8): Test-results report template, scripts/tracker/add-ticket-comment.sh, 
 Cohesion: 0.25
 Nodes (8): Equal-or-Better Load Gate, Never Fail Open — Receipt or Not Run, suite_kind: load (arms the gate), Production Case File (kind: script repo), One Plan File Per Touched Repo, Plan Artifact Canonical Paths, pretool-agent-brief-guard.sh, pretool-plan-path-guard.sh
 
-### Community 35 - "Ultra-Review Gate Orchestration"
+### Community 35 - "ultra-review skill"
 Cohesion: 0.33
 Nodes (7): Shared verdict grounding (review/basis.md), Aggregation backstop (presence + language check), Code gate (Daniel, code-reviewer), Force-shell first line (no-Bash give-up fix), Performance gate (Liam, performance-engineer), Re-visit mode (prior must-fix only), ultra-review skill
 
@@ -295,7 +295,7 @@ Nodes (6): capture_shape → replay_shape.py local repro, OFB Redis keyspace map
 Cohesion: 0.12
 Nodes (14): Code minimalism is a plugin, scoped by agent, not a prompt, What ponytail offers, What was rejected, Why not on every agent, Why the level is pinned, Why the plugin rather than our own prose, Why three carve-outs, and only three, Code minimalism (ponytail) (+6 more)
 
-### Community 41 - "Debug Adapter Tooling"
+### Community 41 - "debugging-code skill"
 Cohesion: 0.47
 Nodes (6): Advanced debugging techniques, Installing debug adapters, dap CLI (DAP debugger driver), debugging-code skill, Vendored plugin skills note, scripts/aiworks-cursor.sh (vendor sync)
 
@@ -346,12 +346,12 @@ Nodes (6): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Lang
 ## Ambiguous Edges - Review These
 - `design (skill)` → `diagram-ticket (skill)`  [AMBIGUOUS]
   .claude/skills/diagram-ticket/SKILL.md · relation: conceptually_related_to
+- `graphify MCP Stdio Server` → `read_source MCP Tool Proposal`  [AMBIGUOUS]
+  .claude/skills/graphify/references/exports.md · relation: references
 - `bluePi Workspace CLAUDE.md` → `Native CLAUDE.md Integration`  [AMBIGUOUS]
   .claude/skills/graphify/references/hooks.md · relation: references
 - `HTML slide template` → `Tailwind responsive design`  [AMBIGUOUS]
   .claude/skills/slides/references/html-template.md · relation: conceptually_related_to
-- `graphify MCP Stdio Server` → `read_source MCP Tool Proposal`  [AMBIGUOUS]
-  .claude/skills/graphify/references/exports.md · relation: references
 - `ship skill` → `report-test-results skill`  [AMBIGUOUS]
   .claude/skills/ship/SKILL.md · relation: conceptually_related_to
 - `identity.sh (worktree identity prefix)` → `get-ticket-details.sh`  [AMBIGUOUS]
@@ -360,7 +360,7 @@ Nodes (6): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Lang
   .claude/skills/karpathy-guidelines/SKILL.md · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **254 isolated node(s):** `It is TWO installs, and the second is the one people miss`, `⚠️ graphify needs no API key. The skill IS the LLM.`, `⚠️ Remove the post-checkout hook`, `⚠️ Labels are positional — regenerate the `.sig``, `What is committed, and what is not` (+249 more)
+- **254 isolated node(s):** `Persistence`, `The ladder`, `Rules`, `Output`, `Intensity` (+249 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **10 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -369,12 +369,12 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `design (skill)` and `diagram-ticket (skill)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+- **What is the exact relationship between `graphify MCP Stdio Server` and `read_source MCP Tool Proposal`?**
+  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `bluePi Workspace CLAUDE.md` and `Native CLAUDE.md Integration`?**
   _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `HTML slide template` and `Tailwind responsive design`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **What is the exact relationship between `graphify MCP Stdio Server` and `read_source MCP Tool Proposal`?**
-  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `ship skill` and `report-test-results skill`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `identity.sh (worktree identity prefix)` and `get-ticket-details.sh`?**

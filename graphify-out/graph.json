@@ -451,10 +451,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt"
+      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md"
     },
     {
       "label": "Code minimalism is a plugin, scoped by agent, not a prompt",
@@ -462,10 +462,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
+      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt"
     },
     {
       "label": "What ponytail offers",
@@ -473,10 +473,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L12",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what ponytail offers",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
+      "norm_label": "what ponytail offers"
     },
     {
       "label": "What was rejected",
@@ -484,10 +484,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L95",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what was rejected",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
+      "norm_label": "what was rejected"
     },
     {
       "label": "Why not on every agent",
@@ -495,10 +495,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L52",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why not on every agent",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
+      "norm_label": "why not on every agent"
     },
     {
       "label": "Why the level is pinned",
@@ -506,10 +506,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L68",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the level is pinned",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
+      "norm_label": "why the level is pinned"
     },
     {
       "label": "Why the plugin rather than our own prose",
@@ -517,10 +517,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L34",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the plugin rather than our own prose",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
+      "norm_label": "why the plugin rather than our own prose"
     },
     {
       "label": "Why three carve-outs, and only three",
@@ -528,10 +528,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L78",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why three carve-outs, and only three",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
+      "norm_label": "why three carve-outs, and only three"
     },
     {
       "label": "ponytail.md",
@@ -539,10 +539,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "ponytail.md",
-      "id": "docs_agents_ponytail"
+      "norm_label": "ponytail.md"
     },
     {
       "label": "Code minimalism (ponytail)",
@@ -550,10 +550,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_code_minimalism_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism (ponytail)",
-      "id": "docs_agents_ponytail_code_minimalism_ponytail"
+      "norm_label": "code minimalism (ponytail)"
     },
     {
       "label": "Commands",
@@ -561,10 +561,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L101",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_commands",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "commands",
-      "id": "docs_agents_ponytail_commands"
+      "norm_label": "commands"
     },
     {
       "label": "How it reaches each spawn path",
@@ -572,10 +572,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L30",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "how it reaches each spawn path",
-      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
+      "norm_label": "how it reaches each spawn path"
     },
     {
       "label": "Installing it",
@@ -583,10 +583,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L112",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_installing_it",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "installing it",
-      "id": "docs_agents_ponytail_installing_it"
+      "norm_label": "installing it"
     },
     {
       "label": "The ladder",
@@ -594,10 +594,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L14",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_the_ladder",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "the ladder",
-      "id": "docs_agents_ponytail_the_ladder"
+      "norm_label": "the ladder"
     },
     {
       "label": "Where it stops",
@@ -605,10 +605,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L75",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_where_it_stops",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "where it stops",
-      "id": "docs_agents_ponytail_where_it_stops"
+      "norm_label": "where it stops"
     },
     {
       "label": "Who gets it, and why not everyone",
@@ -616,10 +616,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L51",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "who gets it, and why not everyone",
-      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
+      "norm_label": "who gets it, and why not everyone"
     },
     {
       "label": "SKILL.md",
@@ -627,10 +627,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "skill.md",
-      "id": "claude_skills_ponytail_skill"
+      "norm_label": "skill.md"
     },
     {
       "label": "Boundaries",
@@ -638,10 +638,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L114",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_boundaries",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "boundaries",
-      "id": "claude_skills_ponytail_skill_boundaries"
+      "norm_label": "boundaries"
     },
     {
       "label": "Intensity",
@@ -649,10 +649,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L77",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_intensity",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "intensity",
-      "id": "claude_skills_ponytail_skill_intensity"
+      "norm_label": "intensity"
     },
     {
       "label": "Output",
@@ -660,10 +660,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L66",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_output",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "output",
-      "id": "claude_skills_ponytail_skill_output"
+      "norm_label": "output"
     },
     {
       "label": "Persistence",
@@ -671,10 +671,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L26",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_persistence",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "persistence",
-      "id": "claude_skills_ponytail_skill_persistence"
+      "norm_label": "persistence"
     },
     {
       "label": "Ponytail",
@@ -682,10 +682,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L20",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_ponytail",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "ponytail",
-      "id": "claude_skills_ponytail_skill_ponytail"
+      "norm_label": "ponytail"
     },
     {
       "label": "Rules",
@@ -693,10 +693,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L56",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_rules",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "rules",
-      "id": "claude_skills_ponytail_skill_rules"
+      "norm_label": "rules"
     },
     {
       "label": "The ladder",
@@ -704,10 +704,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L32",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_the_ladder",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "the ladder",
-      "id": "claude_skills_ponytail_skill_the_ladder"
+      "norm_label": "the ladder"
     },
     {
       "label": "When NOT to be lazy",
@@ -715,10 +715,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L90",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "when not to be lazy",
-      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy"
+      "norm_label": "when not to be lazy"
     },
     {
       "label": "design (skill)",
@@ -2637,7 +2637,7 @@
       "community": 10,
       "norm_label": "assets/design-tokens.css",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "assets_design_tokens_design_tokens_css"
     },
     {
@@ -2652,7 +2652,7 @@
       "community": 10,
       "norm_label": "assets/design-tokens.json",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "assets_design_tokens_design_tokens_json"
     },
     {
@@ -2667,7 +2667,7 @@
       "community": 10,
       "norm_label": "extract-colors.cjs",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_scripts_extract_colors_extract_colors"
     },
     {
@@ -2682,7 +2682,7 @@
       "community": 10,
       "norm_label": "inject-brand-context.cjs",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_scripts_inject_brand_context_inject_brand_context"
     },
     {
@@ -2697,7 +2697,7 @@
       "community": 10,
       "norm_label": "sync-brand-to-tokens.cjs",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_scripts_sync_brand_to_tokens_sync_brand_to_tokens"
     },
     {
@@ -2712,7 +2712,7 @@
       "community": 10,
       "norm_label": "validate-asset.cjs",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_scripts_validate_asset_validate_asset"
     },
     {
@@ -2727,7 +2727,7 @@
       "community": 10,
       "norm_label": "ai-artist skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_ai_artist_skill_ai_artist"
     },
     {
@@ -2742,7 +2742,7 @@
       "community": 10,
       "norm_label": "ai-multimodal skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_ai_multimodal_skill_ai_multimodal"
     },
     {
@@ -2757,7 +2757,7 @@
       "community": 10,
       "norm_label": "assets-organizing skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_assets_organizing_skill_assets_organizing"
     },
     {
@@ -2772,7 +2772,7 @@
       "community": 10,
       "norm_label": "banner sizes & art direction styles",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_banner_design_references_banner_sizes_and_styles_banner_sizes_and_styles"
     },
     {
@@ -2787,7 +2787,7 @@
       "community": 10,
       "norm_label": "banner-design skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_banner_design_skill_banner_design"
     },
     {
@@ -2802,7 +2802,7 @@
       "community": 10,
       "norm_label": "asset approval checklist",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_approval_checklist_approval_checklist"
     },
     {
@@ -2817,7 +2817,7 @@
       "community": 10,
       "norm_label": "asset organization guide",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_asset_organization_asset_organization"
     },
     {
@@ -2832,7 +2832,7 @@
       "community": 10,
       "norm_label": "brand guidelines template",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_brand_guideline_template_brand_guideline_template"
     },
     {
@@ -2847,7 +2847,7 @@
       "community": 10,
       "norm_label": "color palette management",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_color_palette_management_color_palette_management"
     },
     {
@@ -2862,7 +2862,7 @@
       "community": 10,
       "norm_label": "brand consistency checklist",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_consistency_checklist_consistency_checklist"
     },
     {
@@ -2877,7 +2877,7 @@
       "community": 10,
       "norm_label": "logo usage rules",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_logo_usage_rules_logo_usage_rules"
     },
     {
@@ -2892,7 +2892,7 @@
       "community": 10,
       "norm_label": "messaging framework",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_messaging_framework_messaging_framework"
     },
     {
@@ -2907,7 +2907,7 @@
       "community": 10,
       "norm_label": "typography specifications",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_typography_specifications_typography_specifications"
     },
     {
@@ -2922,7 +2922,7 @@
       "community": 10,
       "norm_label": "brand update subcommand",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_update_brand_update"
     },
     {
@@ -2937,7 +2937,7 @@
       "community": 10,
       "norm_label": "visual identity basics",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_visual_identity_visual_identity"
     },
     {
@@ -2952,7 +2952,7 @@
       "community": 10,
       "norm_label": "brand voice framework",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_references_voice_framework_voice_framework"
     },
     {
@@ -2967,7 +2967,7 @@
       "community": 10,
       "norm_label": "brand skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_skill_brand"
     },
     {
@@ -2982,7 +2982,7 @@
       "community": 10,
       "norm_label": "brand guidelines starter template",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_brand_templates_brand_guidelines_starter_brand_guidelines_starter"
     },
     {
@@ -2997,7 +2997,7 @@
       "community": 10,
       "norm_label": "chrome-devtools skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_chrome_devtools_skill_chrome_devtools"
     },
     {
@@ -3012,7 +3012,7 @@
       "community": 10,
       "norm_label": "design-system skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_design_system_skill_design_system"
     },
     {
@@ -3027,7 +3027,7 @@
       "community": 10,
       "norm_label": "frontend-design skill",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "claude_skills_frontend_design_skill_frontend_design"
     },
     {
@@ -3042,7 +3042,7 @@
       "community": 10,
       "norm_label": "docs/brand-guidelines.md",
       "_origin": "semantic",
-      "community_name": "Brand Assets and Design Tokens",
+      "community_name": "brand skill",
       "id": "docs_brand_guidelines_brand_guidelines"
     },
     {
@@ -4152,7 +4152,7 @@
       "community": 14,
       "norm_label": "codegraph per-repo index",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "codegraph_codegraph_index"
     },
     {
@@ -4167,7 +4167,7 @@
       "community": 14,
       "norm_label": "add-ticket-attachment.sh",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "scripts_tracker_add_ticket_attachment_add_ticket_attachment"
     },
     {
@@ -4182,7 +4182,7 @@
       "community": 14,
       "norm_label": "add-ticket-comment.sh",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "scripts_tracker_add_ticket_comment_add_ticket_comment"
     },
     {
@@ -4197,7 +4197,7 @@
       "community": 14,
       "norm_label": "find-tickets.sh",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "scripts_tracker_find_tickets_find_tickets"
     },
     {
@@ -4212,7 +4212,7 @@
       "community": 14,
       "norm_label": "get-ticket-comments.sh",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "scripts_tracker_get_ticket_comments_get_ticket_comments"
     },
     {
@@ -4227,7 +4227,7 @@
       "community": 14,
       "norm_label": "get-ticket-details.sh",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "scripts_tracker_get_ticket_details_get_ticket_details"
     },
     {
@@ -4242,7 +4242,7 @@
       "community": 14,
       "norm_label": "upsert-ticket-details.sh",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "scripts_tracker_upsert_ticket_details_upsert_ticket_details"
     },
     {
@@ -4256,7 +4256,7 @@
       "contributor": null,
       "community": 14,
       "norm_label": "attachment embed-id vs numeric id",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "_claude_skills_update_ticket_skill_attachment_embed"
     },
@@ -4271,7 +4271,7 @@
       "contributor": null,
       "community": 14,
       "norm_label": "the adapter is the only entry point",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "docs_agents_issue_tracker_adapter_only_entry"
     },
@@ -4286,7 +4286,7 @@
       "contributor": null,
       "community": 14,
       "norm_label": "points require their reasoning in one call",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "docs_agents_issue_tracker_points_need_reason"
     },
@@ -4301,7 +4301,7 @@
       "contributor": null,
       "community": 14,
       "norm_label": "status lifecycle owned by dev-cycle (monotonic)",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "docs_agents_issue_tracker_status_lifecycle"
     },
@@ -4316,7 +4316,7 @@
       "contributor": null,
       "community": 14,
       "norm_label": "update-ticket skill",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "_claude_skills_update_ticket_skill_update_ticket"
     },
@@ -4332,7 +4332,7 @@
       "community": 14,
       "norm_label": "clarifying-ticket skill",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "claude_skills_clarifying_ticket_skill_clarifying_ticket"
     },
     {
@@ -4347,7 +4347,7 @@
       "community": 14,
       "norm_label": "clarified ticket templates",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "claude_skills_clarifying_ticket_templates_clarified_ticket_templates"
     },
     {
@@ -4362,7 +4362,7 @@
       "community": 14,
       "norm_label": "decompose-ticket skill",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "claude_skills_decompose_ticket_skill_decompose_ticket"
     },
     {
@@ -4377,7 +4377,7 @@
       "community": 14,
       "norm_label": "decomposition piece-spec templates",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "claude_skills_decompose_ticket_templates_piece_spec_templates"
     },
     {
@@ -4392,7 +4392,7 @@
       "community": 14,
       "norm_label": "diagram-ticket skill",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "claude_skills_diagram_ticket_skill_diagram_ticket"
     },
     {
@@ -4407,7 +4407,7 @@
       "community": 14,
       "norm_label": "estimate-ticket skill",
       "_origin": "semantic",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "id": "claude_skills_estimate_ticket_skill_estimate_ticket"
     },
     {
@@ -4421,7 +4421,7 @@
       "contributor": null,
       "community": 14,
       "norm_label": "issue tracker conventions",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "docs_agents_issue_tracker_issue_tracker"
     },
@@ -4436,7 +4436,7 @@
       "contributor": null,
       "community": 14,
       "norm_label": "output-language operating convention",
-      "community_name": "Ticket Skills and Templates",
+      "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "docs_agents_language_language_policy"
     },
@@ -6342,7 +6342,7 @@
       "community": 22,
       "norm_label": "scripts/dev.sh per-repo harness",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "scripts_dev_sh_dev_harness"
     },
     {
@@ -6357,7 +6357,7 @@
       "community": 22,
       "norm_label": "agent_logs/<key>-automation-plan.md",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "agent_logs_automation_plan"
     },
     {
@@ -6372,7 +6372,7 @@
       "community": 22,
       "norm_label": "agent_logs/<key>-bugs.md",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "agent_logs_bugs"
     },
     {
@@ -6387,7 +6387,7 @@
       "community": 22,
       "norm_label": "bug log template",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_coding_automate_bug_log_template_bug_log_template"
     },
     {
@@ -6402,7 +6402,7 @@
       "community": 22,
       "norm_label": "coding-automate skill",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_coding_automate_skill_coding_automate"
     },
     {
@@ -6417,7 +6417,7 @@
       "community": 22,
       "norm_label": "coding-feature skill",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_coding_feature_skill_coding_feature"
     },
     {
@@ -6432,7 +6432,7 @@
       "community": 22,
       "norm_label": "workspace coding style",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_coding_style_coding_style"
     },
     {
@@ -6447,7 +6447,7 @@
       "community": 22,
       "norm_label": "ground truth first",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_ground_truth_first_ground_truth_first"
     },
     {
@@ -6462,7 +6462,7 @@
       "community": 22,
       "norm_label": "plan-automate skill",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_plan_automate_skill_plan_automate"
     },
     {
@@ -6477,7 +6477,7 @@
       "community": 22,
       "norm_label": "tdd skill",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_tdd_skill_tdd"
     },
     {
@@ -6492,7 +6492,7 @@
       "community": 22,
       "norm_label": "domain docs consumption guide",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "docs_agents_domain_domain_docs"
     },
     {
@@ -6507,7 +6507,7 @@
       "community": 22,
       "norm_label": "submodules convention",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "docs_agents_submodules_submodules_convention"
     },
     {
@@ -6522,7 +6522,7 @@
       "community": 22,
       "norm_label": "submodule checkout write ban",
       "_origin": "semantic",
-      "community_name": "Coding Skills and Plan Logs",
+      "community_name": "coding-automate skill",
       "id": "claude_rules_submodules_submodule_write_ban"
     },
     {
@@ -8906,7 +8906,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "aggregation backstop (presence + language check)",
-      "community_name": "Ultra-Review Gate Orchestration",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_backstop"
     },
@@ -8921,7 +8921,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "code gate (daniel, code-reviewer)",
-      "community_name": "Ultra-Review Gate Orchestration",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_code_reviewer_gate"
     },
@@ -8936,7 +8936,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "performance gate (liam, performance-engineer)",
-      "community_name": "Ultra-Review Gate Orchestration",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_performance_engineer_gate"
     },
@@ -8951,7 +8951,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "re-visit mode (prior must-fix only)",
-      "community_name": "Ultra-Review Gate Orchestration",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_revisit_mode"
     },
@@ -8966,7 +8966,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "shared verdict grounding (review/basis.md)",
-      "community_name": "Ultra-Review Gate Orchestration",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_review_basis_verdict_basis"
     },
@@ -8981,7 +8981,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "ultra-review skill",
-      "community_name": "Ultra-Review Gate Orchestration",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_ultra_review"
     },
@@ -8996,7 +8996,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "force-shell first line (no-bash give-up fix)",
-      "community_name": "Ultra-Review Gate Orchestration",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_force_shell_line"
     },
@@ -9957,7 +9957,7 @@
       "community": 41,
       "norm_label": "dap cli (dap debugger driver)",
       "_origin": "semantic",
-      "community_name": "Debug Adapter Tooling",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_skill_dap"
     },
     {
@@ -9972,7 +9972,7 @@
       "community": 41,
       "norm_label": "scripts/aiworks-cursor.sh (vendor sync)",
       "_origin": "semantic",
-      "community_name": "Debug Adapter Tooling",
+      "community_name": "debugging-code skill",
       "id": "scripts_aiworks_cursor_aiworks_cursor"
     },
     {
@@ -9987,7 +9987,7 @@
       "community": 41,
       "norm_label": "advanced debugging techniques",
       "_origin": "semantic",
-      "community_name": "Debug Adapter Tooling",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_references_advanced_techniques_advanced_techniques"
     },
     {
@@ -10002,7 +10002,7 @@
       "community": 41,
       "norm_label": "installing debug adapters",
       "_origin": "semantic",
-      "community_name": "Debug Adapter Tooling",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_references_installing_debuggers_installing_debuggers"
     },
     {
@@ -10017,7 +10017,7 @@
       "community": 41,
       "norm_label": "debugging-code skill",
       "_origin": "semantic",
-      "community_name": "Debug Adapter Tooling",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_skill_debugging_code"
     },
     {
@@ -10032,7 +10032,7 @@
       "community": 41,
       "norm_label": "vendored plugin skills note",
       "_origin": "semantic",
-      "community_name": "Debug Adapter Tooling",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_vendored_vendored_plugin_skills"
     },
     {
@@ -11321,7 +11321,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "comparison block",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_components_comparison_block"
     },
@@ -11336,7 +11336,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "decision-data island",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_components_decision_data_island"
     },
@@ -11351,7 +11351,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "the export contract (two readers)",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_components_export_contract"
     },
@@ -11366,7 +11366,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "export-data island",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_components_export_data_island"
     },
@@ -11381,7 +11381,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "steps / implementation plan block",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_components_steps_block"
     },
@@ -11396,7 +11396,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "ui preview block",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_components_ui_preview_block"
     },
@@ -11411,7 +11411,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "interactive nodes + walkthrough",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_diagrams_interactive_nodes"
     },
@@ -11426,7 +11426,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "choose the diagram by the shape of the idea",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_diagrams_shape_of_idea"
     },
@@ -11441,7 +11441,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "the four rules (smallest diff, one file, block+island together, re-verify)",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_editing_four_rules"
     },
@@ -11456,7 +11456,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": ":root design-token block",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_theming_token_block"
     },
@@ -11471,7 +11471,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "mode a \u2014 build a new doc",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_skill_mode_a_build"
     },
@@ -11486,7 +11486,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "mode b \u2014 update an existing doc",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_skill_mode_b_update"
     },
@@ -11501,7 +11501,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "plan-approval mode (data-plan-approval)",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_skill_plan_approval_mode"
     },
@@ -11516,7 +11516,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "aiworks:config generated block",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0001_headless_workflow_config_mirror_aiworks_config_block"
     },
@@ -11531,7 +11531,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "file type wins: any .md is english",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0002_workspace_output_localization_md_is_english"
     },
@@ -11546,7 +11546,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "planning.auto_approve resolution is fail-closed",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0003_personal_runtime_config_overrides_auto_approve_fail_closed"
     },
@@ -11561,7 +11561,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "reversibility draws the override line",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0003_personal_runtime_config_overrides_reversibility_line"
     },
@@ -11576,7 +11576,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "case_report_language config key",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0012_case_reports_are_localized_for_their_reader_case_report_language_key"
     },
@@ -11591,7 +11591,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "component library reference",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_components_components"
     },
@@ -11606,7 +11606,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "diagrams reference",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_diagrams_diagrams"
     },
@@ -11621,7 +11621,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "editing an existing doc (mode b playbook)",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_editing_editing"
     },
@@ -11636,7 +11636,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "localization \u2014 english + thai (display-only)",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_localization_localization"
     },
@@ -11651,7 +11651,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "theming reference",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_theming_theming"
     },
@@ -11666,7 +11666,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "write-interactive-docs skill",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_skill_write_interactive_docs"
     },
@@ -11681,7 +11681,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "diagram generation (ticket-clarification visuals)",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_agents_diagram_generation_diagram_generation"
     },
@@ -11696,7 +11696,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "the two rules that bite (byte-identical source, resolvable node keys)",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_diagrams_two_rules"
     },
@@ -11711,7 +11711,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "thai is display-only; exports stay english",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_references_localization_exports_stay_english"
     },
@@ -11726,7 +11726,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "a plan always has a markdown twin",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_skill_plan_markdown_twin"
     },
@@ -11741,7 +11741,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "adr-0001 \u2014 headless workflows read a generated config mirror",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0001_headless_workflow_config_mirror_config_mirror"
     },
@@ -11756,7 +11756,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "adr-0002 \u2014 english spine, thai prose",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0002_workspace_output_localization_english_spine"
     },
@@ -11771,7 +11771,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "adr-0003 \u2014 personal overrides apply at runtime only",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0003_personal_runtime_config_overrides_local_override"
     },
@@ -11786,7 +11786,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "adr-0006 \u2014 the live workspace config carries no comments",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0006_config_carries_no_comments_no_comments"
     },
@@ -11801,7 +11801,7 @@
       "contributor": null,
       "community": 6,
       "norm_label": "adr-0012 \u2014 a case report is localized for its reader",
-      "community_name": "Interactive Doc Authoring",
+      "community_name": "export-data island",
       "_origin": "semantic",
       "id": "docs_adr_0012_case_reports_are_localized_for_their_reader_case_report_language"
     },
@@ -13389,9 +13389,9 @@
       "source_location": "L20",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill",
-      "target": "claude_skills_ponytail_skill_ponytail"
+      "target": "claude_skills_ponytail_skill_ponytail",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13400,9 +13400,9 @@
       "source_location": "L114",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_boundaries"
+      "target": "claude_skills_ponytail_skill_boundaries",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13411,9 +13411,9 @@
       "source_location": "L26",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_persistence"
+      "target": "claude_skills_ponytail_skill_persistence",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13422,9 +13422,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_the_ladder"
+      "target": "claude_skills_ponytail_skill_the_ladder",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13433,9 +13433,9 @@
       "source_location": "L56",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_rules"
+      "target": "claude_skills_ponytail_skill_rules",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13444,9 +13444,9 @@
       "source_location": "L66",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_output"
+      "target": "claude_skills_ponytail_skill_output",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13455,9 +13455,9 @@
       "source_location": "L77",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_intensity"
+      "target": "claude_skills_ponytail_skill_intensity",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13466,9 +13466,9 @@
       "source_location": "L90",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy"
+      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13477,9 +13477,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13488,9 +13488,9 @@
       "source_location": "L12",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13499,9 +13499,9 @@
       "source_location": "L34",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13510,9 +13510,9 @@
       "source_location": "L52",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13521,9 +13521,9 @@
       "source_location": "L68",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13532,9 +13532,9 @@
       "source_location": "L78",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13543,9 +13543,9 @@
       "source_location": "L95",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13642,9 +13642,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail",
-      "target": "docs_agents_ponytail_code_minimalism_ponytail"
+      "target": "docs_agents_ponytail_code_minimalism_ponytail",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13653,9 +13653,9 @@
       "source_location": "L101",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_commands"
+      "target": "docs_agents_ponytail_commands",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13664,9 +13664,9 @@
       "source_location": "L112",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_installing_it"
+      "target": "docs_agents_ponytail_installing_it",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13675,9 +13675,9 @@
       "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_the_ladder"
+      "target": "docs_agents_ponytail_the_ladder",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13686,9 +13686,9 @@
       "source_location": "L30",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
+      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13697,9 +13697,9 @@
       "source_location": "L51",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
+      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13708,9 +13708,9 @@
       "source_location": "L75",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_where_it_stops"
+      "target": "docs_agents_ponytail_where_it_stops",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -13719,9 +13719,9 @@
       "source_location": "L82",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_agents_ponytail"
+      "target": "docs_agents_ponytail",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -27387,5 +27387,5 @@
       "source_file": ".claude/skills/estimate-ticket/SKILL.md"
     }
   ],
-  "built_at_commit": "a9f96e4291b79ca4525bdcbfb3665b87a23b97a8"
+  "built_at_commit": "30be2ee369634b852fd8ed153c973eed2e9664c3"
 }
