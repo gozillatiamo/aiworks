@@ -552,6 +552,33 @@ tracker_edit_comment() {
 # endpoint 302s to `https://api.media.atlassian.com/file/<uuid>/binary`, so resolve it
 # here — at the one place that already knows a file was just uploaded — rather than
 # leaving every caller to discover the distinction the hard way.
+# An image's pixel size as "@<W>x<H>", or "" when it is not an image / the size cannot
+# be read. The ADF media node needs it or the renderer falls back to a 250x200 box and a
+# full-page screenshot lands as an unreadable stamp (see jira.jq's media section), so it
+# is resolved HERE — the one place that still has the local file — and carried in the
+# embed token. `sips` is macOS-native and `file` is everywhere; neither is a new
+# dependency, and an unreadable size degrades to a full-width (letterboxed) image rather
+# than an error.
+jira_image_dims() {
+  local f="$1" wh=""
+  case "$(file -b --mime-type "$f" 2>/dev/null)" in image/*) ;; *) return 0 ;; esac
+  if command -v sips >/dev/null 2>&1; then
+    wh="$(sips -g pixelWidth -g pixelHeight "$f" 2>/dev/null \
+          | awk '/pixelWidth:/{w=$2} /pixelHeight:/{h=$2} END{if (w>0 && h>0) print w"x"h}')"
+  fi
+  # `file -b` reports "PNG image data, 1859 x 1053, …"; a JPEG prints its DENSITY
+  # (72x72) before the real size, so there only take the size after "precision".
+  if [[ -z "$wh" ]]; then
+    wh="$(file -b "$f" 2>/dev/null | awk '
+      match($0, /PNG image data, [0-9]+ x [0-9]+/) || match($0, /precision [0-9]+, [0-9]+x[0-9]+/) ||
+      match($0, /GIF image data, version [0-9a-z]+, [0-9]+ x [0-9]+/) {
+        s = substr($0, RSTART, RLENGTH); n = split(s, p, /[^0-9]+/)
+        print p[n-1] "x" p[n]; exit }')"
+  fi
+  [[ -n "$wh" ]] && printf '@%s' "$wh"
+  return 0
+}
+
 jira_attachment_media_uuid() {
   local att_id="$1" loc
   loc="$(curl -sS -o /dev/null -D - -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
@@ -561,7 +588,7 @@ jira_attachment_media_uuid() {
 }
 
 tracker_add_attachment() {
-  local ticket="$1" dry="$2" file="$3" id_only="${4:-0}" embed_only="${5:-0}" key tmp err http filename att_id media_id
+  local ticket="$1" dry="$2" file="$3" id_only="${4:-0}" embed_only="${5:-0}" key tmp err http filename att_id media_id dims
   [[ -f "$file" ]] || die "no such file: $file"
   key="$(jira_key "$ticket")"
   filename="$(basename "$file")"
@@ -589,15 +616,16 @@ tracker_add_attachment() {
   rm -f "$tmp"
   [[ -n "$att_id" ]] || die "attachment uploaded to $key but the response carried no id"
   media_id="$(jira_attachment_media_uuid "$att_id")"
+  dims="$(jira_image_dims "$file")"
 
   if [[ "$id_only" -eq 1 ]]; then printf '%s\n' "$att_id"; return 0; fi
   if [[ "$embed_only" -eq 1 ]]; then
     [[ -n "$media_id" ]] || die "attached $filename to $key (id $att_id) but could not resolve its media uuid — it cannot be embedded; use the Attachments panel"
-    printf '%s\n' "$media_id"; return 0
+    printf '%s%s\n' "$media_id" "$dims"; return 0
   fi
   if [[ -n "$media_id" ]]; then
-    printf 'Attached %s to %s  [id %s · embed with ![%s](attachment:%s)]\n' \
-           "$filename" "$key" "$att_id" "$filename" "$media_id"
+    printf 'Attached %s to %s  [id %s · embed with ![%s](attachment:%s%s)]\n' \
+           "$filename" "$key" "$att_id" "$filename" "$media_id" "$dims"
   else
     printf 'Attached %s to %s  [id %s · media uuid unresolved — cannot be embedded inline]\n' \
            "$filename" "$key" "$att_id"
@@ -620,7 +648,10 @@ tracker_get_attachments() {
   # jira_attachment_media_uuid), and only the upload path (--embed-id) used to hand it
   # back — so a diagram or screenshot attached by an earlier step could never be moved
   # in-body without re-uploading it. Images only: they are what gets embedded, and each
-  # uuid costs one extra request.
+  # uuid costs one extra request. The token printed here carries no `@<W>x<H>` size —
+  # Jira's attachment metadata does not report pixel dimensions and the file is not local
+  # — so it renders full-width but letterboxed; upload with --embed-id (or append the
+  # size by hand) when the exact fit matters.
   embeds='{}'
   for att_id in $(printf '%s' "$issue" | jq -r '
       (.fields.attachment // [])[] | select((.mimeType // "") | startswith("image/")) | .id'); do

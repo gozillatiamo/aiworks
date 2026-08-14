@@ -28,6 +28,10 @@ To show the file inside a comment rather than burying it in the Attachments pane
   id=$(add-ticket-attachment.sh FM-9 ./shot.png --embed-id)
   printf '![shot](attachment:%s)\n' "$id" | add-ticket-comment.sh FM-9
 
+For an image the embed id carries the file's pixel size as a "@<W>x<H>" suffix
+(uuid@1859x1053). Paste it WHOLE: without the size Jira renders the picture in
+its 250x200 fallback box, which is a stamp nobody can read a screenshot from.
+
 The image must sit ALONE on its line; several on one line render as a thumbnail strip.
 
 Arguments:
@@ -36,7 +40,8 @@ Arguments:
 
 Options:
   --id-only     Print ONLY the numeric attachment id (for remove/download).
-  --embed-id    Print ONLY the media uuid (for ![alt](attachment:<id>) in a comment).
+  --embed-id    Print ONLY the media uuid — plus "@<W>x<H>" for an image — for
+                ![alt](attachment:<id>) in a comment. Use it whole.
   --dry-run     Print the request instead of sending it.
   -h, --help    Show this help and exit.
 
