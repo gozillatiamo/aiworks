@@ -2,8 +2,8 @@
 name: case-report
 description: >-
   Turn a finished deployed-environment investigation into a case file a human can act on —
-  background, the entities involved, an evidence-backed verdict, and a runbook of execute +
-  verify steps. Use when an admin, support agent or operator reported something wrong in a
+  background, the entities involved, an evidence-backed verdict, and a runbook of verify +
+  execute steps. Use when an admin, support agent or operator reported something wrong in a
   running environment and wants a written answer; when a root-cause investigation has reached a
   verdict and needs writing up for someone who will act on it; or when another agent must hand a
   live-incident finding to a human. For a bug reproducible on a laptop the write-up belongs on
@@ -50,7 +50,7 @@ The report's section set is **organization-specific and lives outside this skill
 
 If no repo is declared `kind: script`, or it is not cloned, fall back to the generic skeleton —
 Background · Entities involved · Relevant history · Verdict and root cause · Troubleshooting
-(Execute + Verification) — and say in the report that the organization template was unavailable.
+(Verification, then Execute) — and say in the report that the organization template was unavailable.
 
 **Done when:** the exact list of sections you are going to fill is written down, and you know
 which are required and which are conditional.
@@ -97,14 +97,18 @@ guidance; a person decides and runs it.
   and its parameters. A bespoke query is what you write when nothing there fits.
 - **Bespoke SQL is wrapped so it cannot commit by accident** — open a transaction and roll back by
   default, leaving the commit as a deliberate edit by the human.
-- **Verification runs twice.** The pre and post checks must be the *same* observation so their
-  outputs are comparable — that is what lets the human confirm the change did what it claimed.
-  Give both as code blocks even when they are identical.
+- **Verification runs twice, and is written first.** The pre and post checks must be the *same*
+  observation so their outputs are comparable — that is what lets the human confirm the change did
+  what it claimed. Give both as code blocks even when they are identical, and put that section
+  **above** Execute: a reader who mutates before taking the pre-reading has nothing left to compare
+  the result against, and the pre-reading is also the last chance to notice the case has moved since
+  you investigated it.
 - **A script worth keeping goes back to the store.** When a bespoke script would serve the next
   case too, say so and name where it belongs in the script repo. You propose; a human commits it.
 
-**Done when:** Execute and Verification are both runnable as written, with no placeholder a human
-has to guess at, and every mutation is reversible or its irreversibility is stated in the report.
+**Done when:** Verification and Execute are both runnable as written — in that order — with no
+placeholder a human has to guess at, and every mutation is reversible or its irreversibility is
+stated in the report.
 
 ## Step 6 — Publish by form
 
