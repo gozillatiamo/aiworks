@@ -1014,6 +1014,30 @@ check_voice() {
 # a future edit to that alternation could drop without any test going red here. Asserted at the
 # root AND in the per-repo copies, because the guard is mirrored into every declared repo by aiworks-add's
 # WIRED_HOOKS and a stale copy is a live hole in that repo only.
+# Does the configured statusLine actually render our badge? EXECUTED, not parsed. A chain bridge
+# keeps the command it replaced in its own cache file, so following the string generalises to
+# nothing — one vendor's stash key is not the next one's. Running it is the cheap honest answer:
+# Claude Code runs this exact command once a second, and the probe is kept inert — no
+# `transcript_path`, so the badge's compute-and-cache path never runs, and a throwaway
+# HEADROOM_STATE_DIR so a probe can never write into the real ledger. Bounded at ~5s: a doctor
+# that hangs on somebody's bar is worse than one that misses a finding.
+badge_renders() {  # badge_renders <statusline-command>
+  local cmd="$1" tmp state pid rc=1 i=0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/aiworks-badge.XXXXXX" 2>/dev/null)" || return 1
+  state="$(mktemp -d "${TMPDIR:-/tmp}/aiworks-badge-state.XXXXXX" 2>/dev/null)" || { rm -f "$tmp"; return 1; }
+  (
+    printf '{"session_id":"aiworks-doctor-probe","model":{"id":"aiworks-doctor-probe"}}' \
+      | HEADROOM_STATE_DIR="$state" bash -c "$cmd" >"$tmp" 2>/dev/null
+  ) &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [[ $i -lt 50 ]]; do sleep 0.1; i=$((i+1)); done
+  kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  grep -qi 'headroom' "$tmp" && rc=0
+  rm -rf "$tmp" "$state"
+  return $rc
+}
+
 check_headroom() {
   local g=headroom
   cfg_bool headroom.enabled true
@@ -1121,7 +1145,22 @@ check_headroom() {
     return
   fi
   [[ -f "$user_settings" ]] && sl="$(jq -r '.statusLine.command // empty' "$user_settings" 2>/dev/null)"
+  # Two ways to be wired, and the lib check below covers BOTH — a chained badge with no attribution
+  # lib is exactly as blind as a directly-wired one — so establishing *that* the badge renders is
+  # kept separate from asking whether it counts.
+  local wired=""
   if printf '%s' "$sl" | grep -q 'headroom-statusline'; then
+    wired="into the user statusLine"
+  elif [[ -n "$sl" ]] && badge_renders "$sl"; then
+    # Someone else's bar chained OURS. A chain bridge stores the command it replaced in its own
+    # cache file and re-runs it, so the settings.json string no longer names headroom while the
+    # badge still renders every second — a grep for the literal path reports "not wired" and sends
+    # a person to re-run the plugin's doctor, which would then chain the bridge and nest them two
+    # deep. Following the string is a losing game (each vendor stashes the original somewhere
+    # else), so the question is answered the only way that stays true: render the bar and look.
+    wired="through a chained statusLine command"
+  fi
+  if [[ -n "$wired" ]]; then
     # Wired is not the same as counting. The flat copy resolves attribution.jq BESIDE itself and its
     # compute() opens with `[ -n "$JQ_LIB" ] || return 0`, so without the lib the badge reads
     # "idle (not compressing yet)" forever, every session cache records n=0 saved=0 missed=0, and no
@@ -1133,7 +1172,7 @@ check_headroom() {
       [[ -f "$HOME/.claude/$f" ]] || miss="$miss $f"
     done
     if [[ -z "$miss" ]]; then
-      pass $g "savings badge" "wired into the user statusLine, attribution lib beside the copy"
+      pass $g "savings badge" "wired $wired, attribution lib beside the copy"
     else
       # -t, not a version sort: BSD ls has no -v and a lexical sort puts 2.7.0 above 2.10.0.
       lib="$(ls -dt "$HOME"/.claude/plugins/cache/*/headroom-usage-indicator/*/scripts/lib 2>/dev/null | head -1)"

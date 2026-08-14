@@ -145,6 +145,12 @@ The plugin's `--fix` also joins the badge onto the END of your existing `statusL
 spaces, so on a multi-line bar it lands on the last line and gets truncated. `printf '%s\n%s'`
 instead of `printf '%s  %s'` in that command gives it its own line; it is preserved on later runs,
 since the merge only fires when no `headroom-statusline` reference is present.
+**Another tool may own `statusLine.command` and chain ours.** A bridge stores the command it
+replaced in its own cache file and re-runs it, so the badge still renders while `settings.json` no
+longer names it. Doctor therefore *renders the bar and looks* rather than grepping the string —
+following the string generalises to nothing, since each vendor stashes the original somewhere
+else. The probe is inert by construction: no `transcript_path`, so the badge's compute path never
+runs, and a throwaway `HEADROOM_STATE_DIR`, so it can never write into the ledger it is auditing.
 
 State lives outside the repo — `~/.headroom/` (engine) and `~/.claude/headroom-indicator/`
 (badge, ledger, learned offender files). Nothing to gitignore.

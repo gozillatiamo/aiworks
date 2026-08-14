@@ -491,6 +491,47 @@ ck "tokens saved with no dollars is a finding" "1 session(s) saved tokens the ba
 ck "the finding names the file to edit"        "headroom-model-prices.json"                          "$OUT"
 ck_exit "an unpriced model warns, never fails" 0 "$RC"
 
+# ── 23 · the badge check follows a chained statusLine ─────────────────────────────
+# Another tool can take over `statusLine.command` and re-run the command it replaced from its own
+# cache file. The badge still renders every second; the settings.json string no longer names it.
+# Grepping that string reported "not wired" on a machine whose bar was printing the badge — and
+# the remedy it offered would have chained the bridge and nested the two. So the check renders the
+# bar and looks. The probe must also stay inert: it runs somebody's shell command, and a doctor
+# that writes into the ledger it is auditing has corrupted its own next answer.
+W="$T/hrchain"; make_ws "$W"; stage "$W"
+FH="$T/hrchainhome"; mkdir -p "$FH/.claude"
+LED="$T/hrchainledger"; mkdir -p "$LED"
+printf '#!/usr/bin/env bash\ncat >/dev/null\nprintf "%%s\\n" "○ headroom idle (not compressing yet)"\n' \
+  > "$FH/badge-bridge.sh"; chmod +x "$FH/badge-bridge.sh"
+
+run_chain() {  # run_chain — doctor against the fixture HOME and a throwaway ledger
+  HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" HEADROOM_STATE_DIR="$LED" \
+    "$W/scripts/aiworks-doctor.sh" --only headroom -v 2>&1
+}
+
+printf '{"statusLine":{"type":"command","command":"bash %s/badge-bridge.sh"}}\n' "$FH" \
+  > "$FH/.claude/settings.json"
+
+# Chained and lib-less: the two checks are independent, and a chained badge with no attribution
+# lib is exactly as blind as a directly-wired one. Establishing that the bar renders must not
+# excuse it from the counting check — that is the hole this restructure exists to keep closed.
+OUT="$(run_chain)"
+ck "a chained bar is still held to the lib check" "savings badge measures nothing" "$OUT"
+
+: > "$FH/.claude/attribution.jq"; : > "$FH/.claude/headroom-state.sh"
+OUT="$(run_chain)"
+ck "a chained bar that renders the badge passes" "wired through a chained statusLine" "$OUT"
+ck "and it is not reported as unwired"           "ABSENT:savings badge not wired"     "$OUT"
+
+# The probe runs a shell command; it must leave the ledger it is auditing untouched.
+ck "the probe writes nothing into the ledger" "" "$(ls "$LED" 2>/dev/null)"
+
+printf '{"statusLine":{"type":"command","command":"printf %%s my-own-bar"}}\n' \
+  > "$FH/.claude/settings.json"
+OUT="$(run_chain)"
+ck "a bar without the badge is still a finding" "savings badge not wired"              "$OUT"
+ck "it does not claim a chain that is not there" "ABSENT:wired through a chained"      "$OUT"
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]
