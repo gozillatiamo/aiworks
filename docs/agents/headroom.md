@@ -123,8 +123,8 @@ For anything file-backed, `hcat` is strictly better: it compresses before the sp
 
 ## Operations
 
-`aiworks doctor --only headroom` reports four things, each with its owner command: the engine, the
-plugin install, the `.env` guard's `hcat` coverage, and the savings badge.
+`aiworks doctor --only headroom` reports five things, each with its owner command: the engine, the
+plugin install, the `.env` guard's `hcat` coverage, the savings badge, and the badge's price table.
 
 The badge is wired by the **plugin's own** doctor (`/headroom-usage-indicator:doctor`), never by
 hand — its merge chains an existing `statusLine` command and keeps the original under
@@ -148,6 +148,22 @@ since the merge only fires when no `headroom-statusline` reference is present.
 
 State lives outside the repo — `~/.headroom/` (engine) and `~/.claude/headroom-indicator/`
 (badge, ledger, learned offender files). Nothing to gitignore.
+
+**The price table is a data file, and a missing row is silent.** The badge turns tokens into money
+with a per-model **input** `$/MTok` looked up by substring in `~/.claude/headroom-model-prices.json`
+(a plugin copy under `data/model-prices.json` is the fallback). A model the table does not match is
+not an error: the badge simply drops the `$` segment and records `0.000000` for that session, so the
+`all-time` figure stays at zero no matter how much the team compresses — the one number that would
+justify the feature is the one a missing row zeroes. The table ships from upstream and lags new
+model releases, so add the row yourself rather than waiting for a plugin update:
+
+```bash
+jq '.prices |= [{match: "opus-5", usd_per_mtok: 5}] + .' ~/.claude/headroom-model-prices.json > /tmp/p && mv /tmp/p ~/.claude/headroom-model-prices.json
+```
+
+First substring match wins, so put a more specific `match` ahead of a shorter one that would also
+hit it (`opus-5` before `opus`). The doctor's **badge price table** item catches the next gap from
+the ledger itself — a session that saved tokens but recorded no dollars.
 
 The install extra is `[mcp]`, not `[all]`: `[all]` drags in torch/ONNX/LLMLingua for the ML
 relevance models and the proxy, none of which this workspace uses.

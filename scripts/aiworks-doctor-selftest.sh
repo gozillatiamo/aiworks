@@ -469,6 +469,28 @@ OUT="$(run_hr)"
 ck "an unwired badge still reports as unwired" "savings badge not wired"       "$OUT"
 ck "an unwired badge is not a lib finding"     "ABSENT:measures nothing"       "$OUT"
 
+# ── 22 · the badge price table reads the ledger, and stays quiet without one ──────
+# A model missing from the badge's price table costs nothing visible — the badge just drops the
+# `$` segment and records 0.000000 — so the finding is derived from the ledger the badge wrote:
+# a session that saved tokens with no dollars against it. Both directions are pinned, because a
+# check that cannot fire and a check that always fires look identical on a healthy machine.
+W="$T/headroom"; make_ws "$W"; stage "$W"
+LEDGER="$T/headroom-ledger"; mkdir -p "$LEDGER"
+
+OUT="$(HEADROOM_STATE_DIR="$T/headroom-ledger-absent" "$W/scripts/aiworks-doctor.sh" --only headroom -v 2>&1)"
+ck "no ledger yet is a skip, not a finding" "no headroom ledger on this machine yet" "$OUT"
+
+printf '86972 0.434860\n' > "$LEDGER/session-priced.totals"
+OUT="$(HEADROOM_STATE_DIR="$LEDGER" "$W/scripts/aiworks-doctor.sh" --only headroom -v 2>&1)"
+ck "a priced ledger passes"        "every recorded saving is priced" "$OUT"
+ck "a priced ledger says nothing"  "ABSENT:could not price"          "$OUT"
+
+printf '12345 0.000000\n' > "$LEDGER/session-unpriced.totals"
+OUT="$(HEADROOM_STATE_DIR="$LEDGER" "$W/scripts/aiworks-doctor.sh" --only headroom 2>&1)"; RC=$?
+ck "tokens saved with no dollars is a finding" "1 session(s) saved tokens the badge could not price" "$OUT"
+ck "the finding names the file to edit"        "headroom-model-prices.json"                          "$OUT"
+ck_exit "an unpriced model warns, never fails" 0 "$RC"
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]

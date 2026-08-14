@@ -1155,6 +1155,28 @@ check_headroom() {
          "no headroom badge in the user statusLine — compression would run unmeasured" \
          "see: run /headroom-usage-indicator:doctor in Claude Code and accept the statusLine fix" slow
   fi
+
+  # ── the badge's price table ──
+  # The badge turns tokens into money with a per-model INPUT $/MTok looked up by substring in a
+  # data file. A model absent from that table is not an error anywhere: the badge drops the money
+  # segment, writes $0.000000 into that session's .totals, and the "all-time" figure stays at zero
+  # however much the team actually compresses — the one number that would justify the feature is
+  # the one a missing row silently zeroes. Detected from the ledger the badge itself wrote (tokens
+  # saved with no dollars against them) rather than from a model id, because the id this machine
+  # runs is not knowable from a shell script — and because that ledger is the symptom itself.
+  # The remedy is `see:` on purpose: the framework does not carry a copy of Anthropic's price list.
+  local state_dir="${HEADROOM_STATE_DIR:-$HOME/.claude/headroom-indicator}" unpriced
+  unpriced=$(cat "$state_dir"/session-*.totals 2>/dev/null \
+    | LC_ALL=C awk '$1+0 > 0 && $2+0 == 0 { n++ } END { print n+0 }')
+  if [[ ! -d "$state_dir" ]]; then
+    skip $g "badge price table" "no headroom ledger on this machine yet"
+  elif [[ "${unpriced:-0}" -gt 0 ]]; then
+    warn $g "$unpriced session(s) saved tokens the badge could not price" \
+         "the model is missing from the badge's price table, so the badge shows no \$ and the all-time total can never leave 0" \
+         "see: add that model's input \$/MTok to ~/.claude/headroom-model-prices.json (docs/agents/headroom.md)" slow
+  else
+    pass $g "badge price table" "every recorded saving is priced"
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
