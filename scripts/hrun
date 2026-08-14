@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# hrun <command> [args…] — run a command and print its output COMPRESSED when that is worth doing.
+#
+# `hcat` only reads a FILE (`printf x | hcat` → "usage: hcat <file>"), so command output had no
+# route into compression at all: the bytes landed in context raw or not at all. This captures the
+# output to a temp file first, then decides.
+#
+# Three outcomes, by size:
+#   < MIN          printed verbatim — byte-identical to running the command yourself
+#   MIN…MAX        printed through `hcat`, which itself passes through anything it cannot compress
+#   > MAX          NOT printed — kept on disk and named, because past a couple of MB the compressed
+#                  rendering is still too big to read (see pretool-hcat-size-guard.sh for the
+#                  measurement this ceiling comes from)
+#
+# ⚠️ IT PRINTS A RENDERING, NOT A DATA STREAM. Above MIN the output carries hcat's receipt header
+# and may be a compressed body, so redirecting or piping it produces silent garbage —
+# `hrun cat x.json > y.json` yields a y.json that no parser accepts. It cannot detect the misuse
+# itself (under the Bash tool stdout is never a TTY), so `pretool-hrun-pipe-guard.sh` refuses the
+# shapes where it would happen. Read hrun's output; never feed it to something.
+#
+# Exit code, stdout/stderr interleaving and stdin all pass through unchanged — asserted by
+# guards-selftest.sh, because a wrapper that ate a non-zero exit would turn a failing command into
+# a silent success, which is worse than any number of uncompressed bytes.
+set -uo pipefail
+
+MIN_BYTES="${HRUN_MIN_BYTES:-4096}"          # below this, compression cannot pay for its own header
+MAX_BYTES="${HCAT_MAX_BYTES:-2097152}"       # shared ceiling with the hcat size guard: 2 MiB
+
+[ $# -gt 0 ] || { printf 'usage: hrun <command> [args…]\n' >&2; exit 64; }
+
+out="$(mktemp "${TMPDIR:-/tmp}/hrun.XXXXXX")" || exit 70
+
+# The command owns both streams; merging them here keeps their real interleaving, which is the
+# thing a reader needs when the failure is "this warning printed just before that error".
+"$@" >"$out" 2>&1
+rc=$?
+
+size=$(wc -c <"$out" 2>/dev/null | tr -d ' ')
+size=${size:-0}
+
+if [ "$size" -lt "$MIN_BYTES" ]; then
+  cat "$out"
+  rm -f "$out"
+elif [ "$size" -le "$MAX_BYTES" ] && command -v hcat >/dev/null 2>&1; then
+  hcat "$out"
+  rm -f "$out"
+else
+  # Deliberately does NOT print the body. Keep the file and name it: a person or an agent can Read
+  # it with offset/limit, or hcat a slice, without this call flooding the window first.
+  printf '── hrun: %s exited %s · %s bytes of output, above the %s-byte ceiling — NOT printed.\n' \
+         "$1" "$rc" "$size" "$MAX_BYTES"
+  printf '   kept at %s — Read it with offset/limit, or grep it for the line you need.\n' "$out"
+fi
+
+exit $rc
