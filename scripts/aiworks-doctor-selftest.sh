@@ -476,9 +476,10 @@ run_chain() {  # run_chain — doctor against the fixture HOME and a throwaway l
 
 printf '{"statusLine":{"type":"command","command":"bash %s/badge-bridge.sh"}}\n' "$FH" \
   > "$FH/.claude/settings.json"
+
 # Chained and lib-less: the two checks are independent, and a chained badge with no attribution
 # lib is exactly as blind as a directly-wired one. Establishing that the bar renders must not
-# excuse it from the counting check.
+# excuse it from the counting check — that is the hole this restructure exists to keep closed.
 OUT="$(run_chain)"
 ck "a chained bar is still held to the lib check" "savings badge measures nothing" "$OUT"
 
