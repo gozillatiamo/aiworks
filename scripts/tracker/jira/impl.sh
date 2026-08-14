@@ -220,14 +220,21 @@ tracker_upsert() {
   # already in it must be carried across a rewrite or they are lost for good (OFB-1952).
   # Fetch the existing description's media blocks first; re-appended below. Only relevant
   # when we are actually rewriting the body (--body / --body-file).
+  # `--no-carry-media` turns the net off, for the one case it works against: DELIBERATELY
+  # replacing or dropping an embedded image. With the net on, the image the new body no
+  # longer references is re-appended from the old description — so a re-rendered diagram
+  # leaves its predecessor sitting under the divider, and writing the body again cannot
+  # clear it (the carry-over reads the description it just wrote).
   local existing_media='[]'
-  if [[ -n "$body_md" ]]; then
+  if [[ -n "$body_md" ]] && [[ "$(printf '%s' "$fields" | jq -r '.no_carry_media // empty')" != "true" ]]; then
     local _cur
     _cur="$(jira_api GET "/rest/api/3/issue/$key?fields=description" 2>/dev/null || true)"
     existing_media="$(printf '%s' "$_cur" | jq -L "$JIRA_IMPL_DIR" -c 'include "jira"; ((.fields.description // {}) | adf_media_blocks)' 2>/dev/null || echo '[]')"
     [[ -n "$existing_media" && "$existing_media" != "null" ]] || existing_media='[]'
     local _nm; _nm="$(printf '%s' "$existing_media" | jq 'length' 2>/dev/null || echo 0)"
-    [[ "${_nm:-0}" -gt 0 ]] && echo "Carrying over $_nm image/attachment node(s) from the existing description." >&2
+    # This counts what the OLD description held; one the new body re-embeds itself (its
+    # `![alt](attachment:<id>)` line kept) stays in place instead of being appended again.
+    [[ "${_nm:-0}" -gt 0 ]] && echo "Existing description holds $_nm image/attachment node(s) — any the new body does not re-embed are appended under \"Attachments (carried over)\"." >&2
   fi
 
   # Map the abstract field set (minus status) to a Jira `fields` object. Jira has one
@@ -600,18 +607,34 @@ tracker_add_attachment() {
 # List a ticket's attachments (filename, id, size, mime type) — the ground truth for
 # what a consumer (e.g. the CPO in /prd) must fetch and view before treating a ticket
 # as understood. This is the top-level `attachment` field (separate downloadable
-# files), NOT the inline `[image/attachment]` markers adf_to_text prints for images
-# pasted into the description body (those are covered by tracker_get_details' own
+# files), NOT the inline `![alt](attachment:<id>)` tokens adf_to_text prints for images
+# embedded in the description body (those are covered by tracker_get_details' own
 # "embedded image" warning) — a ticket can carry either or both.
 tracker_get_attachments() {
-  local key issue
+  local key issue embeds att_id media_id
   key="$(jira_key "$1")"
   issue="$(jira_api GET "/rest/api/3/issue/$key?fields=attachment")"
-  printf '%s' "$issue" | jq -r '
+  # Resolve each IMAGE's Media Services UUID so an already-attached file can still be
+  # embedded in a body/description/comment. `![alt](attachment:<id>)` needs that uuid,
+  # a disjoint id space from the REST attachment id printed here (see
+  # jira_attachment_media_uuid), and only the upload path (--embed-id) used to hand it
+  # back — so a diagram or screenshot attached by an earlier step could never be moved
+  # in-body without re-uploading it. Images only: they are what gets embedded, and each
+  # uuid costs one extra request.
+  embeds='{}'
+  for att_id in $(printf '%s' "$issue" | jq -r '
+      (.fields.attachment // [])[] | select((.mimeType // "") | startswith("image/")) | .id'); do
+    media_id="$(jira_attachment_media_uuid "$att_id")"
+    [[ -n "$media_id" ]] && embeds="$(printf '%s' "$embeds" | jq -c --arg i "$att_id" --arg u "$media_id" '.[$i] = $u')"
+  done
+  printf '%s' "$issue" | jq -r --argjson embeds "$embeds" '
     (.fields.attachment // []) as $a
     | if ($a | length) == 0 then "No attachments on this issue."
       else "Attachments (\($a | length)):\n"
-        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]") | join("\n") )
+        + ( $a | map("  " + .filename + "  [id " + (.id|tostring) + ", " + (.mimeType // "?") + ", " + ((.size // 0)|tostring) + " bytes]"
+                     + ( ($embeds[(.id|tostring)] // "") as $u
+                         | if $u == "" then "" else "\n      embed in a body or comment with: ![" + .filename + "](attachment:" + $u + ")" end ))
+              | join("\n") )
         + "\n\nDownload one with: download-ticket-attachment.sh '"$key"' <filename-or-id> <local-path>"
       end'
 }

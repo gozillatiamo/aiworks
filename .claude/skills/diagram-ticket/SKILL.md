@@ -1,6 +1,6 @@
 ---
 name: diagram-ticket
-description: Render a Mermaid diagram (flowchart, sequence, ER, state, class, gantt, gitGraph, quadrant, mindmap, journey) and attach it to a ticket as a PNG image plus a mermaid.live edit link. Use when clarifying a ticket's flow/relationship/lifecycle would benefit from a picture instead of more prose, or when a user asks to diagram, visualize, draw, or virtualize a flow/sequence/ER/state diagram for a ticket. Gated by workspace.config.yaml diagrams.enabled (default OFF) — reports skipped, not an error, when off.
+description: Render a Mermaid diagram (flowchart, sequence, ER, state, class, gantt, gitGraph, quadrant, mindmap, journey) and embed it INSIDE a ticket's description body as an image (plus a mermaid.live edit link) — not merely attached to the Attachments panel, where a reader of the ticket never sees it. Use when clarifying a ticket's flow/relationship/lifecycle would benefit from a picture instead of more prose, or when a user asks to diagram, visualize, draw, or virtualize a flow/sequence/ER/state diagram for a ticket. Gated by workspace.config.yaml diagrams.enabled (default OFF) — reports skipped, not an error, when off.
 argument-hint: "<KEY> [diagram-type] — or pass raw Mermaid source directly"
 allowed-tools:
   - Bash(scripts/diagram/*)
@@ -56,71 +56,80 @@ deliverable. Only continue past this point when it's `true`.
    `render.sh` always runs when invoked (the gate check in step 0 is what you already
    did) — a non-zero exit means invalid Mermaid syntax or a network error, not a
    disabled feature; fix the source or report the failure, don't retry blindly.
+   The background is **opaque** (`--bg`, default `FFFFFF`) and should stay that way: a
+   transparent PNG takes the colour of whatever the viewer puts behind it, and Jira's
+   full-screen media viewer is near-black, which makes the diagram's own dark text and
+   edges unreadable — it reads fine in the body and turns to mush the moment a human
+   clicks it to look closer.
 4. **Get the edit link** (no network call — pure local encode):
    ```sh
    printf '%s' "<mermaid source>" | "$CLAUDE_PROJECT_DIR"/scripts/diagram/live-link.sh -
    ```
-5. **Attach the rendered file** (both providers, always do this — it's the source
-   attachment the in-body image references, and on Notion it's the only embed you get):
+5. **Attach the rendered file and take back its embed handle.** A classic REST
+   attachment id is *not* embeddable — Jira's ADF `media` node needs a **Media Services
+   UUID**, a disjoint id space. `--embed-id` resolves it for you and prints only that
+   uuid:
    ```sh
-   "$CLAUDE_PROJECT_DIR"/scripts/tracker/add-ticket-attachment.sh <KEY> /tmp/<slug>.png
+   uuid=$("$CLAUDE_PROJECT_DIR"/scripts/tracker/add-ticket-attachment.sh <KEY> /tmp/<slug>.png --embed-id)
    ```
-   Note the numeric attachment id the adapter returns — step 6 needs it (Jira only).
-   **Notion: stop here for the image.** Its adapter has no attachment-embed API yet —
-   skip to the fenced-source + live-link fallback in step 7 as your only in-body content.
-6. **Get the true in-body embed, Jira only.** A classic REST attachment id is *not*
-   embeddable — Jira's ADF `media` node needs a **Media Services UUID**, a disjoint id
-   space with no documented bridge field. The bridge: request the attachment's content
-   endpoint and read the redirect it returns.
-   ```sh
-   jira_api GET "/rest/api/3/attachment/content/<attachmentId>"
+   Already attached by an earlier step? `get-ticket-attachments.sh <KEY>` prints each
+   image's ready-to-paste embed token — no re-upload needed.
+   **Notion: skip the uuid** (`add-ticket-attachment.sh <KEY> <file>`, no flag). Its
+   adapter has no attachment-embed API yet, so the live-link line is your only in-body
+   content and `in_body: false`.
+6. **Put the image IN the description body, not just the Attachments panel** (Jira). The
+   image token goes into the Markdown body the ticket is written with — the adapter
+   renders a token that is **alone on its line** as a block-level `mediaSingle`; one
+   sharing a line with prose stays literal text, because ADF has nowhere to put a media
+   node inside a paragraph. So write, on its own line under the section the diagram
+   illustrates (typically after `Scope:`/`Reproduce steps:`, before `Acceptance
+   criteria:`):
+   ```md
+   ![<slug>.png](attachment:<uuid from step 5>)
+   [View / edit this diagram](https://mermaid.live/edit#pako:<link from step 4>)
    ```
-   Don't follow the redirect — read its `Location:` header:
-   `https://api.media.atlassian.com/file/<UUID>/binary?token=...` — the segment between
-   `/file/` and `/binary` is the Media Services UUID.
-7. **Splice the diagram into the raw ADF — never through the Markdown converter.**
-   `md_to_adf` is the same lossy render path that eats `snake_case` underscores in plain
-   text (the OFB-1952 gotcha in step 2); round-tripping a real description through it
-   risks corrupting unrelated content. Instead:
-   1. Fetch the current description as ADF: `jira_api GET
-      "/rest/api/3/issue/<KEY>?fields=description"` → this is your last-known-good
-      backup — keep it until step 8 passes.
-   2. Build two ADF nodes: a `paragraph` with a `link` mark
-      (`href: https://mermaid.live/edit#pako:<link from step 4>`) referencing the
-      diagram, and a `mediaSingle` > `media` node (`type: "file"`,
-      `id: <UUID from step 6>`, `collection: ""`). **Don't also add a `codeBlock` with
-      the raw Mermaid source** — the live-editor link already carries the full source
-      (verified in step 8), so a second copy is pure duplication that just adds noise
-      to the ticket body. Don't post the link as a comment either, for the same
-      reason: it's already in-body on the reference paragraph — a comment would be a
-      second, redundant copy of the same link.
-   3. Splice those two nodes into the fetched `content` array right after the section
-      the diagram illustrates (typically `Scope:` or `Reproduce steps:`) and before
-      `Acceptance criteria:` — via `jq`, not by hand-editing JSON text.
-   4. PUT the whole modified document back: `jira_api PUT "/rest/api/3/issue/<KEY>"`
-      with body `{"fields":{"description": <spliced ADF doc>}}`. This call **replaces
-      the entire description field** — there is no partial-update or simple undo via
-      the API. Never construct the payload through a nested nested-quoting shell
-      one-liner; write it to a temp file and pass `--argjson` from the file, so you can
-      inspect the exact bytes before the PUT fires. If any pre-flight check of that
-      payload shows a null/empty description, **stop — do not run the PUT** — a red
-      diagnostic here means the payload is wrong, not that the check is; fix the
-      construction before writing to a live ticket.
-8. **Verify — both the structure and that the link actually opens.** Re-`GET` the
-   description and confirm all of:
-   - the node-type sequence includes your `mediaSingle` at the intended position (no
-     `codeBlock`), with the rest of the original content byte-identical to the
-     step-7.1 backup;
+   Then write the body once, whole, with `upsert-ticket-details.sh <KEY> --body-file
+   <path>` — Jira's description field only ever takes a full replacement. Two rules that
+   protect what is already on the ticket:
+   - **Never hand-write a body you have not read first.** Dump the current one
+     (`get-ticket-details.sh <KEY>`), insert your two lines into *that* text, and write
+     it back — anything you omit is gone, there is no partial update and no undo.
+   - Images a human pasted into the description are carried over automatically by
+     `upsert-ticket-details.sh` (`adf_append_media`, the OFB-1952 fix), so a rewrite
+     cannot silently drop them — but they land in an "Attachments (carried over)"
+     section at the end, not where they were.
+   - **Replacing** a diagram you rendered earlier (re-rendered, fixed labels) needs
+     `--no-carry-media` on that write, or the superseded image is re-appended under that
+     same divider — and writing the body again will not clear it, because the carry-over
+     reads the description it just wrote. The stale ATTACHMENT still sits in the panel
+     after that; leave it, or ask the ticket's owner before deleting (a delete is
+     irreversible and any other comment embedding it would be left pointing at nothing).
+   **Don't add a `codeBlock` with the raw Mermaid source** — the live-editor link already
+   carries the full source (verified in step 7), so a second copy is pure noise. Don't
+   post the link as a comment either: it is already in-body on the reference line.
+7. **Verify — the image renders in-body, and the link actually opens.** Confirm all of:
+   - `get-ticket-details.sh <KEY>` prints its `⚠ N embedded image/attachment(s) in the
+     description` line and the body still contains every section it had before your
+     write (diff it against the dump from step 6);
    - `get-ticket-attachments.sh <KEY>` lists the rendered file;
-   - the posted mermaid.live link decodes locally to a non-blank diagram: base64url-
-     decode + zlib-inflate the `#pako:` fragment, `json.loads` the result, then
-     `json.loads(state["mermaid"])` must also parse (it's a JSON **string**, not a
-     nested object — `mermaid-live-editor` calls `JSON.parse` on it directly and
-     renders blank on a type mismatch) and `state["code"]` must be the full Mermaid
-     source, not empty.
-   None of this is optional — a diagram that's merely attached (not spliced into the
+   - the link **as it now reads on the ticket** decodes to the full source — read the
+     description back and check that copy, never the string you generated:
+     ```sh
+     "$CLAUDE_PROJECT_DIR"/scripts/diagram/live-link.sh --check "<link from the ticket>"
+     ```
+     It prints `ok: <n> chars of Mermaid source, theme <t>, starts "..."`, and exits
+     non-zero with the reason otherwise. Checking the generated string proves nothing —
+     the encoder is already covered by `scripts/diagram/selftest.sh`; what breaks is the
+     trip onto the ticket. **One** altered base64 character kills the whole zlib stream,
+     and mermaid.live answers a corrupt fragment by quietly loading its own "Loading URL
+     failed" sample diagram — which looks like a rendered diagram to anyone who clicks.
+     That is a shipped failure: it happened on OFB-2315, where the fragment on the ticket
+     differed from the encoder's output in exactly one character. Never retype or
+     reflow a fragment; interpolate it whole.
+   None of this is optional — a diagram that is merely attached (never embedded in the
    description) or a link that renders blank both look identical to success until you
-   check.
+   check. An attachment-only diagram is the failure this flow exists to prevent: nobody
+   reading the ticket sees it.
 
 ## Budget
 

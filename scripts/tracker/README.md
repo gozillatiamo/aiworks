@@ -53,7 +53,15 @@ it (OFB-1952). The Jira adapter now reads the existing description's `mediaSingl
 `mediaGroup` nodes first and re-appends them under an *"Attachments (carried over)"*
 divider, so the images stay rendered — you refine the text without losing the pictures.
 `get-ticket-details.sh` flags how many are present (`⚠ N embedded image/attachment(s)`)
-so you know they exist even though plain text shows each only as `[image/attachment]`.
+and renders each one as the `![alt](attachment:<id>)` token that put it there, so a
+read → edit → write keeps the image in ITS OWN place and the carried-over divider is
+only the fallback for one you deleted from the text. Going the other way — putting an
+image in the body in the first place — that same token is the whole mechanism: alone on
+its line it becomes a `mediaSingle`, and `add-ticket-attachment.sh <KEY> <file>
+--embed-id` (or the embed line `get-ticket-attachments.sh` prints per image) hands you
+the media uuid it needs. To REPLACE or drop an embedded image, add `--no-carry-media` —
+otherwise the safety net re-appends the one your new body left out, and writing again
+cannot clear it (the carry-over reads the description it just wrote).
 
 **Comments render Markdown too:** `add-ticket-comment.sh` no longer posts raw Markdown —
 it converts it to each tracker's native style so headers, bullets, tables and inline

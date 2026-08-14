@@ -70,6 +70,13 @@ Options:
                        Supports headings, bullet/numbered/to-do lists, quotes,
                        dividers and fenced code blocks.
   --body-file <path>   Same as --body, but read the Markdown from a file ("-" = stdin).
+  --no-carry-media     (Jira) Don't re-append images the new body leaves out. By default a
+                       body rewrite carries the old description's images across under an
+                       "Attachments (carried over)" divider, so a rewrite cannot lose a
+                       pasted screenshot. Pass this when you are deliberately REPLACING or
+                       dropping an embedded image (e.g. a re-rendered diagram) — otherwise
+                       the predecessor keeps coming back, and writing the body again cannot
+                       clear it, since the carry-over reads the description it just wrote.
   --estimate-reason <text>       The calibration + comparables that justify the story
                        points. REQUIRED whenever --dev-points/--qa-points is set (and only
                        valid with them): points and their reasoning are committed together
@@ -143,6 +150,7 @@ while [[ $# -gt 0 ]]; do
     --body-file)   need "${2:-}" "--body-file needs a path";
                    if [[ "$2" == "-" ]]; then body_md="$(cat)"; else [[ -f "$2" ]] || die "--body-file: no such file: $2"; body_md="$(cat "$2")"; fi
                    have_body=1; shift 2 ;;
+    --no-carry-media) setf no_carry_media true; shift ;;
     --estimate-reason) need "${2:-}" "--estimate-reason needs a value"; estimate_reason="$2"; have_estimate_reason=1; shift 2 ;;
     --estimate-reason-file) need "${2:-}" "--estimate-reason-file needs a path";
                    if [[ "$2" == "-" ]]; then estimate_reason="$(cat)"; else [[ -f "$2" ]] || die "--estimate-reason-file: no such file: $2"; estimate_reason="$(cat "$2")"; fi

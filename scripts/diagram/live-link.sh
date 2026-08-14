@@ -11,6 +11,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat <<'EOF'
 Usage: live-link.sh <mermaid-file|-> [--theme default|dark|forest|neutral]
+       live-link.sh --check <url|pako-fragment|->
 
 Print a mermaid.live edit link encoding the given Mermaid source, via the
 configured diagram provider (DIAGRAM_PROVIDER, default: mermaid-ink).
@@ -20,6 +21,12 @@ Arguments:
 
 Options:
   --theme <name>  Mermaid theme (default: default).
+  --check <url>   Don't encode: DECODE an existing link and confirm the editor can
+                  open it. Use on a link after it has landed somewhere (a ticket
+                  body, a comment) — one altered base64 character kills the zlib
+                  stream, and mermaid.live answers a broken fragment by quietly
+                  loading its own sample diagram, so it still looks like a diagram.
+                  Accepts "-" to read the link from stdin.
   -h, --help      Show this help and exit.
 EOF
 }
@@ -32,6 +39,9 @@ for a in "$@"; do case "$a" in -h|--help) usage; exit 0 ;; esac; done
 source_file=""; theme="default"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --check)
+      [[ -n "${2:-}" ]] || die "--check needs a url, a pako fragment, or '-' for stdin"
+      diagram_live_link_check "$2"; exit 0 ;;
     --theme) theme="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     -|[!-]*)
