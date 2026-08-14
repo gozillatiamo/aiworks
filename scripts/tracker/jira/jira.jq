@@ -201,7 +201,7 @@ def _adf_media($id):
   { type:"media", attrs:{ type:"file", id:$id, collection:"" } };
 def _adf_media_node($ids):
   if ($ids | length) == 1
-  then { type:"mediaSingle", attrs:{layout:"center"}, content:[ _adf_media($ids[0]) ] }
+  then { type:"mediaSingle", attrs:{layout:"center", width:100}, content:[ _adf_media($ids[0]) ] }
   else { type:"mediaGroup", content:( $ids | map(_adf_media(.)) ) }
   end;
 

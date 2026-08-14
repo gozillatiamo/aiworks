@@ -227,7 +227,9 @@ tracker_upsert() {
     existing_media="$(printf '%s' "$_cur" | jq -L "$JIRA_IMPL_DIR" -c 'include "jira"; ((.fields.description // {}) | adf_media_blocks)' 2>/dev/null || echo '[]')"
     [[ -n "$existing_media" && "$existing_media" != "null" ]] || existing_media='[]'
     local _nm; _nm="$(printf '%s' "$existing_media" | jq 'length' 2>/dev/null || echo 0)"
-    [[ "${_nm:-0}" -gt 0 ]] && echo "Carrying over $_nm image/attachment node(s) from the existing description." >&2
+    # This counts what the OLD description held; one the new body re-embeds itself (its
+    # `![alt](attachment:<id>)` line kept) stays in place instead of being appended again.
+    [[ "${_nm:-0}" -gt 0 ]] && echo "Existing description holds $_nm image/attachment node(s) — any the new body does not re-embed are appended under \"Attachments (carried over)\"." >&2
   fi
 
   # Map the abstract field set (minus status) to a Jira `fields` object. Jira has one
