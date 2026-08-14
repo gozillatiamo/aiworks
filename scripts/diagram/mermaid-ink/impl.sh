@@ -61,3 +61,11 @@ diagram_live_link() {
   enc="$(printf '%s' "$text" | _pako_encode "$theme")"
   printf 'https://mermaid.live/edit#pako:%s\n' "$enc"
 }
+
+# diagram_live_link_check URL_OR_FRAGMENT — decode a link and confirm the editor can open
+# it. For checking a link that has already travelled somewhere (a ticket body, a comment):
+# a single altered base64 char kills the whole zlib stream, and mermaid.live answers a
+# broken fragment by loading its own sample diagram, so the failure looks like success.
+diagram_live_link_check() {
+  python3 "$DIAGRAM_DIR/mermaid-ink/pako_check.py" "$1"
+}

@@ -101,12 +101,20 @@ deliverable. Only continue past this point when it's `true`.
      description` line and the body still contains every section it had before your
      write (diff it against the dump from step 6);
    - `get-ticket-attachments.sh <KEY>` lists the rendered file;
-   - the posted mermaid.live link decodes locally to a non-blank diagram: base64url-
-     decode + zlib-inflate the `#pako:` fragment, `json.loads` the result, then
-     `json.loads(state["mermaid"])` must also parse (it's a JSON **string**, not a
-     nested object — `mermaid-live-editor` calls `JSON.parse` on it directly and
-     renders blank on a type mismatch) and `state["code"]` must be the full Mermaid
-     source, not empty.
+   - the link **as it now reads on the ticket** decodes to the full source — read the
+     description back and check that copy, never the string you generated:
+     ```sh
+     "$CLAUDE_PROJECT_DIR"/scripts/diagram/live-link.sh --check "<link from the ticket>"
+     ```
+     It prints `ok: <n> chars of Mermaid source, theme <t>, starts "..."`, and exits
+     non-zero with the reason otherwise. Checking the generated string proves nothing —
+     the encoder is already covered by `scripts/diagram/selftest.sh`; what breaks is the
+     trip onto the ticket. **One** altered base64 character kills the whole zlib stream,
+     and mermaid.live answers a corrupt fragment by quietly loading its own "Loading URL
+     failed" sample diagram — which looks like a rendered diagram to anyone who clicks.
+     That is a shipped failure: it happened on APP-2315, where the fragment on the ticket
+     differed from the encoder's output in exactly one character. Never retype or
+     reflow a fragment; interpolate it whole.
    None of this is optional — a diagram that is merely attached (never embedded in the
    description) or a link that renders blank both look identical to success until you
    check. An attachment-only diagram is the failure this flow exists to prevent: nobody

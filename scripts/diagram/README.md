@@ -9,9 +9,17 @@ ticket can carry: a rendered image, or a browser link a human can open and edit.
 |---|---|
 | `render.sh <mermaid-file\|-> <out.png\|out.svg> [--theme name]` | Render Mermaid source to a local image file |
 | `live-link.sh <mermaid-file\|-> [--theme name]` | Print a `mermaid.live` edit-in-browser URL for the same source |
+| `live-link.sh --check <url\|fragment\|->` | Decode an existing link and confirm the editor can open it |
 
 Both take Mermaid text from a file path or `-` for stdin. Attach the rendered
 file to a ticket with `scripts/tracker/add-ticket-attachment.sh`.
+
+**Always `--check` a link after it lands somewhere** (a ticket body, a comment) — on the
+copy you read back, not the one you generated. A fragment is 800+ chars of base64 nobody
+proof-reads, one altered character kills the whole zlib stream, and `mermaid.live` answers
+a corrupt fragment by quietly loading its own "Loading URL failed" sample diagram, so it
+still looks like a working link. `scripts/diagram/selftest.sh` covers the encoder and the
+checker's refusals.
 
 **These are low-level primitives — they always run when invoked.** The "should a
 diagram be generated at all" decision (`workspace.config.yaml` → `diagrams.enabled`,
