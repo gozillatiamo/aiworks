@@ -132,6 +132,20 @@ hand — its merge chains an existing `statusLine` command and keeps the origina
 destroy. Because it writes to a machine-global user file, it is the per-person half: opt out with
 `headroom.statusline: false` in `workspace.config.local.yaml`.
 
+⚠️ **A wired badge is not a counting badge.** That doctor copies `scripts/statusline.sh` to
+`~/.claude/headroom-statusline.sh` but **not** `scripts/lib/`, and the copy resolves
+`attribution.jq` beside itself — without it `compute()` returns zeros silently, so the badge reads
+`idle (not compressing yet)` however much `hcat` runs, and no `.totals` is written (that session's
+money total is then gone for good). The plugin's own doctor scores the copy "current" regardless,
+so treat its green as no evidence: `aiworks doctor --only headroom` is what checks for
+`attribution.jq` + `headroom-state.sh` beside the copy, and its owner command restores them.
+Re-run it after any plugin update, which recreates the lib-less copy.
+
+The plugin's `--fix` also joins the badge onto the END of your existing `statusLine` line with two
+spaces, so on a multi-line bar it lands on the last line and gets truncated. `printf '%s\n%s'`
+instead of `printf '%s  %s'` in that command gives it its own line; it is preserved on later runs,
+since the merge only fires when no `headroom-statusline` reference is present.
+
 State lives outside the repo — `~/.headroom/` (engine) and `~/.claude/headroom-indicator/`
 (badge, ledger, learned offender files). Nothing to gitignore.
 

@@ -1121,7 +1121,31 @@ check_headroom() {
   fi
   [[ -f "$user_settings" ]] && sl="$(jq -r '.statusLine.command // empty' "$user_settings" 2>/dev/null)"
   if printf '%s' "$sl" | grep -q 'headroom-statusline'; then
-    pass $g "savings badge" "wired into the user statusLine"
+    # Wired is not the same as counting. The flat copy resolves attribution.jq BESIDE itself and its
+    # compute() opens with `[ -n "$JQ_LIB" ] || return 0`, so without the lib the badge reads
+    # "idle (not compressing yet)" forever, every session cache records n=0 saved=0 missed=0, and no
+    # .totals is ever written — the all-time total is then unrecoverable for those sessions. The
+    # plugin's own doctor copies scripts/statusline.sh there but never scripts/lib/, and still scores
+    # the copy "current", so a green plugin doctor is NOT evidence the badge measures anything.
+    local miss="" f lib
+    for f in attribution.jq headroom-state.sh; do
+      [[ -f "$HOME/.claude/$f" ]] || miss="$miss $f"
+    done
+    if [[ -z "$miss" ]]; then
+      pass $g "savings badge" "wired into the user statusLine, attribution lib beside the copy"
+    else
+      # -t, not a version sort: BSD ls has no -v and a lexical sort puts 2.7.0 above 2.10.0.
+      lib="$(ls -dt "$HOME"/.claude/plugins/cache/*/headroom-usage-indicator/*/scripts/lib 2>/dev/null | head -1)"
+      if [[ -n "$lib" ]]; then
+        warn $g "savings badge measures nothing" \
+             "missing beside ~/.claude/headroom-statusline.sh:$miss — compute() bails, so the badge stays idle however much hcat runs" \
+             "cp '$lib/attribution.jq' '$lib/headroom-state.sh' ~/.claude/" slow
+      else
+        warn $g "savings badge measures nothing" \
+             "missing beside ~/.claude/headroom-statusline.sh:$miss, and no plugin scripts/lib to copy from" \
+             "see: reinstall the headroom plugin, then re-run aiworks doctor --only headroom" slow
+      fi
+    fi
   else
     # The plugin's own doctor owns this: its merge is the one that chains an EXISTING statusLine
     # command and keeps the original under _headroomStatusLineBackup (with a .bak). Hand-editing
