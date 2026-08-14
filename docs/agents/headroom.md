@@ -107,6 +107,31 @@ Also **not** adopted: `headroom learn` (mines failed sessions and rewrites `CLAU
 unreviewed — the opposite of a curated, budget-capped, hook-enforced `CLAUDE.md`), `--memory`, and
 the Serena code-memory MCP (`codegraph` already owns that job — ADR 0013).
 
+## What it compresses — and what the "missed" counter overstates
+
+`hcat` picks a tier from the content. Measured on this workspace, one run per shape:
+
+| input | result | fidelity |
+|---|---|---|
+| structured JSON, 200 records | re-encoded as typed CSV, **66% saved** | **lossless** — every record, every value |
+| varied log, 4,000 lines | **35% saved** | content kept |
+| templated bulk + one anomaly | **99.8% saved** | anomaly kept **with ±3 lines of context**, plus `[N lines omitted]` and a retrieval hash |
+| identical repeated lines | passthrough — *"compression would save 0.0%"* | untouched |
+| shell script, 27 KB | passthrough | untouched — output is *larger* than input |
+| `git diff` | passthrough — *"would save 0.4%"* | untouched |
+
+Two things follow. **It does not silently drop unique information** — an outlier buried in 4,000
+templated lines survives with context, and the omission is stated rather than implied. And **it
+declines to compress code and diffs**, which is why reaching for it on source is a wasted turn, not
+a risk.
+
+⚠️ **So the badge's `N missed` overstates the opportunity.** It counts every large tool result,
+including the code, diffs and script reads `hcat` would hand straight back. A session showing
+"8 missed" may have had almost nothing worth compressing. Read that number as *"how much large
+output happened"*, never as *"how much was wasted"* — and before treating a miss as a finding, ask
+which shape it was. This is measured, not inferred; it is written down here because the number
+sent one investigation down a dead end already.
+
 ## The MCP tools
 
 The plugin registers a `headroom` MCP: `headroom_compress`, `headroom_retrieve`, `headroom_stats`.

@@ -81,7 +81,10 @@ case "$tool" in
       # the headroom plugin's compress-at-the-source reader: a RENAMED `cat`,
       # so it needs its own alternative — `\bcat\b` cannot match "hcat" (the
       # leading h is a word char, so there is no boundary before "cat").
-      if printf '%s' "$seg" | grep -Eq "\\b(hcat|cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
+      # `hrun` is the same hazard one level out: it runs ANY command and prints
+      # what that command printed, so `hrun cat .env` leaks exactly as `cat
+      # .env` does — and its own name contains no "cat" to match on.
+      if printf '%s' "$seg" | grep -Eq "\\b(hrun|hcat|cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
         deny "command dumps a .env file: $cmd"
       fi
       # grep prints matching lines (leaks values) UNLESS it is quiet:
