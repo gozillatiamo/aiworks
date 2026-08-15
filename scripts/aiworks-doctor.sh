@@ -320,10 +320,14 @@ check_workspace() {
 
   # A value that is neither truthy nor falsy is a typo, not an opt-out. `stagehand.enabled:
   # ture` sat in a personal config for weeks reading as "off" — indistinguishable from a
-  # deliberate one. Every feature switch is checked the same way.
+  # deliberate one. Every feature switch is checked the same way. The two whose default is
+  # PERMISSIVE (auto_merge, auto_approve) are checked here too: there a typo does not read as
+  # "off", it reads as "merge it" / "skip the plan gate".
   local sw
   for sw in voice.enabled stagehand.enabled diagrams.enabled artifacts.enabled \
-            figma.enabled image_generation.enabled loadtest.enabled \
+            design.enabled image_generation.enabled observability.enabled \
+            notify.enabled triage.enabled triage.prod \
+            vcs.auto_merge planning.auto_approve planning.to_html \
             headroom.enabled headroom.statusline; do
     local raw; raw="$(cfg "$sw")"
     [[ -z "$raw" ]] && continue
