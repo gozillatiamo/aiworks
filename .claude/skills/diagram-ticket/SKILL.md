@@ -67,8 +67,10 @@ deliverable. Only continue past this point when it's `true`.
    ```
 5. **Attach the rendered file and take back its embed handle.** A classic REST
    attachment id is *not* embeddable — Jira's ADF `media` node needs a **Media Services
-   UUID**, a disjoint id space. `--embed-id` resolves it for you and prints only that
-   uuid:
+   UUID**, a disjoint id space. `--embed-id` resolves it for you and prints only the
+   embed token — the uuid plus the PNG's pixel size, `<uuid>@<W>x<H>`. Keep the size:
+   without it Jira draws the diagram in a 250×200 fallback box, where no label is
+   readable.
    ```sh
    uuid=$("$CLAUDE_PROJECT_DIR"/scripts/tracker/add-ticket-attachment.sh <KEY> /tmp/<slug>.png --embed-id)
    ```

@@ -33,7 +33,13 @@ def adf_to_text:
       # for the same reason). A bare `[image/attachment]` marker used to make that
       # round-trip lose the position, leaving adf_append_media to rescue the image into a
       # "carried over" section at the bottom.
-      elif $t == "media"       then "![attachment](attachment:\($n.attrs.id // ""))\n"
+      # The `@<W>x<H>` suffix carries the node's own pixel size back out, so the rewrite
+      # re-renders the image at the size it already had instead of dropping to the
+      # renderer's fallback ratio (see the write side's SIZE note).
+      elif $t == "media"       then ( "![attachment](attachment:\($n.attrs.id // "")"
+                                      + (if (($n.attrs.width // 0) > 0 and ($n.attrs.height // 0) > 0)
+                                         then "@\($n.attrs.width)x\($n.attrs.height)" else "" end)
+                                      + ")\n" )
       elif $t == "mediaSingle" or $t == "mediaGroup"
                                then ( ($n.content // []) | map(node) | join("") )
       else ( ($n.content // []) | map(node) | join("") )
@@ -181,34 +187,61 @@ def _adf_table($rows; $ctx):
 # --- Images → ADF media (write side) ---------------------------------------------
 # `![alt](attachment:<id>)` renders an issue ATTACHMENT inside the body/comment, so
 # evidence (a test screenshot, a rendered load-test report) sits in the prose that
-# explains it instead of only in the Attachments panel. `<id>` is the numeric id the
-# attachments endpoint returns on upload — see tracker_add_attachment, which prints it
-# for exactly this purpose. An image token that is NOT alone on its line stays literal
+# explains it instead of only in the Attachments panel. `<id>` is the MEDIA UUID (not the
+# numeric attachment id, which the renderer rejects) — see tracker_add_attachment, which
+# prints the whole token. An image token that is NOT alone on its line stays literal
 # text: a media node is block-level in ADF, so there is nowhere valid to put it inside a
 # paragraph, and a silent drop would lose the evidence without saying so.
 #
 # Two block shapes, because they read differently:
-#   one image on a line  → mediaSingle, full width — for a failure a human must SEE.
+#   one image on a line  → mediaSingle, wide (see SIZE) — for a failure a human must SEE.
 #   many images on a line → mediaGroup, a thumbnail strip — for pass evidence that is
 #                           proof-of-record, not something anyone reads one by one.
-def _md_image_ids($l):
-  [ $l | scan("!\\[[^\\]]*\\]\\(attachment:([^)]+)\\)") | .[0] ];
+#
+# SIZE — a readable size is not the default; it has to be asked for, TWICE. Measured on
+# OFB-2247, where our own report rendered at 250×149 next to a human's 616-wide pasted
+# screenshot:
+#   a `width` on the mediaSingle        — without it the block is the renderer's 250×200
+#     fallback box, an unreadable stamp of a full-page screenshot.
+#   `width`/`height` on the media node  — the editor stamps every pasted image with the
+#     file's real pixel size, and without it the box keeps the fallback 250×200 RATIO,
+#     so a wide screenshot sits letterboxed in it. The id carries the size as `@<W>x<H>`
+#     (appended by tracker_add_attachment, which is the last place that still has the
+#     file); with both, the block is exactly the image at the width we ask for.
+# 60% of the comment column — 446px measured, the width the team settled on by eye on OFB-2247
+# after seeing 100% (760px, too big) and 80% (604px, level with a human's own pasted
+# 592-616). Deliberately smaller than a person's paste: a report carries six of these in
+# one comment, and a reader scrolls past them to the table. Still 1.8x the 250x149 stamp
+# this replaced, and the whole knob is this one number. An image NARROWER than that is
+# upscaled, the right trade for evidence — soft but legible beats sharp and unreadable. A
+# size that cannot be read (a format `file`/`sips` does not know) degrades to letterboxed,
+# never to the stamp.
+def _md_image_specs($l):
+  [ $l | scan("!\\[([^\\]]*)\\]\\(attachment:([^)]+)\\)")
+       | { alt: .[0], ref: .[1] }
+       | (.ref | capture("^(?<id>.*)@(?<w>[0-9]+)x(?<h>[0-9]+)$") // null) as $d
+       | if $d == null then { alt: .alt, id: .ref }
+         else { alt: .alt, id: $d.id, w: ($d.w | tonumber), h: ($d.h | tonumber) } end ];
 # A line is a media BLOCK only when it holds nothing but image tokens (and whitespace).
 def _is_media_line($l):
   (($l | test("!\\[[^\\]]*\\]\\(attachment:[^)]+\\)"))
    and ($l | gsub("!\\[[^\\]]*\\]\\(attachment:[^)]+\\)"; "") | test("^\\s*$")));
-def _adf_media($id):
-  { type:"media", attrs:{ type:"file", id:$id, collection:"" } };
-def _adf_media_node($ids):
-  if ($ids | length) == 1
-  then { type:"mediaSingle", attrs:{layout:"center", width:100}, content:[ _adf_media($ids[0]) ] }
-  else { type:"mediaGroup", content:( $ids | map(_adf_media(.)) ) }
+def _adf_media($m):
+  { type:"media",
+    attrs: ( { type:"file", id:$m.id, collection:"" }
+             + (if ($m.w // 0) > 0 then { width:$m.w, height:$m.h } else {} end)
+             + (if (($m.alt // "") | length) > 0 then { alt:$m.alt } else {} end) ) };
+def _adf_media_node($ms):
+  if ($ms | length) == 1
+  then { type:"mediaSingle", attrs: {layout:"center", width:60, widthType:"percentage"},
+         content:[ _adf_media($ms[0]) ] }
+  else { type:"mediaGroup", content:( $ms | map(_adf_media(.)) ) }
   end;
 
 # Classify one (non-fence, non-blank, non-table) line into a token {kind, level?, text?}.
 def _md_classify:
   . as $l
-  | if   (_is_media_line($l))           then {kind:"media",  ids:(_md_image_ids($l))}
+  | if   (_is_media_line($l))           then {kind:"media",  imgs:(_md_image_specs($l))}
     elif ($l|test("^### "))             then {kind:"h",      level:3, text:($l|sub("^### ";""))}
     elif ($l|test("^## "))              then {kind:"h",      level:2, text:($l|sub("^## ";""))}
     elif ($l|test("^# "))               then {kind:"h",      level:1, text:($l|sub("^# ";""))}
@@ -225,7 +258,7 @@ def _md_classify:
 def _md_tok_to_node($ctx):
   . as $t
   | if   $t.kind == "h"     then { type:"heading", attrs:{level:$t.level}, content:_adf_text($t.text; $ctx) }
-    elif $t.kind == "media" then _adf_media_node($t.ids)
+    elif $t.kind == "media" then _adf_media_node($t.imgs)
     elif $t.kind == "rule"  then { type:"rule" }
     elif $t.kind == "quote" then { type:"blockquote", content:[_adf_para($t.text; $ctx)] }
     elif $t.kind == "code"  then ((_adf_text_plain($t.text)) as $c

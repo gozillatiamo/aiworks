@@ -98,15 +98,20 @@ bare `ATTACHMENT_VALIDATION_ERROR` that names nothing.
 id=$(scripts/tracker/add-ticket-attachment.sh <KEY> agent_logs/<KEY>-artifacts/<KEY>-TC001-fail.png --embed-id)
 ```
 
-**Embed it by that id.** In the Markdown you pipe to `add-ticket-comment.sh`, put the
+**Embed it by that id — the WHOLE id.** For an image the uploader prints the file's
+pixel size after the uuid (`6f1c4a64-…@1859x1053`); keep the suffix. Jira sizes an
+inline image from it, and stripping it drops the picture into a 250×200 fallback box —
+a screenshot rendered as an unreadable stamp, which is exactly what a reviewer asked us
+to stop doing on OFB-2247. In the Markdown you pipe to `add-ticket-comment.sh`, put the
 image **alone on its own line** — that is what makes it a block-level image rather than
 literal text:
 ```markdown
 ### TC001 — Sign in with a wrong password
-![TC001 fail](attachment:12345)
+![TC001 fail](attachment:6f1c4a64-2b90-4d7e-9f11-0c3a5e7b81d4@1859x1053)
 ```
-One image on a line renders full-width; several on **one** line render as a thumbnail
-strip. Use full-width for a failure a human must actually look at, and a strip for
+One image on a line renders wide — 60% of the comment column (~446px), a step smaller
+than a human's own pasted screenshot; several on **one** line render as a thumbnail
+strip. Use the wide form for a failure a human must actually look at, and a strip for
 pass evidence that is proof-of-record.
 
 Two limits, both loud rather than silent: this is **Jira-only** (Notion's uploader dies
