@@ -72,7 +72,7 @@ Groups 1–8 run offline by default. 9–12 need `--deep`.
 |---|---|---|
 | 1 | `workspace` | `mani.yaml` present · the config parses and declares repos · no comments in `workspace.config[.local].yaml` · no typo'd feature switch · root `CLAUDE.md` within its 100-line budget |
 | 2 | `repos` | every declared repo is cloned with a valid HEAD · `mani.d` and `products[]` still agree · each clone is git-ignored |
-| 3 | `adapters` | per provider: the `.env` exists and every **required** var is set · the provider CLI is installed · writer scripts are executable · the `.git/info/exclude` trap |
+| 3 | `adapters` | per provider: the `.env` exists and every **required** var is set · the provider CLI is installed · writer scripts are executable · the `.git/info/exclude` trap · `notify` / `observability` skipped when their `enabled` flag is false |
 | 4 | `per-repo` | `scripts/dev.sh` present and executable · `CLAUDE.md` within 100 lines · adapter symlinks (`tracker` + `vcs`) · `.codegraph/` · `skills-lock.json` · no rules file scoped with `globs:` and no `paths:` |
 | 5 | `agent-cfg` | every hook named in `.claude/settings.json` exists and is executable · `.claude/skills` installed · the Cursor mirror is projected · every plugin `enabledPlugins` declares is actually INSTALLED at user scope (`aiworks sync` only declares it) |
 | 6 | `tooling` | the prerequisite binaries are on PATH, each missing one named with the installer that actually owns it |

@@ -78,8 +78,10 @@ org:
 vcs:
   provider: gitlab
 notify:
+  enabled: true
   provider: slack
 observability:
+  enabled: true
   provider: signoz
 tracker:
   provider: jira
@@ -195,6 +197,21 @@ printf 'voice:\n  enabled: false\n' >> "$W/workspace.config.yaml"
 OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk 2>&1)"; RC=$?
 ck_exit "a disabled feature keeps exit 0" 0 "$RC"
 ck "a disabled feature reads as skipped" "voice.enabled is false" "$OUT"
+
+# ── 7b · disabled notify/observability must not demand a missing .env ─────────────
+# Local overlay flips the fixture's enabled:true → false; deleting the .env then proves
+# the adapters group skips instead of failing (the false-positive the live workspace hit).
+W="$T/disabled-adapters"; make_ws "$W"; stage "$W"
+printf 'notify:\n  enabled: false\nobservability:\n  enabled: false\n' \
+  > "$W/workspace.config.local.yaml"
+rm -f "$W/scripts/notify/.env" "$W/scripts/observability/.env"
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk 2>&1)"; RC=$?
+ck_exit "disabled adapters keep exit 0" 0 "$RC"
+ck "disabled notify reads as skipped" "notify.enabled is false" "$OUT"
+ck "disabled observability reads as skipped" "observability.enabled is false" "$OUT"
+ck "missing .env of disabled notify is not a fail" "ABSENT:scripts/notify/.env missing" "$OUT"
+ck "missing .env of disabled observability is not a fail" \
+   "ABSENT:scripts/observability/.env missing" "$OUT"
 
 # ── 8 · THE LEAK TEST ─────────────────────────────────────────────────────────────
 # Every byte doctor writes, on both streams, in every mode that touches an .env — searched
