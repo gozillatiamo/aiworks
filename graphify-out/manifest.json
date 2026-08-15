@@ -45,8 +45,8 @@
     "semantic_hash": "2b8ecd132e6f83bf1c56dd3976a05e8c"
   },
   ".claude/agents/oncall.md": {
-    "mtime": 1786679440.7150712,
-    "ast_hash": "f598a9063f33dd92b56e46b334fd08a3",
+    "mtime": 1786680338.8499923,
+    "ast_hash": "4ada2e8e29d58d5bba608d27ad7f7907",
     "semantic_hash": ""
   },
   ".claude/agents/performance-engineer.md": {
@@ -180,8 +180,8 @@
     "semantic_hash": "f7a5da16b17f9792a93270626d97a978"
   },
   ".claude/skills/case-report/SKILL.md": {
-    "mtime": 1786679440.7174861,
-    "ast_hash": "464a5a0dcd370714871ffe98d6a3fd6e",
+    "mtime": 1786679646.6485286,
+    "ast_hash": "bbd6f569a9ef436bbb27307be80c17ae",
     "semantic_hash": ""
   },
   ".claude/skills/caveman/SKILL.md": {
@@ -190,7 +190,7 @@
     "semantic_hash": "8c3ec0ce859210de95578d3e1c7f6e2a"
   },
   ".claude/skills/clarifying-ticket/SKILL.md": {
-    "mtime": 1786456041.1097162,
+    "mtime": 1786762315.1024482,
     "ast_hash": "a0525177c208e984b29d21e4c8906953",
     "semantic_hash": "a0525177c208e984b29d21e4c8906953"
   },
@@ -380,9 +380,9 @@
     "semantic_hash": "e4df69abcf5c9d57a219b0e264b699be"
   },
   ".claude/skills/diagram-ticket/SKILL.md": {
-    "mtime": 1786630200.5995004,
+    "mtime": 1786762315.1031582,
     "ast_hash": "ecea6bbcacd5ecb14651d3d39670d74f",
-    "semantic_hash": "ecea6bbcacd5ecb14651d3d39670d74f"
+    "semantic_hash": ""
   },
   ".claude/skills/estimate-ticket/SKILL.md": {
     "mtime": 1786630200.59974,
@@ -480,9 +480,9 @@
     "semantic_hash": "50e4e3892b49d8700c1f5ef079990c58"
   },
   ".claude/skills/report-test-results/SKILL.md": {
-    "mtime": 1786630200.606368,
+    "mtime": 1786762315.1035805,
     "ast_hash": "0aff3727b421940f217d58506ff7210b",
-    "semantic_hash": "0aff3727b421940f217d58506ff7210b"
+    "semantic_hash": ""
   },
   ".claude/skills/report-test-results/report-template.md": {
     "mtime": 1786072467.136969,
@@ -670,7 +670,7 @@
     "semantic_hash": ""
   },
   "scripts/tracker/README.md": {
-    "mtime": 1786630200.6816752,
+    "mtime": 1786762315.1050148,
     "ast_hash": "b6a659bcc2711a94045c6e4de7bbe4bc",
     "semantic_hash": "b6a659bcc2711a94045c6e4de7bbe4bc"
   },
@@ -690,9 +690,9 @@
     "semantic_hash": "852db457c447c233e4d12d59c8947f7c"
   },
   ".claude/skills/update-ticket/SKILL.md": {
-    "mtime": 1786072467.1376047,
+    "mtime": 1786762315.1039948,
     "ast_hash": "619a2ccfb67741d33d988c7ebb3cfa42",
-    "semantic_hash": "619a2ccfb67741d33d988c7ebb3cfa42"
+    "semantic_hash": ""
   },
   ".claude/skills/write-interactive-docs/SKILL.md": {
     "mtime": 1786630200.609659,
@@ -885,7 +885,7 @@
     "semantic_hash": "f965b37b327c26d2fbee42a47d217186"
   },
   "scripts/diagram/README.md": {
-    "mtime": 1784606391.4702146,
+    "mtime": 1786762315.1042073,
     "ast_hash": "926d9509b5b9e2a476a378d3e402b2c7",
     "semantic_hash": "926d9509b5b9e2a476a378d3e402b2c7"
   },
@@ -1010,8 +1010,8 @@
     "semantic_hash": "670339fbe3065ca607a5473a1a7702b6"
   },
   "docs/agents/headroom.md": {
-    "mtime": 1786679440.71834,
-    "ast_hash": "1aed0f1d2b02df99f10c589d16ece31c",
+    "mtime": 1786680338.8577974,
+    "ast_hash": "aac21387822ebf40a529882aeb9d2076",
     "semantic_hash": ""
   },
   ".claude/skills/ponytail/SKILL.md": {
@@ -1032,6 +1032,11 @@
   "docs/agents/graphify.md": {
     "mtime": 1786593518.8869884,
     "ast_hash": "5fca6c97529baf1277f6cb1d2ffa8d52",
+    "semantic_hash": ""
+  },
+  "scripts/hrun": {
+    "mtime": 1786679646.6510184,
+    "ast_hash": "8ed108b64f7ce49d223e0754aaff68e9",
     "semantic_hash": ""
   }
 }
