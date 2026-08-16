@@ -245,18 +245,19 @@ case "$cmd" in
       printf '  %s✗ ffmpeg missing and no brew — install it by hand%s\n' "$c_err" "$c_off"
     fi
 
-    # The credential file, created EMPTY if absent. Never populated by this script: a key belongs
-    # to a person, and prompting for one here would put it in a shell history.
-    envf="$HOME/.config/aiworks/voice.env"
+    # The credential file, seeded EMPTY from the template if absent. Never populated by this
+    # script: a key belongs to a person, and prompting for one here would put it in a shell history.
+    envf="$VOICE/.env"
     if [[ -f "$envf" ]]; then
-      printf '  %s✓%s %s\n' "$c_ok" "$c_off" "$envf"
+      printf '  %s✓%s scripts/voice/.env\n' "$c_ok" "$c_off"
     else
-      mkdir -p "$(dirname "$envf")"
-      { sed -n '1,20p' "$VOICE/.env.example" | sed 's/^# Voice adapter — PER-CLONE.*/# Voice adapter credentials — machine-global./'
-        printf '\nELEVENLABS_API_KEY=\nOPENAI_API_KEY=\nGEMINI_VOICE_API_KEY=\nCARTESIA_API_KEY=\n'
-      } > "$envf"
+      cp "$VOICE/.env.example" "$envf"
       chmod 600 "$envf"
-      printf '  %s✓%s created %s (mode 600) — paste your keys into it\n' "$c_ok" "$c_off" "$envf"
+      printf '  %s✓%s created scripts/voice/.env (mode 600) — paste your keys into it\n' "$c_ok" "$c_off"
+    fi
+    if [[ -f "$HOME/.config/aiworks/voice.env" ]]; then
+      printf '  %s!%s ~/.config/aiworks/voice.env is no longer read — move your keys into scripts/voice/.env\n' "$c_warn" "$c_off"
+      printf '    (it is left on disk untouched; delete it yourself when you are done)\n'
     fi
     voice_load_credentials
     for v in ELEVENLABS_API_KEY OPENAI_API_KEY GEMINI_VOICE_API_KEY CARTESIA_API_KEY; do

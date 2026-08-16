@@ -510,12 +510,13 @@ written yourself tells you nothing about whether you were understood.
 ## Credentials
 
 ```
-~/.config/aiworks/voice.env     mode 600 — the real keys live here
-scripts/voice/.env              per-clone override; EMPTY values are ignored
+scripts/voice/.env     git-ignored, mode 600 — the keys live here
 ```
 
-Machine-global first, because a Superset worktree gets **stub** adapter `.env` files in this
-workspace and a per-repo-only path would leave voice dead in every worktree.
+Credentials live in `scripts/voice/.env` — git-ignored, mode 600, seeded from
+`.env.example` by `aiworks voice setup`. This is the same per-adapter `.env` the tracker,
+vcs, notify and observability adapters use. A linked worktree does not inherit it: copy the
+real file in from the main clone, exactly as for the other adapters.
 `GEMINI_VOICE_API_KEY` is deliberately separate from the image generator's `GEMINI_API_KEY`.
 
 ⚠ Never read, print, `grep` (without `-q`) or `bash -x` a real `.env` — see `CLAUDE.md`.

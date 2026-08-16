@@ -491,8 +491,8 @@ stagehand:
 # with any other `language` every voice command exits 0 SILENTLY (run it with -v to hear why),
 # so this block is inert for the whole team as shipped. A teammate opts in through the
 # git-ignored workspace.config.local.yaml — never by editing this file.
-# Credentials never live here: ~/.config/aiworks/voice.env (mode 600), with scripts/voice/.env
-# as a per-clone override. Full doc: docs/agents/voice.md · scripts/voice/README.md
+# Credentials never live here: scripts/voice/.env (git-ignored, mode 600).
+# Full doc: docs/agents/voice.md · scripts/voice/README.md
 voice:
   enabled: false                   # MASTER switch for the whole feature
   tts:
