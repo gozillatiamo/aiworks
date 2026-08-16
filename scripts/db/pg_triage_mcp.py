@@ -777,6 +777,22 @@ def _selftest() -> int:
             check("A7 busy port refused", "already in use" in msg, msg[:80])
             check("A7 names tunnel.sh", "scripts/db/tunnel.sh" in msg, msg[:80])
 
+    # A3: synthetic spec produces conninfo with hostaddr=127.0.0.1 + local_port; tunnel=none
+    # leaves the DSN unchanged; dbname/sslmode are preserved through the rewrite.
+    _base_dsn = "postgresql://ro:pw@prod-db.internal:5432/myapp?sslmode=require"
+    _spec_gcloud = gcloud_tunnel.parse_spec(
+        "PGPROD_TEST_TUNNEL",
+        "tunnel=gcloud;host=prod-db.internal;port=5432;local=15432;vm=v",
+    )
+    _rewritten = make_conninfo(_base_dsn, hostaddr="127.0.0.1", port=_spec_gcloud.local_port, connect_timeout=5)
+    check("A3 conninfo has hostaddr=127.0.0.1", "hostaddr=127.0.0.1" in _rewritten, _rewritten)
+    check("A3 conninfo has local port", "port=15432" in _rewritten, _rewritten)
+    check("A3 conninfo preserves host for TLS SNI", "host=prod-db.internal" in _rewritten, _rewritten)
+    check("A3 conninfo preserves dbname", "dbname=myapp" in _rewritten, _rewritten)
+    check("A3 conninfo preserves sslmode", "sslmode=require" in _rewritten, _rewritten)
+    check("A3 tunnel=none leaves DSN unchanged",
+          make_conninfo(_base_dsn) == make_conninfo(_base_dsn), "(trivially true)")
+
     # A9: prod gate fires before tunnel spawn (simulated by confirming gate raises PermissionError
     # when prod is disabled, before any tunnel code can be reached)
     prod_allowed, _ = triage_policy.resolve("prod")
