@@ -45,6 +45,12 @@ DB_PREFIX = "PGSTG_DB_"  # database for a target on the base DSN: PGSTG_DB_<NAME
 # cannot express — call it something else.
 RESERVED = {DSN_VAR}
 
+# `PGSTG_<NAME>_TUNNEL` is a tunnel sidecar, not a target DSN. It must be excluded from the
+# configured-target enumeration so a variable like `PGSTG_MAIN_TUNNEL` never becomes a phantom
+# target named "main_tunnel". A target may not be *named* "…_tunnel" for the same reason
+# `dsn` is in RESERVED — the suffix is claimed by the sidecar scheme.
+TUNNEL_SUFFIX = "_TUNNEL"
+
 
 def _suffix(name: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", name.strip().upper())
@@ -82,6 +88,8 @@ def configured_targets() -> list[str]:
     for k, v in os.environ.items():
         if not v or k in RESERVED:
             continue
+        if k.endswith(TUNNEL_SUFFIX):
+            continue  # PGSTG_<NAME>_TUNNEL is a tunnel sidecar, not a target DSN
         if k.startswith(DB_PREFIX):
             names.add(k[len(DB_PREFIX):].lower())
         elif k.startswith(TARGET_PREFIX):
@@ -163,6 +171,12 @@ def _selftest() -> int:
             check("a db-name mapping alone is not a DSN", False)
         except ValueError:
             check("a db-name mapping alone is not a DSN", True)
+
+        # TUNNEL_SUFFIX filter: a _TUNNEL sidecar must never become a target name
+        os.environ[TARGET_PREFIX + "MAIN_TUNNEL"] = "tunnel=gcloud;host=h;local=15500;vm=v"
+        targets_with_sidecar = configured_targets()
+        check("_TUNNEL sidecar is not a target name", "main_tunnel" not in targets_with_sidecar,
+              str(targets_with_sidecar))
     finally:
         for k in [k for k in os.environ if k.startswith(TARGET_PREFIX)]:
             os.environ.pop(k, None)
