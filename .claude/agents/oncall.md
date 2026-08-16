@@ -70,6 +70,9 @@ tools:
   - mcp__pg_triage__explain_query
   - mcp__pg_triage__execute_sql
   - mcp__pg_triage__disconnect
+  # Tunnel sidecars: report open tunnels, idle time and time-to-reap. Use after connect to
+  # confirm the forward is up, and after disconnect to confirm it was released.
+  - mcp__pg_triage__tunnel_status
   # PRODUCTION/staging Redis, READ-ONLY, on-demand. Typed read tools only — there is no command
   # passthrough, and no write-shaped command exists (no KEYS either: it blocks a single-threaded
   # server). `target` is required and prod is never implied. ALWAYS disconnect at the end. No

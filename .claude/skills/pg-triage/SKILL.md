@@ -38,7 +38,7 @@ The `pg_triage` MCP lives in **local scope**, deliberately not in the shared `.m
 registered by `scripts/triage-mcp.sh sync`, which each person runs themselves (`aiworks sync` does
 not — `docs/adr/0009`), and the DSNs are per-machine too. Before anything else,
 check that its tools are present and what is configured — call `list_targets`, which also reports
-`prod_allowed`.
+`prod_allowed` and, when tunnel sidecars are declared, `tunnel_open` per target.
 
 If the `mcp__pg_triage__*` tools are **missing**, stop and tell the user to do the
 one-time setup — do not improvise another route to prod:
@@ -131,8 +131,9 @@ target holds it, resolve it from whatever registry your schema uses before a bli
 6. **Interpret**: state what the data shows and the finding (root cause / confirmation /
    refutation), tied to the specific target and rows you saw. If it grounds a ticket or fix,
    hand that off — this skill does not write code or change prod.
-7. **Teardown**: call `disconnect` to close every prod pool. Always do this when the
-   investigation is done — it leaves zero open connections to prod.
+7. **Teardown**: call `disconnect` to close every prod pool **and any open tunnel sidecars**.
+   Always do this when the investigation is done — it leaves zero open connections to prod and
+   zero tunnel processes. Call `tunnel_status` afterwards to confirm the local port was released.
 
 ## Persisting to a local repro (developer, `/diagnosing-bugs` only)
 Reading prod here is transient and read-only. If a bug needs the *actual* rows reproduced
@@ -142,6 +143,28 @@ sanctioned way to move prod-derived data onto local disk is **`scripts/db/prod_r
 that `--teardown` DROPs wholesale. Never hand-craft local `INSERT`s from prod values.
 Investigation agents (e.g. `oncall`) do **not** seed — they read, find, and hand
 the fix off.
+
+## Tunnel sidecars
+
+Some targets require a `gcloud compute ssh` port-forward because the Postgres host is inside a
+VPC. These are declared in `scripts/db/.env` as `PGPROD_<NAME>_TUNNEL=...` sidecars. When one
+is configured, the MCP opens and manages the tunnel automatically — you do not need a `gcloud`
+grant.
+
+- **`list_targets`** includes `tunnel_open` per entry when a sidecar is declared.
+- **`tunnel_status`** shows open tunnels, pid, idle time and time-to-reap mid-session.
+- **`disconnect`** closes both pools and tunnels and returns a `tunnels_closed` key.
+
+**Port-in-use failure:** if `127.0.0.1:<local>` is already listening when the MCP tries to
+open a tunnel, the call fails with a clear error naming `scripts/db/tunnel.sh status|kill`.
+This means a previous session's tunnel is orphaned. The remedy is human-only:
+
+```bash
+scripts/db/tunnel.sh status     # see what is open
+scripts/db/tunnel.sh kill       # clear orphans
+```
+
+This script is not granted to agents. See `docs/adr/0017`.
 
 ## Reporting
 

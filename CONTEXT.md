@@ -134,6 +134,21 @@ One of the four read-only MCPs over a DEPLOYED environment — `pg_triage`, `red
 and one teardown habit (`disconnect`). The first three read what **we** produce: our rows, our
 keys, our cluster objects. The fourth reads what the **cloud provider** measures for us.
 
+**tunnel sidecar**:
+An opt-in companion variable (`PGPROD_<NAME>_TUNNEL` / `PGSTG_<NAME>_TUNNEL`) declared beside a
+triage target's DSN. It tells the MCP server to open a `gcloud compute ssh -N -L` port-forward
+lazily when that target is first queried, and to reap it on idle or disconnect. The sidecar is
+additive — the DSN is unchanged — and the MCP owns the tunnel lifecycle so no agent ever needs a
+`gcloud` Bash grant.
+→ [ADR 0017](docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md)
+
+**reachability**:
+Being able to open a TCP connection to a host — via a tunnel, a VPN, or direct routing. A
+reachable target is not the same as an authorized one: the `triage.prod` gate (ADR 0005) is
+permission; reachability is a prerequisite, not a bypass. A tunnel sidecar provides reachability;
+it does not grant access.
+→ [ADR 0005](docs/adr/0005-deployed-env-triage-and-the-prod-gate.md)
+
 **plateau**:
 The tell that an investigation has reached the infrastructure boundary: our own instrumentation
 says the operation executed in microseconds while the caller waited hundreds of milliseconds, and

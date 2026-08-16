@@ -91,12 +91,77 @@ explicitly; a fleet-wide check is just a query per target.
 | `get_object_details` | Columns + indexes of a table/view.                                  |
 | `explain_query`      | Query plan. `analyze=True` runs the query (off by default).         |
 | `execute_sql`        | Read-only query, paginated at 200 rows/page.                        |
-| `disconnect`         | Close pools — both envs by default, or one via `env`. Leaves zero open connections. |
+| `tunnel_status`      | Open tunnel sidecars: pid, up/idle seconds, time-to-reap, forward. No DB access. |
+| `disconnect`         | Close pools **and** tunnels — both envs by default, or one via `env`. Leaves zero open connections. |
 
 Every data tool takes `env` **and** `target`. Every result carries `env` + `pii_vaulted`, so a
 mixed-env investigation can't mislabel where a row came from.
 
 Every data tool takes a `target`.
+
+## Tunnel sidecars (optional — for managed Postgres behind a VPC)
+
+A managed Postgres instance is usually not reachable from a laptop. When you need to triage such
+a target, declare a tunnel sidecar beside its DSN and the MCP will port-forward for you.
+
+### Declaring a tunnel
+
+Add a `_TUNNEL` sidecar in `scripts/db/.env` next to the target DSN:
+
+```bash
+PGPROD_MAIN=postgresql://readonly:pw@prod-db.internal:5432/app?sslmode=verify-full
+PGPROD_MAIN_TUNNEL=tunnel=gcloud;host=prod-db.internal;port=5432;local=15432;vm=bastion-vm;zone=asia-southeast1-a
+```
+
+**Supported keys:**
+
+| Key       | Required                | Default  | Description |
+|-----------|-------------------------|----------|-------------|
+| `tunnel`  | no                      | `gcloud` | `gcloud` \| `none` (use `none` when already reachable via VPN/bastion). |
+| `host`    | yes (for `gcloud`)      |          | Remote Postgres hostname as seen **from the VM** (not your laptop). |
+| `port`    | no                      | `5432`   | Remote Postgres port. |
+| `local`   | yes (for `gcloud`)      |          | Local port to bind on 127.0.0.1. Must be unique across all sidecars; must not be 5432. |
+| `vm`      | yes (for `gcloud`)      |          | `gcloud compute` instance name. |
+| `zone`    | no                      |          | gcloud zone (omit to use your `gcloud config` default zone). |
+| `project` | no                      |          | gcloud project (omit to use your `gcloud config` default project). |
+| `iap`     | no                      | `true`   | `true` → `--tunnel-through-iap` (IAP-TCP-forwarding role required); `false` → direct SSH. |
+
+**Naming rules:**
+- A target may not be named `…_tunnel` (the suffix is reserved for sidecars, same as `dsn` is
+  reserved for the staging base DSN).
+- `PGSTG_DSN_TUNNEL` is not supported — the bare staging instance has no target name to attach a
+  tunnel to; declare `PGSTG_<NAME>` per target instead.
+
+### How it works
+
+The tunnel is lazy: it is spawned on the first tool call for that target, not at process start.
+It is reaped automatically after 120 s of idle time, and `disconnect` closes it immediately.
+`gcloud compute ssh` connects with `--tunnel-through-iap` (or without, when `iap=false`) and the
+`-L <local>:<host>:<port>` flag; the framework never runs a remote command.
+
+The connection goes through `127.0.0.1:<local>` while the DSN's `host=` is preserved for TLS SNI
+and certificate verification — a `sslmode=verify-full` DSN keeps working through the forward.
+
+### Prerequisites
+
+```bash
+gcloud auth login
+# The IAP-TCP-forwarding role on the VM project (when iap=true)
+```
+
+### Port-in-use behaviour
+
+If `127.0.0.1:<local>` is already listening when the MCP tries to open the tunnel, the call is
+**refused** — the MCP never adopts or kills a tunnel it did not open. Clear the orphan with:
+
+```bash
+scripts/db/tunnel.sh status    # see what is open
+scripts/db/tunnel.sh kill      # kill all orphans
+scripts/db/tunnel.sh kill main # kill one target by name
+```
+
+`tunnel.sh` is **not** granted to agents. `gcloud compute ssh` with a different operand would
+give a shell on the production VM — that is why the tunnel lives inside the MCP server.
 
 ## Verifying it
 
