@@ -3,7 +3,10 @@
     "mcp-image": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "mcp-image"],
+      "args": [
+        "-y",
+        "mcp-image"
+      ],
       "env": {
         "GEMINI_API_KEY": "${GEMINI_API_KEY}",
         "IMAGE_OUTPUT_DIR": "${IMAGE_OUTPUT_DIR:-/tmp/aiworks-generated-images}",
@@ -38,11 +41,22 @@
     "codegraph": {
       "type": "stdio",
       "command": "codegraph",
-      "args": ["serve", "--mcp"]
+      "args": [
+        "serve",
+        "--mcp"
+      ]
     },
     "graphify_docs": {
       "type": "stdio",
       "command": "graphify-mcp"
+    },
+    "n8n-mcp": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/n8n-mcp.sh\""
+      ]
     }
   }
 }
