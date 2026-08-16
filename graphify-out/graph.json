@@ -352,10 +352,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_graphify",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "graphify.md"
+      "norm_label": "graphify.md",
+      "id": "docs_agents_graphify"
     },
     {
       "label": "Adding docs to the graph",
@@ -363,10 +363,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L93",
       "_origin": "ast",
-      "id": "docs_agents_graphify_adding_docs_to_the_graph",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "adding docs to the graph"
+      "norm_label": "adding docs to the graph",
+      "id": "docs_agents_graphify_adding_docs_to_the_graph"
     },
     {
       "label": "`graphify install` overreaches \u2014 review before committing",
@@ -374,10 +374,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L84",
       "_origin": "ast",
-      "id": "docs_agents_graphify_graphify_install_overreaches_review_before_committing",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "`graphify install` overreaches \u2014 review before committing"
+      "norm_label": "`graphify install` overreaches \u2014 review before committing",
+      "id": "docs_agents_graphify_graphify_install_overreaches_review_before_committing"
     },
     {
       "label": "\u26a0\ufe0f graphify needs no API key. The skill IS the LLM.",
@@ -385,10 +385,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L16",
       "_origin": "ast",
-      "id": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "\u26a0\ufe0f graphify needs no api key. the skill is the llm."
+      "norm_label": "\u26a0\ufe0f graphify needs no api key. the skill is the llm.",
+      "id": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm"
     },
     {
       "label": "graphify \u2014 operating the doc graph",
@@ -396,10 +396,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_graphify_graphify_operating_the_doc_graph",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "graphify \u2014 operating the doc graph"
+      "norm_label": "graphify \u2014 operating the doc graph",
+      "id": "docs_agents_graphify_graphify_operating_the_doc_graph"
     },
     {
       "label": "It is TWO installs, and the second is the one people miss",
@@ -407,10 +407,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L6",
       "_origin": "ast",
-      "id": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "it is two installs, and the second is the one people miss"
+      "norm_label": "it is two installs, and the second is the one people miss",
+      "id": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss"
     },
     {
       "label": "\u26a0\ufe0f Labels are positional \u2014 regenerate the `.sig`",
@@ -418,10 +418,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L53",
       "_origin": "ast",
-      "id": "docs_agents_graphify_labels_are_positional_regenerate_the_sig",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "\u26a0\ufe0f labels are positional \u2014 regenerate the `.sig`"
+      "norm_label": "\u26a0\ufe0f labels are positional \u2014 regenerate the `.sig`",
+      "id": "docs_agents_graphify_labels_are_positional_regenerate_the_sig"
     },
     {
       "label": "\u26a0\ufe0f Remove the post-checkout hook",
@@ -429,10 +429,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L36",
       "_origin": "ast",
-      "id": "docs_agents_graphify_remove_the_post_checkout_hook",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "\u26a0\ufe0f remove the post-checkout hook"
+      "norm_label": "\u26a0\ufe0f remove the post-checkout hook",
+      "id": "docs_agents_graphify_remove_the_post_checkout_hook"
     },
     {
       "label": "What is committed, and what is not",
@@ -440,10 +440,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L70",
       "_origin": "ast",
-      "id": "docs_agents_graphify_what_is_committed_and_what_is_not",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "what is committed, and what is not"
+      "norm_label": "what is committed, and what is not",
+      "id": "docs_agents_graphify_what_is_committed_and_what_is_not"
     },
     {
       "label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md",
@@ -451,10 +451,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md"
+      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt"
     },
     {
       "label": "Code minimalism is a plugin, scoped by agent, not a prompt",
@@ -462,10 +462,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt"
+      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
     },
     {
       "label": "What ponytail offers",
@@ -473,10 +473,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L12",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what ponytail offers"
+      "norm_label": "what ponytail offers",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
     },
     {
       "label": "What was rejected",
@@ -484,10 +484,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L95",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what was rejected"
+      "norm_label": "what was rejected",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
     },
     {
       "label": "Why not on every agent",
@@ -495,10 +495,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L52",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why not on every agent"
+      "norm_label": "why not on every agent",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
     },
     {
       "label": "Why the level is pinned",
@@ -506,10 +506,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L68",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the level is pinned"
+      "norm_label": "why the level is pinned",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
     },
     {
       "label": "Why the plugin rather than our own prose",
@@ -517,10 +517,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L34",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the plugin rather than our own prose"
+      "norm_label": "why the plugin rather than our own prose",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
     },
     {
       "label": "Why three carve-outs, and only three",
@@ -528,10 +528,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L78",
       "_origin": "ast",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why three carve-outs, and only three"
+      "norm_label": "why three carve-outs, and only three",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
     },
     {
       "label": "ponytail.md",
@@ -539,10 +539,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "ponytail.md"
+      "norm_label": "ponytail.md",
+      "id": "docs_agents_ponytail"
     },
     {
       "label": "Code minimalism (ponytail)",
@@ -550,10 +550,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_code_minimalism_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism (ponytail)"
+      "norm_label": "code minimalism (ponytail)",
+      "id": "docs_agents_ponytail_code_minimalism_ponytail"
     },
     {
       "label": "Commands",
@@ -561,10 +561,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L101",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_commands",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "commands"
+      "norm_label": "commands",
+      "id": "docs_agents_ponytail_commands"
     },
     {
       "label": "How it reaches each spawn path",
@@ -572,10 +572,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L30",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "how it reaches each spawn path"
+      "norm_label": "how it reaches each spawn path",
+      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
     },
     {
       "label": "Installing it",
@@ -583,10 +583,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L112",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_installing_it",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "installing it"
+      "norm_label": "installing it",
+      "id": "docs_agents_ponytail_installing_it"
     },
     {
       "label": "The ladder",
@@ -594,10 +594,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L14",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_the_ladder",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "the ladder"
+      "norm_label": "the ladder",
+      "id": "docs_agents_ponytail_the_ladder"
     },
     {
       "label": "Where it stops",
@@ -605,10 +605,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L75",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_where_it_stops",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "where it stops"
+      "norm_label": "where it stops",
+      "id": "docs_agents_ponytail_where_it_stops"
     },
     {
       "label": "Who gets it, and why not everyone",
@@ -616,10 +616,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L51",
       "_origin": "ast",
-      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "who gets it, and why not everyone"
+      "norm_label": "who gets it, and why not everyone",
+      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
     },
     {
       "label": "SKILL.md",
@@ -627,10 +627,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "skill.md"
+      "norm_label": "skill.md",
+      "id": "claude_skills_ponytail_skill"
     },
     {
       "label": "Boundaries",
@@ -638,10 +638,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L114",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_boundaries",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "boundaries"
+      "norm_label": "boundaries",
+      "id": "claude_skills_ponytail_skill_boundaries"
     },
     {
       "label": "Intensity",
@@ -649,10 +649,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L77",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_intensity",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "intensity"
+      "norm_label": "intensity",
+      "id": "claude_skills_ponytail_skill_intensity"
     },
     {
       "label": "Output",
@@ -660,10 +660,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L66",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_output",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "output"
+      "norm_label": "output",
+      "id": "claude_skills_ponytail_skill_output"
     },
     {
       "label": "Persistence",
@@ -671,10 +671,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L26",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_persistence",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "persistence"
+      "norm_label": "persistence",
+      "id": "claude_skills_ponytail_skill_persistence"
     },
     {
       "label": "Ponytail",
@@ -682,10 +682,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L20",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_ponytail",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "ponytail"
+      "norm_label": "ponytail",
+      "id": "claude_skills_ponytail_skill_ponytail"
     },
     {
       "label": "Rules",
@@ -693,10 +693,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L56",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_rules",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "rules"
+      "norm_label": "rules",
+      "id": "claude_skills_ponytail_skill_rules"
     },
     {
       "label": "The ladder",
@@ -704,10 +704,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L32",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_the_ladder",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "the ladder"
+      "norm_label": "the ladder",
+      "id": "claude_skills_ponytail_skill_the_ladder"
     },
     {
       "label": "When NOT to be lazy",
@@ -715,10 +715,65 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L90",
       "_origin": "ast",
-      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "when not to be lazy"
+      "norm_label": "when not to be lazy",
+      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy"
+    },
+    {
+      "label": "obsidian.md",
+      "file_type": "document",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_obsidian",
+      "community": 63,
+      "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
+      "norm_label": "obsidian.md"
+    },
+    {
+      "label": "Commit vs keep local",
+      "file_type": "document",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L28",
+      "_origin": "ast",
+      "id": "docs_agents_obsidian_commit_vs_keep_local",
+      "community": 63,
+      "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
+      "norm_label": "commit vs keep local"
+    },
+    {
+      "label": "Gotchas",
+      "file_type": "document",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L41",
+      "_origin": "ast",
+      "id": "docs_agents_obsidian_gotchas",
+      "community": 63,
+      "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
+      "norm_label": "gotchas"
+    },
+    {
+      "label": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
+      "file_type": "document",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
+      "community": 63,
+      "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
+      "norm_label": "obsidian \u2014 shared vault settings for the workspace meta-repo"
+    },
+    {
+      "label": "What `aiworks sync` does",
+      "file_type": "document",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "docs_agents_obsidian_what_aiworks_sync_does",
+      "community": 63,
+      "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
+      "norm_label": "what `aiworks sync` does"
     },
     {
       "label": "hrun",
@@ -730,10 +785,10 @@
         "kind": "file"
       },
       "_origin": "ast",
-      "id": "scripts_hrun",
       "community": 64,
       "community_name": "hrun",
-      "norm_label": "hrun"
+      "norm_label": "hrun",
+      "id": "scripts_hrun"
     },
     {
       "label": "hrun script",
@@ -745,10 +800,10 @@
         "kind": "bash_entrypoint"
       },
       "_origin": "ast",
-      "id": "scripts_hrun__entry",
       "community": 64,
       "community_name": "hrun",
-      "norm_label": "hrun script"
+      "norm_label": "hrun script",
+      "id": "scripts_hrun__entry"
     },
     {
       "label": "design (skill)",
@@ -762,7 +817,7 @@
       "community": 9,
       "norm_label": "design (skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_skill_design"
     },
     {
@@ -777,7 +832,7 @@
       "community": 9,
       "norm_label": "design-system (skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_skill_design_system"
     },
     {
@@ -1756,9 +1811,9 @@
       "id": "readme_triage_authorization"
     },
     {
-      "label": "graphify MCP Stdio Server",
+      "label": "Native CLAUDE.md Integration",
       "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -1766,54 +1821,9 @@
       "contributor": null,
       "community": 1,
       "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "graphify mcp stdio server",
+      "norm_label": "native claude.md integration",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_exports_mcp_server"
-    },
-    {
-      "label": "Query Token Budget",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/query.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "query token budget",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_query_token_budget"
-    },
-    {
-      "label": "Corpus Detection",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "corpus detection",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_detect"
-    },
-    {
-      "label": "Extraction Manifest",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "extraction manifest",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_manifest"
+      "id": "_claude_skills_graphify_references_hooks_claude_md_integration"
     },
     {
       "label": "Multi-Repo Workspace (AGENTS.md)",
@@ -2026,6 +2036,21 @@
       "id": "context_hook_shim"
     },
     {
+      "label": "claude-cli Backend",
+      "file_type": "concept",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "claude-cli backend",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_claude_cli_backend"
+    },
+    {
       "label": "codegraph",
       "file_type": "concept",
       "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
@@ -2071,7 +2096,7 @@
       "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_codegraph_telemetry_disabled"
     },
     {
-      "label": "read_source MCP Tool Proposal",
+      "label": "graphify (Doc Graph Tool)",
       "file_type": "concept",
       "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
       "source_location": null,
@@ -2081,9 +2106,9 @@
       "contributor": null,
       "community": 1,
       "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "read_source mcp tool proposal",
+      "norm_label": "graphify (doc graph tool)",
       "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_read_source_mcp_tool"
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_graphify"
     },
     {
       "label": "hcat (ADR 0014)",
@@ -2296,21 +2321,6 @@
       "id": "claude_workspace_instructions"
     },
     {
-      "label": "Corpus Size Gate",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "corpus size gate",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_corpus_size_gate"
-    },
-    {
       "label": "Honesty Rules",
       "file_type": "rationale",
       "source_file": ".claude/skills/graphify/SKILL.md",
@@ -2326,7 +2336,7 @@
       "id": "_claude_skills_graphify_skill_honesty_rules"
     },
     {
-      "label": "Parallel Subagent Dispatch",
+      "label": "No API Key Required",
       "file_type": "rationale",
       "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
@@ -2336,9 +2346,9 @@
       "contributor": null,
       "community": 1,
       "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "parallel subagent dispatch",
+      "norm_label": "no api key required",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_parallel_subagent_dispatch"
+      "id": "_claude_skills_graphify_skill_no_api_key_required"
     },
     {
       "label": "Never Read .env Files (AGENTS.md)",
@@ -2461,21 +2471,6 @@
       "id": "claude_submodule_ban"
     },
     {
-      "label": "agent_logs Excluded",
-      "file_type": "rationale",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "agent_logs excluded",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_agent_logs_exclusion"
-    },
-    {
       "label": "Codegraph Keeps The Code, Graphify Maps The Prose",
       "file_type": "rationale",
       "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
@@ -2489,21 +2484,6 @@
       "norm_label": "codegraph keeps the code, graphify maps the prose",
       "_origin": "semantic",
       "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_codegraph_graphify_split"
-    },
-    {
-      "label": "Doc-Only Graphify Scope",
-      "file_type": "rationale",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "doc-only graphify scope",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_doc_only_scope"
     },
     {
       "label": "graphify extract Fails Open",
@@ -2536,6 +2516,21 @@
       "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_graphify_stores_map_not_text"
     },
     {
+      "label": "Query Logging Default Off",
+      "file_type": "rationale",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "query logging default off",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_query_log_default_off"
+    },
+    {
       "label": "Round-Trip Cost Metric",
       "file_type": "rationale",
       "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
@@ -2549,36 +2544,6 @@
       "norm_label": "round-trip cost metric",
       "_origin": "semantic",
       "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_round_trip_cost_metric"
-    },
-    {
-      "label": "Shell Files Excluded From Doc Graph",
-      "file_type": "rationale",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "shell files excluded from doc graph",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_shell_files_excluded"
-    },
-    {
-      "label": "Strict Mode Stays Off",
-      "file_type": "rationale",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "community_name": "bluePi Workspace CLAUDE.md",
-      "norm_label": "strict mode stays off",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_strict_mode_off"
     },
     {
       "label": "Accuracy Loss Is A Cost, Not A Saving",
@@ -2821,6 +2786,81 @@
       "id": "claude_skills_brand_scripts_validate_asset_validate_asset"
     },
     {
+      "label": "ai-artist skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 10,
+      "norm_label": "ai-artist skill",
+      "_origin": "semantic",
+      "community_name": "brand skill",
+      "id": "claude_skills_ai_artist_skill_ai_artist"
+    },
+    {
+      "label": "ai-multimodal skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 10,
+      "norm_label": "ai-multimodal skill",
+      "_origin": "semantic",
+      "community_name": "brand skill",
+      "id": "claude_skills_ai_multimodal_skill_ai_multimodal"
+    },
+    {
+      "label": "assets-organizing skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 10,
+      "norm_label": "assets-organizing skill",
+      "_origin": "semantic",
+      "community_name": "brand skill",
+      "id": "claude_skills_assets_organizing_skill_assets_organizing"
+    },
+    {
+      "label": "Banner sizes & art direction styles",
+      "file_type": "document",
+      "source_file": ".claude/skills/banner-design/references/banner-sizes-and-styles.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 10,
+      "norm_label": "banner sizes & art direction styles",
+      "_origin": "semantic",
+      "community_name": "brand skill",
+      "id": "claude_skills_banner_design_references_banner_sizes_and_styles_banner_sizes_and_styles"
+    },
+    {
+      "label": "banner-design skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 10,
+      "norm_label": "banner-design skill",
+      "_origin": "semantic",
+      "community_name": "brand skill",
+      "id": "claude_skills_banner_design_skill_banner_design"
+    },
+    {
       "label": "Asset approval checklist",
       "file_type": "document",
       "source_file": ".claude/skills/brand/references/approval-checklist.md",
@@ -3016,6 +3056,21 @@
       "id": "claude_skills_brand_templates_brand_guidelines_starter_brand_guidelines_starter"
     },
     {
+      "label": "chrome-devtools skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 10,
+      "norm_label": "chrome-devtools skill",
+      "_origin": "semantic",
+      "community_name": "brand skill",
+      "id": "claude_skills_chrome_devtools_skill_chrome_devtools"
+    },
+    {
       "label": "design-system skill",
       "file_type": "document",
       "source_file": ".claude/skills/brand/references/update.md",
@@ -3029,6 +3084,21 @@
       "_origin": "semantic",
       "community_name": "brand skill",
       "id": "claude_skills_design_system_skill_design_system"
+    },
+    {
+      "label": "frontend-design skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 10,
+      "norm_label": "frontend-design skill",
+      "_origin": "semantic",
+      "community_name": "brand skill",
+      "id": "claude_skills_frontend_design_skill_frontend_design"
     },
     {
       "label": "docs/brand-guidelines.md",
@@ -4351,109 +4421,109 @@
       "id": "docs_agents_language_language_policy"
     },
     {
-      "label": "ai-artist skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "label": "URL Ingest (graphify add)",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 15,
-      "norm_label": "ai-artist skill",
+      "community_name": "Corpus Detection",
+      "norm_label": "url ingest (graphify add)",
       "_origin": "semantic",
-      "community_name": "banner-design skill",
-      "id": "claude_skills_ai_artist_skill_ai_artist"
+      "id": "_claude_skills_graphify_references_add_watch_url_ingest"
     },
     {
-      "label": "ai-multimodal skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "label": "Whisper Transcription",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 15,
-      "norm_label": "ai-multimodal skill",
+      "community_name": "Corpus Detection",
+      "norm_label": "whisper transcription",
       "_origin": "semantic",
-      "community_name": "banner-design skill",
-      "id": "claude_skills_ai_multimodal_skill_ai_multimodal"
+      "id": "_claude_skills_graphify_references_transcribe_whisper_transcription"
     },
     {
-      "label": "assets-organizing skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "label": "Corpus Detection",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 15,
-      "norm_label": "assets-organizing skill",
+      "community_name": "Corpus Detection",
+      "norm_label": "corpus detection",
       "_origin": "semantic",
-      "community_name": "banner-design skill",
-      "id": "claude_skills_assets_organizing_skill_assets_organizing"
+      "id": "_claude_skills_graphify_skill_detect"
     },
     {
-      "label": "Banner sizes & art direction styles",
-      "file_type": "document",
-      "source_file": ".claude/skills/banner-design/references/banner-sizes-and-styles.md",
+      "label": "God Nodes",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 15,
-      "norm_label": "banner sizes & art direction styles",
+      "community_name": "Corpus Detection",
+      "norm_label": "god nodes",
       "_origin": "semantic",
-      "community_name": "banner-design skill",
-      "id": "claude_skills_banner_design_references_banner_sizes_and_styles_banner_sizes_and_styles"
+      "id": "_claude_skills_graphify_skill_god_nodes"
     },
     {
-      "label": "banner-design skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "label": "Extraction Manifest",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 15,
-      "norm_label": "banner-design skill",
+      "community_name": "Corpus Detection",
+      "norm_label": "extraction manifest",
       "_origin": "semantic",
-      "community_name": "banner-design skill",
-      "id": "claude_skills_banner_design_skill_banner_design"
+      "id": "_claude_skills_graphify_skill_manifest"
     },
     {
-      "label": "chrome-devtools skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "label": "Whisper Domain-Hint Prompt",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 15,
-      "norm_label": "chrome-devtools skill",
+      "community_name": "Corpus Detection",
+      "norm_label": "whisper domain-hint prompt",
       "_origin": "semantic",
-      "community_name": "banner-design skill",
-      "id": "claude_skills_chrome_devtools_skill_chrome_devtools"
+      "id": "_claude_skills_graphify_references_transcribe_whisper_domain_hint_prompt"
     },
     {
-      "label": "frontend-design skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/banner-design/SKILL.md",
+      "label": "Corpus Size Gate",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 15,
-      "norm_label": "frontend-design skill",
+      "community_name": "Corpus Detection",
+      "norm_label": "corpus size gate",
       "_origin": "semantic",
-      "community_name": "banner-design skill",
-      "id": "claude_skills_frontend_design_skill_frontend_design"
+      "id": "_claude_skills_graphify_skill_corpus_size_gate"
     },
     {
       "label": "disconnect (k8s MCP teardown)",
@@ -4906,21 +4976,6 @@
       "id": "docs_adr_0010_cloud_monitoring_triage_shares_the_read_only_identity_monitoring_triage"
     },
     {
-      "label": "URL Ingest (graphify add)",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/add-watch.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 18,
-      "community_name": "Incremental Update",
-      "norm_label": "url ingest (graphify add)",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_add_watch_url_ingest"
-    },
-    {
       "label": "Watch Mode Auto-Rebuild",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/references/add-watch.md",
@@ -4981,21 +5036,6 @@
       "id": "_claude_skills_graphify_references_query_work_memory_lessons"
     },
     {
-      "label": "Whisper Transcription",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/transcribe.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 18,
-      "community_name": "Incremental Update",
-      "norm_label": "whisper transcription",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_transcribe_whisper_transcription"
-    },
-    {
       "label": "detect_incremental",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/references/update.md",
@@ -5041,6 +5081,21 @@
       "id": "_claude_skills_graphify_references_update_incremental_update"
     },
     {
+      "label": "AST Structural Extraction",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 18,
+      "community_name": "Incremental Update",
+      "norm_label": "ast structural extraction",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_ast_structural_extraction"
+    },
+    {
       "label": "Watch Debounce",
       "file_type": "rationale",
       "source_file": ".claude/skills/graphify/references/add-watch.md",
@@ -5056,6 +5111,51 @@
       "id": "_claude_skills_graphify_references_add_watch_debounce"
     },
     {
+      "label": "Call Edge Direction And Language Rule",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 18,
+      "community_name": "Incremental Update",
+      "norm_label": "call edge direction and language rule",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_extraction_spec_call_edge_direction_rule"
+    },
+    {
+      "label": "Node ID Format",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 18,
+      "community_name": "Incremental Update",
+      "norm_label": "node id format",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_extraction_spec_node_id_format"
+    },
+    {
+      "label": "Code-Only Update Fast Path",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 18,
+      "community_name": "Incremental Update",
+      "norm_label": "code-only update fast path",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_update_code_only_fast_path"
+    },
+    {
       "label": "headroom learn Rejected",
       "file_type": "rationale",
       "source_file": "docs/adr/0014-compression-is-explicit-and-file-scoped.md",
@@ -5069,6 +5169,36 @@
       "norm_label": "headroom learn rejected",
       "_origin": "semantic",
       "id": "docs_adr_0014_compression_is_explicit_and_file_scoped_headroom_learn_rejected"
+    },
+    {
+      "label": "refresh-savings.sh (Stop hook)",
+      "file_type": "code",
+      "source_file": ".claude/hooks/caveman-statusline/README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 19,
+      "norm_label": "refresh-savings.sh (stop hook)",
+      "_origin": "semantic",
+      "community_name": "ux-ui-designer agent (Jane)",
+      "id": "claude_hooks_caveman_statusline_refresh_savings_refresh_savings_sh"
+    },
+    {
+      "label": "statusline.sh",
+      "file_type": "code",
+      "source_file": ".claude/hooks/caveman-statusline/README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 19,
+      "norm_label": "statusline.sh",
+      "_origin": "semantic",
+      "community_name": "ux-ui-designer agent (Jane)",
+      "id": "claude_hooks_caveman_statusline_statusline_statusline_sh"
     },
     {
       "label": "workspace.config.yaml",
@@ -5159,6 +5289,36 @@
       "_origin": "semantic",
       "community_name": "ux-ui-designer agent (Jane)",
       "id": "claude_agents_ux_ui_planner_ux_ui_planner"
+    },
+    {
+      "label": "Caveman savings statusline",
+      "file_type": "document",
+      "source_file": ".claude/hooks/caveman-statusline/README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 19,
+      "norm_label": "caveman savings statusline",
+      "_origin": "semantic",
+      "community_name": "ux-ui-designer agent (Jane)",
+      "id": "claude_hooks_caveman_statusline_readme_caveman_savings_statusline"
+    },
+    {
+      "label": "caveman skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/caveman/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 19,
+      "norm_label": "caveman skill",
+      "_origin": "semantic",
+      "community_name": "ux-ui-designer agent (Jane)",
+      "id": "claude_skills_caveman_skill_caveman"
     },
     {
       "label": "designing-page skill",
@@ -5776,6 +5936,21 @@
       "id": "scripts_redis_readme_no_seed_tool"
     },
     {
+      "label": "DEEP_MODE Aggressive Inference",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 20,
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "deep_mode aggressive inference",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_extraction_spec_deep_mode"
+    },
+    {
       "label": "Extraction Subagent Prompt",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/references/extraction-spec.md",
@@ -5836,7 +6011,7 @@
       "id": "_claude_skills_graphify_references_extraction_spec_vision_extraction_rules"
     },
     {
-      "label": "AST Structural Extraction",
+      "label": "Gemini Semantic Backend",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
@@ -5846,14 +6021,14 @@
       "contributor": null,
       "community": 20,
       "community_name": "Extraction Subagent Prompt",
-      "norm_label": "ast structural extraction",
+      "norm_label": "gemini semantic backend",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_ast_structural_extraction"
+      "id": "_claude_skills_graphify_skill_gemini_backend"
     },
     {
-      "label": "Call Edge Direction And Language Rule",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "label": "Semantic Extraction",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -5861,9 +6036,9 @@
       "contributor": null,
       "community": 20,
       "community_name": "Extraction Subagent Prompt",
-      "norm_label": "call edge direction and language rule",
+      "norm_label": "semantic extraction",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_call_edge_direction_rule"
+      "id": "_claude_skills_graphify_skill_semantic_extraction"
     },
     {
       "label": "Discrete Confidence Score Rubric",
@@ -5896,21 +6071,6 @@
       "id": "_claude_skills_graphify_references_extraction_spec_confidence_taxonomy"
     },
     {
-      "label": "Node ID Format",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 20,
-      "community_name": "Extraction Subagent Prompt",
-      "norm_label": "node id format",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_node_id_format"
-    },
-    {
       "label": "Rationale As Node Attribute",
       "file_type": "rationale",
       "source_file": ".claude/skills/graphify/references/extraction-spec.md",
@@ -5926,9 +6086,9 @@
       "id": "_claude_skills_graphify_references_extraction_spec_rationale_attribute"
     },
     {
-      "label": "Code-Only Update Fast Path",
+      "label": "Parallel Subagent Dispatch",
       "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -5936,9 +6096,39 @@
       "contributor": null,
       "community": 20,
       "community_name": "Extraction Subagent Prompt",
-      "norm_label": "code-only update fast path",
+      "norm_label": "parallel subagent dispatch",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_update_code_only_fast_path"
+      "id": "_claude_skills_graphify_skill_parallel_subagent_dispatch"
+    },
+    {
+      "label": "Semantic Extraction Cache",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 20,
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "semantic extraction cache",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_semantic_extraction_cache"
+    },
+    {
+      "label": "Wiki Export",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 21,
+      "community_name": "graphify Skill Pipeline",
+      "norm_label": "wiki export",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_exports_wiki_export"
     },
     {
       "label": "Cross-Repo Graph Merge",
@@ -5971,9 +6161,9 @@
       "id": "_claude_skills_graphify_references_github_and_merge_repo_clone"
     },
     {
-      "label": "Native CLAUDE.md Integration",
+      "label": "cluster-only Rerun",
       "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_file": ".claude/skills/graphify/references/update.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -5981,9 +6171,24 @@
       "contributor": null,
       "community": 21,
       "community_name": "graphify Skill Pipeline",
-      "norm_label": "native claude.md integration",
+      "norm_label": "cluster-only rerun",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_hooks_claude_md_integration"
+      "id": "_claude_skills_graphify_references_update_cluster_only"
+    },
+    {
+      "label": "Community Detection And Labeling",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 21,
+      "community_name": "graphify Skill Pipeline",
+      "norm_label": "community detection and labeling",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_community_clustering"
     },
     {
       "label": "Cumulative Cost Tracker",
@@ -6046,21 +6251,6 @@
       "id": "_claude_skills_graphify_skill_obsidian_vault"
     },
     {
-      "label": "graphify (Doc Graph Tool)",
-      "file_type": "concept",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Skill Pipeline",
-      "norm_label": "graphify (doc graph tool)",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_graphify"
-    },
-    {
       "label": "GRAPH_REPORT.md",
       "file_type": "document",
       "source_file": ".claude/skills/graphify/SKILL.md",
@@ -6119,21 +6309,6 @@
       "norm_label": ".graphify_python interpreter sidecar",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_graphify_python_interpreter_sidecar"
-    },
-    {
-      "label": "Query Logging Default Off",
-      "file_type": "rationale",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Skill Pipeline",
-      "norm_label": "query logging default off",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_query_log_default_off"
     },
     {
       "label": "scripts/dev.sh per-repo harness",
@@ -6250,7 +6425,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "bfs and dfs traversal modes",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_query_bfs_dfs_traversal_modes"
@@ -6265,7 +6440,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "node explanation",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_query_explain_node"
@@ -6280,7 +6455,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "graph query flow",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_query_graph_query_flow"
@@ -6295,7 +6470,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "inline networkx fallback",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_query_networkx_inline_fallback"
@@ -6310,10 +6485,25 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "shortest path between concepts",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_query_shortest_path"
+    },
+    {
+      "label": "Query Token Budget",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 23,
+      "community_name": "graph.json",
+      "norm_label": "query token budget",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_query_token_budget"
     },
     {
       "label": "build_merge Replace-On-Re-Extract",
@@ -6325,7 +6515,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "build_merge replace-on-re-extract",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_update_build_merge"
@@ -6340,7 +6530,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "graph health check",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_graph_health_check"
@@ -6355,7 +6545,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "graph.json",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_graph_json"
@@ -6370,7 +6560,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "verbatim source_file rule",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_extraction_spec_source_file_rule"
@@ -6385,7 +6575,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "constrained query expansion",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_query_constrained_query_expansion"
@@ -6400,7 +6590,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "prune_sources for deleted files",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_update_prune_sources"
@@ -6415,7 +6605,7 @@
       "author": null,
       "contributor": null,
       "community": 23,
-      "community_name": "graphify Query and Traversal",
+      "community_name": "graph.json",
       "norm_label": "graph.json shrink guard",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_shrink_guard"
@@ -6781,21 +6971,6 @@
       "id": "_claude_skills_telemetry_triage_skill_telemetry_triage"
     },
     {
-      "label": "find-prs.sh",
-      "file_type": "code",
-      "source_file": ".claude/skills/apply-human-review/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "find-prs.sh",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "scripts_vcs_find_prs_find_prs"
-    },
-    {
       "label": "pr-resolve-thread.sh",
       "file_type": "code",
       "source_file": ".claude/agents/qa-runner.md",
@@ -6809,21 +6984,6 @@
       "_origin": "semantic",
       "community_name": "qa-runner agent (Peter)",
       "id": "scripts_vcs_pr_resolve_thread_pr_resolve_thread"
-    },
-    {
-      "label": "pr-threads.sh",
-      "file_type": "code",
-      "source_file": ".claude/skills/apply-human-review/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "pr-threads.sh",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "scripts_vcs_pr_threads_pr_threads"
     },
     {
       "label": "scripts/vcs/ adapter",
@@ -6856,6 +7016,36 @@
       "id": "claude_agents_qa_runner_bar"
     },
     {
+      "label": "agent_logs/<KEY>-automation-plan.md",
+      "file_type": "document",
+      "source_file": ".claude/agents/qa-planner.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 26,
+      "norm_label": "agent_logs/<key>-automation-plan.md",
+      "_origin": "semantic",
+      "community_name": "qa-runner agent (Peter)",
+      "id": "agent_logs_automation_plan"
+    },
+    {
+      "label": "agent_logs/<KEY>-bugs.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/coding-automate/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 26,
+      "norm_label": "agent_logs/<key>-bugs.md",
+      "_origin": "semantic",
+      "community_name": "qa-runner agent (Peter)",
+      "id": "agent_logs_bugs"
+    },
+    {
       "label": "agent_logs/<KEY>-report.md",
       "file_type": "document",
       "source_file": ".claude/agents/qa-runner.md",
@@ -6869,36 +7059,6 @@
       "_origin": "semantic",
       "community_name": "qa-runner agent (Peter)",
       "id": "agent_logs_report"
-    },
-    {
-      "label": "developer agent",
-      "file_type": "document",
-      "source_file": ".claude/skills/apply-human-review/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "developer agent",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "claude_agents_developer_developer"
-    },
-    {
-      "label": "development-planner agent",
-      "file_type": "document",
-      "source_file": ".claude/skills/apply-human-review/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "development-planner agent",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "claude_agents_development_planner_development_planner"
     },
     {
       "label": "qa-runner agent (Peter)",
@@ -6916,19 +7076,49 @@
       "id": "claude_agents_qa_runner_qa_runner"
     },
     {
-      "label": "apply-human-review skill",
+      "label": "Bug log template",
       "file_type": "document",
-      "source_file": ".claude/skills/apply-human-review/SKILL.md",
+      "source_file": ".claude/skills/coding-automate/bug-log-template.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 26,
-      "norm_label": "apply-human-review skill",
+      "norm_label": "bug log template",
       "_origin": "semantic",
       "community_name": "qa-runner agent (Peter)",
-      "id": "claude_skills_apply_human_review_skill_apply_human_review"
+      "id": "claude_skills_coding_automate_bug_log_template_bug_log_template"
+    },
+    {
+      "label": "coding-automate skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/coding-automate/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 26,
+      "norm_label": "coding-automate skill",
+      "_origin": "semantic",
+      "community_name": "qa-runner agent (Peter)",
+      "id": "claude_skills_coding_automate_skill_coding_automate"
+    },
+    {
+      "label": "Ground truth first",
+      "file_type": "document",
+      "source_file": ".claude/skills/ground-truth-first.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 26,
+      "norm_label": "ground truth first",
+      "_origin": "semantic",
+      "community_name": "qa-runner agent (Peter)",
+      "id": "claude_skills_ground_truth_first_ground_truth_first"
     },
     {
       "label": "loadtest-baseline-gate skill",
@@ -6944,6 +7134,21 @@
       "_origin": "semantic",
       "community_name": "qa-runner agent (Peter)",
       "id": "claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate"
+    },
+    {
+      "label": "plan-automate skill",
+      "file_type": "document",
+      "source_file": ".claude/agents/qa-planner.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 26,
+      "norm_label": "plan-automate skill",
+      "_origin": "semantic",
+      "community_name": "qa-runner agent (Peter)",
+      "id": "claude_skills_plan_automate_skill_plan_automate"
     },
     {
       "label": "report-test-results skill",
@@ -6976,21 +7181,6 @@
       "id": "claude_skills_self_control_gitflow_skill_self_control_gitflow"
     },
     {
-      "label": "Human: review directive convention",
-      "file_type": "document",
-      "source_file": ".claude/skills/apply-human-review/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "human: review directive convention",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "docs_agents_human_review_human_review"
-    },
-    {
       "label": "Load-test gate convention",
       "file_type": "document",
       "source_file": ".claude/agents/qa-runner.md",
@@ -7006,6 +7196,36 @@
       "id": "docs_agents_loadtest_gate_loadtest_gate"
     },
     {
+      "label": "workspace.config.example.yaml",
+      "file_type": "code",
+      "source_file": ".claude/rules/workspace-config.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 27,
+      "norm_label": "workspace.config.example.yaml",
+      "_origin": "semantic",
+      "community_name": "qa-planner agent (Peter)",
+      "id": "claude_rules_workspace_config_example_workspace_config_example"
+    },
+    {
+      "label": "workspace.config.local.yaml",
+      "file_type": "code",
+      "source_file": ".claude/rules/workspace-config.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 27,
+      "norm_label": "workspace.config.local.yaml",
+      "_origin": "semantic",
+      "community_name": "qa-planner agent (Peter)",
+      "id": "claude_rules_workspace_config_local_workspace_config_local"
+    },
+    {
       "label": "QA planner delegation contract",
       "file_type": "concept",
       "source_file": ".claude/agents/qa-planner.md",
@@ -7019,36 +7239,6 @@
       "_origin": "semantic",
       "community_name": "qa-planner agent (Peter)",
       "id": "claude_agents_qa_planner_delegation_contract"
-    },
-    {
-      "label": "agent_logs/<KEY>-automation-plan.md",
-      "file_type": "document",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "agent_logs/<key>-automation-plan.md",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "agent_logs_automation_plan"
-    },
-    {
-      "label": "agent_logs/<KEY>-bugs.md",
-      "file_type": "document",
-      "source_file": ".claude/skills/coding-automate/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "agent_logs/<key>-bugs.md",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "agent_logs_bugs"
     },
     {
       "label": "agent_logs/<KEY>-testcases.md (BDD test plan)",
@@ -7081,51 +7271,6 @@
       "id": "claude_agents_qa_planner_qa_planner"
     },
     {
-      "label": "Bug log template",
-      "file_type": "document",
-      "source_file": ".claude/skills/coding-automate/bug-log-template.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "bug log template",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "claude_skills_coding_automate_bug_log_template_bug_log_template"
-    },
-    {
-      "label": "coding-automate skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/coding-automate/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "coding-automate skill",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "claude_skills_coding_automate_skill_coding_automate"
-    },
-    {
-      "label": "Ground truth first",
-      "file_type": "document",
-      "source_file": ".claude/skills/ground-truth-first.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "ground truth first",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "claude_skills_ground_truth_first_ground_truth_first"
-    },
-    {
       "label": "karpathy-guidelines skill",
       "file_type": "document",
       "source_file": ".claude/agents/qa-planner.md",
@@ -7139,21 +7284,6 @@
       "_origin": "semantic",
       "community_name": "qa-planner agent (Peter)",
       "id": "claude_skills_karpathy_guidelines_skill_karpathy_guidelines"
-    },
-    {
-      "label": "plan-automate skill",
-      "file_type": "document",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "plan-automate skill",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "claude_skills_plan_automate_skill_plan_automate"
     },
     {
       "label": "plan-testcases skill",
@@ -7229,6 +7359,51 @@
       "_origin": "semantic",
       "community_name": "qa-planner agent (Peter)",
       "id": "docs_agents_plan_artifacts_plan_artifacts"
+    },
+    {
+      "label": "Workspace config files carry no comments",
+      "file_type": "rationale",
+      "source_file": ".claude/rules/workspace-config.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 27,
+      "norm_label": "workspace config files carry no comments",
+      "_origin": "semantic",
+      "community_name": "qa-planner agent (Peter)",
+      "id": "claude_rules_workspace_config_config_no_comments"
+    },
+    {
+      "label": "ADR 0003 \u2014 personal runtime config overrides",
+      "file_type": "rationale",
+      "source_file": ".claude/rules/workspace-config.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 27,
+      "norm_label": "adr 0003 \u2014 personal runtime config overrides",
+      "_origin": "semantic",
+      "community_name": "qa-planner agent (Peter)",
+      "id": "docs_adr_0003_personal_runtime_config_overrides_adr_0003"
+    },
+    {
+      "label": "ADR 0006 \u2014 config carries no comments",
+      "file_type": "rationale",
+      "source_file": ".claude/rules/workspace-config.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 27,
+      "norm_label": "adr 0006 \u2014 config carries no comments",
+      "_origin": "semantic",
+      "community_name": "qa-planner agent (Peter)",
+      "id": "docs_adr_0006_config_carries_no_comments_adr_0006"
     },
     {
       "label": "Red-green-refactor vertical slice loop",
@@ -9796,36 +9971,6 @@
       "id": "scripts_slack_dispatch_readme_sticky_command"
     },
     {
-      "label": "refresh-savings.sh (Stop hook)",
-      "file_type": "code",
-      "source_file": ".claude/hooks/caveman-statusline/README.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 41,
-      "norm_label": "refresh-savings.sh (stop hook)",
-      "_origin": "semantic",
-      "community_name": "caveman skill",
-      "id": "claude_hooks_caveman_statusline_refresh_savings_refresh_savings_sh"
-    },
-    {
-      "label": "statusline.sh",
-      "file_type": "code",
-      "source_file": ".claude/hooks/caveman-statusline/README.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 41,
-      "norm_label": "statusline.sh",
-      "_origin": "semantic",
-      "community_name": "caveman skill",
-      "id": "claude_hooks_caveman_statusline_statusline_statusline_sh"
-    },
-    {
       "label": "dap CLI (DAP debugger driver)",
       "file_type": "code",
       "source_file": ".claude/skills/debugging-code/SKILL.md",
@@ -9837,7 +9982,7 @@
       "community": 41,
       "norm_label": "dap cli (dap debugger driver)",
       "_origin": "semantic",
-      "community_name": "caveman skill",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_skill_dap"
     },
     {
@@ -9852,38 +9997,8 @@
       "community": 41,
       "norm_label": "scripts/aiworks-cursor.sh (vendor sync)",
       "_origin": "semantic",
-      "community_name": "caveman skill",
+      "community_name": "debugging-code skill",
       "id": "scripts_aiworks_cursor_aiworks_cursor"
-    },
-    {
-      "label": "Caveman savings statusline",
-      "file_type": "document",
-      "source_file": ".claude/hooks/caveman-statusline/README.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 41,
-      "norm_label": "caveman savings statusline",
-      "_origin": "semantic",
-      "community_name": "caveman skill",
-      "id": "claude_hooks_caveman_statusline_readme_caveman_savings_statusline"
-    },
-    {
-      "label": "caveman skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/caveman/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 41,
-      "norm_label": "caveman skill",
-      "_origin": "semantic",
-      "community_name": "caveman skill",
-      "id": "claude_skills_caveman_skill_caveman"
     },
     {
       "label": "Advanced debugging techniques",
@@ -9897,7 +10012,7 @@
       "community": 41,
       "norm_label": "advanced debugging techniques",
       "_origin": "semantic",
-      "community_name": "caveman skill",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_references_advanced_techniques_advanced_techniques"
     },
     {
@@ -9912,7 +10027,7 @@
       "community": 41,
       "norm_label": "installing debug adapters",
       "_origin": "semantic",
-      "community_name": "caveman skill",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_references_installing_debuggers_installing_debuggers"
     },
     {
@@ -9927,7 +10042,7 @@
       "community": 41,
       "norm_label": "debugging-code skill",
       "_origin": "semantic",
-      "community_name": "caveman skill",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_debugging_code_skill_debugging_code"
     },
     {
@@ -9942,83 +10057,98 @@
       "community": 41,
       "norm_label": "vendored plugin skills note",
       "_origin": "semantic",
-      "community_name": "caveman skill",
+      "community_name": "debugging-code skill",
       "id": "claude_skills_vendored_vendored_plugin_skills"
     },
     {
-      "label": "scripts/tracker/add-ticket-attachment.sh",
-      "file_type": "code",
-      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "label": "graphify MCP Stdio Server",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/exports.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 42,
-      "norm_label": "scripts/tracker/add-ticket-attachment.sh",
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "graphify mcp stdio server",
       "_origin": "semantic",
-      "community_name": "Diagram Attachment to Tickets",
-      "id": "_claude_skills_diagram_ticket_skill_add_ticket_attachment_sh"
+      "id": "_claude_skills_graphify_references_exports_mcp_server"
     },
     {
-      "label": "scripts/diagram/live-link.sh",
-      "file_type": "code",
-      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "label": "read_source MCP Tool Proposal",
+      "file_type": "concept",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 42,
-      "norm_label": "scripts/diagram/live-link.sh",
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "read_source mcp tool proposal",
       "_origin": "semantic",
-      "community_name": "Diagram Attachment to Tickets",
-      "id": "_claude_skills_diagram_ticket_skill_live_link_sh"
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_read_source_mcp_tool"
     },
     {
-      "label": "scripts/diagram/render.sh",
-      "file_type": "code",
-      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 42,
-      "norm_label": "scripts/diagram/render.sh",
-      "_origin": "semantic",
-      "community_name": "Diagram Attachment to Tickets",
-      "id": "_claude_skills_diagram_ticket_skill_render_sh"
-    },
-    {
-      "label": "diagram-ticket (skill)",
-      "file_type": "document",
-      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 42,
-      "norm_label": "diagram-ticket (skill)",
-      "_origin": "semantic",
-      "community_name": "Diagram Attachment to Tickets",
-      "id": "_claude_skills_diagram_ticket_skill_diagram_ticket"
-    },
-    {
-      "label": "ADF media-UUID bridge (Jira embed)",
+      "label": "agent_logs Excluded",
       "file_type": "rationale",
-      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 42,
-      "norm_label": "adf media-uuid bridge (jira embed)",
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "agent_logs excluded",
       "_origin": "semantic",
-      "community_name": "Diagram Attachment to Tickets",
-      "id": "_claude_skills_diagram_ticket_skill_adf_media_uuid"
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_agent_logs_exclusion"
+    },
+    {
+      "label": "Doc-Only Graphify Scope",
+      "file_type": "rationale",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "doc-only graphify scope",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_doc_only_scope"
+    },
+    {
+      "label": "Shell Files Excluded From Doc Graph",
+      "file_type": "rationale",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "shell files excluded from doc graph",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_shell_files_excluded"
+    },
+    {
+      "label": "Strict Mode Stays Off",
+      "file_type": "rationale",
+      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "strict mode stays off",
+      "_origin": "semantic",
+      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_strict_mode_off"
     },
     {
       "label": "Ticket-wide PASS approval (orchestrator-owned)",
@@ -11221,81 +11351,6 @@
       "id": "_claude_skills_graphify_references_exports_token_reduction_benchmark"
     },
     {
-      "label": "Wiki Export",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/exports.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 59,
-      "community_name": "Optional Export Flags",
-      "norm_label": "wiki export",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_exports_wiki_export"
-    },
-    {
-      "label": "cluster-only Rerun",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/update.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 59,
-      "community_name": "Optional Export Flags",
-      "norm_label": "cluster-only rerun",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_update_cluster_only"
-    },
-    {
-      "label": "Community Detection And Labeling",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 59,
-      "community_name": "Optional Export Flags",
-      "norm_label": "community detection and labeling",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_community_clustering"
-    },
-    {
-      "label": "God Nodes",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 59,
-      "community_name": "Optional Export Flags",
-      "norm_label": "god nodes",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_god_nodes"
-    },
-    {
-      "label": "Whisper Domain-Hint Prompt",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/transcribe.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 59,
-      "community_name": "Optional Export Flags",
-      "norm_label": "whisper domain-hint prompt",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_transcribe_whisper_domain_hint_prompt"
-    },
-    {
       "label": "Comparison block",
       "file_type": "concept",
       "source_file": ".claude/skills/write-interactive-docs/references/components.md",
@@ -11806,169 +11861,94 @@
       "id": "docs_agents_pii_provenance_always_survives"
     },
     {
-      "label": "DEEP_MODE Aggressive Inference",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 62,
-      "community_name": "Semantic Extraction",
-      "norm_label": "deep_mode aggressive inference",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_deep_mode"
-    },
-    {
-      "label": "Gemini Semantic Backend",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 62,
-      "community_name": "Semantic Extraction",
-      "norm_label": "gemini semantic backend",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_gemini_backend"
-    },
-    {
-      "label": "Semantic Extraction",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 62,
-      "community_name": "Semantic Extraction",
-      "norm_label": "semantic extraction",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_semantic_extraction"
-    },
-    {
-      "label": "claude-cli Backend",
-      "file_type": "concept",
-      "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 62,
-      "community_name": "Semantic Extraction",
-      "norm_label": "claude-cli backend",
-      "_origin": "semantic",
-      "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_claude_cli_backend"
-    },
-    {
-      "label": "No API Key Required",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 62,
-      "community_name": "Semantic Extraction",
-      "norm_label": "no api key required",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_no_api_key_required"
-    },
-    {
-      "label": "Semantic Extraction Cache",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 62,
-      "community_name": "Semantic Extraction",
-      "norm_label": "semantic extraction cache",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_semantic_extraction_cache"
-    },
-    {
-      "label": "workspace.config.example.yaml",
+      "label": "find-prs.sh",
       "file_type": "code",
-      "source_file": ".claude/rules/workspace-config.md",
+      "source_file": ".claude/skills/apply-human-review/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 63,
-      "norm_label": "workspace.config.example.yaml",
+      "community": 62,
+      "norm_label": "find-prs.sh",
       "_origin": "semantic",
-      "community_name": "Workspace config files carry no comments",
-      "id": "claude_rules_workspace_config_example_workspace_config_example"
+      "community_name": "apply-human-review skill",
+      "id": "scripts_vcs_find_prs_find_prs"
     },
     {
-      "label": "workspace.config.local.yaml",
+      "label": "pr-threads.sh",
       "file_type": "code",
-      "source_file": ".claude/rules/workspace-config.md",
+      "source_file": ".claude/skills/apply-human-review/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 63,
-      "norm_label": "workspace.config.local.yaml",
+      "community": 62,
+      "norm_label": "pr-threads.sh",
       "_origin": "semantic",
-      "community_name": "Workspace config files carry no comments",
-      "id": "claude_rules_workspace_config_local_workspace_config_local"
+      "community_name": "apply-human-review skill",
+      "id": "scripts_vcs_pr_threads_pr_threads"
     },
     {
-      "label": "Workspace config files carry no comments",
-      "file_type": "rationale",
-      "source_file": ".claude/rules/workspace-config.md",
+      "label": "developer agent",
+      "file_type": "document",
+      "source_file": ".claude/skills/apply-human-review/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 63,
-      "norm_label": "workspace config files carry no comments",
+      "community": 62,
+      "norm_label": "developer agent",
       "_origin": "semantic",
-      "community_name": "Workspace config files carry no comments",
-      "id": "claude_rules_workspace_config_config_no_comments"
+      "community_name": "apply-human-review skill",
+      "id": "claude_agents_developer_developer"
     },
     {
-      "label": "ADR 0003 \u2014 personal runtime config overrides",
-      "file_type": "rationale",
-      "source_file": ".claude/rules/workspace-config.md",
+      "label": "development-planner agent",
+      "file_type": "document",
+      "source_file": ".claude/skills/apply-human-review/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 63,
-      "norm_label": "adr 0003 \u2014 personal runtime config overrides",
+      "community": 62,
+      "norm_label": "development-planner agent",
       "_origin": "semantic",
-      "community_name": "Workspace config files carry no comments",
-      "id": "docs_adr_0003_personal_runtime_config_overrides_adr_0003"
+      "community_name": "apply-human-review skill",
+      "id": "claude_agents_development_planner_development_planner"
     },
     {
-      "label": "ADR 0006 \u2014 config carries no comments",
-      "file_type": "rationale",
-      "source_file": ".claude/rules/workspace-config.md",
+      "label": "apply-human-review skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/apply-human-review/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 63,
-      "norm_label": "adr 0006 \u2014 config carries no comments",
+      "community": 62,
+      "norm_label": "apply-human-review skill",
       "_origin": "semantic",
-      "community_name": "Workspace config files carry no comments",
-      "id": "docs_adr_0006_config_carries_no_comments_adr_0006"
+      "community_name": "apply-human-review skill",
+      "id": "claude_skills_apply_human_review_skill_apply_human_review"
+    },
+    {
+      "label": "Human: review directive convention",
+      "file_type": "document",
+      "source_file": ".claude/skills/apply-human-review/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 62,
+      "norm_label": "human: review directive convention",
+      "_origin": "semantic",
+      "community_name": "apply-human-review skill",
+      "id": "docs_agents_human_review_human_review"
     },
     {
       "label": "pretool-agent-context.sh (PreToolUse Agent hook)",
@@ -12972,7 +12952,7 @@
       "community": 9,
       "norm_label": "scripts/icon/generate.py",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_scripts_icon_generate"
     },
     {
@@ -12987,7 +12967,7 @@
       "community": 9,
       "norm_label": "fetch-background.py (pexels/unsplash)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_scripts_fetch_background"
     },
     {
@@ -13002,7 +12982,7 @@
       "community": 9,
       "norm_label": "generate-tokens.cjs",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_scripts_generate_tokens"
     },
     {
@@ -13017,7 +12997,7 @@
       "community": 9,
       "norm_label": "search-slides.py (bm25 slide search)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_scripts_search_slides"
     },
     {
@@ -13032,7 +13012,7 @@
       "community": 9,
       "norm_label": "slide-token-validator.py",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_scripts_slide_token_validator"
     },
     {
@@ -13047,8 +13027,53 @@
       "community": 9,
       "norm_label": "validate-tokens.cjs",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_scripts_validate_tokens"
+    },
+    {
+      "label": "scripts/tracker/add-ticket-attachment.sh",
+      "file_type": "code",
+      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 9,
+      "norm_label": "scripts/tracker/add-ticket-attachment.sh",
+      "_origin": "semantic",
+      "community_name": "design-system (skill)",
+      "id": "_claude_skills_diagram_ticket_skill_add_ticket_attachment_sh"
+    },
+    {
+      "label": "scripts/diagram/live-link.sh",
+      "file_type": "code",
+      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 9,
+      "norm_label": "scripts/diagram/live-link.sh",
+      "_origin": "semantic",
+      "community_name": "design-system (skill)",
+      "id": "_claude_skills_diagram_ticket_skill_live_link_sh"
+    },
+    {
+      "label": "scripts/diagram/render.sh",
+      "file_type": "code",
+      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 9,
+      "norm_label": "scripts/diagram/render.sh",
+      "_origin": "semantic",
+      "community_name": "design-system (skill)",
+      "id": "_claude_skills_diagram_ticket_skill_render_sh"
     },
     {
       "label": "Banner Design (built-in sub-skill)",
@@ -13062,7 +13087,7 @@
       "community": 9,
       "norm_label": "banner design (built-in sub-skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_skill_banner_design"
     },
     {
@@ -13077,7 +13102,7 @@
       "community": 9,
       "norm_label": "icon design (built-in sub-skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_skill_icon_design"
     },
     {
@@ -13092,7 +13117,7 @@
       "community": 9,
       "norm_label": "slides (built-in sub-skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_skill_slides"
     },
     {
@@ -13107,7 +13132,7 @@
       "community": 9,
       "norm_label": "social photos (built-in sub-skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_skill_social_photos"
     },
     {
@@ -13122,7 +13147,7 @@
       "community": 9,
       "norm_label": "brand (external sub-skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_skill_brand"
     },
     {
@@ -13137,7 +13162,7 @@
       "community": 9,
       "norm_label": "three-layer token architecture",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_skill_three_layer_tokens"
     },
     {
@@ -13152,7 +13177,7 @@
       "community": 9,
       "norm_label": "ui-styling (external sub-skill)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_skill_ui_styling"
     },
     {
@@ -13167,7 +13192,7 @@
       "community": 9,
       "norm_label": "banner sizes & art direction styles",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_banner_sizes_and_styles"
     },
     {
@@ -13182,7 +13207,7 @@
       "community": 9,
       "norm_label": "design routing guide",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_design_routing"
     },
     {
@@ -13197,7 +13222,7 @@
       "community": 9,
       "norm_label": "icon design reference",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_icon_design"
     },
     {
@@ -13212,7 +13237,7 @@
       "community": 9,
       "norm_label": "slides reference",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_slides"
     },
     {
@@ -13227,7 +13252,7 @@
       "community": 9,
       "norm_label": "copywriting formulas",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_slides_copywriting_formulas"
     },
     {
@@ -13242,7 +13267,7 @@
       "community": 9,
       "norm_label": "slides create (invocation stub)",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_slides_create"
     },
     {
@@ -13257,7 +13282,7 @@
       "community": 9,
       "norm_label": "html slide template",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_slides_html_template"
     },
     {
@@ -13272,7 +13297,7 @@
       "community": 9,
       "norm_label": "slide layout patterns",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_slides_layout_patterns"
     },
     {
@@ -13287,7 +13312,7 @@
       "community": 9,
       "norm_label": "slide strategies",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_slides_strategies"
     },
     {
@@ -13302,7 +13327,7 @@
       "community": 9,
       "norm_label": "social photos design guide",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_references_social_photos_design"
     },
     {
@@ -13317,7 +13342,7 @@
       "community": 9,
       "norm_label": "component specifications",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_references_component_specs"
     },
     {
@@ -13332,7 +13357,7 @@
       "community": 9,
       "norm_label": "component tokens",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_references_component_tokens"
     },
     {
@@ -13347,7 +13372,7 @@
       "community": 9,
       "norm_label": "primitive tokens",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_references_primitive_tokens"
     },
     {
@@ -13362,7 +13387,7 @@
       "community": 9,
       "norm_label": "semantic tokens",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_references_semantic_tokens"
     },
     {
@@ -13377,7 +13402,7 @@
       "community": 9,
       "norm_label": "states and variants",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_references_states_and_variants"
     },
     {
@@ -13392,7 +13417,7 @@
       "community": 9,
       "norm_label": "tailwind integration",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_references_tailwind_integration"
     },
     {
@@ -13407,8 +13432,38 @@
       "community": 9,
       "norm_label": "token architecture",
       "_origin": "semantic",
-      "community_name": "Design and Slide References",
+      "community_name": "design-system (skill)",
       "id": "_claude_skills_design_system_references_token_architecture"
+    },
+    {
+      "label": "diagram-ticket (skill)",
+      "file_type": "document",
+      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 9,
+      "norm_label": "diagram-ticket (skill)",
+      "_origin": "semantic",
+      "community_name": "design-system (skill)",
+      "id": "_claude_skills_diagram_ticket_skill_diagram_ticket"
+    },
+    {
+      "label": "ADF media-UUID bridge (Jira embed)",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/diagram-ticket/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 9,
+      "norm_label": "adf media-uuid bridge (jira embed)",
+      "_origin": "semantic",
+      "community_name": "design-system (skill)",
+      "id": "_claude_skills_diagram_ticket_skill_adf_media_uuid"
     }
   ],
   "links": [
@@ -13419,9 +13474,9 @@
       "source_location": "L20",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill",
-      "target": "claude_skills_ponytail_skill_ponytail",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_ponytail"
     },
     {
       "relation": "contains",
@@ -13430,9 +13485,9 @@
       "source_location": "L114",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_boundaries",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_boundaries"
     },
     {
       "relation": "contains",
@@ -13441,9 +13496,9 @@
       "source_location": "L26",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_persistence",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_persistence"
     },
     {
       "relation": "contains",
@@ -13452,9 +13507,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_the_ladder",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_the_ladder"
     },
     {
       "relation": "contains",
@@ -13463,9 +13518,9 @@
       "source_location": "L56",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_rules",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_rules"
     },
     {
       "relation": "contains",
@@ -13474,9 +13529,9 @@
       "source_location": "L66",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_output",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_output"
     },
     {
       "relation": "contains",
@@ -13485,9 +13540,9 @@
       "source_location": "L77",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_intensity",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_intensity"
     },
     {
       "relation": "contains",
@@ -13496,9 +13551,9 @@
       "source_location": "L90",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy",
-      "confidence_score": 1.0
+      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy"
     },
     {
       "relation": "contains",
@@ -13507,9 +13562,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
     },
     {
       "relation": "contains",
@@ -13518,9 +13573,9 @@
       "source_location": "L12",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
     },
     {
       "relation": "contains",
@@ -13529,9 +13584,9 @@
       "source_location": "L34",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
     },
     {
       "relation": "contains",
@@ -13540,9 +13595,9 @@
       "source_location": "L52",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
     },
     {
       "relation": "contains",
@@ -13551,9 +13606,9 @@
       "source_location": "L68",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
     },
     {
       "relation": "contains",
@@ -13562,9 +13617,9 @@
       "source_location": "L78",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
     },
     {
       "relation": "contains",
@@ -13573,9 +13628,9 @@
       "source_location": "L95",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
-      "confidence_score": 1.0
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
     },
     {
       "relation": "contains",
@@ -13584,9 +13639,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify",
-      "target": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "confidence_score": 1.0
+      "target": "docs_agents_graphify_graphify_operating_the_doc_graph"
     },
     {
       "relation": "contains",
@@ -13595,9 +13650,9 @@
       "source_location": "L16",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm",
-      "confidence_score": 1.0
+      "target": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm"
     },
     {
       "relation": "contains",
@@ -13606,9 +13661,9 @@
       "source_location": "L36",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_remove_the_post_checkout_hook",
-      "confidence_score": 1.0
+      "target": "docs_agents_graphify_remove_the_post_checkout_hook"
     },
     {
       "relation": "contains",
@@ -13617,9 +13672,9 @@
       "source_location": "L53",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_labels_are_positional_regenerate_the_sig",
-      "confidence_score": 1.0
+      "target": "docs_agents_graphify_labels_are_positional_regenerate_the_sig"
     },
     {
       "relation": "contains",
@@ -13628,9 +13683,9 @@
       "source_location": "L6",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss",
-      "confidence_score": 1.0
+      "target": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss"
     },
     {
       "relation": "contains",
@@ -13639,9 +13694,9 @@
       "source_location": "L70",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_what_is_committed_and_what_is_not",
-      "confidence_score": 1.0
+      "target": "docs_agents_graphify_what_is_committed_and_what_is_not"
     },
     {
       "relation": "contains",
@@ -13650,9 +13705,9 @@
       "source_location": "L84",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_graphify_install_overreaches_review_before_committing",
-      "confidence_score": 1.0
+      "target": "docs_agents_graphify_graphify_install_overreaches_review_before_committing"
     },
     {
       "relation": "contains",
@@ -13661,8 +13716,52 @@
       "source_location": "L93",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_adding_docs_to_the_graph",
+      "target": "docs_agents_graphify_adding_docs_to_the_graph"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_obsidian",
+      "target": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L28",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
+      "target": "docs_agents_obsidian_commit_vs_keep_local",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L41",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
+      "target": "docs_agents_obsidian_gotchas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/obsidian.md",
+      "source_location": "L7",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
+      "target": "docs_agents_obsidian_what_aiworks_sync_does",
       "confidence_score": 1.0
     },
     {
@@ -13672,9 +13771,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail",
-      "target": "docs_agents_ponytail_code_minimalism_ponytail",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_code_minimalism_ponytail"
     },
     {
       "relation": "contains",
@@ -13683,9 +13782,9 @@
       "source_location": "L101",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_commands",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_commands"
     },
     {
       "relation": "contains",
@@ -13694,9 +13793,9 @@
       "source_location": "L112",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_installing_it",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_installing_it"
     },
     {
       "relation": "contains",
@@ -13705,9 +13804,9 @@
       "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_the_ladder",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_the_ladder"
     },
     {
       "relation": "contains",
@@ -13716,9 +13815,9 @@
       "source_location": "L30",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
     },
     {
       "relation": "contains",
@@ -13727,9 +13826,9 @@
       "source_location": "L51",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
     },
     {
       "relation": "contains",
@@ -13738,9 +13837,9 @@
       "source_location": "L75",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_where_it_stops",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail_where_it_stops"
     },
     {
       "relation": "contains",
@@ -13749,9 +13848,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "scripts_hrun",
-      "target": "scripts_hrun__entry",
-      "confidence_score": 1.0
+      "target": "scripts_hrun__entry"
     },
     {
       "relation": "references",
@@ -13760,9 +13859,9 @@
       "source_location": "L82",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_agents_ponytail",
-      "confidence_score": 1.0
+      "target": "docs_agents_ponytail"
     },
     {
       "relation": "references",
@@ -27428,5 +27527,5 @@
       "source_file": ".claude/skills/estimate-ticket/SKILL.md"
     }
   ],
-  "built_at_commit": "d7bc60d28ab10f01521f486e4c35e4c9c2503b00"
+  "built_at_commit": "a078c53a85ddb144282e9a81383a197ae903eced"
 }
