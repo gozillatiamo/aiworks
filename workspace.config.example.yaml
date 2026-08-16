@@ -152,16 +152,19 @@ branch_model:
 quality_gate:
   provider: sonarqube              # sonarqube | none
 
-# ── Review depth (how much the Review phase is allowed to report) ──────────────
+# ── Review level (how deep every review gate reports) ─────────────────────────
 review:
-  level: strict                    # strict (default) | thorough
-                                   #   strict   → the three review gates (code-reviewer + guardian
-                                   #     + performance) report BLOCKING must-fixes ONLY: no
-                                   #     "[minor / fold-in]" comments, no Improvement tickets. The
-                                   #     merge waits on real defects and nothing else.
-                                   #   thorough → must-fixes AND the nice-to-have tier — small
-                                   #     fold-ins applied inside the same PR/MR, larger follow-ups
-                                   #     filed as Improvement tickets.
+  level: strict                    # strict (default) | thorough. Applies to every review gate —
+                                   #   code-reviewer, guardian, performance — and to /review,
+                                   #   /ultra-review and the dev-cycle Review phase.
+                                   #   strict → must-fixes ONLY: the blocking findings that hold the
+                                   #   merge. No "[minor / fold-in]" comments, no Improvement tickets,
+                                   #   no polish/optional findings.
+                                   #   thorough → must-fixes AND nice-to-have: polish and refactor
+                                   #   findings are commented, small ones folded into the same PR/MR,
+                                   #   the rest filed as Improvement tickets.
+                                   #   A `Human:` review comment is always a must-fix, at either level
+                                   #   (docs/agents/human-review.md).
 
 # ── Load-test gate (the base-branch NON-DEGRADATION rule) ─────────────────────
 # Read only by a repo declared `suite_kind: load` (see products[].repos[] below). A plain
@@ -316,6 +319,20 @@ voice:
       cartesia: "ccc7bb22-dcd0-42e4-822e-0731b950972f"   # Suda (f, native Thai)
       gemini: "Leda"                                     # (f) — on Thai the MODEL decides, not the voice
       openai: "sage"                                     # (f) — best Thai voice of any vendor here
+    # voice_alt:                   # OPTIONAL, keyed by provider like `voice:` above. The alternate
+    #   elevenlabs: "<voice id>"   #   voice used for the prod / error / review intents only, so an
+    #   openai: "onyx"             #   incident does not sound like every other line. No alt
+                                   #   configured ⇒ one voice everywhere (never a broken request).
+    # model: eleven_v3             # OPTIONAL override of the provider's own default model:
+                                   #   elevenlabs eleven_v3 · openai gpt-4o-mini-tts ·
+                                   #   cartesia sonic-3 · gemini gemini-2.5-flash-preview-tts.
+                                   #   One scalar for whichever provider is active — set it only
+                                   #   when you actually want a non-default model.
+    # gender:                      # OPTIONAL, keyed by provider. f | m. NOT cosmetic: it pins the
+    #   elevenlabs: f              #   Thai sentence-final particle to the voice (`ครับ` m / `ค่ะ` f)
+                                   #   — a male voice saying "ได้เลยค่ะ" was a real bug. Only needed
+                                   #   for a voice id the provider's built-in table does not know;
+                                   #   otherwise it is looked up from the voice id (default f).
     loudness: -16                  # integrated loudness (EBU R128) every synthesized line is
                                    #   levelled to, -1.5 dBTP ceiling. NOT cosmetic: vendors ship
                                    #   wildly different volumes and so do voices inside one vendor
@@ -328,6 +345,10 @@ voice:
   stt:
     provider: openai               # openai (gpt-4o-transcribe, best measured) | gemini (cheapest)
                                    #   | elevenlabs (accurate, over-capitalizes)
+    # model: gpt-4o-transcribe     # OPTIONAL override of the provider's own default:
+                                   #   openai gpt-4o-transcribe · gemini gemini-2.5-flash ·
+                                   #   elevenlabs scribe_v1. Same shape as tts.model — one scalar
+                                   #   for whichever provider is active.
   # Turns a finished turn into the ONE line that gets spoken. Model is keyed by provider for the
   # same reason the voice id is. `claude` means the headless CLI (`claude -p`), no API key needed.
   summarizer:
@@ -496,6 +517,13 @@ voice:
                                    #   at ~1.5 s. The text that gets TYPED is always the accurate
                                    #   pass over the COMPLETE recording, so nothing is lost.
     auto_send: true                # forced false when preview.provider is none
+    # silence_db: -50              # OPTIONAL noise floors, in dB. A recording counts as silence —
+    # silence_peak_db: -35         #   and is discarded instead of transcribed — only when BOTH its
+                                   #   mean and its peak sit below these. Defaults suit a quiet room
+                                   #   on a built-in mic; a noisy room or a hot input needs its own
+                                   #   numbers. Measure them with `aiworks voice calibrate`, which
+                                   #   records silence + speech and prints the pair to set. Personal
+                                   #   to the machine — belongs in workspace.config.local.yaml.
   cache:
     max_mb: 500                    # the synthesized-audio cache (LRU by access time). The key is
                                    #   provider|voice|model|cue|mix|text, so a repeated line is free.

@@ -49,7 +49,7 @@ only when no `--body` is given).
 
 **Images survive a body rewrite (Jira):** a `--body` write replaces the whole
 description field, which would otherwise drop editor-pasted images/attachments already in
-it (OFB-1952). The Jira adapter now reads the existing description's `mediaSingle` /
+it (APP-1952). The Jira adapter now reads the existing description's `mediaSingle` /
 `mediaGroup` nodes first and re-appends them under an *"Attachments (carried over)"*
 divider, so the images stay rendered — you refine the text without losing the pictures.
 `get-ticket-details.sh` flags how many are present (`⚠ N embedded image/attachment(s)`)

@@ -22,7 +22,8 @@
 #    2 repos        every declared repo cloned with a valid HEAD · mani.d ↔ products[] agree
 #                   · each clone is git-ignored, so it cannot dirty the meta-repo
 #    3 adapters     per provider: .env present and every REQUIRED var set · provider CLI
-#                   installed · writer scripts executable · the .git/info/exclude trap
+#                   installed · writer scripts executable · the .git/info/exclude trap ·
+#                   notify / observability skipped when their enabled flag is false
 #    4 per-repo     scripts/dev.sh · CLAUDE.md budget · .claude/ · adapter symlinks
 #                   (tracker + vcs — the two `aiworks add` links) · .codegraph/ index ·
 #                   skills-lock.json · a rules file scoped with `globs:` and no `paths:`
@@ -320,10 +321,14 @@ check_workspace() {
 
   # A value that is neither truthy nor falsy is a typo, not an opt-out. `stagehand.enabled:
   # ture` sat in a personal config for weeks reading as "off" — indistinguishable from a
-  # deliberate one. Every feature switch is checked the same way.
+  # deliberate one. Every feature switch is checked the same way. The two whose default is
+  # PERMISSIVE (auto_merge, auto_approve) are checked here too: there a typo does not read as
+  # "off", it reads as "merge it" / "skip the plan gate".
   local sw
   for sw in voice.enabled stagehand.enabled diagrams.enabled artifacts.enabled \
-            figma.enabled image_generation.enabled loadtest.enabled \
+            design.enabled image_generation.enabled observability.enabled \
+            notify.enabled triage.enabled triage.prod \
+            vcs.auto_merge planning.auto_approve planning.to_html \
             headroom.enabled headroom.statusline; do
     local raw; raw="$(cfg "$sw")"
     [[ -z "$raw" ]] && continue
@@ -559,8 +564,28 @@ check_adapters() {
     case "$a" in
       vcs)           provider="$(cfg vcs.provider)" ;;
       tracker)       provider="$(cfg tracker.provider)" ;;
-      notify)        provider="$(cfg notify.provider)" ;;
-      observability) provider="$(cfg observability.provider)" ;;
+      notify)
+        # Same contract as voice/triage/credentials: enabled:false is a decision, not a defect.
+        # Default matches workspace.config.example.yaml (off).
+        cfg_bool notify.enabled false
+        case $? in
+          1) skip $g "notify" "notify.enabled is false"; continue ;;
+          2) warn $g "notify.enabled is not a boolean" \
+               "resolved to the default (off) — set true|false" \
+               "\$EDITOR workspace.config.yaml"; continue ;;
+        esac
+        provider="$(cfg notify.provider)"
+        ;;
+      observability)
+        cfg_bool observability.enabled false
+        case $? in
+          1) skip $g "observability" "observability.enabled is false"; continue ;;
+          2) warn $g "observability.enabled is not a boolean" \
+               "resolved to the default (off) — set true|false" \
+               "\$EDITOR workspace.config.yaml"; continue ;;
+        esac
+        provider="$(cfg observability.provider)"
+        ;;
     esac
     if [[ -z "$provider" ]]; then
       warn $g "$a: no provider in config" "readers fall back to a default that may not be yours" \
@@ -1380,7 +1405,9 @@ check_credentials() {
   skip $g "notify ($(cfg notify.provider))" \
        "no read-only probe exists — a dry run never authenticates and a real send would post"
 
-  cfg_bool observability.enabled true
+  local op; op="$(cfg observability.provider)"
+  # Default matches workspace.config.example.yaml (off) — same gate as check_adapters.
+  cfg_bool observability.enabled false
   if [[ $? == 1 ]]; then
     skip $g "observability" "observability.enabled is false"
   elif [[ -x "$ROOT/scripts/observability/find-traces.sh" ]]; then

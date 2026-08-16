@@ -198,24 +198,22 @@ def _adf_table($rows; $ctx):
 #   many images on a line → mediaGroup, a thumbnail strip — for pass evidence that is
 #                           proof-of-record, not something anyone reads one by one.
 #
-# SIZE — a readable size is not the default; it has to be asked for, TWICE. Measured on
-# OFB-2247, where our own report rendered at 250×149 next to a human's 616-wide pasted
-# screenshot:
-#   a `width` on the mediaSingle        — without it the block is the renderer's 250×200
-#     fallback box, an unreadable stamp of a full-page screenshot.
-#   `width`/`height` on the media node  — the editor stamps every pasted image with the
-#     file's real pixel size, and without it the box keeps the fallback 250×200 RATIO,
-#     so a wide screenshot sits letterboxed in it. The id carries the size as `@<W>x<H>`
-#     (appended by tracker_add_attachment, which is the last place that still has the
-#     file); with both, the block is exactly the image at the width we ask for.
-# 60% of the comment column — 446px measured, the width the team settled on by eye on OFB-2247
-# after seeing 100% (760px, too big) and 80% (604px, level with a human's own pasted
-# 592-616). Deliberately smaller than a person's paste: a report carries six of these in
-# one comment, and a reader scrolls past them to the table. Still 1.8x the 250x149 stamp
-# this replaced, and the whole knob is this one number. An image NARROWER than that is
-# upscaled, the right trade for evidence — soft but legible beats sharp and unreadable. A
-# size that cannot be read (a format `file`/`sips` does not know) degrades to letterboxed,
-# never to the stamp.
+# SIZE — a readable size has to be asked for TWICE, and asking once is not enough:
+#   `width` + `widthType` on the mediaSingle — without a width the block IS the
+#     renderer's 250×200 fallback box, an unreadable stamp of a full-page screenshot.
+#   `width`/`height` on the media node — without them that box keeps the fallback
+#     250×200 RATIO, so a wide screenshot sits letterboxed inside the block, with
+#     ~300px of blank above and below it. The editor stamps every image a human
+#     pastes with the file's real pixel size; a token can carry the same as `@<W>x<H>`,
+#     appended by tracker_add_attachment — the last place that still has the file.
+# With both, the block is exactly the image at the width we ask for: 446px measured, where
+# the sizeless form gave 250×149. 60% of the column, settled on by eye against a real
+# report — 100% came out 760px (too big) and 80% 604px (level with a human's own pasted
+# 592-616). Deliberately a step under a person's paste: one comment carries six of these
+# and the reader scrolls past them to the table. The whole knob is this one number. An
+# image narrower than that is upscaled, the right trade for evidence: soft but legible
+# beats sharp and unreadable. A size that cannot be read degrades to letterboxed-but-
+# visible, never to the stamp.
 def _md_image_specs($l):
   [ $l | scan("!\\[([^\\]]*)\\]\\(attachment:([^)]+)\\)")
        | { alt: .[0], ref: .[1] }

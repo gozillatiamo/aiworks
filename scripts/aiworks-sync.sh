@@ -24,6 +24,11 @@
 # clobbered. Fill it in (https://aistudio.google.com/apikey) to turn image generation on; until
 # then the /prd-design preflight detects the gap and fails loud instead of shipping placeholder art.
 #
+# It also ENSURES the Obsidian vault share-contract: seeds `.obsidian/{app,appearance,
+# core-plugins}.json` when missing (never clobbers) and keeps a managed `.gitignore` block that
+# ignores personal UI layout (`workspace.json` / `workspace-mobile.json` / `graph.json`) so teammates inherit
+# vault abilities without each other's open tabs. See docs/agents/obsidian.md.
+#
 # It also ENSURES codegraph (https://github.com/colbymchenry/codegraph) — the per-repo index the
 # build/review agents grep through — is installed: a machine-wide CLI installed once for the whole
 # sweep (npm i -g @colbymchenry/codegraph, else the bundled curl|sh installer). A no-op when it's
@@ -452,6 +457,92 @@ NODE
   esac
 }
 
+
+# ── Obsidian vault (shared settings; personal UI layout ignored) ─────────────────
+# The workspace meta-repo is a valid Obsidian vault for reading docs/. Teammates share
+# vault abilities (core plugins, appearance, app settings) via committed `.obsidian/*`
+# files; each person's open tabs/panes stay local. Sync seeds the shareable files when
+# missing and keeps a managed .gitignore block for workspace*.json — same shape as the
+# `aiworks cursor` plugin-skill block. Never clobbers an existing file.
+# See docs/agents/obsidian.md.
+GI_OBSIDIAN_BEGIN='# >>> aiworks sync: obsidian (generated — do not edit by hand)'
+GI_OBSIDIAN_END='# <<< aiworks sync: obsidian'
+
+ensure_obsidian_vault() {
+  local dir="$ROOT/.obsidian" gi="$ROOT/.gitignore" want have tmp seeded=0
+  step "Ensure Obsidian vault shares settings (ignore personal workspace layout)"
+
+  if [[ "$DRY" -eq 1 ]]; then
+    printf '    %swould seed .obsidian/{app,appearance,core-plugins}.json if missing + keep .gitignore block for workspace*.json%s\n' \
+      "$c_dim" "$c_off"
+    return 0
+  fi
+
+  mkdir -p "$dir"
+
+  if [[ ! -f "$dir/app.json" ]]; then
+    printf '{}\n' > "$dir/app.json" && seeded=1 && ok "seeded .obsidian/app.json"
+  fi
+  if [[ ! -f "$dir/appearance.json" ]]; then
+    printf '{}\n' > "$dir/appearance.json" && seeded=1 && ok "seeded .obsidian/appearance.json"
+  fi
+  if [[ ! -f "$dir/core-plugins.json" ]]; then
+    # Prefer python3 over a bash heredoc so the seed stays one parseable function.
+    if command -v python3 >/dev/null 2>&1; then
+      OBSIDIAN_CORE_PLUGINS_OUT="$dir/core-plugins.json" python3 - <<'PY'
+import json, os
+cfg = {
+  "file-explorer": True, "global-search": True, "switcher": True, "graph": True,
+  "backlink": True, "canvas": True, "outgoing-link": True, "tag-pane": True,
+  "footnotes": False, "properties": True, "page-preview": True, "daily-notes": True,
+  "templates": True, "note-composer": True, "command-palette": True,
+  "slash-command": False, "editor-status": True, "bookmarks": True,
+  "markdown-importer": False, "zk-prefixer": False, "random-note": False,
+  "outline": True, "word-count": True, "slides": False, "audio-recorder": False,
+  "workspaces": False, "file-recovery": True, "publish": False, "sync": True,
+  "bases": True, "webviewer": False,
+}
+open(os.environ["OBSIDIAN_CORE_PLUGINS_OUT"], "w", encoding="utf-8").write(
+    json.dumps(cfg, indent=2) + "\n"
+)
+PY
+      seeded=1
+      ok "seeded .obsidian/core-plugins.json"
+    else
+      printf '{}\n' > "$dir/core-plugins.json" && seeded=1
+      warn "seeded empty .obsidian/core-plugins.json (python3 missing — open Obsidian once to restore defaults)"
+    fi
+  fi
+  [[ "$seeded" -eq 1 ]] || ok ".obsidian shareable config present"
+
+  # Managed gitignore block — rewrite in place when missing or stale.
+  touch "$gi"
+  want="$(
+    printf '%s\n' "$GI_OBSIDIAN_BEGIN"
+    printf '# Obsidian vault — commit shared settings; keep personal UI layout local.\n'
+    printf '# See docs/agents/obsidian.md.\n'
+    printf '.obsidian/workspace.json\n'
+    printf '.obsidian/workspace-mobile.json\n'
+    printf '.obsidian/graph.json\n'
+    printf '%s\n' "$GI_OBSIDIAN_END"
+  )"
+  have="$(awk -v b="$GI_OBSIDIAN_BEGIN" -v e="$GI_OBSIDIAN_END" \
+    'index($0,b){f=1} f{print} index($0,e){f=0}' "$gi" 2>/dev/null)"
+  if [[ "$have" == "$want" ]]; then
+    ok ".gitignore obsidian block current"
+    return 0
+  fi
+  tmp="$(mktemp)" || { warn "could not update .gitignore obsidian block (mktemp failed)"; return 0; }
+  awk -v b="$GI_OBSIDIAN_BEGIN" -v e="$GI_OBSIDIAN_END" \
+    'index($0,b){f=1} !f{print} index($0,e){f=0}' "$gi" > "$tmp" 2>/dev/null
+  while [[ -s "$tmp" ]] && [[ -z "$(tail -n1 "$tmp")" ]]; do
+    sed '$d' "$tmp" > "${tmp}.n" && mv "${tmp}.n" "$tmp"
+  done
+  { printf '\n'; printf '%s\n' "$want"; } >> "$tmp"
+  mv "$tmp" "$gi" && ok ".gitignore obsidian block written"
+}
+
+
 # ── deployed-environment triage: REPORTED here, never installed here ──────────────
 # Sync onboards repos. It does not reach into a deployed environment on anyone's behalf, and it
 # does not bootstrap the identity that lets it — see docs/adr/0009. So the two things it used to
@@ -545,6 +636,10 @@ prepare_adapter_env
 # in the git-ignored settings.local.json) so the graphic-designer's asset pipeline can work
 # once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
 seed_image_gen_settings
+
+# Obsidian vault share-contract: seed shared .obsidian settings + ignore personal UI layout.
+# Idempotent; never clobbers existing vault prefs. See docs/agents/obsidian.md.
+ensure_obsidian_vault
 
 # NOTE: deployed-environment triage is deliberately NOT set up here — see triage_stanza() above
 # and docs/adr/0009. It is reported in the summary and scored by `aiworks doctor`.

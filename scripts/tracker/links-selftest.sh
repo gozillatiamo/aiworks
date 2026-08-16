@@ -107,8 +107,8 @@ echo "--- jira: md_to_adf image SIZE (a screenshot must not render as a 250x200 
 # A readable size takes BOTH halves: a width on the mediaSingle (or the block is the
 # renderer's 250x200 fallback box) and width/height on the media node (or that box keeps
 # the fallback RATIO and letterboxes the picture). `@<W>x<H>` on the id carries the size.
-# 60% of the column = 446px measured, settled on by eye after 100% (760px) and 80% (604,
-# level with a human's own 592-616 paste); the sizeless form gave 250x149.
+# 60% of the column = 446px measured, settled on by eye a step under a human's own pasted
+# 592-616; the sizeless form gave 250x149, 100% came out 760 and 80% 604.
 SIZE='[.. | objects | select(.type=="mediaSingle" or .type=="mediaGroup")
        | {n:.type, w:.attrs.width, wt:.attrs.widthType, m:[.content[].attrs | {id, width, height, alt}]}]'
 t "single image is full width, sized" \
@@ -182,8 +182,8 @@ rb "image round-trips in place" '[{"i":0,"n":"heading"},{"i":1,"n":"mediaSingle"
    'md_to_adf | adf_to_text | md_to_adf
     | [.content | to_entries[] | {i:.key, n:.value.type} + (if .value.type=="mediaSingle" then {ids:[.value.content[].attrs.id]} else {} end)]
     | tojson' \
-   '## Deposit Flow Diagram
-![p2p_deposit.png](attachment:7)
+   '## Flow Diagram
+![flow.png](attachment:7)
 [View / edit this diagram](https://mermaid.live/edit#pako:abc)'
 # ...and must not then be appended a SECOND time by the carry-over safety net.
 rb "carry-over skips media already in body" '[{"n":"mediaSingle","ids":["7"]}]' \

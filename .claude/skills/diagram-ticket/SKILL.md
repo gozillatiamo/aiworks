@@ -97,7 +97,7 @@ deliverable. Only continue past this point when it's `true`.
      (`get-ticket-details.sh <KEY>`), insert your two lines into *that* text, and write
      it back — anything you omit is gone, there is no partial update and no undo.
    - Images a human pasted into the description are carried over automatically by
-     `upsert-ticket-details.sh` (`adf_append_media`, the OFB-1952 fix), so a rewrite
+     `upsert-ticket-details.sh` (`adf_append_media`, the APP-1952 fix), so a rewrite
      cannot silently drop them — but they land in an "Attachments (carried over)"
      section at the end, not where they were.
    - **Replacing** a diagram you rendered earlier (re-rendered, fixed labels) needs
@@ -125,7 +125,7 @@ deliverable. Only continue past this point when it's `true`.
      trip onto the ticket. **One** altered base64 character kills the whole zlib stream,
      and mermaid.live answers a corrupt fragment by quietly loading its own "Loading URL
      failed" sample diagram — which looks like a rendered diagram to anyone who clicks.
-     That is a shipped failure: it happened on OFB-2315, where the fragment on the ticket
+     That is a shipped failure: it happened on APP-2315, where the fragment on the ticket
      differed from the encoder's output in exactly one character. Never retype or
      reflow a fragment; interpolate it whole.
    None of this is optional — a diagram that is merely attached (never embedded in the

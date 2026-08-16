@@ -650,7 +650,7 @@ tracker_get_attachments() {
   # in-body without re-uploading it. Images only: they are what gets embedded, and each
   # uuid costs one extra request. The token printed here carries no `@<W>x<H>` size —
   # Jira's attachment metadata does not report pixel dimensions and the file is not local
-  # — so it renders letterboxed inside the block; upload with --embed-id (or append the
+  # — so it renders full-width but letterboxed; upload with --embed-id (or append the
   # size by hand) when the exact fit matters.
   embeds='{}'
   for att_id in $(printf '%s' "$issue" | jq -r '
