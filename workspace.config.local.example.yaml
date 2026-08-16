@@ -31,6 +31,13 @@
 # Write in Thai locally while the team default stays English — see docs/agents/language.md.
 # language: th
 
+# Sign the Thai messages YOU paste under your own name in your own voice. Speaker-gender-marked,
+# and Thai has no neutral polite equivalent — which is exactly why this belongs here and not in the
+# shared file. Defaults are ผม / ครับ; this is the only part of the register that is configurable
+# (see docs/agents/register.md). Inert unless language or case_report_language is th.
+# outbound_first_person: ดิฉัน
+# outbound_particle: ค่ะ
+
 # Skip the plan-approval gate on your own runs, and/or get the interactive HTML render of every
 # plan locally, while the team defaults stay as they are. ⚠️ SHALLOW MERGE: a local `planning:`
 # block replaces the shared one WHOLE — a key you omit here reads as `false`, it does NOT inherit

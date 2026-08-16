@@ -86,7 +86,7 @@ out and the reply is summarized instead, which costs a call and gives the model 
 your work:
 
 ```
-VOICE[ship]: APP-1952 merged เข้า develop แล้วครับ MR !12 ปิดแล้ว
+VOICE[ship]: APP-1952 merged เข้า develop แล้วค่ะ MR !12 ปิดแล้ว
 ```
 
 | group | for | cue |
@@ -99,9 +99,10 @@ VOICE[ship]: APP-1952 merged เข้า develop แล้วครับ MR !1
 | bare `VOICE:` | anything else worth saying aloud | no cue |
 
 Only the **first** tag in a reply is used. Write it in the reply's own language policy — under `th`
-that means Thai prose with the English spine intact, exactly like the rest of the reply.
+that means Thai prose with the English spine intact, exactly like the rest of the reply, in the
+persona's own voice and address mode (`register.md`): the particle, and no first-person pronoun.
 
-**Say the result, not that you finished.** "เสร็จแล้วครับ" and "อธิบายให้ฟังแล้วครับ" are the purest
+**Say the result, not that you finished.** "เสร็จแล้วค่ะ" and "อธิบายให้ฟังแล้วค่ะ" are the purest
 noise this feature can make — the user can see that the turn ended. The line has to carry the
 finding, the number, the verdict, or what is now waiting for them. A turn that only *answered*
 something still has a result: the answer. The summarizer is told the same thing, so a tag is worth
@@ -137,19 +138,19 @@ makes it free (it hits the audio cache).
 The same finished turn, at each level:
 
 ```
-terse     เอกสารแก้ครบ 6 ไฟล์ รอคุณสั่งค่ะ
+terse     เอกสารแก้ครบ 6 ไฟล์ รอคำสั่งค่ะ
           1 sentence, facts only. The length this feature shipped with — unchanged, byte for byte
 
-balanced  เรียบร้อยค่ะ เอกสารแก้ไขครบ 6 ไฟล์ รอการอนุมัติจากคุณนะคะ
+balanced  เรียบร้อยค่ะ เอกสารแก้ไขครบ 6 ไฟล์ รออนุมัติอยู่นะคะ
           + a 1–2 word reaction that states the outcome, + a softener, + the second fact
 
 chatty    เรียบร้อยค่ะ การแก้ mute ทำให้ local speech เงียบครบ 4 ทาง และ voice note upload
-          ปกติ 23031 bytes เอกสารแก้ครบ 6 ไฟล์ รอคุณสั่งค่ะ
+          ปกติ 23031 bytes เอกสารแก้ครบ 6 ไฟล์ รอคำสั่งค่ะ
           + the third fact, + the follow-through (what will be reported, what waits for you)
 
 max       เรียบร้อยค่ะ แก้ 4 script เสร็จแล้ว ได้แก่ lib.sh เพิ่ม narration state,
           summarize.sh เพิ่ม cap 260 chars สำหรับ ack และ 360 สำหรับ report, queue.sh เพิ่ม kind
-          narration, aiworks-voice.sh audition ครบ 4 ระดับ รอการตรวจสอบจากคุณค่ะ
+          narration, aiworks-voice.sh audition ครบ 4 ระดับ รอให้ตรวจสอบค่ะ
           + the STEPS, in the order they happened, one status each — and it talked through the
           turn while the work happened
 ```

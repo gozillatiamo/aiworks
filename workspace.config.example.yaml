@@ -73,6 +73,17 @@ case_report_language: th           # OPTIONAL. en | th — omit to follow `langu
                                    #   case file stays English like every other `.md`, and tracker tickets stay
                                    #   in `language`. Resolved by .claude/hooks/resolve-language.sh; rationale
                                    #   in docs/adr/0012-case-reports-are-localized-for-their-reader.md.
+outbound_first_person: ผม          # OPTIONAL, Thai only. The voice of a message a HUMAN pastes under
+outbound_particle: ครับ             #   their own name — a partner team, an operator, support. NOT the
+                                   #   assistant's own voice: speaking as itself it keeps the persona's
+                                   #   particle and uses no first-person pronoun (docs/agents/voice.md).
+                                   # Both are speaker-gender-marked and Thai has no neutral polite
+                                   #   equivalent, so a shared default cannot be right for everyone —
+                                   #   set your own in workspace.config.local.yaml. Defaults ผม / ครับ.
+                                   # Inert unless `language` or `case_report_language` is th. The rest of
+                                   #   the register (never คุณ, never เรา for "I", address mode over
+                                   #   exposition mode) is not configurable — see docs/agents/register.md
+                                   #   and docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md.
 
 # ── Observability (the traces/logs the perf + triage agents read) ──────────────
 # Where the performance-engineer and oncall agents get ground truth about a

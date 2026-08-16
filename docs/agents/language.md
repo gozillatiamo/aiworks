@@ -16,6 +16,11 @@ This governs **language only** — never *which* tools run, *which* phases fire,
 work is. An `en` run and a `th` run take the identical process and produce the identical
 artifacts; only the prose differs.
 
+It also governs only **which** language, not how that language reads. Once something is being
+written in Thai, [`register.md`](register.md) decides the register — address mode over exposition
+mode, and the pronouns and particles that follow from it. The two are resolved by the same hook and
+injected together.
+
 **Out of scope:** this is the language the **agent team communicates in** — not the **product's**
 own UI copy or content. A product screen's labels/strings follow the product's own design and
 localization (the Figma spec / design system), never this switch. `language: th` does not translate
@@ -208,5 +213,10 @@ turn. Rationale: [ADR-0012](../adr/0012-case-reports-are-localized-for-their-rea
   every prompt. Because `.claude/settings.json` and the hook script are both committed, this
   reinforcement applies to every teammate's session automatically — it does not depend on any
   one person's Claude Code memory, which is local to that person and never reaches a teammate.
+  The same script also appends the **register** clause ([`register.md`](register.md)) whenever
+  either resolved language is `th`, and resolves `outbound_first_person`/`outbound_particle` with
+  the same local-first precedence. Register rides this hook rather than getting one of its own
+  because it has no independent trigger — it is meaningful only when the language is already Thai,
+  which this script is the one thing that already knows.
 
 Default `en` ⇒ every directive above is a no-op and behavior is unchanged.
