@@ -2,16 +2,11 @@
   "mcpServers": {
     "mcp-image": {
       "type": "stdio",
-      "command": "npx",
+      "command": "bash",
       "args": [
-        "-y",
-        "mcp-image"
-      ],
-      "env": {
-        "GEMINI_API_KEY": "${GEMINI_API_KEY}",
-        "IMAGE_OUTPUT_DIR": "${IMAGE_OUTPUT_DIR:-/tmp/aiworks-generated-images}",
-        "IMAGE_QUALITY": "balanced"
-      }
+        "-c",
+        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/mcp-image.sh\""
+      ]
     },
     "sonarqube": {
       "type": "http",

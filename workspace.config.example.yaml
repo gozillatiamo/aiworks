@@ -322,8 +322,8 @@ design:
 
 # ── Image generation (the graphic-designer's asset pipeline; feeds the design phase) ──
 # How Fiona (graphic-designer) makes assets via the mcp-image server — see
-# docs/agents/image-generation.md for setup (the GEMINI_API_KEY lives in the git-ignored
-# .claude/settings.local.json, never here).
+# docs/agents/image-generation.md for setup (GEMINI_API_KEY lives in the git-ignored
+# workspace-root `.env` via direnv, never here or in settings.local.json).
 image_generation:
   enabled: false                   # MASTER switch for mcp-image generation (default OFF). false →
                                    #   the graphic-designer generates NO images (returns every asset
@@ -331,7 +331,7 @@ image_generation:
                                    #   true → real assets via mcp-image, which needs GEMINI_API_KEY.
                                    #   `aiworks sync` only wires up the mcp-image server when this is true.
   quality: balanced                # fast | balanced | quality → the mcp-image IMAGE_QUALITY preset
-                                   #   (seeded into .claude/settings.local.json env by `aiworks sync`).
+                                   #   (default when IMAGE_QUALITY is unset in the environment).
   max_per_request: 2               # budget cap: the MOST generations the graphic-designer fires per
                                    #   request (keeps Gemini spend bounded). Raise only when needed.
 

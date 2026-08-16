@@ -81,21 +81,22 @@ cp scripts/vcs/.env.example     scripts/vcs/.env       # GitHub/GitLab
 cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 ```
 
-> 🔍 **SonarQube MCP token** (only with `quality_gate.provider: sonarqube`). The `sonarqube`
-> MCP server runs as a **shared** container (`aiworks-mcp-sonarqube`, HTTP transport, like the
-> postgres MCP services); its `.mcp.json` entry sends your SonarCloud token as a per-request
-> `Authorization: Bearer` header, expanded from `SONARQUBE_TOKEN` **in the environment Claude
-> Code is launched from**. Claude Code does not auto-load `.env`, so load one into your shell
-> first. Get a token on [sonarcloud.io](https://sonarcloud.io) → **My Account → Security** →
-> Generate Tokens → **User Token** (the `squ_…` value). Put it in a git-ignored `.env`; the
-> committed `.envrc` (a one-line `dotenv`) auto-loads it with [`direnv`](https://direnv.net):
+> 🔍 **MCP secrets (workspace-root `.env`)**. Put MCP tokens in the git-ignored root `.env`
+> (loaded by the committed `.envrc` → `dotenv` / [direnv](https://direnv.net)). Do **not** put
+> them in `.claude/settings.local.json` — that file only enables servers / prefs. Stdio
+> wrappers under `scripts/mcp/` (e.g. `mcp-image`, `n8n-mcp`) read `.env` themselves so Cursor
+> works without inheriting direnv. Typical keys:
 > ```sh
 > brew install direnv                       # + hook your shell:  eval "$(direnv hook zsh)"
-> printf 'SONARQUBE_TOKEN=squ_your_token\n' >> .env   # workspace root; already git-ignored
-> direnv allow                              # trust the checked-in .envrc once
+> # GEMINI_API_KEY=…          # mcp-image (https://aistudio.google.com/apikey)
+> # N8N_MCP_URL=https://…/mcp-server/http
+> # N8N_MCP_ACCESS_TOKEN=…    # n8n instance MCP access token
+> # SONARQUBE_TOKEN=squ_…     # SonarCloud user token (quality_gate.provider: sonarqube)
+> direnv allow
 > ```
-> Set `SONARQUBE_ORG` to your SonarCloud organization slug (in `.superset/.env`) if it differs
-> from the default. Restart Claude Code after the first setup so the MCP config reloads.
+> SonarQube MCP still uses HTTP headers from process env (shared container
+> `aiworks-mcp-sonarqube`). Set `SONARQUBE_ORG` in `.superset/.env` if it differs from the
+> default. Restart Claude Code / Cursor after the first setup so MCP reloads.
 
 **4. Set up the workspace** — clones + onboards every declared repo, installs node
 dependencies, and starts the shared MCP services. Idempotent, safe to re-run:
