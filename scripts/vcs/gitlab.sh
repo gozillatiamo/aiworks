@@ -10,6 +10,15 @@ vcs_require_config() {
   command -v jq   >/dev/null || die "jq is required for the GitLab adapter"
 }
 
+# The GitLab project every `projects/<…>/merge_requests…` call below acts on. `:fullpath` is
+# glab's own placeholder — it resolves from the CURRENT WORKING DIRECTORY's git remote, which is
+# exactly the assumption VCS_REPO exists to override. Falls back to `:fullpath` byte-for-byte
+# when VCS_REPO is unset, so every existing caller is unaffected.
+_gl_project() {
+  local r; r="$(vcs_repo_ref)"
+  if [[ -n "$r" ]]; then vcs_urlencode_path "$r"; else printf ':fullpath'; fi
+}
+
 # vcs_open_pr BASE HEAD TITLE BODY [DRY] -> prints "<url>" then "number=<iid>".
 # Every MR is opened with "Squash commits when merge request is accepted" CHECKED
 # (--squash-before-merge=true). This guarantees a squash even when a human merges the
@@ -19,7 +28,7 @@ vcs_open_pr() {
   local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
   # Reuse an open MR for this source branch (avoid duplicates).
   local existing url iid
-  existing="$(glab api "projects/:fullpath/merge_requests?source_branch=$head&state=opened" 2>/dev/null \
+  existing="$(glab api "projects/$(_gl_project)/merge_requests?source_branch=$head&state=opened" 2>/dev/null \
               | jq -r '.[0].web_url // empty' 2>/dev/null || true)"
   if [[ -n "$existing" ]]; then
     iid="${existing##*/}"
@@ -45,7 +54,7 @@ vcs_open_pr() {
 # Conventional-Commit title (e.g. feat(FM-12): …) and/or branch (feature/FM-12).
 vcs_find_prs() {
   local key="$1"
-  glab api "projects/:fullpath/merge_requests?state=opened&per_page=100" 2>/dev/null \
+  glab api "projects/$(_gl_project)/merge_requests?state=opened&per_page=100" 2>/dev/null \
     | jq -r --arg k "$key" '
         ($k | ascii_downcase) as $kk
         | .[]
@@ -59,7 +68,7 @@ vcs_find_prs() {
 # Read-only. The key-filtered vcs_find_prs answers "where is ticket X?"; this answers "what is
 # waiting?", which needs the whole open set and the fields a reviewer triages on.
 vcs_list_prs() {
-  glab api "projects/:fullpath/merge_requests?state=opened&per_page=100&order_by=updated_at" 2>/dev/null \
+  glab api "projects/$(_gl_project)/merge_requests?state=opened&per_page=100&order_by=updated_at" 2>/dev/null \
     | jq -r '.[] | [ (.iid|tostring),
                      (if .draft then "yes" else "no" end),
                      (.author.username // "-"),
@@ -71,7 +80,7 @@ vcs_list_prs() {
 # vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
 vcs_pr_view() {
   local num="$1" json state sha up
-  if ! json="$(glab api "projects/:fullpath/merge_requests/$num" 2>/dev/null)"; then
+  if ! json="$(glab api "projects/$(_gl_project)/merge_requests/$num" 2>/dev/null)"; then
     printf 'state=UNKNOWN\nmerge_sha=\n'; return 0
   fi
   state="$(printf '%s' "$json" | jq -r '.state // "unknown"')"
@@ -109,7 +118,7 @@ _gl_line_code() { printf '%s_%s_%s' "$(_gl_sha1 "$1")" "$2" "$3"; }
 # the server will accept. Walks the unified hunks tracking old/new line counters.
 _gl_diff_line_at() {
   local num="$1" path="$2" target="$3" diff
-  diff="$(glab api "projects/:fullpath/merge_requests/$num/diffs?per_page=100" 2>/dev/null \
+  diff="$(glab api "projects/$(_gl_project)/merge_requests/$num/diffs?per_page=100" 2>/dev/null \
           | jq -r --arg p "$path" '.[] | select(.new_path==$p) | .diff' 2>/dev/null || true)"
   [[ -n "$diff" ]] || return 0
   printf '%s' "$diff" | awk -v target="$target" '
@@ -178,7 +187,7 @@ vcs_pr_comment() {
   # fall back to a plain note so the content is never lost AND the caller knows it isn't inline.
   if [[ -n "$path" && -n "$line" ]]; then
     local refs base head start err
-    refs="$(glab api "projects/:fullpath/merge_requests/$num" 2>/dev/null \
+    refs="$(glab api "projects/$(_gl_project)/merge_requests/$num" 2>/dev/null \
             | jq -r '[.diff_refs.base_sha, .diff_refs.head_sha, .diff_refs.start_sha] | @tsv' 2>/dev/null || true)"
     IFS=$'\t' read -r base head start <<<"$refs"
     if [[ -z "$base" || -z "$head" || -z "$start" ]]; then
@@ -229,7 +238,7 @@ vcs_pr_comment() {
 
       # Attempt the range first (when built); a hard rejection retries single-line below.
       if [[ "$ranged" -eq 1 ]]; then
-        if err="$(glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" "${posr[@]}" 2>&1)"; then
+        if err="$(glab api --method POST "projects/$(_gl_project)/merge_requests/$num/discussions" "${posr[@]}" 2>&1)"; then
           if [[ -n "$(printf '%s' "$err" | jq -r '.notes[0].position // empty' 2>/dev/null)" ]]; then
             printf 'Inline comment posted on MR !%s at %s:%s-%s (range)\n' "$num" "$path" "$sline" "$eline"; return 0
           fi
@@ -242,7 +251,7 @@ vcs_pr_comment() {
       fi
 
       # Single-line anchor (no range requested, or the range was rejected above).
-      if err="$(glab api --method POST "projects/:fullpath/merge_requests/$num/discussions" "${pos[@]}" 2>&1)"; then
+      if err="$(glab api --method POST "projects/$(_gl_project)/merge_requests/$num/discussions" "${pos[@]}" 2>&1)"; then
         if [[ -n "$(printf '%s' "$err" | jq -r '.notes[0].position // empty' 2>/dev/null)" ]]; then
           printf 'Inline comment posted on MR !%s at %s:%s (%s)\n' "$num" "$path" "$eline" "${kind_e:-added}"; return 0
         fi
@@ -268,7 +277,7 @@ vcs_pr_comments() {
   local num="$1"
   glab mr view "$num" --comments 2>/dev/null && return 0
   # Fallback: render notes via the API.
-  glab api "projects/:fullpath/merge_requests/$num/notes" 2>/dev/null \
+  glab api "projects/$(_gl_project)/merge_requests/$num/notes" 2>/dev/null \
     | jq -r '.[] | select(.system==false) | "\(.author.name)  \(.created_at)\n  \(.body)\n"' 2>/dev/null \
     || die "could not read notes for MR !$num"
 }
@@ -281,7 +290,7 @@ vcs_pr_comments() {
 # Only resolvable threads (review discussions) are listed; plain notes have no checkbox.
 vcs_pr_threads() {
   local num="$1" out
-  out="$(glab api "projects/:fullpath/merge_requests/$num/discussions?per_page=100" 2>/dev/null \
+  out="$(glab api "projects/$(_gl_project)/merge_requests/$num/discussions?per_page=100" 2>/dev/null \
     | jq -r '
         .[]
         | select(any(.notes[]; .resolvable == true))
@@ -316,7 +325,7 @@ vcs_pr_resolve_thread() {
     printf 'DRY RUN — glab api --method PUT …/merge_requests/%s/discussions/%s?resolved=%s\n' "$num" "$tid" "$resolved"
     return 0
   fi
-  glab api --method PUT "projects/:fullpath/merge_requests/$num/discussions/$tid?resolved=$resolved" >/dev/null \
+  glab api --method PUT "projects/$(_gl_project)/merge_requests/$num/discussions/$tid?resolved=$resolved" >/dev/null \
     || die "could not mark thread $tid on MR !$num $word"
   printf 'Thread %s on MR !%s marked %s\n' "$tid" "$num" "$word"
 }
@@ -332,7 +341,7 @@ vcs_pr_reply() {
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — glab api POST …/merge_requests/%s/discussions/%s/notes\n' "$num" "$tid"; return 0
   fi
-  glab api --method POST "projects/:fullpath/merge_requests/$num/discussions/$tid/notes" \
+  glab api --method POST "projects/$(_gl_project)/merge_requests/$num/discussions/$tid/notes" \
       --form "body=$body" >/dev/null \
     || die "could not post reply to thread $tid on MR !$num"
   printf 'Reply posted to thread %s on MR !%s\n' "$tid" "$num"
@@ -363,7 +372,7 @@ vcs_upload_media() {
   fi
   [[ -f "$file" ]] || { echo "warn: media file not found: $file" >&2; return 1; }
   local json url
-  json="$(glab api --method POST "projects/:fullpath/uploads" -F "file=@${file}" 2>/dev/null)" \
+  json="$(glab api --method POST "projects/$(_gl_project)/uploads" -F "file=@${file}" 2>/dev/null)" \
     || { echo "warn: gitlab upload failed for $file" >&2; return 1; }
   url="$(printf '%s' "$json" | jq -r '.url // empty' 2>/dev/null)"
   [[ -n "$url" ]] || { echo "warn: no upload url in gitlab response for $file" >&2; return 1; }
