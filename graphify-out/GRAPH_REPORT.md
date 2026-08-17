@@ -1,16 +1,16 @@
-# Graph Report - ai-workspace  (2026-08-16)
+# Graph Report - ai-workspace  (2026-08-17)
 
 ## Corpus Check
-- 209 files · ~229,867 words
+- 213 files · ~237,560 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 885 nodes · 1247 edges · 65 communities (54 shown, 11 thin omitted)
-- Extraction: 92% EXTRACTED · 7% INFERRED · 1% AMBIGUOUS · INFERRED: 88 edges (avg confidence: 0.78)
+- 910 nodes · 1270 edges · 67 communities (56 shown, 11 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 1% AMBIGUOUS · INFERRED: 88 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a078c53a`
+- Built from commit: `380cb405`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -30,27 +30,27 @@
 - ui-styling skill
 - Ticket Estimation
 - clarifying-ticket skill
-- Corpus Detection
+- Thai register (address mode)
 - Kubernetes and Cloud Triage
 - Read-Only Deployed Access ADRs
 - Incremental Update
 - ux-ui-designer agent (Jane)
 - Extraction Subagent Prompt
 - graphify Skill Pipeline
-- coding-feature skill
+- coding-automate skill
 - graph.json
 - Gitflow and Config Conventions
 - Deployed Root-Cause Method
 - qa-runner agent (Peter)
 - qa-planner agent (Peter)
 - TDD and Test Design
-- Review Verdict Basis
+- The basis for a review verdict
 - graphify — operating the doc graph
 - Cursor Mirror and Compression
 - Production Case Reporting
-- Test Result Reporting
+- report-test-results skill
 - Load Gate and Plan Artifacts
-- Issue tracker conventions
+- ultra-review skill
 - Token Usage Reporting
 - Load-Test Noise Floor Comparison
 - QA Sub-Tasks and BDD
@@ -80,6 +80,8 @@
 - apply-human-review skill
 - Obsidian — shared vault settings for the workspace meta-repo
 - hrun
+- Decision
+- Semantic Extraction
 
 ## God Nodes (most connected - your core abstractions)
 1. `qa-runner agent (Peter)` - 29 edges
@@ -94,16 +96,16 @@
 10. `Extraction Subagent Prompt` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Gate Threshold Tuning` --semantically_similar_to--> `Query Token Budget`  [INFERRED] [semantically similar]
-  docs/agents/headroom.md → .claude/skills/graphify/references/query.md
-- `Disposable Subagent For Huge Files` --semantically_similar_to--> `Parallel Subagent Dispatch`  [INFERRED] [semantically similar]
-  docs/agents/headroom.md → .claude/skills/graphify/SKILL.md
 - `Never Read .env Files (AGENTS.md)` --semantically_similar_to--> `Never Read .env Files`  [INFERRED] [semantically similar]
   AGENTS.md → CLAUDE.md
 - `env Guard hcat Coverage` --semantically_similar_to--> `Adapter Pipe Guard`  [INFERRED] [semantically similar]
   docs/agents/headroom.md → CLAUDE.md
 - `Graphify Stores A Map, Not The Text` --semantically_similar_to--> `Extraction Subagent Prompt`  [INFERRED] [semantically similar]
   docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md → .claude/skills/graphify/references/extraction-spec.md
+- `Native CLAUDE.md Integration` --references--> `bluePi Workspace CLAUDE.md`  [AMBIGUOUS]
+  .claude/skills/graphify/references/hooks.md → CLAUDE.md
+- `Multi-Repo Workspace (AGENTS.md)` --semantically_similar_to--> `Multi-Repo Workspace`  [INFERRED] [semantically similar]
+  AGENTS.md → CLAUDE.md
 
 ## Import Cycles
 - None detected.
@@ -131,15 +133,15 @@
 - **Provider-dispatch adapter pattern (lib.sh + swappable impls)** — scripts_tracker_readme_lib_sh, scripts_vcs_readme_lib_sh, scripts_tracker_readme_tracker_provider_interface, scripts_vcs_readme_vcs_provider_interface, scripts_voice_readme [INFERRED 0.85]
 - **Tracker-adapter ticket lifecycle (estimate → plan → automate → gate → PR → notify)** — _claude_skills_estimate_ticket_skill_estimate_ticket, _claude_skills_plan_testcases_skill_plan_testcases, _claude_skills_plan_automate_skill_plan_automate, _claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate, _claude_skills_open_pr_skill_open_pr, _claude_skills_notify_skill_notify, _claude_skills_diagram_ticket_skill_diagram_ticket [INFERRED 0.85]
 
-## Communities (65 total, 11 thin omitted)
+## Communities (67 total, 11 thin omitted)
 
 ### Community 0 - "Agent Roster and Dev Harness"
 Cohesion: 0.07
 Nodes (65): Michael — CEO Agent (conductor only), Daniel — Code Reviewer Agent (merge gate), Emily — CPO Agent, Thomas — CTO Agent, Noah — Senior Fullstack Developer Agent, prod_repro_seed.py — Sanctioned Masked Prod-data Seed, replay_shape.py — Synthetic Redis Shape Replay, scripts/dev.sh — Uniform Per-repo Dev Harness (+57 more)
 
 ### Community 1 - "bluePi Workspace CLAUDE.md"
-Cohesion: 0.06
-Nodes (59): Native CLAUDE.md Integration, Honesty Rules, No API Key Required, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions, Adapter Pipe Guard, caveman Output Compression (+51 more)
+Cohesion: 0.05
+Nodes (61): Native CLAUDE.md Integration, Query Token Budget, Honesty Rules, No API Key Required, Parallel Subagent Dispatch, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions (+53 more)
 
 ### Community 2 - "Prod PII Vault (HMAC digests only)"
 Cohesion: 0.08
@@ -158,8 +160,8 @@ Cohesion: 0.07
 Nodes (35): add-ticket-comment.sh, Markdown to ADF renderer, Attachment carry-over on body rewrite, Dedup before filing, jira/discover-fields.sh, find-tickets.sh, get-ticket-comments.sh, get-ticket-details.sh (+27 more)
 
 ### Community 6 - "export-data island"
-Cohesion: 0.08
-Nodes (31): Comparison block, Component library reference, decision-data island, The export contract (two readers), export-data island, Steps / Implementation Plan block, UI preview block, Diagrams reference (+23 more)
+Cohesion: 0.07
+Nodes (33): Comparison block, Component library reference, decision-data island, The export contract (two readers), export-data island, Steps / Implementation Plan block, UI preview block, Diagrams reference (+25 more)
 
 ### Community 7 - "Output Language Policy"
 Cohesion: 0.06
@@ -190,12 +192,12 @@ Cohesion: 0.12
 Nodes (20): scripts/tracker/add-ticket-comment.sh, Board calibration set (10 recent Done), Dev+QA points written, total derived, estimate-ticket (skill), scripts/tracker/find-tickets.sh, scripts/tracker/get-ticket-comments.sh, scripts/tracker/get-ticket-details.sh, scripts/tracker/upsert-ticket-details.sh (+12 more)
 
 ### Community 14 - "clarifying-ticket skill"
-Cohesion: 0.25
-Nodes (14): clarifying-ticket skill, Clarified ticket templates, decompose-ticket skill, Decomposition piece-spec templates, diagram-ticket skill, estimate-ticket skill, codegraph per-repo index, Output-language operating convention (+6 more)
+Cohesion: 0.17
+Nodes (19): Attachment embed-id vs numeric id, update-ticket skill, clarifying-ticket skill, Clarified ticket templates, decompose-ticket skill, Decomposition piece-spec templates, diagram-ticket skill, estimate-ticket skill (+11 more)
 
-### Community 15 - "Corpus Detection"
-Cohesion: 0.29
-Nodes (7): URL Ingest (graphify add), Whisper Domain-Hint Prompt, Whisper Transcription, Corpus Size Gate, Corpus Detection, God Nodes, Extraction Manifest
+### Community 15 - "Thai register (address mode)"
+Cohesion: 0.13
+Nodes (13): Rejected alternatives, Thai register is address mode, and the speaker decides the pronoun, 1. The one rule — a message to a person is written in address mode, 2. Who is speaking — three voices, and they are not interchangeable, 3. Second person: `คุณ` is banned by default, 4. The officialese table, read backwards, 5. Ordering — the one thing mode does not decide, 6. Reporting a problem to an outside team (+5 more)
 
 ### Community 16 - "Kubernetes and Cloud Triage"
 Cohesion: 0.15
@@ -206,28 +208,28 @@ Cohesion: 0.17
 Nodes (15): PII provenance stays production-only, triage.prod — the one production opt-in, ADR-0005 — Triage covers every deployed env; only prod is gated, Targets derived from the GKE context name, Impersonation, not a key file, ADR-0007 — Kubernetes triage authenticates as a separate read-only identity, Bash(kubectl *) / Bash(gcloud *) denied to agents, LEGACY[] table swept by its own rename (+7 more)
 
 ### Community 18 - "Incremental Update"
-Cohesion: 0.19
-Nodes (13): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Language Rule, Node ID Format, Post-Commit Auto-Rebuild Hook, save-result Feedback Loop, Work Memory And LESSONS.md, Code-Only Update Fast Path (+5 more)
+Cohesion: 0.18
+Nodes (14): Watch Debounce, URL Ingest (graphify add), Watch Mode Auto-Rebuild, Post-Commit Auto-Rebuild Hook, save-result Feedback Loop, Work Memory And LESSONS.md, Whisper Transcription, detect_incremental (+6 more)
 
 ### Community 19 - "ux-ui-designer agent (Jane)"
-Cohesion: 0.22
-Nodes (15): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, workspace.config.yaml, caveman skill (+7 more)
+Cohesion: 0.23
+Nodes (14): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, caveman skill, designing-page skill (+6 more)
 
 ### Community 20 - "Extraction Subagent Prompt"
-Cohesion: 0.20
-Nodes (12): Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, DEEP_MODE Aggressive Inference, Extraction Subagent Prompt, Hyperedges, Rationale As Node Attribute, Semantic Similarity Edges, Vision Extraction Rules (+4 more)
+Cohesion: 0.22
+Nodes (11): Call Edge Direction And Language Rule, Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, Extraction Subagent Prompt, Hyperedges, Node ID Format, Rationale As Node Attribute, Semantic Similarity Edges (+3 more)
 
 ### Community 21 - "graphify Skill Pipeline"
-Cohesion: 0.18
-Nodes (13): Wiki Export, Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, cluster-only Rerun, Community Detection And Labeling, Cumulative Cost Tracker, Fast Path On Existing Graph (+5 more)
+Cohesion: 0.22
+Nodes (10): Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, Cumulative Cost Tracker, Fast Path On Existing Graph, GRAPH_REPORT.md, graphify Skill Pipeline, .graphify_python Interpreter Sidecar (+2 more)
 
-### Community 22 - "coding-feature skill"
-Cohesion: 0.33
-Nodes (7): Submodule checkout write ban, coding-feature skill, Workspace coding style, tdd skill, Domain docs consumption guide, Submodules convention, scripts/dev.sh per-repo harness
+### Community 22 - "coding-automate skill"
+Cohesion: 0.20
+Nodes (14): agent_logs/<KEY>-automation-plan.md, agent_logs/<KEY>-bugs.md, Submodule checkout write ban, Bug log template, coding-automate skill, coding-feature skill, Workspace coding style, Ground truth first (+6 more)
 
 ### Community 23 - "graph.json"
-Cohesion: 0.17
-Nodes (13): Verbatim source_file Rule, BFS And DFS Traversal Modes, Constrained Query Expansion, Node Explanation, Graph Query Flow, Inline NetworkX Fallback, Shortest Path Between Concepts, Query Token Budget (+5 more)
+Cohesion: 0.18
+Nodes (12): Verbatim source_file Rule, BFS And DFS Traversal Modes, Constrained Query Expansion, Node Explanation, Graph Query Flow, Inline NetworkX Fallback, Shortest Path Between Concepts, build_merge Replace-On-Re-Extract (+4 more)
 
 ### Community 24 - "Gitflow and Config Conventions"
 Cohesion: 0.24
@@ -238,20 +240,20 @@ Cohesion: 0.21
 Nodes (12): Step 1 — Base rate before any hypothesis, Step 3 — Discriminator, scripts/observability/find-traces.sh, scripts/observability/get-logs.sh, Step 2 — Hypothesis ledger, root-cause-deployed skill, Step 4 — Verdict tiers (CONFIRMED/LEADING/SPECULATIVE), diagnosing-bugs skill (local red loop) (+4 more)
 
 ### Community 26 - "qa-runner agent (Peter)"
-Cohesion: 0.22
-Nodes (15): agent_logs/<KEY>-automation-plan.md, agent_logs/<KEY>-bugs.md, agent_logs/<KEY>-report.md, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), Bug log template, coding-automate skill, Ground truth first (+7 more)
+Cohesion: 0.23
+Nodes (12): agent_logs/<KEY>-report.md, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), karpathy-guidelines skill, loadtest-baseline-gate skill, report-test-results skill, self-control-gitflow skill, telemetry-triage skill (+4 more)
 
 ### Community 27 - "qa-planner agent (Peter)"
-Cohesion: 0.18
-Nodes (14): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, karpathy-guidelines skill, plan-testcases skill (+6 more)
+Cohesion: 0.23
+Nodes (12): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, workspace.config.yaml, plan-testcases skill (+4 more)
 
 ### Community 28 - "TDD and Test Design"
 Cohesion: 0.24
 Nodes (11): Deep modules, Interface design for testability, Mock at system boundaries only, Refactor candidates, Horizontal slices anti-pattern, Red-green-refactor vertical slice loop, tdd skill, Good and bad tests (+3 more)
 
-### Community 29 - "Review Verdict Basis"
-Cohesion: 0.27
-Nodes (10): docs/agents/issue-tracker.md, The basis for a review verdict, Codegraph callers/impact blast radius, §2 Coding standards are the bottom line, §3 The repo's knowledge is your instrument, §1 The requirements are the bar, §4 Review level (strict / thorough), review skill (+2 more)
+### Community 29 - "The basis for a review verdict"
+Cohesion: 0.21
+Nodes (12): docs/agents/issue-tracker.md, scripts/dev.sh per-repo harness (why/artifacts), The basis for a review verdict, Codegraph callers/impact blast radius, §2 Coding standards are the bottom line, §5 Every claim carries a receipt, §3 The repo's knowledge is your instrument, §1 The requirements are the bar (+4 more)
 
 ### Community 30 - "graphify — operating the doc graph"
 Cohesion: 0.22
@@ -265,17 +267,17 @@ Nodes (9): Orchestrator-owned notify (combined verdict), ADR-0004 — Cursor is 
 Cohesion: 0.22
 Nodes (9): case-report skill, k8s_triage, pg_triage (read-only deployed Postgres), redis_triage, root-cause-deployed skill, PII provenance convention, Case report template, Production troubleshooting guideline (+1 more)
 
-### Community 33 - "Test Result Reporting"
-Cohesion: 0.25
-Nodes (8): Test-results report template, scripts/tracker/add-ticket-comment.sh, coding-automate skill, scripts/dev.sh per-repo harness (why/artifacts), scripts/pdf/render.sh, report-test-results skill, update-ticket skill, §5 Every claim carries a receipt
+### Community 33 - "report-test-results skill"
+Cohesion: 0.33
+Nodes (6): Test-results report template, scripts/tracker/add-ticket-comment.sh, coding-automate skill, scripts/pdf/render.sh, report-test-results skill, update-ticket skill
 
 ### Community 34 - "Load Gate and Plan Artifacts"
 Cohesion: 0.25
 Nodes (8): Equal-or-Better Load Gate, Never Fail Open — Receipt or Not Run, suite_kind: load (arms the gate), Production Case File (kind: script repo), One Plan File Per Touched Repo, Plan Artifact Canonical Paths, pretool-agent-brief-guard.sh, pretool-plan-path-guard.sh
 
-### Community 35 - "Issue tracker conventions"
-Cohesion: 0.14
-Nodes (15): Shared verdict grounding (review/basis.md), Aggregation backstop (presence + language check), Code gate (Daniel, code-reviewer), Force-shell first line (no-Bash give-up fix), Performance gate (Liam, performance-engineer), Re-visit mode (prior must-fix only), ultra-review skill, Attachment embed-id vs numeric id (+7 more)
+### Community 35 - "ultra-review skill"
+Cohesion: 0.33
+Nodes (7): Shared verdict grounding (review/basis.md), Aggregation backstop (presence + language check), Code gate (Daniel, code-reviewer), Force-shell first line (no-Bash give-up fix), Performance gate (Liam, performance-engineer), Re-visit mode (prior must-fix only), ultra-review skill
 
 ### Community 36 - "Token Usage Reporting"
 Cohesion: 0.38
@@ -302,8 +304,8 @@ Cohesion: 0.47
 Nodes (6): Advanced debugging techniques, Installing debug adapters, dap CLI (DAP debugger driver), debugging-code skill, Vendored plugin skills note, scripts/aiworks-cursor.sh (vendor sync)
 
 ### Community 42 - "Doc-Only Graphify Scope"
-Cohesion: 0.33
-Nodes (6): graphify MCP Stdio Server, agent_logs Excluded, Doc-Only Graphify Scope, read_source MCP Tool Proposal, Shell Files Excluded From Doc Graph, Strict Mode Stays Off
+Cohesion: 0.18
+Nodes (11): graphify MCP Stdio Server, Wiki Export, Whisper Domain-Hint Prompt, cluster-only Rerun, Community Detection And Labeling, God Nodes, agent_logs Excluded, Doc-Only Graphify Scope (+3 more)
 
 ### Community 43 - "Ticket Approval Rules"
 Cohesion: 0.40
@@ -349,12 +351,18 @@ Nodes (6): developer agent, development-planner agent, apply-human-review skill,
 Cohesion: 0.40
 Nodes (4): Commit vs keep local, Gotchas, Obsidian — shared vault settings for the workspace meta-repo, What `aiworks sync` does
 
+### Community 65 - "Decision"
+Cohesion: 0.20
+Nodes (9): ADR 0017 — Triage tunnels are declared beside the DSN, Consequences, Context, Decision, Enumeration hazard, Port safety, The prod gate ordering, Why the framework only port-forwards (+1 more)
+
+### Community 66 - "Semantic Extraction"
+Cohesion: 0.50
+Nodes (4): DEEP_MODE Aggressive Inference, Gemini Semantic Backend, Semantic Extraction, Semantic Extraction Cache
+
 ## Ambiguous Edges - Review These
 - `design (skill)` → `diagram-ticket (skill)`  [AMBIGUOUS]
   .claude/skills/diagram-ticket/SKILL.md · relation: conceptually_related_to
-- `graphify MCP Stdio Server` → `read_source MCP Tool Proposal`  [AMBIGUOUS]
-  .claude/skills/graphify/references/exports.md · relation: references
-- `bluePi Workspace CLAUDE.md` → `Native CLAUDE.md Integration`  [AMBIGUOUS]
+- `Native CLAUDE.md Integration` → `bluePi Workspace CLAUDE.md`  [AMBIGUOUS]
   .claude/skills/graphify/references/hooks.md · relation: references
 - `HTML slide template` → `Tailwind responsive design`  [AMBIGUOUS]
   .claude/skills/slides/references/html-template.md · relation: conceptually_related_to
@@ -362,11 +370,13 @@ Nodes (4): Commit vs keep local, Gotchas, Obsidian — shared vault settings for
   .claude/skills/ship/SKILL.md · relation: conceptually_related_to
 - `identity.sh (worktree identity prefix)` → `get-ticket-details.sh`  [AMBIGUOUS]
   scripts/voice/README.md · relation: calls
+- `graphify MCP Stdio Server` → `read_source MCP Tool Proposal`  [AMBIGUOUS]
+  .claude/skills/graphify/references/exports.md · relation: references
 - `handoff (skill)` → `karpathy-guidelines (skill)`  [AMBIGUOUS]
   .claude/skills/karpathy-guidelines/SKILL.md · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **257 isolated node(s):** `What `aiworks sync` does`, `Commit vs keep local`, `Gotchas`, `Adding docs to the graph`, ``graphify install` overreaches — review before committing` (+252 more)
+- **274 isolated node(s):** `Rejected alternatives`, `Context`, `Why the framework only port-forwards`, `Why the helper is shared but the Redis migration is deferred`, `The prod gate ordering` (+269 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -375,9 +385,7 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `design (skill)` and `diagram-ticket (skill)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **What is the exact relationship between `graphify MCP Stdio Server` and `read_source MCP Tool Proposal`?**
-  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
-- **What is the exact relationship between `bluePi Workspace CLAUDE.md` and `Native CLAUDE.md Integration`?**
+- **What is the exact relationship between `Native CLAUDE.md Integration` and `bluePi Workspace CLAUDE.md`?**
   _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `HTML slide template` and `Tailwind responsive design`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
@@ -385,5 +393,7 @@ _Questions this graph is uniquely positioned to answer:_
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `identity.sh (worktree identity prefix)` and `get-ticket-details.sh`?**
   _Edge tagged AMBIGUOUS (relation: calls) - confidence is low._
+- **What is the exact relationship between `graphify MCP Stdio Server` and `read_source MCP Tool Proposal`?**
+  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `handoff (skill)` and `karpathy-guidelines (skill)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._

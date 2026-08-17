@@ -347,6 +347,171 @@
   },
   "nodes": [
     {
+      "label": "0016-thai-register-is-address-mode-not-exposition-mode.md",
+      "file_type": "document",
+      "source_file": "docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "0016-thai-register-is-address-mode-not-exposition-mode.md"
+    },
+    {
+      "label": "Rejected alternatives",
+      "file_type": "document",
+      "source_file": "docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md",
+      "source_location": "L52",
+      "_origin": "ast",
+      "id": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode_rejected_alternatives",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "rejected alternatives"
+    },
+    {
+      "label": "Thai register is address mode, and the speaker decides the pronoun",
+      "file_type": "document",
+      "source_file": "docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode_thai_register_is_address_mode_and_the_speaker_decides_the_pronoun",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "thai register is address mode, and the speaker decides the pronoun"
+    },
+    {
+      "label": "register.md",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_register",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "register.md"
+    },
+    {
+      "label": "1. The one rule \u2014 a message to a person is written in address mode",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L11",
+      "_origin": "ast",
+      "id": "docs_agents_register_1_the_one_rule_a_message_to_a_person_is_written_in_address_mode",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "1. the one rule \u2014 a message to a person is written in address mode"
+    },
+    {
+      "label": "2. Who is speaking \u2014 three voices, and they are not interchangeable",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L32",
+      "_origin": "ast",
+      "id": "docs_agents_register_2_who_is_speaking_three_voices_and_they_are_not_interchangeable",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "2. who is speaking \u2014 three voices, and they are not interchangeable"
+    },
+    {
+      "label": "3. Second person: `\u0e04\u0e38\u0e13` is banned by default",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L56",
+      "_origin": "ast",
+      "id": "docs_agents_register_3_second_person_\u0e04_\u0e13_is_banned_by_default",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "3. second person: `\u0e04\u0e13` is banned by default"
+    },
+    {
+      "label": "4. The officialese table, read backwards",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L73",
+      "_origin": "ast",
+      "id": "docs_agents_register_4_the_officialese_table_read_backwards",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "4. the officialese table, read backwards"
+    },
+    {
+      "label": "5. Ordering \u2014 the one thing mode does not decide",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L105",
+      "_origin": "ast",
+      "id": "docs_agents_register_5_ordering_the_one_thing_mode_does_not_decide",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "5. ordering \u2014 the one thing mode does not decide"
+    },
+    {
+      "label": "6. Reporting a problem to an outside team",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L119",
+      "_origin": "ast",
+      "id": "docs_agents_register_6_reporting_a_problem_to_an_outside_team",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "6. reporting a problem to an outside team"
+    },
+    {
+      "label": "7. Warmth is in the framing, never in the finding",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L150",
+      "_origin": "ast",
+      "id": "docs_agents_register_7_warmth_is_in_the_framing_never_in_the_finding",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "7. warmth is in the framing, never in the finding"
+    },
+    {
+      "label": "8. Where it stops",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L160",
+      "_origin": "ast",
+      "id": "docs_agents_register_8_where_it_stops",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "8. where it stops"
+    },
+    {
+      "label": "9. How it reaches each spawn path",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L170",
+      "_origin": "ast",
+      "id": "docs_agents_register_9_how_it_reaches_each_spawn_path",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "9. how it reaches each spawn path"
+    },
+    {
+      "label": "Accusation anti-patterns",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L140",
+      "_origin": "ast",
+      "id": "docs_agents_register_accusation_anti_patterns",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "accusation anti-patterns"
+    },
+    {
+      "label": "Thai register (address mode)",
+      "file_type": "document",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_register_thai_register_address_mode",
+      "community": 15,
+      "community_name": "Thai register (address mode)",
+      "norm_label": "thai register (address mode)"
+    },
+    {
       "label": "graphify.md",
       "file_type": "document",
       "source_file": "docs/agents/graphify.md",
@@ -726,10 +891,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_obsidian",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "obsidian.md"
+      "norm_label": "obsidian.md",
+      "id": "docs_agents_obsidian"
     },
     {
       "label": "Commit vs keep local",
@@ -737,10 +902,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L28",
       "_origin": "ast",
-      "id": "docs_agents_obsidian_commit_vs_keep_local",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "commit vs keep local"
+      "norm_label": "commit vs keep local",
+      "id": "docs_agents_obsidian_commit_vs_keep_local"
     },
     {
       "label": "Gotchas",
@@ -748,10 +913,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L41",
       "_origin": "ast",
-      "id": "docs_agents_obsidian_gotchas",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "gotchas"
+      "norm_label": "gotchas",
+      "id": "docs_agents_obsidian_gotchas"
     },
     {
       "label": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
@@ -759,10 +924,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "obsidian \u2014 shared vault settings for the workspace meta-repo"
+      "norm_label": "obsidian \u2014 shared vault settings for the workspace meta-repo",
+      "id": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo"
     },
     {
       "label": "What `aiworks sync` does",
@@ -770,10 +935,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L7",
       "_origin": "ast",
-      "id": "docs_agents_obsidian_what_aiworks_sync_does",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "what `aiworks sync` does"
+      "norm_label": "what `aiworks sync` does",
+      "id": "docs_agents_obsidian_what_aiworks_sync_does"
     },
     {
       "label": "hrun",
@@ -804,6 +969,116 @@
       "community_name": "hrun",
       "norm_label": "hrun script",
       "id": "scripts_hrun__entry"
+    },
+    {
+      "label": "0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "0017-triage-tunnels-are-declared-beside-the-dsn.md"
+    },
+    {
+      "label": "ADR 0017 \u2014 Triage tunnels are declared beside the DSN",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_adr_0017_triage_tunnels_are_declared_beside_the_dsn",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "adr 0017 \u2014 triage tunnels are declared beside the dsn"
+    },
+    {
+      "label": "Consequences",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L106",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_consequences",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "consequences"
+    },
+    {
+      "label": "Context",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_context",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "context"
+    },
+    {
+      "label": "Decision",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L40",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_decision",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "decision"
+    },
+    {
+      "label": "Enumeration hazard",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L85",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_enumeration_hazard",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "enumeration hazard"
+    },
+    {
+      "label": "Port safety",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L94",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_port_safety",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "port safety"
+    },
+    {
+      "label": "The prod gate ordering",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L77",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_the_prod_gate_ordering",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "the prod gate ordering"
+    },
+    {
+      "label": "Why the framework only port-forwards",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L51",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_why_the_framework_only_port_forwards",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "why the framework only port-forwards"
+    },
+    {
+      "label": "Why the helper is shared but the Redis migration is deferred",
+      "file_type": "document",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L62",
+      "_origin": "ast",
+      "id": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_why_the_helper_is_shared_but_the_redis_migration_is_deferred",
+      "community": 65,
+      "community_name": "Decision",
+      "norm_label": "why the helper is shared but the redis migration is deferred"
     },
     {
       "label": "design (skill)",
@@ -1826,6 +2101,21 @@
       "id": "_claude_skills_graphify_references_hooks_claude_md_integration"
     },
     {
+      "label": "Query Token Budget",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "query token budget",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_query_token_budget"
+    },
+    {
       "label": "Multi-Repo Workspace (AGENTS.md)",
       "file_type": "concept",
       "source_file": "AGENTS.md",
@@ -2349,6 +2639,21 @@
       "norm_label": "no api key required",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_skill_no_api_key_required"
+    },
+    {
+      "label": "Parallel Subagent Dispatch",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 1,
+      "community_name": "bluePi Workspace CLAUDE.md",
+      "norm_label": "parallel subagent dispatch",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_parallel_subagent_dispatch"
     },
     {
       "label": "Never Read .env Files (AGENTS.md)",
@@ -4211,21 +4516,6 @@
       "id": "_claude_skills_loadtest_baseline_gate_skill_unavailable_verdict"
     },
     {
-      "label": "codegraph per-repo index",
-      "file_type": "code",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 14,
-      "norm_label": "codegraph per-repo index",
-      "_origin": "semantic",
-      "community_name": "clarifying-ticket skill",
-      "id": "codegraph_codegraph_index"
-    },
-    {
       "label": "add-ticket-attachment.sh",
       "file_type": "code",
       "source_file": ".claude/skills/decompose-ticket/SKILL.md",
@@ -4314,6 +4604,81 @@
       "_origin": "semantic",
       "community_name": "clarifying-ticket skill",
       "id": "scripts_tracker_upsert_ticket_details_upsert_ticket_details"
+    },
+    {
+      "label": "Attachment embed-id vs numeric id",
+      "file_type": "concept",
+      "source_file": ".claude/skills/update-ticket/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 14,
+      "norm_label": "attachment embed-id vs numeric id",
+      "community_name": "clarifying-ticket skill",
+      "_origin": "semantic",
+      "id": "_claude_skills_update_ticket_skill_attachment_embed"
+    },
+    {
+      "label": "The adapter is the only entry point",
+      "file_type": "concept",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 14,
+      "norm_label": "the adapter is the only entry point",
+      "community_name": "clarifying-ticket skill",
+      "_origin": "semantic",
+      "id": "docs_agents_issue_tracker_adapter_only_entry"
+    },
+    {
+      "label": "Points require their reasoning in one call",
+      "file_type": "concept",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 14,
+      "norm_label": "points require their reasoning in one call",
+      "community_name": "clarifying-ticket skill",
+      "_origin": "semantic",
+      "id": "docs_agents_issue_tracker_points_need_reason"
+    },
+    {
+      "label": "Status lifecycle owned by dev-cycle (monotonic)",
+      "file_type": "concept",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 14,
+      "norm_label": "status lifecycle owned by dev-cycle (monotonic)",
+      "community_name": "clarifying-ticket skill",
+      "_origin": "semantic",
+      "id": "docs_agents_issue_tracker_status_lifecycle"
+    },
+    {
+      "label": "update-ticket skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/update-ticket/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 14,
+      "norm_label": "update-ticket skill",
+      "community_name": "clarifying-ticket skill",
+      "_origin": "semantic",
+      "id": "_claude_skills_update_ticket_skill_update_ticket"
     },
     {
       "label": "clarifying-ticket skill",
@@ -4406,6 +4771,21 @@
       "id": "claude_skills_estimate_ticket_skill_estimate_ticket"
     },
     {
+      "label": "Issue tracker conventions",
+      "file_type": "document",
+      "source_file": "docs/agents/issue-tracker.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 14,
+      "norm_label": "issue tracker conventions",
+      "community_name": "clarifying-ticket skill",
+      "_origin": "semantic",
+      "id": "docs_agents_issue_tracker_issue_tracker"
+    },
+    {
       "label": "Output-language operating convention",
       "file_type": "document",
       "source_file": "docs/agents/language.md",
@@ -4419,111 +4799,6 @@
       "community_name": "clarifying-ticket skill",
       "_origin": "semantic",
       "id": "docs_agents_language_language_policy"
-    },
-    {
-      "label": "URL Ingest (graphify add)",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/add-watch.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 15,
-      "community_name": "Corpus Detection",
-      "norm_label": "url ingest (graphify add)",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_add_watch_url_ingest"
-    },
-    {
-      "label": "Whisper Transcription",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/transcribe.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 15,
-      "community_name": "Corpus Detection",
-      "norm_label": "whisper transcription",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_transcribe_whisper_transcription"
-    },
-    {
-      "label": "Corpus Detection",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 15,
-      "community_name": "Corpus Detection",
-      "norm_label": "corpus detection",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_detect"
-    },
-    {
-      "label": "God Nodes",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 15,
-      "community_name": "Corpus Detection",
-      "norm_label": "god nodes",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_god_nodes"
-    },
-    {
-      "label": "Extraction Manifest",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 15,
-      "community_name": "Corpus Detection",
-      "norm_label": "extraction manifest",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_manifest"
-    },
-    {
-      "label": "Whisper Domain-Hint Prompt",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/transcribe.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 15,
-      "community_name": "Corpus Detection",
-      "norm_label": "whisper domain-hint prompt",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_transcribe_whisper_domain_hint_prompt"
-    },
-    {
-      "label": "Corpus Size Gate",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 15,
-      "community_name": "Corpus Detection",
-      "norm_label": "corpus size gate",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_corpus_size_gate"
     },
     {
       "label": "disconnect (k8s MCP teardown)",
@@ -4976,6 +5251,21 @@
       "id": "docs_adr_0010_cloud_monitoring_triage_shares_the_read_only_identity_monitoring_triage"
     },
     {
+      "label": "URL Ingest (graphify add)",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 18,
+      "community_name": "Incremental Update",
+      "norm_label": "url ingest (graphify add)",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_add_watch_url_ingest"
+    },
+    {
       "label": "Watch Mode Auto-Rebuild",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/references/add-watch.md",
@@ -5036,6 +5326,21 @@
       "id": "_claude_skills_graphify_references_query_work_memory_lessons"
     },
     {
+      "label": "Whisper Transcription",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 18,
+      "community_name": "Incremental Update",
+      "norm_label": "whisper transcription",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_transcribe_whisper_transcription"
+    },
+    {
       "label": "detect_incremental",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/references/update.md",
@@ -5081,7 +5386,7 @@
       "id": "_claude_skills_graphify_references_update_incremental_update"
     },
     {
-      "label": "AST Structural Extraction",
+      "label": "Corpus Detection",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
@@ -5091,9 +5396,24 @@
       "contributor": null,
       "community": 18,
       "community_name": "Incremental Update",
-      "norm_label": "ast structural extraction",
+      "norm_label": "corpus detection",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_ast_structural_extraction"
+      "id": "_claude_skills_graphify_skill_detect"
+    },
+    {
+      "label": "Extraction Manifest",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 18,
+      "community_name": "Incremental Update",
+      "norm_label": "extraction manifest",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_manifest"
     },
     {
       "label": "Watch Debounce",
@@ -5111,9 +5431,9 @@
       "id": "_claude_skills_graphify_references_add_watch_debounce"
     },
     {
-      "label": "Call Edge Direction And Language Rule",
+      "label": "Corpus Size Gate",
       "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -5121,39 +5441,9 @@
       "contributor": null,
       "community": 18,
       "community_name": "Incremental Update",
-      "norm_label": "call edge direction and language rule",
+      "norm_label": "corpus size gate",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_call_edge_direction_rule"
-    },
-    {
-      "label": "Node ID Format",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 18,
-      "community_name": "Incremental Update",
-      "norm_label": "node id format",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_node_id_format"
-    },
-    {
-      "label": "Code-Only Update Fast Path",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/references/update.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 18,
-      "community_name": "Incremental Update",
-      "norm_label": "code-only update fast path",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_update_code_only_fast_path"
+      "id": "_claude_skills_graphify_skill_corpus_size_gate"
     },
     {
       "label": "headroom learn Rejected",
@@ -5199,21 +5489,6 @@
       "_origin": "semantic",
       "community_name": "ux-ui-designer agent (Jane)",
       "id": "claude_hooks_caveman_statusline_statusline_statusline_sh"
-    },
-    {
-      "label": "workspace.config.yaml",
-      "file_type": "code",
-      "source_file": ".claude/rules/workspace-config.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 19,
-      "norm_label": "workspace.config.yaml",
-      "_origin": "semantic",
-      "community_name": "ux-ui-designer agent (Jane)",
-      "id": "claude_rules_workspace_config_workspace_config"
     },
     {
       "label": "scripts/tracker/ adapter",
@@ -5936,21 +6211,6 @@
       "id": "scripts_redis_readme_no_seed_tool"
     },
     {
-      "label": "DEEP_MODE Aggressive Inference",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 20,
-      "community_name": "Extraction Subagent Prompt",
-      "norm_label": "deep_mode aggressive inference",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_extraction_spec_deep_mode"
-    },
-    {
       "label": "Extraction Subagent Prompt",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/references/extraction-spec.md",
@@ -6011,7 +6271,7 @@
       "id": "_claude_skills_graphify_references_extraction_spec_vision_extraction_rules"
     },
     {
-      "label": "Gemini Semantic Backend",
+      "label": "AST Structural Extraction",
       "file_type": "concept",
       "source_file": ".claude/skills/graphify/SKILL.md",
       "source_location": null,
@@ -6021,14 +6281,14 @@
       "contributor": null,
       "community": 20,
       "community_name": "Extraction Subagent Prompt",
-      "norm_label": "gemini semantic backend",
+      "norm_label": "ast structural extraction",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_gemini_backend"
+      "id": "_claude_skills_graphify_skill_ast_structural_extraction"
     },
     {
-      "label": "Semantic Extraction",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
+      "label": "Call Edge Direction And Language Rule",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -6036,9 +6296,9 @@
       "contributor": null,
       "community": 20,
       "community_name": "Extraction Subagent Prompt",
-      "norm_label": "semantic extraction",
+      "norm_label": "call edge direction and language rule",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_semantic_extraction"
+      "id": "_claude_skills_graphify_references_extraction_spec_call_edge_direction_rule"
     },
     {
       "label": "Discrete Confidence Score Rubric",
@@ -6071,6 +6331,21 @@
       "id": "_claude_skills_graphify_references_extraction_spec_confidence_taxonomy"
     },
     {
+      "label": "Node ID Format",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 20,
+      "community_name": "Extraction Subagent Prompt",
+      "norm_label": "node id format",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_extraction_spec_node_id_format"
+    },
+    {
       "label": "Rationale As Node Attribute",
       "file_type": "rationale",
       "source_file": ".claude/skills/graphify/references/extraction-spec.md",
@@ -6086,9 +6361,9 @@
       "id": "_claude_skills_graphify_references_extraction_spec_rationale_attribute"
     },
     {
-      "label": "Parallel Subagent Dispatch",
+      "label": "Code-Only Update Fast Path",
       "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_file": ".claude/skills/graphify/references/update.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -6096,39 +6371,9 @@
       "contributor": null,
       "community": 20,
       "community_name": "Extraction Subagent Prompt",
-      "norm_label": "parallel subagent dispatch",
+      "norm_label": "code-only update fast path",
       "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_parallel_subagent_dispatch"
-    },
-    {
-      "label": "Semantic Extraction Cache",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 20,
-      "community_name": "Extraction Subagent Prompt",
-      "norm_label": "semantic extraction cache",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_semantic_extraction_cache"
-    },
-    {
-      "label": "Wiki Export",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/exports.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Skill Pipeline",
-      "norm_label": "wiki export",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_exports_wiki_export"
+      "id": "_claude_skills_graphify_references_update_code_only_fast_path"
     },
     {
       "label": "Cross-Repo Graph Merge",
@@ -6159,36 +6404,6 @@
       "norm_label": "github repo clone",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_github_and_merge_repo_clone"
-    },
-    {
-      "label": "cluster-only Rerun",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/update.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Skill Pipeline",
-      "norm_label": "cluster-only rerun",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_update_cluster_only"
-    },
-    {
-      "label": "Community Detection And Labeling",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 21,
-      "community_name": "graphify Skill Pipeline",
-      "norm_label": "community detection and labeling",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_skill_community_clustering"
     },
     {
       "label": "Cumulative Cost Tracker",
@@ -6311,6 +6526,21 @@
       "id": "_claude_skills_graphify_skill_graphify_python_interpreter_sidecar"
     },
     {
+      "label": "codegraph per-repo index",
+      "file_type": "code",
+      "source_file": ".claude/agents/qa-planner.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 22,
+      "norm_label": "codegraph per-repo index",
+      "_origin": "semantic",
+      "community_name": "coding-automate skill",
+      "id": "codegraph_codegraph_index"
+    },
+    {
       "label": "scripts/dev.sh per-repo harness",
       "file_type": "code",
       "source_file": ".claude/skills/coding-automate/SKILL.md",
@@ -6322,8 +6552,68 @@
       "community": 22,
       "norm_label": "scripts/dev.sh per-repo harness",
       "_origin": "semantic",
-      "community_name": "coding-feature skill",
+      "community_name": "coding-automate skill",
       "id": "scripts_dev_sh_dev_harness"
+    },
+    {
+      "label": "agent_logs/<KEY>-automation-plan.md",
+      "file_type": "document",
+      "source_file": ".claude/agents/qa-planner.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 22,
+      "norm_label": "agent_logs/<key>-automation-plan.md",
+      "_origin": "semantic",
+      "community_name": "coding-automate skill",
+      "id": "agent_logs_automation_plan"
+    },
+    {
+      "label": "agent_logs/<KEY>-bugs.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/coding-automate/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 22,
+      "norm_label": "agent_logs/<key>-bugs.md",
+      "_origin": "semantic",
+      "community_name": "coding-automate skill",
+      "id": "agent_logs_bugs"
+    },
+    {
+      "label": "Bug log template",
+      "file_type": "document",
+      "source_file": ".claude/skills/coding-automate/bug-log-template.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 22,
+      "norm_label": "bug log template",
+      "_origin": "semantic",
+      "community_name": "coding-automate skill",
+      "id": "claude_skills_coding_automate_bug_log_template_bug_log_template"
+    },
+    {
+      "label": "coding-automate skill",
+      "file_type": "document",
+      "source_file": ".claude/skills/coding-automate/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 22,
+      "norm_label": "coding-automate skill",
+      "_origin": "semantic",
+      "community_name": "coding-automate skill",
+      "id": "claude_skills_coding_automate_skill_coding_automate"
     },
     {
       "label": "coding-feature skill",
@@ -6337,7 +6627,7 @@
       "community": 22,
       "norm_label": "coding-feature skill",
       "_origin": "semantic",
-      "community_name": "coding-feature skill",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_coding_feature_skill_coding_feature"
     },
     {
@@ -6352,8 +6642,38 @@
       "community": 22,
       "norm_label": "workspace coding style",
       "_origin": "semantic",
-      "community_name": "coding-feature skill",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_coding_style_coding_style"
+    },
+    {
+      "label": "Ground truth first",
+      "file_type": "document",
+      "source_file": ".claude/skills/ground-truth-first.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 22,
+      "norm_label": "ground truth first",
+      "_origin": "semantic",
+      "community_name": "coding-automate skill",
+      "id": "claude_skills_ground_truth_first_ground_truth_first"
+    },
+    {
+      "label": "plan-automate skill",
+      "file_type": "document",
+      "source_file": ".claude/agents/qa-planner.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 22,
+      "norm_label": "plan-automate skill",
+      "_origin": "semantic",
+      "community_name": "coding-automate skill",
+      "id": "claude_skills_plan_automate_skill_plan_automate"
     },
     {
       "label": "tdd skill",
@@ -6367,7 +6687,7 @@
       "community": 22,
       "norm_label": "tdd skill",
       "_origin": "semantic",
-      "community_name": "coding-feature skill",
+      "community_name": "coding-automate skill",
       "id": "claude_skills_tdd_skill_tdd"
     },
     {
@@ -6382,7 +6702,7 @@
       "community": 22,
       "norm_label": "domain docs consumption guide",
       "_origin": "semantic",
-      "community_name": "coding-feature skill",
+      "community_name": "coding-automate skill",
       "id": "docs_agents_domain_domain_docs"
     },
     {
@@ -6397,7 +6717,7 @@
       "community": 22,
       "norm_label": "submodules convention",
       "_origin": "semantic",
-      "community_name": "coding-feature skill",
+      "community_name": "coding-automate skill",
       "id": "docs_agents_submodules_submodules_convention"
     },
     {
@@ -6412,7 +6732,7 @@
       "community": 22,
       "norm_label": "submodule checkout write ban",
       "_origin": "semantic",
-      "community_name": "coding-feature skill",
+      "community_name": "coding-automate skill",
       "id": "claude_rules_submodules_submodule_write_ban"
     },
     {
@@ -6489,21 +6809,6 @@
       "norm_label": "shortest path between concepts",
       "_origin": "semantic",
       "id": "_claude_skills_graphify_references_query_shortest_path"
-    },
-    {
-      "label": "Query Token Budget",
-      "file_type": "concept",
-      "source_file": ".claude/skills/graphify/references/query.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 23,
-      "community_name": "graph.json",
-      "norm_label": "query token budget",
-      "_origin": "semantic",
-      "id": "_claude_skills_graphify_references_query_token_budget"
     },
     {
       "label": "build_merge Replace-On-Re-Extract",
@@ -7016,36 +7321,6 @@
       "id": "claude_agents_qa_runner_bar"
     },
     {
-      "label": "agent_logs/<KEY>-automation-plan.md",
-      "file_type": "document",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "agent_logs/<key>-automation-plan.md",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "agent_logs_automation_plan"
-    },
-    {
-      "label": "agent_logs/<KEY>-bugs.md",
-      "file_type": "document",
-      "source_file": ".claude/skills/coding-automate/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "agent_logs/<key>-bugs.md",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "agent_logs_bugs"
-    },
-    {
       "label": "agent_logs/<KEY>-report.md",
       "file_type": "document",
       "source_file": ".claude/agents/qa-runner.md",
@@ -7076,49 +7351,19 @@
       "id": "claude_agents_qa_runner_qa_runner"
     },
     {
-      "label": "Bug log template",
+      "label": "karpathy-guidelines skill",
       "file_type": "document",
-      "source_file": ".claude/skills/coding-automate/bug-log-template.md",
+      "source_file": ".claude/agents/qa-planner.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
       "community": 26,
-      "norm_label": "bug log template",
+      "norm_label": "karpathy-guidelines skill",
       "_origin": "semantic",
       "community_name": "qa-runner agent (Peter)",
-      "id": "claude_skills_coding_automate_bug_log_template_bug_log_template"
-    },
-    {
-      "label": "coding-automate skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/coding-automate/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "coding-automate skill",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "claude_skills_coding_automate_skill_coding_automate"
-    },
-    {
-      "label": "Ground truth first",
-      "file_type": "document",
-      "source_file": ".claude/skills/ground-truth-first.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "ground truth first",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "claude_skills_ground_truth_first_ground_truth_first"
+      "id": "claude_skills_karpathy_guidelines_skill_karpathy_guidelines"
     },
     {
       "label": "loadtest-baseline-gate skill",
@@ -7134,21 +7379,6 @@
       "_origin": "semantic",
       "community_name": "qa-runner agent (Peter)",
       "id": "claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate"
-    },
-    {
-      "label": "plan-automate skill",
-      "file_type": "document",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 26,
-      "norm_label": "plan-automate skill",
-      "_origin": "semantic",
-      "community_name": "qa-runner agent (Peter)",
-      "id": "claude_skills_plan_automate_skill_plan_automate"
     },
     {
       "label": "report-test-results skill",
@@ -7179,6 +7409,36 @@
       "_origin": "semantic",
       "community_name": "qa-runner agent (Peter)",
       "id": "claude_skills_self_control_gitflow_skill_self_control_gitflow"
+    },
+    {
+      "label": "telemetry-triage skill",
+      "file_type": "document",
+      "source_file": ".claude/agents/qa-planner.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 26,
+      "norm_label": "telemetry-triage skill",
+      "_origin": "semantic",
+      "community_name": "qa-runner agent (Peter)",
+      "id": "claude_skills_telemetry_triage_skill_telemetry_triage"
+    },
+    {
+      "label": "update-ticket skill",
+      "file_type": "document",
+      "source_file": ".claude/agents/qa-planner.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 26,
+      "norm_label": "update-ticket skill",
+      "_origin": "semantic",
+      "community_name": "qa-runner agent (Peter)",
+      "id": "claude_skills_update_ticket_skill_update_ticket"
     },
     {
       "label": "Load-test gate convention",
@@ -7226,6 +7486,21 @@
       "id": "claude_rules_workspace_config_local_workspace_config_local"
     },
     {
+      "label": "workspace.config.yaml",
+      "file_type": "code",
+      "source_file": ".claude/rules/workspace-config.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 27,
+      "norm_label": "workspace.config.yaml",
+      "_origin": "semantic",
+      "community_name": "qa-planner agent (Peter)",
+      "id": "claude_rules_workspace_config_workspace_config"
+    },
+    {
       "label": "QA planner delegation contract",
       "file_type": "concept",
       "source_file": ".claude/agents/qa-planner.md",
@@ -7271,21 +7546,6 @@
       "id": "claude_agents_qa_planner_qa_planner"
     },
     {
-      "label": "karpathy-guidelines skill",
-      "file_type": "document",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "karpathy-guidelines skill",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "claude_skills_karpathy_guidelines_skill_karpathy_guidelines"
-    },
-    {
       "label": "plan-testcases skill",
       "file_type": "document",
       "source_file": ".claude/agents/qa-planner.md",
@@ -7299,36 +7559,6 @@
       "_origin": "semantic",
       "community_name": "qa-planner agent (Peter)",
       "id": "claude_skills_plan_testcases_skill_plan_testcases"
-    },
-    {
-      "label": "telemetry-triage skill",
-      "file_type": "document",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "telemetry-triage skill",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "claude_skills_telemetry_triage_skill_telemetry_triage"
-    },
-    {
-      "label": "update-ticket skill",
-      "file_type": "document",
-      "source_file": ".claude/agents/qa-planner.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 27,
-      "norm_label": "update-ticket skill",
-      "_origin": "semantic",
-      "community_name": "qa-planner agent (Peter)",
-      "id": "claude_skills_update_ticket_skill_update_ticket"
     },
     {
       "label": "write-interactive-docs skill",
@@ -7571,6 +7801,21 @@
       "id": "_claude_skills_tdd_skill_horizontal_slice_antipattern"
     },
     {
+      "label": "scripts/dev.sh per-repo harness (why/artifacts)",
+      "file_type": "concept",
+      "source_file": ".claude/skills/report-test-results/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 29,
+      "norm_label": "scripts/dev.sh per-repo harness (why/artifacts)",
+      "_origin": "semantic",
+      "community_name": "The basis for a review verdict",
+      "id": "_claude_skills_report_test_results_skill_dev_sh_harness"
+    },
+    {
       "label": "Codegraph callers/impact blast radius",
       "file_type": "concept",
       "source_file": ".claude/skills/review/basis.md",
@@ -7582,7 +7827,7 @@
       "community": 29,
       "norm_label": "codegraph callers/impact blast radius",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_basis_codegraph_blast_radius"
     },
     {
@@ -7597,7 +7842,7 @@
       "community": 29,
       "norm_label": "\u00a74 review level (strict / thorough)",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_basis_review_level"
     },
     {
@@ -7612,7 +7857,7 @@
       "community": 29,
       "norm_label": "spec axis sub-agent",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_skill_spec_axis"
     },
     {
@@ -7627,7 +7872,7 @@
       "community": 29,
       "norm_label": "standards axis sub-agent",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_skill_standards_axis"
     },
     {
@@ -7642,7 +7887,7 @@
       "community": 29,
       "norm_label": "docs/agents/issue-tracker.md",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_qa_subtasks_skill_issue_tracker_doc"
     },
     {
@@ -7657,7 +7902,7 @@
       "community": 29,
       "norm_label": "review skill",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_skill_review"
     },
     {
@@ -7672,7 +7917,7 @@
       "community": 29,
       "norm_label": "the basis for a review verdict",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_basis_basis"
     },
     {
@@ -7687,8 +7932,23 @@
       "community": 29,
       "norm_label": "\u00a72 coding standards are the bottom line",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_basis_coding_standards_bottom_line"
+    },
+    {
+      "label": "\u00a75 Every claim carries a receipt",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/review/basis.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 29,
+      "norm_label": "\u00a75 every claim carries a receipt",
+      "_origin": "semantic",
+      "community_name": "The basis for a review verdict",
+      "id": "_claude_skills_review_basis_receipt_rule"
     },
     {
       "label": "\u00a73 The repo's knowledge is your instrument",
@@ -7702,7 +7962,7 @@
       "community": 29,
       "norm_label": "\u00a73 the repo's knowledge is your instrument",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_basis_repo_knowledge_instrument"
     },
     {
@@ -7717,7 +7977,7 @@
       "community": 29,
       "norm_label": "\u00a71 the requirements are the bar",
       "_origin": "semantic",
-      "community_name": "Review Verdict Basis",
+      "community_name": "The basis for a review verdict",
       "id": "_claude_skills_review_basis_requirements_are_the_bar"
     },
     {
@@ -8572,7 +8832,7 @@
       "community": 33,
       "norm_label": "scripts/tracker/add-ticket-comment.sh",
       "_origin": "semantic",
-      "community_name": "Test Result Reporting",
+      "community_name": "report-test-results skill",
       "id": "_claude_skills_report_test_results_skill_add_ticket_comment_sh"
     },
     {
@@ -8587,7 +8847,7 @@
       "community": 33,
       "norm_label": "scripts/pdf/render.sh",
       "_origin": "semantic",
-      "community_name": "Test Result Reporting",
+      "community_name": "report-test-results skill",
       "id": "_claude_skills_report_test_results_skill_pdf_render_sh"
     },
     {
@@ -8602,23 +8862,8 @@
       "community": 33,
       "norm_label": "coding-automate skill",
       "_origin": "semantic",
-      "community_name": "Test Result Reporting",
+      "community_name": "report-test-results skill",
       "id": "_claude_skills_report_test_results_skill_coding_automate_skill"
-    },
-    {
-      "label": "scripts/dev.sh per-repo harness (why/artifacts)",
-      "file_type": "concept",
-      "source_file": ".claude/skills/report-test-results/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 33,
-      "norm_label": "scripts/dev.sh per-repo harness (why/artifacts)",
-      "_origin": "semantic",
-      "community_name": "Test Result Reporting",
-      "id": "_claude_skills_report_test_results_skill_dev_sh_harness"
     },
     {
       "label": "update-ticket skill",
@@ -8632,7 +8877,7 @@
       "community": 33,
       "norm_label": "update-ticket skill",
       "_origin": "semantic",
-      "community_name": "Test Result Reporting",
+      "community_name": "report-test-results skill",
       "id": "_claude_skills_report_test_results_skill_update_ticket_skill"
     },
     {
@@ -8647,7 +8892,7 @@
       "community": 33,
       "norm_label": "test-results report template",
       "_origin": "semantic",
-      "community_name": "Test Result Reporting",
+      "community_name": "report-test-results skill",
       "id": "_claude_skills_report_test_results_report_template_report_template"
     },
     {
@@ -8662,23 +8907,8 @@
       "community": 33,
       "norm_label": "report-test-results skill",
       "_origin": "semantic",
-      "community_name": "Test Result Reporting",
+      "community_name": "report-test-results skill",
       "id": "_claude_skills_report_test_results_skill_report_test_results"
-    },
-    {
-      "label": "\u00a75 Every claim carries a receipt",
-      "file_type": "rationale",
-      "source_file": ".claude/skills/review/basis.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 33,
-      "norm_label": "\u00a75 every claim carries a receipt",
-      "_origin": "semantic",
-      "community_name": "Test Result Reporting",
-      "id": "_claude_skills_review_basis_receipt_rule"
     },
     {
       "label": "pretool-agent-brief-guard.sh",
@@ -8811,7 +9041,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "aggregation backstop (presence + language check)",
-      "community_name": "Issue tracker conventions",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_backstop"
     },
@@ -8826,7 +9056,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "code gate (daniel, code-reviewer)",
-      "community_name": "Issue tracker conventions",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_code_reviewer_gate"
     },
@@ -8841,7 +9071,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "performance gate (liam, performance-engineer)",
-      "community_name": "Issue tracker conventions",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_performance_engineer_gate"
     },
@@ -8856,84 +9086,9 @@
       "contributor": null,
       "community": 35,
       "norm_label": "re-visit mode (prior must-fix only)",
-      "community_name": "Issue tracker conventions",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_revisit_mode"
-    },
-    {
-      "label": "Attachment embed-id vs numeric id",
-      "file_type": "concept",
-      "source_file": ".claude/skills/update-ticket/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "attachment embed-id vs numeric id",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "_claude_skills_update_ticket_skill_attachment_embed"
-    },
-    {
-      "label": "Choose the diagram by the shape of the idea",
-      "file_type": "concept",
-      "source_file": ".claude/skills/write-interactive-docs/references/diagrams.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "choose the diagram by the shape of the idea",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "_claude_skills_write_interactive_docs_references_diagrams_shape_of_idea"
-    },
-    {
-      "label": "The adapter is the only entry point",
-      "file_type": "concept",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "the adapter is the only entry point",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "docs_agents_issue_tracker_adapter_only_entry"
-    },
-    {
-      "label": "Points require their reasoning in one call",
-      "file_type": "concept",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "points require their reasoning in one call",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "docs_agents_issue_tracker_points_need_reason"
-    },
-    {
-      "label": "Status lifecycle owned by dev-cycle (monotonic)",
-      "file_type": "concept",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "status lifecycle owned by dev-cycle (monotonic)",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "docs_agents_issue_tracker_status_lifecycle"
     },
     {
       "label": "Shared verdict grounding (review/basis.md)",
@@ -8946,7 +9101,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "shared verdict grounding (review/basis.md)",
-      "community_name": "Issue tracker conventions",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_review_basis_verdict_basis"
     },
@@ -8961,54 +9116,9 @@
       "contributor": null,
       "community": 35,
       "norm_label": "ultra-review skill",
-      "community_name": "Issue tracker conventions",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_ultra_review"
-    },
-    {
-      "label": "update-ticket skill",
-      "file_type": "document",
-      "source_file": ".claude/skills/update-ticket/SKILL.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "update-ticket skill",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "_claude_skills_update_ticket_skill_update_ticket"
-    },
-    {
-      "label": "Diagram generation (ticket-clarification visuals)",
-      "file_type": "document",
-      "source_file": "docs/agents/diagram-generation.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "diagram generation (ticket-clarification visuals)",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "docs_agents_diagram_generation_diagram_generation"
-    },
-    {
-      "label": "Issue tracker conventions",
-      "file_type": "document",
-      "source_file": "docs/agents/issue-tracker.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 35,
-      "norm_label": "issue tracker conventions",
-      "community_name": "Issue tracker conventions",
-      "_origin": "semantic",
-      "id": "docs_agents_issue_tracker_issue_tracker"
     },
     {
       "label": "Force-shell first line (no-Bash give-up fix)",
@@ -9021,7 +9131,7 @@
       "contributor": null,
       "community": 35,
       "norm_label": "force-shell first line (no-bash give-up fix)",
-      "community_name": "Issue tracker conventions",
+      "community_name": "ultra-review skill",
       "_origin": "semantic",
       "id": "_claude_skills_ultra_review_skill_force_shell_line"
     },
@@ -10076,6 +10186,66 @@
       "id": "_claude_skills_graphify_references_exports_mcp_server"
     },
     {
+      "label": "Wiki Export",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "wiki export",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_exports_wiki_export"
+    },
+    {
+      "label": "cluster-only Rerun",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "cluster-only rerun",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_update_cluster_only"
+    },
+    {
+      "label": "Community Detection And Labeling",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "community detection and labeling",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_community_clustering"
+    },
+    {
+      "label": "God Nodes",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "god nodes",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_god_nodes"
+    },
+    {
       "label": "read_source MCP Tool Proposal",
       "file_type": "concept",
       "source_file": "docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md",
@@ -10089,6 +10259,21 @@
       "norm_label": "read_source mcp tool proposal",
       "_origin": "semantic",
       "id": "docs_adr_0013_codegraph_keeps_the_code_graphify_maps_the_prose_read_source_mcp_tool"
+    },
+    {
+      "label": "Whisper Domain-Hint Prompt",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "community_name": "Doc-Only Graphify Scope",
+      "norm_label": "whisper domain-hint prompt",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_transcribe_whisper_domain_hint_prompt"
     },
     {
       "label": "agent_logs Excluded",
@@ -11456,6 +11641,21 @@
       "id": "_claude_skills_write_interactive_docs_references_diagrams_interactive_nodes"
     },
     {
+      "label": "Choose the diagram by the shape of the idea",
+      "file_type": "concept",
+      "source_file": ".claude/skills/write-interactive-docs/references/diagrams.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 6,
+      "norm_label": "choose the diagram by the shape of the idea",
+      "community_name": "export-data island",
+      "_origin": "semantic",
+      "id": "_claude_skills_write_interactive_docs_references_diagrams_shape_of_idea"
+    },
+    {
       "label": "The four rules (smallest diff, one file, block+island together, re-verify)",
       "file_type": "concept",
       "source_file": ".claude/skills/write-interactive-docs/references/editing.md",
@@ -11694,6 +11894,21 @@
       "community_name": "export-data island",
       "_origin": "semantic",
       "id": "_claude_skills_write_interactive_docs_skill_write_interactive_docs"
+    },
+    {
+      "label": "Diagram generation (ticket-clarification visuals)",
+      "file_type": "document",
+      "source_file": "docs/agents/diagram-generation.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 6,
+      "norm_label": "diagram generation (ticket-clarification visuals)",
+      "community_name": "export-data island",
+      "_origin": "semantic",
+      "id": "docs_agents_diagram_generation_diagram_generation"
     },
     {
       "label": "The two rules that bite (byte-identical source, resolvable node keys)",
@@ -11949,6 +12164,66 @@
       "_origin": "semantic",
       "community_name": "apply-human-review skill",
       "id": "docs_agents_human_review_human_review"
+    },
+    {
+      "label": "DEEP_MODE Aggressive Inference",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 66,
+      "community_name": "Semantic Extraction",
+      "norm_label": "deep_mode aggressive inference",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_references_extraction_spec_deep_mode"
+    },
+    {
+      "label": "Gemini Semantic Backend",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 66,
+      "community_name": "Semantic Extraction",
+      "norm_label": "gemini semantic backend",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_gemini_backend"
+    },
+    {
+      "label": "Semantic Extraction",
+      "file_type": "concept",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 66,
+      "community_name": "Semantic Extraction",
+      "norm_label": "semantic extraction",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_semantic_extraction"
+    },
+    {
+      "label": "Semantic Extraction Cache",
+      "file_type": "rationale",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 66,
+      "community_name": "Semantic Extraction",
+      "norm_label": "semantic extraction cache",
+      "_origin": "semantic",
+      "id": "_claude_skills_graphify_skill_semantic_extraction_cache"
     },
     {
       "label": "pretool-agent-context.sh (PreToolUse Agent hook)",
@@ -13635,6 +13910,127 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode",
+      "target": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode_thai_register_is_address_mode_and_the_speaker_decides_the_pronoun",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md",
+      "source_location": "L52",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode_thai_register_is_address_mode_and_the_speaker_decides_the_pronoun",
+      "target": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode_rejected_alternatives",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_adr_0017_triage_tunnels_are_declared_beside_the_dsn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_adr_0017_triage_tunnels_are_declared_beside_the_dsn",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_context",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L106",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_adr_0017_triage_tunnels_are_declared_beside_the_dsn",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_consequences",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L40",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_adr_0017_triage_tunnels_are_declared_beside_the_dsn",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_decision",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L51",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_decision",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_why_the_framework_only_port_forwards",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L62",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_decision",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_why_the_helper_is_shared_but_the_redis_migration_is_deferred",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L77",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_decision",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_the_prod_gate_ordering",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L85",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_decision",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_enumeration_hazard",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md",
+      "source_location": "L94",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_decision",
+      "target": "docs_adr_0017_triage_tunnels_are_declared_beside_the_dsn_port_safety",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/agents/graphify.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -13727,9 +14123,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_obsidian",
-      "target": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
-      "confidence_score": 1.0
+      "target": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo"
     },
     {
       "relation": "contains",
@@ -13738,9 +14134,9 @@
       "source_location": "L28",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
-      "target": "docs_agents_obsidian_commit_vs_keep_local",
-      "confidence_score": 1.0
+      "target": "docs_agents_obsidian_commit_vs_keep_local"
     },
     {
       "relation": "contains",
@@ -13749,9 +14145,9 @@
       "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
-      "target": "docs_agents_obsidian_gotchas",
-      "confidence_score": 1.0
+      "target": "docs_agents_obsidian_gotchas"
     },
     {
       "relation": "contains",
@@ -13760,9 +14156,9 @@
       "source_location": "L7",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
-      "target": "docs_agents_obsidian_what_aiworks_sync_does",
-      "confidence_score": 1.0
+      "target": "docs_agents_obsidian_what_aiworks_sync_does"
     },
     {
       "relation": "contains",
@@ -13844,6 +14240,127 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register",
+      "target": "docs_agents_register_thai_register_address_mode",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L140",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_6_reporting_a_problem_to_an_outside_team",
+      "target": "docs_agents_register_accusation_anti_patterns",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L105",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_5_ordering_the_one_thing_mode_does_not_decide",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_1_the_one_rule_a_message_to_a_person_is_written_in_address_mode",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L119",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_6_reporting_a_problem_to_an_outside_team",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L150",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_7_warmth_is_in_the_framing_never_in_the_finding",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L160",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_8_where_it_stops",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L170",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_9_how_it_reaches_each_spawn_path",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L32",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_2_who_is_speaking_three_voices_and_they_are_not_interchangeable",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L56",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_3_second_person_\u0e04_\u0e13_is_banned_by_default",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/register.md",
+      "source_location": "L73",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_register_thai_register_address_mode",
+      "target": "docs_agents_register_4_the_officialese_table_read_backwards",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scripts/hrun",
       "source_location": "L1",
       "weight": 1.0,
@@ -13862,6 +14379,17 @@
       "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
       "target": "docs_agents_ponytail"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode",
+      "target": "docs_agents_register",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -27527,5 +28055,5 @@
       "source_file": ".claude/skills/estimate-ticket/SKILL.md"
     }
   ],
-  "built_at_commit": "a078c53a85ddb144282e9a81383a197ae903eced"
+  "built_at_commit": "380cb405a99c310881abaaac12095091d98a9c9e"
 }
