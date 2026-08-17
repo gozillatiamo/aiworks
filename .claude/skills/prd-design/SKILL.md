@@ -74,16 +74,15 @@ The graphic-designer (`Fiona`) generates assets via the **`mcp-image`** server
 needs the server enabled **and** `GEMINI_API_KEY` set. A connected server with no
 key still cannot generate — so check BOTH:
 1. From `claude mcp list`, is **`mcp-image` ✔ Connected**?
-2. Is the key present? `[ -n "$GEMINI_API_KEY" ]`, or a non-empty `GEMINI_API_KEY`
-   in `.claude/settings.local.json` `env` (e.g.
-   `grep -A2 '"env"' .claude/settings.local.json`).
+2. Is the key present in the workspace `.env`?
+   `grep -q '^GEMINI_API_KEY=.\+' .env` (exit code only — never print the value).
 
 - **Both true → image-gen available.** Proceed; the designers generate real assets.
 - **Otherwise → image-gen UNAVAILABLE.** Do **not** proceed silently into placeholder
   art. Warn the user and offer an explicit choice:
-  - **(a) Enable it** — set `GEMINI_API_KEY` in `.claude/settings.local.json`'s `env`
-    block (get a key at https://aistudio.google.com/apikey), then restart the session
-    so `mcp-image` picks it up. See `docs/agents/image-generation.md`.
+  - **(a) Enable it** — set `GEMINI_API_KEY` in the workspace-root `.env`
+    (get a key at https://aistudio.google.com/apikey), `direnv allow` if needed, then
+    restart the session so `mcp-image` picks it up. See `docs/agents/image-generation.md`.
   - **(b) Proceed placeholder/specs-only** — designers still build frames, but any
     asset-dependent state stays on an **explicit placeholder**, the graphic-designer
     returns `unavailable`/`placeholder`, and the ux-ui-designer must **flag those
@@ -112,12 +111,21 @@ carries (a done ticket is held read-only), so dropping it would let a shipped ti
 empty, skip step 2 entirely (spec-only mission) and go to step 3 with an empty `figmaByFeature`.
 
 ### 2. DESIGN (in-session — this is where you take control)
-For **each** feature in `uiFeatures`, run the design chain with the **Agent tool**
-(NOT a workflow). Run different features **concurrently** — issue the planner calls
-for all features in one message — but keep each feature's own chain sequential
-(plan → [assets] → frames). Pass `workKey` and the feature brief into each prompt —
-and, when `figma_file_key` is set (preflight 0), the **fileKey + the per-feature page
-name** (resolve `page_naming`: `{work_key}`→`workKey`, `{feature}`→the feature name).
+**Load the visual system first:** `docs/agents/design-system.md` — FeeedMe mood **cozy**
+(warm, no bare-white), font **Mitr**, **light mode only** for now, **Thai-first** copy,
+reuse approved screens (e.g. Add Pet Wizard `90:14`). Pass its rules into every
+planner/designer prompt (the design agents also read it themselves).
+
+For **each** feature in `uiFeatures`, run the chain plan → [assets] → build with the
+**Agent tool** (NOT a workflow). **Concurrency rule — Figma WRITES must be serialized.**
+The read-only **planners** may run concurrently (issue all planner calls in one message),
+but the **`ux-ui-designer` frame-BUILD steps write to the ONE canonical file and COLLIDE
+if run concurrently** — observed 2026-07-12: parallel designers cross-contaminated pages
+(a "Daily Log" page ended up holding another feature's card; another's page was clobbered).
+So **build features ONE AT A TIME**, and place assets serially too — only one Figma writer
+at any moment. Pass `workKey` + the feature brief into each prompt — and, when
+`figma_file_key` is set (preflight 0), the **fileKey + the per-feature page name** (resolve
+`page_naming`: `{work_key}`→`workKey`, `{feature}`→the feature name).
 
 1. **Plan** — `Agent(subagent_type: 'ux-ui-planner')`: design-plan the feature
    (reads the design system via Figma, writes the plan md, returns `plan_path` +
@@ -185,9 +193,12 @@ finished.
 
 ## Notes
 - Pass `args` as a real JSON object to Workflow, not a stringified one.
-- Concurrency: the per-feature design chains are independent — batch them. The
-  serial cost is one chain (plan→assets→frames), not the sum across features.
-- This skill is the ONLY supported way to get real frames today. A raw
-  `Workflow(prd)` (stage `all`) still runs end-to-end but its design phase will
-  403 on Figma and produce no frames — use it only for spec/non-UI missions or
-  if a token-auth/local Figma MCP has been wired into the workflow runtime.
+- Concurrency: run the read-only **planners** concurrently, but **serialize the
+  Figma-WRITING steps** (`ux-ui-designer` builds + `graphic-designer` Assets-page writes) —
+  concurrent writers on the one canonical file collide/cross-contaminate pages (see step 2).
+  The build phase's wall-clock is the sum of the per-feature builds, not one chain.
+- A raw `Workflow(prd)` (stage `all`) CAN now write Figma frames headlessly, but still
+  DON'T use it for UI work: (a) it fans designers out concurrently → page collisions, and
+  (b) the headless runtime may not load the workspace `.env`, so every asset returns
+  `unavailable` → placeholder art. This skill (in-session, serialized, key in `.env`) is
+  the supported path for real, asset-complete frames.

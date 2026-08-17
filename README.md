@@ -75,6 +75,23 @@ cp scripts/vcs/.env.example     scripts/vcs/.env       # GitLab (defaults usuall
 cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 ```
 
+> 🔍 **MCP secrets (workspace-root `.env`)**. Put MCP tokens in the git-ignored root `.env`
+> (loaded by the committed `.envrc` → `dotenv` / [direnv](https://direnv.net)). Do **not** put
+> them in `.claude/settings.local.json` — that file only enables servers / prefs. Stdio
+> wrappers under `scripts/mcp/` (e.g. `mcp-image`, `n8n-mcp`) read `.env` themselves so Cursor
+> works without inheriting direnv. Typical keys:
+> ```sh
+> brew install direnv                       # + hook your shell:  eval "$(direnv hook zsh)"
+> # GEMINI_API_KEY=…          # mcp-image (https://aistudio.google.com/apikey)
+> # N8N_MCP_URL=https://…/mcp-server/http
+> # N8N_MCP_ACCESS_TOKEN=…    # n8n instance MCP access token
+> # SONARQUBE_TOKEN=squ_…     # SonarCloud user token (quality_gate.provider: sonarqube)
+> direnv allow
+> ```
+> SonarQube MCP still uses HTTP headers from process env (shared container
+> `aiworks-mcp-sonarqube`). Set `SONARQUBE_ORG` in `.superset/.env` if it differs from the
+> default. Restart Claude Code / Cursor after the first setup so MCP reloads.
+
 **3. Set up the workspace** — clones + onboards every OFB repo, installs node
 dependencies, and starts the shared MCP services. Idempotent, safe to re-run:
 

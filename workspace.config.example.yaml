@@ -76,9 +76,32 @@ case_report_language: th           # OPTIONAL. en | th — omit to follow `langu
                                    #   different language depending on whether an oncall agent was spawned or
                                    #   the question was answered inline. The English spine still applies
                                    #   (identifiers, amounts, table/column names, headings, code), the `.md`
-                                   #   case file stays English like every other `.md`, and tickets stay in
-                                   #   `language`. Resolved by .claude/hooks/resolve-language.sh; rationale in
-                                   #   docs/adr/0012-case-reports-are-localized-for-their-reader.md.
+                                   #   case file stays English like every other `.md`, and tracker tickets stay
+                                   #   in `language`. Resolved by .claude/hooks/resolve-language.sh; rationale
+                                   #   in docs/adr/0012-case-reports-are-localized-for-their-reader.md.
+outbound_first_person: ผม          # OPTIONAL, Thai only. The voice of a message a HUMAN pastes under
+outbound_particle: ครับ             #   their own name — a partner team, an operator, support. NOT the
+                                   #   assistant's own voice: speaking as itself it keeps the persona's
+                                   #   particle and uses no first-person pronoun (docs/agents/voice.md).
+                                   # Both are speaker-gender-marked and Thai has no neutral polite
+                                   #   equivalent, so a shared default cannot be right for everyone —
+                                   #   set your own in workspace.config.local.yaml. Defaults ผม / ครับ.
+                                   # Inert unless `language` or `case_report_language` is th. The rest of
+                                   #   the register (never คุณ, never เรา for "I", address mode over
+                                   #   exposition mode) is not configurable — see docs/agents/register.md
+                                   #   and docs/adr/0016-thai-register-is-address-mode-not-exposition-mode.md.
+
+# ── Observability (the traces/logs the perf + triage agents read) ──────────────
+# Where the performance-engineer and oncall agents get ground truth about a
+# RUNNING environment. Read through the observability adapter (scripts/observability/),
+# provider-agnostic like vcs/tracker/notify.
+observability:
+  enabled: false                   # true → those agents may pull traces + logs when they
+                                   #   root-cause a deployed-env incident. false → they work
+                                   #   from code, tests and the diff only.
+  provider: signoz                 # signoz (the only provider today)
+  base_url: ""                     # your instance root, e.g. https://signoz.your-org.com — the
+                                   #   API key lives in scripts/observability/.env, never here.
 
 # ── Version control ──────────────────────────────────────────────────────────
 vcs:
@@ -277,8 +300,8 @@ design:
 
 # ── Image generation (the graphic-designer's asset pipeline; feeds the design phase) ──
 # How Fiona (graphic-designer) makes assets via the mcp-image server — see
-# docs/agents/image-generation.md for setup (the GEMINI_API_KEY lives in the git-ignored
-# .claude/settings.local.json, never here).
+# docs/agents/image-generation.md for setup (GEMINI_API_KEY lives in the git-ignored
+# workspace-root `.env` via direnv, never here or in settings.local.json).
 image_generation:
   enabled: false                   # MASTER switch for mcp-image generation (default OFF). false →
                                    #   the graphic-designer generates NO images (returns every asset
@@ -286,7 +309,7 @@ image_generation:
                                    #   true → real assets via mcp-image, which needs GEMINI_API_KEY.
                                    #   `aiworks sync` only wires up the mcp-image server when this is true.
   quality: balanced                # fast | balanced | quality → the mcp-image IMAGE_QUALITY preset
-                                   #   (seeded into .claude/settings.local.json env by `aiworks sync`).
+                                   #   (default when IMAGE_QUALITY is unset in the environment).
   max_per_request: 2               # budget cap: the MOST generations the graphic-designer fires per
                                    #   request (keeps Gemini spend bounded). Raise only when needed.
 
@@ -295,8 +318,8 @@ image_generation:
 # with any other `language` every voice command exits 0 SILENTLY (run it with -v to hear why),
 # so this block is inert for the whole team as shipped. A teammate opts in through the
 # git-ignored workspace.config.local.yaml — never by editing this file.
-# Credentials never live here: ~/.config/aiworks/voice.env (mode 600), with scripts/voice/.env
-# as a per-clone override. Full doc: docs/agents/voice.md · scripts/voice/README.md
+# Credentials never live here: scripts/voice/.env (git-ignored, mode 600).
+# Full doc: docs/agents/voice.md · scripts/voice/README.md
 voice:
   enabled: false                   # MASTER switch for the whole feature
   tts:

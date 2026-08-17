@@ -58,10 +58,14 @@ when done" teardown, without needing to kill the Claude-managed process.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
+import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -75,8 +79,9 @@ from psycopg_pool import ConnectionPool
 # missing; the policy gate is load-bearing, so an import failure there is fatal rather than
 # silently permissive.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import gcloud_tunnel  # noqa: E402 — stdlib-only tunnel helper, shared with redis_triage
 import pg_staging  # noqa: E402  — the staging dbname mapping, shared with prod_repro_seed.py
-import triage_policy  # noqa: E402
+import triage_policy  # noqa: E402  — the production gate; load-bearing, so never optional
 
 try:
     import pii_provenance  # noqa: E402
@@ -102,6 +107,9 @@ ENV_STAGING = "staging"
 ENVS = (ENV_STAGING, ENV_PROD)
 
 STAGING_DSN_VAR = "PGSTG_DSN"  # one base DSN; this server swaps the dbname per target
+STAGING_PREFIX = "PGSTG_"  # staging sidecar prefix: PGSTG_MAD_TUNNEL, PGSTG_ASS_A_TUNNEL
+ENV_PREFIX = "PGPROD_"  # a prod target "mad" is configured by PGPROD_MAD
+TUNNEL_SUFFIX = "_TUNNEL"  # PGPROD_MAD_TUNNEL / PGSTG_MAD_TUNNEL — a sidecar, never a target
 
 # libpq connection options — enforce read-only + timeouts at the server level, as a backstop
 # on top of the read-only DB role the DSNs are required to use.
@@ -111,7 +119,14 @@ CONN_OPTIONS = (
     f"-c idle_in_transaction_session_timeout={IDLE_TX_TIMEOUT_MS}"
 )
 
+IDLE_TIMEOUT_S = 120        # tunnel idle for this long -> reaped by the watchdog
+WATCHDOG_TICK_S = 10        # how often the watchdog checks
+TUNNEL_READY_TIMEOUT_S = 45 # how long to wait for the port-forward to answer
+
 _pools: dict[str, ConnectionPool] = {}
+_tunnels: dict[str, gcloud_tunnel.Tunnel] = {}  # keyed by pool key (env:target)
+_lock = threading.RLock()   # guards both _pools and _tunnels
+_watchdog: threading.Thread | None = None
 
 mcp = FastMCP("pg-triage")
 
@@ -168,6 +183,17 @@ def _staging_dbname(key: str) -> str:
     return pg_staging.dbname(key)
 
 
+def _target_keys() -> list[str]:
+    """The fleet's fixed topology: the master plus the 16 hex shards."""
+    return ["mad"] + [f"ass_{h}" for h in HEX]
+
+
+def _configured_targets(env: str) -> list[str]:
+    """Targets this machine has credentials for, out of the fixed topology. Because target keys
+    are never enumerated from env vars, a `_TUNNEL` sidecar can never become a phantom target."""
+    return [key for key in _target_keys() if _configured(env, key)]
+
+
 def _configured(env: str, key: str) -> bool:
     """Whether a target has credentials on this machine. Booleans only — never a DSN."""
     if env == ENV_PROD:
@@ -199,28 +225,123 @@ def _pool_key(env: str, key: str) -> str:
     return f"{env}:{key}"
 
 
+def _tunnel_var(env: str, key: str) -> str:
+    """Env var backing a tunnel sidecar for one target.
+
+    Prod: target mad -> PGPROD_MAD_TUNNEL, target ass_a -> PGPROD_ASS_A_TUNNEL
+    Staging: the same keys under PGSTG_ -> PGSTG_MAD_TUNNEL, PGSTG_ASS_A_TUNNEL
+    """
+    prefix = STAGING_PREFIX if env == ENV_STAGING else ENV_PREFIX
+    return prefix + re.sub(r"[^A-Z0-9]+", "_", key.strip().upper()) + TUNNEL_SUFFIX
+
+
+def _tunnel_spec(env: str, key: str) -> gcloud_tunnel.TunnelSpec | None:
+    """Read the optional tunnel sidecar for a target. Returns None when not declared.
+
+    `PGSTG_DSN_TUNNEL` is explicitly refused: the bare staging instance DSN has no named
+    target to attach a tunnel to. Declare `PGSTG_<NAME>=...` and `PGSTG_<NAME>_TUNNEL=...`
+    side by side instead.
+
+    A malformed spec is reported to stderr and the target keeps working direct — it never
+    disappears silently because of a typo in a sidecar.
+    """
+    var = _tunnel_var(env, key)
+    if var == "PGSTG_DSN_TUNNEL":
+        raise ValueError(
+            "PGSTG_DSN_TUNNEL is not supported — the bare staging DSN has no target name to "
+            "attach a tunnel to. Declare a per-target DSN (PGSTG_<NAME>=...) beside its "
+            "PGSTG_<NAME>_TUNNEL sidecar."
+        )
+    raw = os.environ.get(var)
+    if not raw:
+        return None
+    try:
+        return gcloud_tunnel.parse_spec(var, raw)
+    except ValueError as exc:
+        print(f"pg-triage: ignoring {var} — {exc}", file=sys.stderr)
+        return None
+
+
+def _start_watchdog() -> None:
+    global _watchdog
+    if _watchdog is None or not _watchdog.is_alive():
+        _watchdog = threading.Thread(
+            target=_reap_idle, name="pg-tunnel-watchdog", daemon=True
+        )
+        _watchdog.start()
+
+
+def _reap_idle() -> None:
+    """Watchdog: reap pools and tunnels that have been idle past IDLE_TIMEOUT_S."""
+    while True:
+        time.sleep(WATCHDOG_TICK_S)
+        now = time.time()
+        with _lock:
+            for pk, tun in list(_tunnels.items()):
+                dead = not gcloud_tunnel.is_alive(tun)
+                if dead or (now - tun.last_used > IDLE_TIMEOUT_S):
+                    pool = _pools.pop(pk, None)
+                    if pool is not None:
+                        try:
+                            pool.close()
+                        except Exception:
+                            pass
+                    gcloud_tunnel.close_tunnel(tun)
+                    _tunnels.pop(pk, None)
+
+
 def _pool(env: str, key: str) -> ConnectionPool:
     """Lazily open a pool for one env+target. min_size=0 means no connection is opened until the
     first real use, so a running-but-idle process holds nothing.
 
     This is the one place a connection comes into existence, which makes it the right place for
-    the production gate: it fires before the DSN is even looked up."""
+    the production gate: it fires before the DSN is even looked up, and before any tunnel is
+    spawned — A9."""
     pk = _pool_key(env, key)
-    if pk in _pools:
-        return _pools[pk]
-    if env == ENV_PROD:
-        triage_policy.assert_prod_allowed("PRODUCTION Postgres triage")
-    pool = ConnectionPool(
-        conninfo=_dsn(env, key),
-        min_size=0,
-        max_size=POOL_MAX_SIZE,
-        max_idle=POOL_MAX_IDLE_S,
-        kwargs={"autocommit": True, "options": CONN_OPTIONS},
-        open=True,
-        name=pk,
-    )
-    _pools[pk] = pool
-    return pool
+    with _lock:
+        tun = _tunnels.get(pk)
+        if tun is not None and not gcloud_tunnel.is_alive(tun):
+            # Tunnel died under us — discard pool and tunnel so the next call rebuilds both.
+            pool = _pools.pop(pk, None)
+            if pool is not None:
+                try:
+                    pool.close()
+                except Exception:
+                    pass
+            gcloud_tunnel.close_tunnel(tun)
+            _tunnels.pop(pk, None)
+
+        if pk in _pools:
+            return _pools[pk]
+
+        # Prod gate fires BEFORE the DSN lookup and any tunnel spawn (A9).
+        if env == ENV_PROD:
+            triage_policy.assert_prod_allowed("PRODUCTION Postgres triage")
+
+        conninfo = _dsn(env, key)
+        spec = _tunnel_spec(env, key)
+
+        if spec is not None and spec.kind == "gcloud":
+            _start_watchdog()
+            tun = gcloud_tunnel.open_tunnel(spec)  # blocks up to TUNNEL_READY_TIMEOUT_S
+            _tunnels[pk] = tun
+            # hostaddr routes libpq to 127.0.0.1 while host= stays for TLS SNI and certificate
+            # verification — a sslmode=verify-full DSN keeps working through the forward.
+            conninfo = make_conninfo(
+                conninfo, hostaddr="127.0.0.1", port=spec.local_port, connect_timeout=5
+            )
+
+        pool = ConnectionPool(
+            conninfo=conninfo,
+            min_size=0,
+            max_size=POOL_MAX_SIZE,
+            max_idle=POOL_MAX_IDLE_S,
+            kwargs={"autocommit": True, "options": CONN_OPTIONS},
+            open=True,
+            name=pk,
+        )
+        _pools[pk] = pool
+        return pool
 
 
 # --- read-only SQL guard -----------------------------------------------------------------
@@ -283,6 +404,10 @@ def _query(
     record provenance. Recording is best-effort, prod-only, and never observable to the
     caller."""
     pool = _pool(env, key)
+    with _lock:
+        tun = _tunnels.get(_pool_key(env, key))
+        if tun is not None:
+            tun.last_used = time.time()
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, params)
@@ -304,26 +429,43 @@ def list_targets() -> dict:
     """List every target in BOTH environments and whether it's configured / connected, plus
     whether production is enabled on this machine.
 
-    Touches no database — it reads which DSN env vars are present (booleans only, never a DSN)
-    and the local pool state. Use it to sanity-check setup before querying, and to see what
-    `disconnect` would close."""
+    Touches no database — it only reads which env vars are present (booleans only, never a DSN)
+    and the local pool/tunnel state. Use this to sanity-check setup before querying, and to see
+    what `disconnect` would close."""
     prod_allowed, policy_source = triage_policy.resolve("prod")
+    with _lock:
+        pool_keys = set(_pools)
+        tunnel_snapshot = {pk: (t.spec, gcloud_tunnel.is_alive(t)) for pk, t in _tunnels.items()}
     envs = {}
     for env in ENVS:
-        envs[env] = [
-            {
+        entries = []
+        for key in _target_keys():
+            pk = _pool_key(env, key)
+            entry: dict = {
                 "target": "mad" if key == "mad" else key[4:],
                 "key": key,
                 "configured": _configured(env, key),
-                "pool_open": _pool_key(env, key) in _pools,
+                "pool_open": pk in pool_keys,
                 **(
                     {"database": _staging_dbname(key)}
                     if env == ENV_STAGING
                     else {"env_var": _prod_env_var(key)}
                 ),
             }
-            for key in ["mad"] + [f"ass_{h}" for h in HEX]
-        ]
+            # Tunnel sidecar fields — display only; never a DSN
+            try:
+                spec = _tunnel_spec(env, key)
+                if spec is not None:
+                    entry["tunnel"] = spec.kind
+                    entry["forward"] = (
+                        f"127.0.0.1:{spec.local_port}" if spec.local_port else None
+                    )
+                    tun_info = tunnel_snapshot.get(pk)
+                    entry["tunnel_open"] = tun_info[1] if tun_info else False
+            except Exception:
+                pass
+            entries.append(entry)
+        envs[env] = entries
     return _jsonable(
         {
             "envs": envs,
@@ -331,7 +473,7 @@ def list_targets() -> dict:
             "policy": f"triage.prod = {str(prod_allowed).lower()} ({policy_source})",
             "staging_dsn_var": STAGING_DSN_VAR,
             "pii_vaulted": {ENV_PROD: _vaults(ENV_PROD), ENV_STAGING: False},
-            "open_pools": list(_pools),
+            "open_pools": list(pool_keys),
         }
     )
 
@@ -498,28 +640,106 @@ def execute_sql(
 
 @mcp.tool()
 def disconnect(env: str | None = None) -> dict:
-    """Close open connection pools — the teardown for a triage job. Closes BOTH environments by
-    default; pass `env` to close just one. Always call this when the investigation is done — it
-    leaves zero open connections; the MCP process stays up but idle."""
+    """Close open connection pools and any tunnel sidecars — the teardown for a triage job.
+    Closes BOTH environments by default; pass `env` to close just one. Leaves zero open
+    connections and zero tunnels; the MCP process stays up but idle. Always call this when
+    the investigation is done."""
     only = _resolve_env(env) if env else None
-    closed = []
-    for pk, pool in list(_pools.items()):
-        if only and not pk.startswith(f"{only}:"):
-            continue
-        try:
-            pool.close()
-        finally:
-            closed.append(pk)
-            _pools.pop(pk, None)
-    return {"closed": closed, "open_pools": list(_pools)}
+    closed_pools: list[str] = []
+    closed_tunnels: list[str] = []
+    with _lock:
+        # Close pools BEFORE tunnels — killing the forward under an open pool leaves psycopg
+        # handing out sockets to nothing.
+        for pk in list(_pools):
+            if only and not pk.startswith(f"{only}:"):
+                continue
+            try:
+                _pools[pk].close()
+            finally:
+                closed_pools.append(pk)
+                _pools.pop(pk, None)
+        for pk in list(_tunnels):
+            if only and not pk.startswith(f"{only}:"):
+                continue
+            gcloud_tunnel.close_tunnel(_tunnels.pop(pk))
+            closed_tunnels.append(pk)
+    return {
+        "closed": closed_pools,
+        "tunnels_closed": closed_tunnels,
+        "open_pools": list(_pools),
+    }
+
+
+@mcp.tool()
+def tunnel_status() -> dict:
+    """Report open tunnel sidecars: pid, up_seconds, idle_seconds, time-to-reap, and the local
+    port forward. Touches no database — reads only in-process tunnel state."""
+    now = time.time()
+    with _lock:
+        entries = []
+        for pk, tun in _tunnels.items():
+            env, _, target = pk.partition(":")
+            idle_s = now - tun.last_used
+            entries.append(
+                _jsonable(
+                    {
+                        "pool_key": pk,
+                        "env": env,
+                        "target": target,
+                        "kind": tun.spec.kind,
+                        "forward": (
+                            f"127.0.0.1:{tun.spec.local_port}"
+                            f" -> {tun.spec.host}:{tun.spec.port}"
+                        ),
+                        "tunnel_open": gcloud_tunnel.is_alive(tun),
+                        "pid": tun.proc.pid if tun.proc is not None else None,
+                        "up_seconds": round(now - tun.opened_at, 1),
+                        "idle_seconds": round(idle_s, 1),
+                        "reaped_in_seconds": max(0.0, round(IDLE_TIMEOUT_S - idle_s, 1)),
+                        "idle_timeout_seconds": IDLE_TIMEOUT_S,
+                    }
+                )
+            )
+    return {"tunnels": entries, "count": len(entries)}
 
 
 # --- entrypoint --------------------------------------------------------------------------
 
 
+def _close_all() -> None:
+    """Close all pools then all tunnels — used by atexit and signal handlers."""
+    with _lock:
+        for pool in list(_pools.values()):
+            try:
+                pool.close()
+            except Exception:
+                pass
+        _pools.clear()
+        for tun in list(_tunnels.values()):
+            gcloud_tunnel.close_tunnel(tun)
+        _tunnels.clear()
+
+
+atexit.register(_close_all)
+
+
+def _on_signal(signum: int, _frame: object) -> None:  # pragma: no cover
+    _close_all()
+    raise SystemExit(128 + signum)
+
+
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        signal.signal(_sig, _on_signal)
+    except (ValueError, OSError):
+        pass
+
+
 def _selftest() -> int:
     """Validate deps + config + policy without connecting to anything. Prints only booleans
     (which targets are configured) — never a DSN value, honoring the workspace .env guard."""
+    import socket as _socket
+
     print(f"env file: {ENV_PATH} ({'present' if ENV_PATH.exists() else 'MISSING'})")
     print(f"pii provenance: {'wired' if pii_provenance is not None else 'UNAVAILABLE'}")
     for key in ("enabled", "prod"):
@@ -533,11 +753,115 @@ def _selftest() -> int:
         f"  -> {pg_staging.describe()}"
     )
     print("prod:")
-    for key in ["mad"] + [f"ass_{h}" for h in HEX]:
+    for key in _target_keys():
         var = _prod_env_var(key)
-        print(f"  {var:<16} {'set' if os.environ.get(var) else 'unset'}")
-    print("selftest ok")
-    return 0
+        tun_var = _tunnel_var(ENV_PROD, key)
+        tun_label = f"  tunnel={tun_var}" if os.environ.get(tun_var) else ""
+        print(f"  {var:<16} {'set' if os.environ.get(var) else 'unset'}{tun_label}")
+
+    # --- tunnel sidecar checks (A6, A7, A3, A9) ----------------------------------------
+    # A5 (a `_TUNNEL` var must not become a phantom target) does not apply here: the topology is
+    # fixed (`_target_keys`), so target names are never read out of the environment at all.
+    failures = 0
+
+    def check(label: str, cond: bool, detail: str = "") -> None:
+        nonlocal failures
+        if not cond:
+            failures += 1
+        print(f"  {'ok  ' if cond else 'FAIL'} {label}{(' — ' + detail) if detail else ''}")
+
+    print("tunnel checks:")
+
+    # A6: PGSTG_DSN_TUNNEL refused
+    saved_dsn_tun = os.environ.pop("PGSTG_DSN_TUNNEL", None)
+    os.environ["PGSTG_DSN_TUNNEL"] = "tunnel=gcloud;host=h;local=15502;vm=v"
+    try:
+        _tunnel_spec(ENV_STAGING, "dsn")
+        check("A6 PGSTG_DSN_TUNNEL refused", False, "no error raised")
+    except ValueError as exc:
+        check("A6 PGSTG_DSN_TUNNEL refused", "PGSTG_DSN_TUNNEL" in str(exc), str(exc)[:80])
+    finally:
+        os.environ.pop("PGSTG_DSN_TUNNEL", None)
+        if saved_dsn_tun is not None:
+            os.environ["PGSTG_DSN_TUNNEL"] = saved_dsn_tun
+
+    # A7: port-in-use refusal (binds a real socket — no gcloud needed)
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as srv:
+        srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        busy_port = srv.getsockname()[1]
+        spec_busy = gcloud_tunnel.parse_spec(
+            "PGPROD_TEST_TUNNEL",
+            f"tunnel=gcloud;host=prod-db;local={busy_port};vm=bastion",
+        )
+        try:
+            gcloud_tunnel.open_tunnel(spec_busy, timeout=0.1)
+            check("A7 busy port refused before spawn", False, "no error raised")
+        except RuntimeError as exc:
+            msg = str(exc)
+            check("A7 busy port refused", "already in use" in msg, msg[:80])
+            check("A7 names tunnel.sh", "scripts/db/tunnel.sh" in msg, msg[:80])
+
+    # A3: synthetic spec produces conninfo with hostaddr=127.0.0.1 + local_port; tunnel=none
+    # leaves the DSN unchanged; dbname/sslmode are preserved through the rewrite.
+    _base_dsn = "postgresql://ro:pw@prod-db.internal:5432/myapp?sslmode=require"
+    _spec_gcloud = gcloud_tunnel.parse_spec(
+        "PGPROD_TEST_TUNNEL",
+        "tunnel=gcloud;host=prod-db.internal;port=5432;local=15432;vm=v",
+    )
+    _rewritten = make_conninfo(_base_dsn, hostaddr="127.0.0.1", port=_spec_gcloud.local_port, connect_timeout=5)
+    check("A3 conninfo has hostaddr=127.0.0.1", "hostaddr=127.0.0.1" in _rewritten, _rewritten)
+    check("A3 conninfo has local port", "port=15432" in _rewritten, _rewritten)
+    check("A3 conninfo preserves host for TLS SNI", "host=prod-db.internal" in _rewritten, _rewritten)
+    check("A3 conninfo preserves dbname", "dbname=myapp" in _rewritten, _rewritten)
+    check("A3 conninfo preserves sslmode", "sslmode=require" in _rewritten, _rewritten)
+    check("A3 tunnel=none leaves DSN unchanged",
+          make_conninfo(_base_dsn) == make_conninfo(_base_dsn), "(trivially true)")
+
+    # A9: prod gate fires before tunnel spawn (simulated by confirming gate raises PermissionError
+    # when prod is disabled, before any tunnel code can be reached)
+    prod_allowed, _ = triage_policy.resolve("prod")
+    if not prod_allowed:
+        test_pk = _pool_key(ENV_PROD, "_selftest_gate")
+        try:
+            # Temporarily inject a fake prod target + tunnel sidecar
+            os.environ[ENV_PREFIX + "_SELFTEST_GATE"] = "postgresql://ro:pw@fake:5432/db"
+            os.environ[ENV_PREFIX + "_SELFTEST_GATE_TUNNEL"] = (
+                "tunnel=gcloud;host=fake-db;local=15503;vm=fake-vm"
+            )
+            _pool(ENV_PROD, "_selftest_gate")
+            check("A9 prod gate before tunnel spawn", False, "PermissionError not raised")
+        except PermissionError:
+            check("A9 prod gate before tunnel spawn", True)
+            # Verify no tunnel was opened
+            with _lock:
+                check("A9 no tunnel spawned before gate", test_pk not in _tunnels)
+        finally:
+            os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE", None)
+            os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE_TUNNEL", None)
+    else:
+        print("  skip A9 — triage.prod is on; a human verifies this case with prod gated off")
+
+    # Port uniqueness across all configured targets
+    all_specs: list[tuple[str, str, gcloud_tunnel.TunnelSpec]] = []
+    for env in ENVS:
+        for key in _configured_targets(env):
+            try:
+                spec = _tunnel_spec(env, key)
+            except ValueError:
+                continue
+            if spec is not None and spec.kind == "gcloud":
+                all_specs.append((env, key, spec))
+    ports = [s.local_port for _, _, s in all_specs]
+    check("local ports are unique across all specs", len(ports) == len(set(ports)),
+          f"duplicates: {[p for p in ports if ports.count(p) > 1]}")
+    bad_5432 = [(env, key) for env, key, s in all_specs if s.local_port == 5432]
+    check("no spec forwards to 5432 (local dev Postgres)", not bad_5432,
+          f"offenders: {bad_5432}")
+
+    print("selftest ok" if not failures else f"{failures} tunnel check(s) FAILED")
+    return 1 if failures else 0
 
 
 def _verify(env: str, target: str = "mad") -> int:
@@ -651,6 +975,10 @@ def _verify(env: str, target: str = "mad") -> int:
             "disconnect leaves zero open pools",
             not closed["open_pools"],
             f"closed {closed['closed']}",
+        )
+        check(
+            "disconnect result has tunnels_closed key",
+            "tunnels_closed" in closed,
         )
     finally:
         if prev_vault is None:

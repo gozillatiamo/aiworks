@@ -19,10 +19,10 @@
 # untouched — you still fill in the secrets by hand (e.g. the Slack token in notify/.env).
 #
 # It also PREPARES the image-generation config: ensures the git-ignored
-# .claude/settings.local.json enables the `mcp-image` MCP server and carries a GEMINI_API_KEY
-# placeholder (the key the graphic-designer's asset pipeline needs). A non-empty key is never
-# clobbered. Fill it in (https://aistudio.google.com/apikey) to turn image generation on; until
-# then the /prd-design preflight detects the gap and fails loud instead of shipping placeholder art.
+# .claude/settings.local.json enables the `mcp-image` MCP server, and checks that
+# GEMINI_API_KEY is present in the workspace-root `.env` (direnv — MCP secret SoT).
+# Put the key there (https://aistudio.google.com/apikey); until then /prd-design
+# preflight detects the gap and fails loud instead of shipping placeholder art.
 #
 # It also ENSURES the Obsidian vault share-contract: seeds `.obsidian/{app,appearance,
 # core-plugins}.json` when missing (never clobbers) and keeps a managed `.gitignore` block that
@@ -379,15 +379,13 @@ prepare_adapter_env() {
 # ── image-generation config (mcp-image + GEMINI_API_KEY) ─────────────────────────
 # The graphic-designer (Fiona) generates assets through the `mcp-image` MCP server
 # (`mcp__mcp-image__generate_image`, Gemini) + the /image-generation skill. That server
-# is declared in the committed .mcp.json with env GEMINI_API_KEY=${GEMINI_API_KEY} — so the
-# key must be present in the environment. We keep it OUT of version control by putting it in
-# the git-ignored .claude/settings.local.json `env` block (Claude Code exports that env to MCP
-# servers, where .mcp.json's ${GEMINI_API_KEY} expands it). Here we ensure that file enables
-# "mcp-image" and carries a GEMINI_API_KEY placeholder for the user to fill in. An EXISTING,
-# non-empty key is never clobbered; other settings are preserved (JSON merge, with a .bak).
+# is launched via scripts/mcp/mcp-image.sh, which loads GEMINI_API_KEY from the
+# workspace-root `.env` (direnv) — the single source of truth for MCP secrets. Do NOT
+# put the key in `.claude/settings.local.json`. Here we only enable "mcp-image" in that
+# file and check that `.env` already has a non-empty GEMINI_API_KEY (presence only).
 seed_image_gen_settings() {
   local sl="$ROOT/.claude/settings.local.json" rel=".claude/settings.local.json"
-  step "Prepare image-gen config (mcp-image + GEMINI_API_KEY) in $rel"
+  step "Prepare image-gen config (mcp-image; GEMINI_API_KEY from .env) in $rel"
 
   # image_generation policy from workspace.config.yaml (default OFF). When disabled we do NOT
   # wire up mcp-image — the graphic-designer's availability gate then returns assets as
@@ -419,11 +417,11 @@ seed_image_gen_settings() {
   esac
 
   if [[ "$DRY" -eq 1 ]]; then
-    printf '    %swould ensure %s enables "mcp-image" and carries an env.GEMINI_API_KEY placeholder (quality=%s, max_per_request=%s)%s\n' "$c_dim" "$rel" "$ig_quality" "$ig_max" "$c_off"
+    printf '    %swould ensure %s enables "mcp-image" and check .env for GEMINI_API_KEY (quality=%s, max_per_request=%s)%s\n' "$c_dim" "$rel" "$ig_quality" "$ig_max" "$c_off"
     return 0
   fi
   if ! command -v node >/dev/null 2>&1; then
-    warn "node not found — can't auto-prepare $rel; add \"mcp-image\" to enabledMcpjsonServers and env.GEMINI_API_KEY by hand (see docs/agents/image-generation.md)"
+    warn "node not found — can't auto-prepare $rel; add \"mcp-image\" to enabledMcpjsonServers by hand (see docs/agents/image-generation.md)"
     return 0
   fi
   local out
@@ -438,22 +436,31 @@ else { try { j = JSON.parse(raw); } catch (e) { console.log('PARSE_ERROR'); proc
 j.enabledMcpjsonServers = Array.isArray(j.enabledMcpjsonServers) ? j.enabledMcpjsonServers : [];
 let changed = false;
 if (!j.enabledMcpjsonServers.includes('mcp-image')) { j.enabledMcpjsonServers.unshift('mcp-image'); changed = true; }
+// Secrets live in workspace .env — drop stale GEMINI_API_KEY from settings.local if present.
 j.env = (j.env && typeof j.env === 'object' && !Array.isArray(j.env)) ? j.env : {};
-let seededKey = false;
-if (!('GEMINI_API_KEY' in j.env)) { j.env.GEMINI_API_KEY = ''; changed = true; seededKey = true; }
-const hasKey = typeof j.env.GEMINI_API_KEY === 'string' && j.env.GEMINI_API_KEY.trim() !== '';
+if ('GEMINI_API_KEY' in j.env) { delete j.env.GEMINI_API_KEY; changed = true; }
+if (Object.keys(j.env).length === 0) { delete j.env; changed = true; }
 if (changed) {
   try { if (fs.existsSync(f)) fs.copyFileSync(f, f + '.bak'); } catch (e) {}
   fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
 }
-console.log((changed ? 'CHANGED' : 'OK') + (seededKey ? ' SEEDED' : '') + (hasKey ? ' HAS_KEY' : ' NO_KEY'));
+console.log(changed ? 'CHANGED' : 'OK');
 NODE
 )"
+  local has_key=0
+  # Presence only — never print the value (CLAUDE.md .env rule).
+  if [[ -f "$ROOT/.env" ]] && grep -q '^GEMINI_API_KEY=.\+' "$ROOT/.env"; then
+    has_key=1
+  fi
   case "$out" in
-    PARSE_ERROR) warn "$rel is not valid JSON — left untouched; add \"mcp-image\" + env.GEMINI_API_KEY by hand" ;;
-    *HAS_KEY*)   ok "$rel ready — GEMINI_API_KEY set; image generation ENABLED (quality=${ig_quality}, max_per_request=${ig_max})" ;;
-    *NO_KEY*)    ok "$rel prepared — now set env.GEMINI_API_KEY (key: https://aistudio.google.com/apikey) to enable image generation (quality=${ig_quality}, max_per_request=${ig_max}; see docs/agents/image-generation.md)" ;;
-    *)           warn "could not determine image-gen state for $rel" ;;
+    PARSE_ERROR) warn "$rel is not valid JSON — left untouched; add \"mcp-image\" to enabledMcpjsonServers by hand" ;;
+    CHANGED|OK)
+      if [[ "$has_key" -eq 1 ]]; then
+        ok "$rel ready — mcp-image enabled; GEMINI_API_KEY present in .env (quality=${ig_quality}, max_per_request=${ig_max})"
+      else
+        ok "$rel prepared — mcp-image enabled; now set GEMINI_API_KEY in the workspace .env (key: https://aistudio.google.com/apikey; quality=${ig_quality}, max_per_request=${ig_max}; see docs/agents/image-generation.md)"
+      fi ;;
+    *) warn "could not determine image-gen state for $rel" ;;
   esac
 }
 

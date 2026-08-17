@@ -983,14 +983,13 @@ Traps that are already handled, and that you must not "simplify" away:
 ## Credentials
 
 ```
-1. ~/.config/aiworks/voice.env     mode 600 — the real keys live here
-2. scripts/voice/.env              per-clone override; EMPTY values are ignored
+scripts/voice/.env     git-ignored, mode 600 — the keys live here
 ```
 
-Machine-global first, on purpose: a Superset worktree gets **stub** adapter `.env` files in
-this workspace (a known trap — the Jira/Slack creds are missing there), so a per-repo-only
-credential path would leave voice dead in every worktree. "Non-empty wins" is what stops a
-stub from silently un-configuring a working setup.
+Credentials live in `scripts/voice/.env` — git-ignored, mode 600, seeded from `.env.example`
+by `aiworks voice setup`. This is the same per-adapter `.env` the tracker, vcs, notify and
+observability adapters use. A linked worktree does not inherit it: copy the real file in
+from the main clone, exactly as for the other adapters.
 
 `GEMINI_VOICE_API_KEY` is deliberately **not** the image generator's `GEMINI_API_KEY`: one
 key per feature keeps a voice quota problem out of the design pipeline.

@@ -118,6 +118,36 @@ if [ "$case_lang" != "$lang" ]; then
   brief_policy="$brief_policy EXCEPTION: a deployed-environment case report relayed in chat, and its chat notification, are written in $case_name prose (English spine)."
 fi
 
+# Thai REGISTER — how the Thai reads, once something is being written in Thai at all. Rides this
+# resolver instead of getting a hook of its own: the rule has no independent trigger (it is
+# meaningful only when the language is already Thai) and this script is the one thing that already
+# knows that, on both events. See docs/agents/register.md and docs/adr/0016.
+#
+# Fires when EITHER language is Thai: `language: en` + `case_report_language: th` is the normal
+# pairing, and a case report's register matters exactly as much as its language.
+#
+# `outbound_first_person`/`outbound_particle` are the voice a HUMAN pastes under their own name.
+# Both are speaker-gender-marked and Thai has no neutral polite equivalent, so they are a per-person
+# override (workspace.config.local.yaml) rather than a team value — a shared default cannot be right
+# for everyone, and the failure mode is misgendering a teammate to an outside party.
+if [ "$lang" = "th" ] || [ "$case_lang" = "th" ]; then
+  first_person=""
+  particle=""
+  if [ -f "$local_file" ]; then
+    first_person=$(extract_key "$local_file" outbound_first_person)
+    particle=$(extract_key "$local_file" outbound_particle)
+  fi
+  if [ -f "$default_file" ]; then
+    [ -z "$first_person" ] && first_person=$(extract_key "$default_file" outbound_first_person)
+    [ -z "$particle" ] && particle=$(extract_key "$default_file" outbound_particle)
+  fi
+  [ -z "$first_person" ] && first_person="ผม"
+  [ -z "$particle" ] && particle="ครับ"
+
+  full_policy="$full_policy THAI REGISTER — Thai addressed to a person is written in ADDRESS mode, not the exposition mode of documentation: first person $first_person or simply omitted, NEVER เรา for \"I\" (that is the solidarity register, not the polite one — เรา survives only as ทางเรา/ฝั่งเรา, \"our side\"); NEVER คุณ — omit the second person, or use ทาง<Team>/พี่/a nickname; bare verbs, not การ-/ทำการ- nominalizations; เลย/แต่/เพราะ, not ดังนั้น/เนื่องจาก/อย่างไรก็ตาม; ทำ/เช็ค/บอก/ได้ไหม, not ดำเนินการ/ตรวจสอบ/แจ้ง/ได้หรือไม่; one $particle-class particle per clause; a question rather than a stated verdict. Three speakers, deliberately not reconciled: the assistant AS ITSELF keeps the persona's own particle and uses no first-person pronoun, a draft a human pastes under their own name is $first_person/$particle, the company's position is ทางเรา/ฝั่งเรา. Reporting a problem to an outside team: open on your OWN side's evidence (never on ฝั่งคุณ), raw payload verbatim in a fenced block, conclusion downgraded to ดูเหมือน/น่าจะ, one numbered question per line, name the imposition (รบกวน/ถ้าพอมีเวลา), close on ช่วยกัน — and shared context FIRST, the ask LAST, which is the one surface where the compression rule is deliberately overruled. The register governs framing and requests only: it never softens a number, a verdict or a warning. Full convention: docs/agents/register.md."
+  brief_policy="$brief_policy Thai is ADDRESS mode: never คุณ, never เรา for \"I\", no การ-/ทำการ- padding or ดังนั้น/เนื่องจาก connectives, one particle per clause, ask rather than assert; an outbound draft a person pastes is $first_person/$particle (register.md)."
+fi
+
 # SessionStart fires once per session (full explanation). UserPromptSubmit fires on
 # every turn (compact reminder only, to avoid ballooning context on every message).
 event=$(cat 2>/dev/null | jq -r '.hook_event_name // empty' 2>/dev/null)

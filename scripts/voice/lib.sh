@@ -6,7 +6,7 @@
 #   voice_cfg PATH DEFAULT     read one dotted config path (voice.tts.provider) local-first
 #   voice_language             the resolved workspace output language ('th' | 'en' | …)
 #   voice_gate_or_exit KIND    the th + voice.enabled gate: exit 0 SILENTLY when it fails
-#   voice_load_credentials     export the provider API keys (machine-global, .env override)
+#   voice_load_credentials     export the provider API keys from scripts/voice/.env
 #   voice_load_tts_provider    source providers/<voice.tts.provider>.sh
 #   voice_cache_key …          content-address a synthesis request
 #   voice_normalize_text       whitespace-normalize the spoken text (part of the cache key)
@@ -31,13 +31,11 @@
 #   silently dead in exactly the sessions that need the identity prefix most. The main clone
 #   is found mechanically from `git rev-parse --git-common-dir`, never guessed.
 #
-# CREDENTIALS — machine-global first, per-repo .env overrides with NON-EMPTY values only:
-#   1. ~/.config/aiworks/voice.env      mode 600, the real keys
-#   2. scripts/voice/.env               per-clone override; EMPTY values are ignored
-#   Same reason as above, one layer down: a worktree's adapter .env files are STUBS in this
-#   workspace (a known trap — Jira/Slack creds are missing there), so a per-repo-only
-#   credential path would break voice in every worktree. An empty stub must not clobber a
-#   real machine-global key, hence "non-empty wins" rather than a plain source-in-order.
+# CREDENTIALS — scripts/voice/.env (git-ignored, mode 600), seeded by `aiworks voice setup`.
+#   Same per-adapter .env shape as tracker, vcs, notify and observability. A linked worktree
+#   does not inherit git-ignored files: copy the real .env in from the main clone, exactly as
+#   for the other adapters. GEMINI_VOICE_API_KEY is deliberately separate from the image
+#   generator's GEMINI_API_KEY.
 #
 # Values are never echoed. Do not add a debug print of a key, and do not run these scripts
 # under bash -x (see the .env rule in CLAUDE.md — xtrace prints sourced values verbatim).
@@ -418,34 +416,21 @@ voice_gate_or_exit() {
 
 # ── credentials ───────────────────────────────────────────────────────────────────
 voice_load_credentials() {
-  local f line k v
-  f="$HOME/.config/aiworks/voice.env"
-  if [[ -f "$f" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    . "$f"
-    set +a
-  fi
-  f="$VOICE_DIR/.env"
+  local f="$VOICE_DIR/.env"
+  [[ -f "$HOME/.config/aiworks/voice.env" ]] && \
+    vlog "ignoring $HOME/.config/aiworks/voice.env — voice reads scripts/voice/.env only; move your keys there (this file is never deleted for you)"
   [[ -f "$f" ]] || return 0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    case "$line" in ''|'#'*) continue ;; esac
-    line="${line#export }"
-    [[ "$line" == *=* ]] || continue
-    k="${line%%=*}"; v="${line#*=}"
-    k="$(printf '%s' "$k" | tr -d '[:space:]')"
-    [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-    v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
-    [[ -n "$v" ]] || continue          # an empty stub must not clobber the real key
-    export "$k=$v"
-  done < "$f"
+  set -a
+  # shellcheck disable=SC1090
+  . "$f"
+  set +a
 }
 
 # voice_need_key NAME — the key's value, or a message naming exactly which file to fix. The
 # NAME is printed, never the value, including on the error path.
 voice_need_key() {
   local name="$1"
-  [[ -n "${!name:-}" ]] || vdie "$name is not set — add it to ~/.config/aiworks/voice.env (mode 600) or scripts/voice/.env"
+  [[ -n "${!name:-}" ]] || vdie "$name is not set — add it to scripts/voice/.env (mode 600)"
   printf '%s' "${!name}"
 }
 

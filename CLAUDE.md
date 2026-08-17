@@ -16,11 +16,11 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so it is already in context. Keys documented
   in `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither — the rule beside it.
-- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0015`).
+- `CONTEXT.md` — the workspace glossary · `docs/adr/` — why the workspace is shaped this way (`0001`–`0016`).
 - `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`):
   author on the Claude side, never hand-edit `.cursor/`, and open the `.code-workspace` **file**, not the folder.
-- `docs/agents/language.md` · `caveman.md` · `ponytail.md` · `voice.md` · `stagehand.md` — the always-on
-  conventions, summarized in their own sections below.
+- `docs/agents/language.md` · `register.md` · `caveman.md` · `ponytail.md` · `voice.md` · `stagehand.md` — the
+  always-on conventions, summarized in their own sections below.
 - `docs/agents/issue-tracker.md` — reading and writing tickets: the adapter, status names, id format.
 - `docs/agents/human-review.md` — a `Human:` review comment is a blocking directive the agents auto-route and
   resolve; a `Human:` **reply on an agent's own must-fix CLEARS it** — approve and advance, never re-open it.
@@ -41,10 +41,9 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 - **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in
   (`CYPRESS_ENV=staging`). Defer to each repo's default — never hardcode one in agents or workflows.
 - **Known false-reds:** rule one out before calling a failure real — each repo declares its own under
-  `known_false_reds:` in `workspace.config.yaml`; workspace-wide, also suspect a stale persistent test DB,
-  submodule branch drift, and dual-formatter conflicts on generated files. Re-run the scoped test in isolation
-  against the base branch. When estimating, fetch the persisted story-point fields first (`/estimate-ticket`)
-  rather than concluding "no calibration history".
+  `known_false_reds:`; workspace-wide, also suspect a stale persistent test DB, submodule branch drift, and
+  dual-formatter conflicts on generated files. Re-run the scoped test in isolation against the base branch. When
+  estimating, fetch the persisted story-point fields first (`/estimate-ticket`) — never conclude "no history".
 
 ## Provider adapters
 
@@ -52,19 +51,20 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 (traces/logs). **Always go through the adapters — never call `gh`/`glab`/Notion/Jira/Slack/the SigNoz API
 directly.** ⚠️ **Run a WRITER bare** — never in a pipe, `&&`, `;`, `$( )` or a heredoc. The allow rules match the
 WHOLE command string, so a bare call matches and runs while a compound matches nothing, falls through to the
-permission classifier, and is denied **silently, without prompting anyone**. Piping buys nothing — these print
-1-4 lines; redirect to a file if a later step needs the output. Readers and any `--dry-run` may be piped freely.
-Enforced by `pretool-adapter-pipe-guard.sh`.
+permission classifier, and is denied **silently, without prompting anyone**. Readers and any `--dry-run` may be
+piped freely. Enforced by `pretool-adapter-pipe-guard.sh`.
 
 ## Language, compression and code
 
-All three are injected mechanically, so this section carries only what those injections do **not** say. If the
-language directive is ever missing (a stripped session), read the config yourself first; under `th`, **any `.md`
-file you author is still English — always**. ⚠️ **Compression is an OUTPUT rule: the first brief that spawns an
-agent is INPUT and goes in FULL** — that one message is the agent's whole world; everything after it is caveman,
-style never content, so a follow-up's NEW facts still go in complete. **Ponytail is that rule for code** — YAGNI,
-reuse, stdlib/native before a dependency — and it stops at three things: a repo's own test suite, a ticket's
-acceptance criteria, the adapters. It shortens the implementation, never the requirement (`ponytail.md`).
+All injected mechanically, so this section carries only what those injections do **not** say. If the language
+directive is ever missing (a stripped session), read the config yourself first; under `th`, **any `.md` file you
+author is still English — always**, and Thai prose is address mode, never exposition mode — ⚠️ the pronoun follows
+the SPEAKER, so an assistant speaking as itself never signs `ผม` (`register.md`). ⚠️ **Compression is an OUTPUT
+rule: the first brief that spawns an agent is INPUT and goes in FULL** — that one message is the agent's whole
+world; everything after it is caveman, style never content, so a follow-up's NEW facts still go in complete.
+**Ponytail is that rule for code** — YAGNI, reuse, stdlib/native before a dependency — and it stops at a repo's own
+test suite, a ticket's acceptance criteria, and the adapters: it shortens the implementation, never the
+requirement (`ponytail.md`).
 
 ## Speaking and showing
 
@@ -85,10 +85,10 @@ Per-person and off by default; what concerns you is what you put in a **reply**.
 PR/MR carries `tracker.ticket_prefix` in its title or branch), post the Slack notification as part of that step.
 Not optional, not a follow-up, not something to ask permission for.
 
-**Workspace/framework work — ASK first.** A change to THIS meta-repo has no ticket and is not the team's sprint
-traffic; the same holds for any MR with no ticket key. Report it in chat and ask — announcing infra work to a
-product channel spends attention nobody was waiting to give. Retract with `send.sh --delete <permalink>`, but
-those already looking saw it, so say so if it mattered.
+**Workspace/framework work — ASK first.** A change to THIS workspace repo itself has no ticket and is not the
+team's sprint traffic; the same holds for any PR/MR with no ticket key. Report it in chat and ask — announcing infra
+work to a product channel spends attention nobody was waiting to give. Retract with `send.sh --delete <permalink>`,
+but those already looking saw it, so say so if it mattered.
 
 ## DO NOT
 
