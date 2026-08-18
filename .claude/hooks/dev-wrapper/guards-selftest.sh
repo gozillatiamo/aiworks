@@ -614,6 +614,78 @@ tae "repo's own scripts/dev.sh ok"     0 "$TMP/ws/repo/scripts/dev.sh"
 tae "ordinary repo source ok"          0 "$TMP/ws/repo/src/main.rs"
 tae "missing dir fails open"           0 "$TMP/ws/nope/scripts/vcs/x.sh"
 
+echo "--- pretool-orchestrator-guard ---"
+# A dedicated fixture: a product repo "svc" (git checkout), the run-state dir, a marker,
+# plus .claude/ and a root-level run summary — so the allow/deny boundary is exercised
+# against a realistic layout rather than the bare TMP dir the earlier sections share.
+mkdir -p "$TMP/og/svc/src" "$TMP/og/agent_logs/FM-1-dev-cycle-state" "$TMP/og/.claude" "$TMP/og/scripts"
+git -C "$TMP/og/svc" init -q
+: > "$TMP/og/svc/src/main.rs"
+: > "$TMP/og/agent_logs/FM-1-DEV-CYCLE-SUMMARY.md"
+og_marker() { # og_marker <armed:true|false>
+  printf '{"session_id":"sess-1","ticket":"FM-1","armed":%s,"run_state":"x","recorded_at":"2026-01-01T00:00:00Z"}' "$1" \
+    > "$TMP/og/agent_logs/FM-1-dev-cycle-state/orchestrator-guard.json"
+}
+# tog <name> <want> <armed:true|false> <child:1|unset> <transcript> <json-from-j/jw/jr>
+tog() {
+  local name=$1 want=$2 armed=$3 child=$4 transcript=$5 json=$6 got
+  og_marker "$armed"
+  json=$(printf '%s' "$json" | jq -c --arg t "$transcript" --arg s sess-1 --arg d "$TMP/og" \
+    '. + {transcript_path:$t, session_id:$s, cwd:$d}')
+  if [ "$child" = "1" ]; then
+    got=$(printf '%s' "$json" | CLAUDE_PROJECT_DIR="$TMP/og" CLAUDE_CODE_CHILD_SESSION=1 "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+  else
+    got=$(printf '%s' "$json" | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+  fi
+  if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else fail=$((fail+1)); printf 'FAIL %s (want exit %s, got %s)\n' "$name" "$want" "$got"; fi
+}
+MAIN_TS="$TMP/og/main.jsonl"
+SUB_TS="$TMP/og/main/subagents/agent-3.jsonl"
+WF_SUB_TS="$TMP/og/main/subagents/workflows/wf_x/agent-1.jsonl"
+
+tog "armed + main, Edit inside product repo -> deny"      2 true  ""  "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + main, Write a run-state row -> deny"          2 true  ""  "$MAIN_TS" "$(jw "$TMP/og/agent_logs/FM-1-dev-cycle-state/svc-built.json")"
+tog "armed + main, git commit inside product repo -> deny" 2 true  ""  "$MAIN_TS" "$(j "git -C $TMP/og/svc commit -m x")"
+tog "armed + main, git log inside product repo -> allow"   0 true  ""  "$MAIN_TS" "$(j "git -C $TMP/og/svc log --oneline")"
+tog "armed + main, git status inside product repo -> allow" 0 true ""  "$MAIN_TS" "$(j "git -C $TMP/og/svc status")"
+tog "armed + CLAUDE_CODE_CHILD_SESSION=1, Edit repo -> allow" 0 true "1" "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + subagent transcript, same Edit -> allow"      0 true  ""  "$SUB_TS"  "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + neither signal (empty transcript_path) -> allow (fails open)" 0 true "" "" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "marker armed:false, main, same Edit -> allow"         0 false ""  "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "armed + main, Write .claude/settings.json -> allow"   0 true  ""  "$MAIN_TS" "$(jw "$TMP/og/.claude/settings.json")"
+tog "armed + main, Write root run summary -> allow"        0 true  ""  "$MAIN_TS" "$(jw "$TMP/og/agent_logs/FM-1-DEV-CYCLE-SUMMARY.md")"
+tog "armed + main, Write outside the workspace root -> allow" 0 true "" "$MAIN_TS" "$(jw "/tmp/scratch-notes.md")"
+
+# session mismatch: marker says sess-1, payload says a different session.
+og_marker true
+got=$(printf '%s' "$(jw "$TMP/og/svc/src/main.rs")" \
+      | jq -c --arg t "$MAIN_TS" --arg d "$TMP/og" '. + {transcript_path:$t, session_id:"other-session", cwd:$d}' \
+      | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+if [ "$got" = "0" ]; then pass=$((pass+1)); printf 'ok   %s\n' "session mismatch -> allow"
+else fail=$((fail+1)); printf 'FAIL %s (want exit 0, got %s)\n' "session mismatch -> allow" "$got"; fi
+
+# no marker anywhere.
+rm -f "$TMP/og/agent_logs/FM-1-dev-cycle-state/orchestrator-guard.json"
+got=$(printf '%s' "$(jw "$TMP/og/svc/src/main.rs")" \
+      | jq -c --arg t "$MAIN_TS" --arg d "$TMP/og" '. + {transcript_path:$t, session_id:"sess-1", cwd:$d}' \
+      | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+if [ "$got" = "0" ]; then pass=$((pass+1)); printf 'ok   %s\n' "no marker anywhere -> allow"
+else fail=$((fail+1)); printf 'FAIL %s (want exit 0, got %s)\n' "no marker anywhere -> allow" "$got"; fi
+
+# marker present but unparseable JSON.
+printf 'not json' > "$TMP/og/agent_logs/FM-1-dev-cycle-state/orchestrator-guard.json"
+got=$(printf '%s' "$(jw "$TMP/og/svc/src/main.rs")" \
+      | jq -c --arg t "$MAIN_TS" --arg d "$TMP/og" '. + {transcript_path:$t, session_id:"sess-1", cwd:$d}' \
+      | env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_PROJECT_DIR="$TMP/og" "$H/pretool-orchestrator-guard.sh" >/dev/null 2>&1; echo $?)
+if [ "$got" = "0" ]; then pass=$((pass+1)); printf 'ok   %s\n' "marker unparseable JSON -> allow"
+else fail=$((fail+1)); printf 'FAIL %s (want exit 0, got %s)\n' "marker unparseable JSON -> allow" "$got"; fi
+
+# The three C6-discriminator cases the orchestrator asked for explicitly.
+tog "discriminator: payload with agent_id -> allow"                       0 true "" "$MAIN_TS" "$(jq -cn --arg p "$TMP/og/svc/src/main.rs" --arg a x '{tool_name:"Edit",tool_input:{file_path:$p},agent_id:$a}')"
+tog "discriminator: transcript_path under subagents/workflows/.. -> allow" 0 true "" "$WF_SUB_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+tog "discriminator: armed marker + main-shaped payload -> deny"           2 true "" "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]

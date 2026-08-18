@@ -87,6 +87,10 @@ Rules:
 - Only enough code to pass current test
 - Don't anticipate future tests
 - Keep tests focused on observable behavior
+- Run the SCOPED test, not the suite, while looping — one spec/module at a time
+- Send a verbose runner to a file and read the signal: `<test cmd> > /tmp/tdd.log 2>&1` then
+  `grep -n -E 'FAIL|panic|assert|error' /tmp/tdd.log` or `tail -n 30 /tmp/tdd.log`. The failure
+  line is what you need; the 40 KB around it is not
 
 ### 4. Refactor
 
