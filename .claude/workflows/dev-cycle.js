@@ -198,7 +198,11 @@ let RESOLVED_ARTIFACTS = false
 // DEVIATION from the plan's example log line: `ticket`/`dryRun`/`approvePlan` are declared further
 // below in the Inputs section, so referencing them THIS early throws (TDZ) — version-only here.
 const DEVCYCLE_VERSION = '2026-08-18.2'
-log(`${meta.name} v${DEVCYCLE_VERSION}`)
+// `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
+// `export const meta = {...}` block before executing the script body, so `meta.name` throws
+// "meta is not defined" live even though it type-checks in the offline compile probe (a
+// hand-rolled wrapper that keeps the literal source, meta included, in scope). Literal name.
+log(`dev-cycle v${DEVCYCLE_VERSION}`)
 // C14 — MECHANICAL STEPS run on haiku, explicitly, so it never depends on an agent file staying
 // haiku: this resolver, the status mover, the ws-root/plan-guard/publish-request kickoff steps, the
 // run-state loader, and the Summary phase's incomplete-run DM. Every judgment agent (planner,
@@ -323,7 +327,7 @@ const dryRun = /--dry-run\b/i.test(rawArg) || opt.dryRun === true
 const approvePlan = /--approve-plan\b/i.test(rawArg) || opt.approvePlan === true
 // C11 — the ticket-scoped half of the version line (the version-only half already logged above,
 // before `ticket` existed): now that it does, restate it WITH the ticket + run flags.
-log(`${meta.name} v${DEVCYCLE_VERSION} — ${ticket}${dryRun ? ' (dry run)' : ''}${approvePlan ? ' (plan approved)' : ''}`)
+log(`dev-cycle v${DEVCYCLE_VERSION} — ${ticket}${dryRun ? ' (dry run)' : ''}${approvePlan ? ' (plan approved)' : ''}`)
 
 // Machine-readable marker prefixed on EVERY agent prompt so
 // summarize-workflow-performance can attribute each transcript to a repo+role.
