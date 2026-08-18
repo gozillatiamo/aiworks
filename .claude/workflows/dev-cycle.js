@@ -429,6 +429,10 @@ const flag = (name) => rawArg.match(new RegExp(`--${name}(?:=|\\s+)(\\S+)`, 'i')
 // --feature-base overrides the feature base only, so a mixed run's bug branch still targets fix_base.
 const BASE_OVERRIDE = flag('base') || opt.base || null
 const FEATURE_BASE_OVERRIDE = flag('feature-base') || opt.featureBase || null
+// --feature-base-repos scopes --feature-base to a named subset: every repo NOT listed keeps its own
+// REPOS[].base, exactly as if no override had been passed for it. Absent ⇒ --feature-base applies to
+// every repo, unchanged. No business rule is encoded here — the caller names the repos.
+const FEATURE_BASE_REPOS = String(flag('feature-base-repos') || opt.featureBaseRepos || '').split(',').map((s) => s.trim()).filter(Boolean)
 // review↔fix loops, per repo. Generous ON PURPOSE: at review.level strict the gates report
 // must-fixes only, a reviewer that passes is FROZEN (never re-run), and a re-visit may raise
 // nothing new — so extra rounds cannot widen scope. They only let a repo finish its own
@@ -562,6 +566,10 @@ const SCOPE_SCHEMA = {
   required: ['ticket', 'type', 'repos'],
   properties: {
     ticket: { type: 'string' }, title: { type: 'string' },
+    // C10 — the fingerprint inputs. Scope is the ONE stage that reads the live ticket, and it
+    // already walks the acceptance criteria one by one (out_of_reach), so both are free here.
+    acceptance: { type: 'array', items: { type: 'string' } }, // the ticket's criteria, VERBATIM
+    comment_count: { type: 'number' },                        // how many comments the ticket has now
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
     tracker_reachable: { type: 'boolean' }, // false → scope could NOT read the live ticket via the adapter (writes won't persist this run)
     // OUT OF REACH — acceptance criteria no repo in THIS workspace can satisfy, declared once here
@@ -619,6 +627,7 @@ const REPO_PLAN_SCHEMA = {
   properties: {
     repo: { type: 'string' }, title: { type: 'string' },
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
+    reused: { type: 'boolean' }, // C10 — true when this repo's Kickoff was SKIPPED (plan rehydrated from run state)
     base_branch: { type: 'string' }, work_branch: { type: 'string' },
     figma_url: { type: ['string', 'null'] }, plan_path: { type: 'string' },
     plan_html: { type: ['string', 'null'] }, // set when RESOLVED_PLAN_TO_HTML rendered the plan to interactive HTML
@@ -1117,7 +1126,7 @@ async function runRepoPipeline(rp, desc, branchKind) {
    • a brand-new feature spec red only because the app change is not built into this run yet is EXPECTED — note it and move on; it validates at the test-suite gate against the candidate build, not here.
 5. SCOPED RUN before handoff — once your automation is correct, run THIS ticket's scope ONCE via \`scripts/dev.sh test <scoping args>\` covering (a) the ticket's own spec(s) you built + (b) the ticket's regression spec(s) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)). Do NOT run the whole suite (\`scripts/dev.sh test\` with no scoping args): the full-suite run is ON-DEMAND only (the user triggers a full run separately), not part of this flow. Then confirm \`scripts/dev.sh artifacts\` lists a capture per scenario you automated — a green run with no rows means the capture step did not take effect, and the results report will have nothing to attach. ${desc.green} is the target — but a scoped red caused ONLY by reported app bugs or expected pre-merge reds is a VALID handoff state; record it, do not chase it.
 6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of the suite state (green, or red + the bug ids you reported), commit count, status="complete" (a green run, OR a red caused only by reported app bugs / expected pre-merge reds — both are a valid complete handoff for this phase) else "partial"/"blocked" with what's left in "remaining", and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. A red-but-reported suite is SUCCESS for this phase — never withhold the structured result to investigate further, and never exceed the step-4 triage budget.`
-    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /coding-feature (it loads this repo's CLAUDE.md + coding_standards AND the workspace coding-style — storytelling code, NO body comments — "read before your first edit", and its Step 4 drives the build test-first through /tdd's red-green-refactor loop) and /karpathy-guidelines, committing each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.${outOfReachBrief}${submodulePinClause} When you post your dev-status comment on the ticket, and you are handing back any \`deferred\` criterion, give it ONE line there naming the criterion and its owner — the ticket should record what this run did not deliver, and no separate ticket is filed for it.`
+    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. ${rp.reused ? `BRANCH FIRST — this repo's Kickoff was SKIPPED this invocation (its plan was reused from run state), so nothing has checked out your branch yet: run \`git fetch origin\` then \`git switch ${rp.work_branch}\` before anything else, and report the sha \`git rev-parse HEAD\` prints. If that branch does not exist, create it from the run's base — \`git switch -c ${rp.work_branch} origin/${rp.base_branch}\` — and say so in your summary. ` : ''}If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /coding-feature (it loads this repo's CLAUDE.md + coding_standards AND the workspace coding-style — storytelling code, NO body comments — "read before your first edit", and its Step 4 drives the build test-first through /tdd's red-green-refactor loop) and /karpathy-guidelines, committing each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.${outOfReachBrief}${submodulePinClause} When you post your dev-status comment on the ticket, and you are handing back any \`deferred\` criterion, give it ONE line there naming the criterion and its owner — the ticket should record what this run did not deliver, and no separate ticket is filed for it.`
   // RESUME: a 'built' row whose recorded head still matches the live branch means this repo's
   // build already landed on an earlier invocation — skip re-paying for it (docs/adr/0018).
   const builtRow = rowAt(R, 'built')
@@ -1516,7 +1525,7 @@ const RUN_STATE_SCHEMA = {
         required: ['repo', 'milestone', 'status'],
         properties: {
           repo: { type: 'string' },                // a REPOS key, or "all" for a run-level row
-          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'reviewed', 'test_suite', 'merged', 'distributed'] },
+          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'reviewed', 'test_suite', 'merged', 'distributed', 'artifact_published'] },
           status: { type: 'string', enum: ['done', 'in-progress'] },
           work_branch: { type: ['string', 'null'] },
           head_sha: { type: ['string', 'null'] },   // the sha recorded WHEN the milestone landed
@@ -1524,7 +1533,13 @@ const RUN_STATE_SCHEMA = {
           pr_number: { type: ['number', 'string', 'null'] },
           pr_url: { type: ['string', 'null'] },
           recorded_at: { type: ['string', 'null'] },
-          degraded: { type: 'boolean' },            // recorded head != live head → NOT skippable
+          ticket_fp: { type: ['string', 'null'] },  // C10 — the ticket fingerprint AT PLAN TIME
+          plan_path: { type: ['string', 'null'] },  // C10 — the plan markdown this row points at
+          plan_bytes: { type: ['number', 'null'] }, // C10 — filled by the LOADER: wc -c of plan_path (0/null ⇒ gone)
+          title: { type: ['string', 'null'] },      // C10 — rehydrates prTitle() on a skip
+          acceptance: { type: 'array', items: { type: 'string' } }, // C10 — rehydrates the reviewers' BAR
+          artifact_url: { type: ['string', 'null'] }, // C11 — the published plan page for this repo
+          degraded: { type: 'boolean' },            // proof no longer holds → NOT skippable
         },
       },
     },
@@ -1534,8 +1549,8 @@ const runState = await safeAgent(
   `${tag('all', 'general-purpose', 'run-state')} READ ONLY — write nothing, touch no git branch, run no tests. Load this run's checkpoint for ${ticket} and validate it against the live branches.
 1. \`ls agent_logs/${ticket}-dev-cycle-state/*.json\` from your cwd (the workspace root). ONE FILE PER CHECKPOINT (not one shared file), named \`<repo>-<milestone>.json\`. If the directory does not exist or is empty, return found:false with rows:[] — that is the normal first-invocation answer, not an error.
 2. \`cat\` each file and parse it as one JSON object. A file that fails to parse is DISCARDED with no attempt to repair it. There is no duplicate-row question here — each (repo, milestone) has its own path, so nothing to dedupe.
-3. For every row carrying a work_branch, resolve what that branch points at NOW, using the repo dir from this map (do NOT cd; use git -C): ${Object.entries(REPOS).map(([id, d]) => `${id}=${d.path}`).join(', ')}. Run \`git -C <that dir> rev-parse --verify <work_branch>\` and put the result in live_sha (null when the branch does not exist).
-4. DEGRADE mechanically: set degraded:true AND status:"in-progress" on any row whose live_sha is null or differs from its recorded head_sha. Do not reason about whether the difference matters — a moved head means the milestone is no longer proven, full stop. Leave degraded:false only on an exact match.
+3. For every row carrying a work_branch AND a milestone OTHER than "planned", resolve what that branch points at NOW, using the repo dir from this map (do NOT cd; use git -C): ${Object.entries(REPOS).map(([id, d]) => `${id}=${d.path}`).join(', ')}. Run \`git -C <that dir> rev-parse --verify <work_branch>\` and put the result in live_sha (null when the branch does not exist). For a "planned" row, ALSO measure the plan markdown it points at: \`wc -c < "<plan_path>"\` and put the byte count in plan_bytes (0 when the file is missing or unreadable — never guess a size, and never create the file).
+4. DEGRADE mechanically, by what each milestone's proof actually IS. For every milestone EXCEPT "planned": set degraded:true AND status:"in-progress" on any row whose live_sha is null or differs from its recorded head_sha — a moved head means the milestone is no longer proven, full stop. For a "planned" row the proof is the PLAN FILE, not the branch head (commits landing on a work branch are the build doing its job and do not invalidate the plan that produced them): set degraded:true AND status:"in-progress" when plan_bytes is 0/absent or the row carries no plan_path, and otherwise leave degraded:false — do NOT compare its head_sha to live_sha at all. Do not reason about whether a difference matters; apply exactly these two rules.
 5. Return every row you parsed, degraded flags applied, plus found and the directory path. Add nothing, invent nothing, and never fabricate a head_sha you did not read from a file.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', model: 'haiku', phase: 'Scope', label: `run-state:${ticket}`, schema: RUN_STATE_SCHEMA },
 )
@@ -1552,7 +1567,7 @@ phase('Scope')
 const testSuiteRepoIds = Object.keys(REPOS).filter((id) => REPOS[id].testSuite)
 const scope = await safeAgent(
   `${tag('all', 'cto', 'scope')} You are the scoping stage for ${ticket}. Read the ticket via the tracker adapter (\`scripts/tracker/get-ticket-details.sh ${ticket}\`, + \`get-ticket-comments.sh\`) and decide which of the workspace's repos it requires changes in: ${Object.keys(REPOS).join(', ')} (only these are registered). For each touched repo return { repo, depends_on (other touched repo ids that must be built/merged first — typically a backend → app → test-suite order), summary (what that repo must change) }. The registered cross-repo test-suite (QA) repo(s) are: ${testSuiteRepoIds.length ? testSuiteRepoIds.join(', ') : 'none'}. When this change should be validated end-to-end by the cross-repo test suite (E2E / API / load) against the candidate build, set test_suite.needed:true AND include that test-suite repo in \`repos\`, with depends_on listing the app/service repos it validates (so it builds + merges LAST). The gate CANNOT run unless the test-suite repo is in \`repos\` — needed:true on its own does nothing. If no test-suite repo is registered, leave needed:false. Most tickets touch only the app repo; when they also need end-to-end validation, return the app repo PLUS the test-suite repo. Also set tracker_reachable: true ONLY if the adapter actually returned the live ticket this call — set it false if the tracker was unreachable and you proceeded from inline/contextual info (the run then loudly flags that Status moves, comments, and improvement tickets did NOT persist).
-OUT OF REACH — read the ticket's acceptance criteria one by one and ask of each: can ANY repo registered above satisfy it? List in \`out_of_reach\` only those that cannot be satisfied here BY CONSTRUCTION — the owner is a repo this workspace does not hold (gateway/infra config, a third party's system), or the work needs an access only a person has (a dashboard, a certificate, a production credential). Quote the criterion, say concretely why, and name who CAN do it. Judge reachability, NOT difficulty: a criterion that is merely hard, or whose real obstacle only appears once someone reads the code, is NOT out of reach — the build will discover those and hand back \`deferred\`, which gets adjudicated then. An empty list is the normal, healthy answer, and a criterion you are unsure about belongs OUT of the list. Then set \`deliverable_now\`: true if at least ONE acceptance criterion remains reachable here, false ONLY if the ticket asks for nothing this workspace can deliver — false STOPS the run immediately, before any branch or plan exists, so do not use it to express that a ticket is partly blocked. Return the structured scope.`,
+OUT OF REACH — read the ticket's acceptance criteria one by one and ask of each: can ANY repo registered above satisfy it? List in \`out_of_reach\` only those that cannot be satisfied here BY CONSTRUCTION — the owner is a repo this workspace does not hold (gateway/infra config, a third party's system), or the work needs an access only a person has (a dashboard, a certificate, a production credential). Quote the criterion, say concretely why, and name who CAN do it. Judge reachability, NOT difficulty: a criterion that is merely hard, or whose real obstacle only appears once someone reads the code, is NOT out of reach — the build will discover those and hand back \`deferred\`, which gets adjudicated then. An empty list is the normal, healthy answer, and a criterion you are unsure about belongs OUT of the list. Then set \`deliverable_now\`: true if at least ONE acceptance criterion remains reachable here, false ONLY if the ticket asks for nothing this workspace can deliver — false STOPS the run immediately, before any branch or plan exists, so do not use it to express that a ticket is partly blocked. Also return, for the run's ticket-change fingerprint: \`title\` (the ticket's title verbatim), \`acceptance\` (every acceptance criterion of the ticket, copied VERBATIM, one array element per criterion, in the order they appear — this is the same list you just walked for out_of_reach, so copy it rather than re-deriving it), and \`comment_count\` (how many comments \`get-ticket-comments.sh\` returned — a plain integer, 0 when there are none). Copy, do not paraphrase, summarize, re-order or renumber: a later invocation compares this text to decide whether the ticket changed, so a rewording you invent reads as a human edit and costs a full re-plan. Return the structured scope.`,
   { agentType: 'cto', phase: 'Scope', label: `scope:${ticket}`, schema: SCOPE_SCHEMA },
 )
 if (!scope) throw new Error(`dev-cycle: scope stage did not converge for ${ticket}`)
@@ -1568,6 +1583,18 @@ const outOfReachBrief = outOfReach.length
   ? ` OUT OF REACH, already settled for this run — do NOT re-argue these and do NOT try to satisfy them: ${outOfReach.map((o, i) => `(${i + 1}) "${o.criterion}" — ${o.why} [owner: ${o.owner}]`).join(' ')} A criterion on this list that your slice cannot meet is EXPECTED; report it in \`deferred\` and move on.`
   : ''
 if (outOfReach.length) log(`[scope] ${outOfReach.length} acceptance criterion/criteria declared OUT OF REACH for this workspace: ${outOfReach.map((o) => o.owner).join(', ')} — the run proceeds on what IS reachable.`)
+// TICKET FINGERPRINT (C10) — "did anything a human would call a real edit happen since this repo
+// was last planned", from what Scope ALREADY read. Normalize first (whitespace collapsed, cased
+// down) so a transcription wobble is not an edit, then hash with djb2 — a workflow has no crypto
+// and no filesystem, so this is a stable string reduction, not a checksum of the ticket.
+// ponytail: a transcription hash, not byte equality. The tracker adapter exposes NO `updated`
+// timestamp on any provider (checked: scripts/tracker/{jira,notion,linear}/impl.sh + jira.jq's
+// issue_details_text emit none), so there is nothing cheaper and more correct to prefer. The day
+// get-ticket-details.sh prints one, replace the whole hash with that field.
+const fpNorm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+const fpHash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(16) }
+const TICKET_FP = fpHash([fpNorm(scope.title), ...(scope.acceptance || []).map(fpNorm), `c=${scope.comment_count ?? '?'}`].join('|'))
+log(`[scope] ticket fingerprint fp=${TICKET_FP} (title + ${(scope.acceptance || []).length} acceptance criterion/criteria + ${scope.comment_count ?? '?'} comment(s)) — a Kickoff already recorded under this fp is skippable.`)
 const testSuiteRequested = scope.test_suite?.needed === true
 // A flagged test-suite gate is only RUNNABLE if the test-suite repo is in the built set
 // (its qa-planner/qa-runner author + build the specs the gate runs). The scope agent can
@@ -1664,13 +1691,29 @@ for (const r of scoped) {
   // (C1) win over the repo's own REPOS[].base when set — this is the ONE place that resolution happens.
   planMeta[r.repo] = {
     kind: desc.kind, repoDir, repoRoot, planRel, planHtmlRel, testcasesRel,
-    baseBranch: BASE_OVERRIDE || (branchKind === 'feature' ? FEATURE_BASE_OVERRIDE : null) || desc.base[branchKind],
+    baseBranch: BASE_OVERRIDE || (branchKind === 'feature' && (!FEATURE_BASE_REPOS.length || FEATURE_BASE_REPOS.includes(r.repo)) ? FEATURE_BASE_OVERRIDE : null) || desc.base[branchKind],
     workBranch: `${branchKind}/${ticket}`,
     planPath: repoRoot ? `${repoRoot}/${planRel}` : planRel,
     planHtmlPath: repoRoot ? `${repoRoot}/${planHtmlRel}` : planHtmlRel,
   }
 }
 
+// C10 — the Kickoff skip gate. A repo skips its planner ONLY when all three hold:
+//   (a) a non-degraded `planned` row exists for it (so the loader saw its plan file, non-empty),
+//   (b) that row's ticket_fp equals THIS run's TICKET_FP, and
+//   (c) no OTHER scoped repo's planned row disagrees with TICKET_FP.
+// (c) is why a changed ticket re-plans EVERYWHERE: a partial re-plan leaves sibling repos planned
+// against a different reading of the ticket, and cross-repo drift is the failure the plans exist
+// to prevent. --approve-plan does not bypass this: an approved re-run whose ticket is untouched is
+// precisely the case worth skipping (the planner's own --approve-plan branch already only re-READS
+// the plan), and one whose ticket changed re-plans like any other.
+const plannedRow = (id) => rowAt(id, 'planned')
+const fpStale = scoped.some((r) => { const w = plannedRow(r.repo); return w && w.ticket_fp !== TICKET_FP })
+if (fpStale) log(`⚠️ [kickoff] ${ticket} CHANGED since it was last planned (now fp=${TICKET_FP}) — INVALIDATING every 'planned' row for this run: all ${scoped.length} repo(s) re-plan from the live ticket. A partial re-plan would leave a sibling repo planned against the older reading.`)
+const kickoffSkippable = (id) => {
+  const w = plannedRow(id)
+  return !fpStale && !!w && w.ticket_fp === TICKET_FP && Number(w.plan_bytes) > 0
+}
 const plans = (await parallel(scoped.map((r) => () => {
   const desc = REPOS[r.repo]
   const planner = desc.plan
@@ -1679,6 +1722,22 @@ const plans = (await parallel(scoped.map((r) => () => {
   // baseBranch/workBranch come from planMeta (resolved once, override-aware, C1) — never
   // recomputed here, so this prompt and the recorded plan can't disagree on either.
   const { repoDir, repoRoot, planRel, planPath, planHtmlPath, testcasesRel, baseBranch, workBranch } = m
+  // C10 — reuse instead of re-planning. Rehydrated from the row + planMeta ONLY: the workflow has
+  // no filesystem access, so nothing here reads the plan file — the build agent reads it, at
+  // plan_path, exactly as it would after a live Kickoff, and the plan-guard below re-asserts on
+  // disk that the file is really under this repo.
+  const reuse = kickoffSkippable(r.repo) ? plannedRow(r.repo) : null
+  if (reuse) {
+    log(`[${r.repo}] Kickoff SKIPPED — already planned this run (fp=${TICKET_FP}, plan ${reuse.plan_bytes} bytes at ${planPath}, recorded ${reuse.recorded_at || 'earlier'}); plan rehydrated from run state, NO ${planner} spawned.`)
+    return {
+      repo: r.repo, reused: true, type: scope.type,
+      title: reuse.title || scope.title, acceptance: (reuse.acceptance?.length ? reuse.acceptance : (scope.acceptance || [])),
+      base_branch: baseBranch, work_branch: workBranch, plan_path: planPath,
+      plan_html: RESOLVED_PLAN_TO_HTML ? planHtmlPath : null, figma_url: null, needs_artifact_publish: null,
+      summary: `plan reused from run state (planned ${reuse.recorded_at || 'in an earlier invocation'}; no re-plan — ticket unchanged, fp=${TICKET_FP})`,
+      unverified_claims: [],
+    }
+  }
   // ANCHORING directive — front-loaded so a planner can't miss it. Code repos: the planner WRITES
   // the plan itself, so an absolute target makes placement cwd-independent. Test-suite repo:
   // /plan-testcases + /plan-automate write to FIXED relative `agent_logs/...` paths, so the agent
@@ -1728,7 +1787,10 @@ const plans = (await parallel(scoped.map((r) => () => {
   const prompt = desc.kind === 'test-suite'
     ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), /update-ticket (publish the plan ONLY — do NOT move the ticket status; the workflow owns it), then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
     : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO from base ${baseBranch} — THIS RUN says so: pass it to /ticket-kickoff and do NOT let the branch model re-derive it from the branch prefix or origin/HEAD, which is how a run's base override gets silently discarded.${basePresentClause(baseBranch)} The workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
-  return agent(prompt + groundingClause + PONYTAIL_DIRECTIVE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + codegraphClause(desc.path) + stateWrite(r.repo, 'planned'), { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
+  const plannedExtra = `,"ticket_fp":"${TICKET_FP}","plan_path":"${planPath}","title":"<the ticket title, verbatim, JSON-escaped>","acceptance":["<one acceptance criterion for THIS repo's slice per element, JSON-escaped>"]`
+  return agent(prompt + groundingClause + PONYTAIL_DIRECTIVE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + codegraphClause(desc.path) + stateWrite(r.repo, 'planned', plannedExtra)
+    + ` Those four extra fields are what lets the NEXT invocation reuse this plan instead of paying for it again: ticket_fp and plan_path exactly as given above, and title/acceptance identical to what you return in your structured result (a reviewer later judges the diff against that acceptance list and has no other source for it). Write valid JSON — escape any quote or backslash inside a criterion, and if you have no acceptance criteria for this slice write \`"acceptance":[]\`.`,
+    { agentType: planner, phase: 'Kickoff', label: `kickoff:${ticket}:${r.repo}`, schema: REPO_PLAN_SCHEMA })
 }))).filter(Boolean)
 // Normalize the recorded paths to the ABSOLUTE, repo-anchored forms — consistently for every
 // repo, regardless of what the planner echoed back (a planner that returned a bare-relative or
@@ -1790,17 +1852,26 @@ if (missingPlans.length) {
 // Delivery is QUEUED for the main conversation's next turn (measured, not assumed), so this is
 // "while the run continues", not "instantly". Gated on artifacts.enabled, which defaults FALSE, so a
 // teammate who never opted in gets no request at all rather than an unactionable ping.
-const htmlPlans = RESOLVED_PLAN_TO_HTML ? plans.filter((p) => p.plan_html) : []
+// C11 — a reused plan (C10 skipped its Kickoff) rendered NO new HTML this invocation, so there is
+// nothing to publish or republish for it: `plans.forEach` above stamps plan_html onto every plan
+// unconditionally, which is exactly how the previous run minted a second artifact per repo.
+const htmlPlans = RESOLVED_PLAN_TO_HTML ? plans.filter((p) => p.plan_html && !p.reused) : []
+if (RESOLVED_PLAN_TO_HTML && plans.some((p) => p.reused)) log(`[kickoff] ${plans.filter((p) => p.reused).length} repo(s) reused their plan — excluded from the Artifact publish request (no new page was rendered for them).`)
+// C11 — the URL of the page already published for this repo, if any. The workflow itself cannot
+// publish (no agent in a workflow holds the Artifact tool — only the main session does), so this
+// is threaded THROUGH the request: publish to the same address instead of minting a new page.
+const priorArtifact = (id) => rowAt(id, 'artifact_published')?.artifact_url || null
 if (htmlPlans.length && RESOLVED_ARTIFACTS) {
   await safeAgent(
     `${tag('all', 'general-purpose', 'publish-request')} Ask the MAIN SESSION to publish this run's plan page(s) as an Artifact. You are not publishing anything yourself — you do not have the Artifact tool, and neither does any other agent in this run.
 1. Load the messaging tool: ToolSearch with query "select:SendMessage".
 2. Send ONE message with to: "main". It must stand on its own, because the reader has none of your context and will act on it as a teammate's request:
    • name the ticket (${ticket}) and the repo(s) whose plan is ready;
-   • give the ABSOLUTE path of each page to publish: ${htmlPlans.map((p) => `${p.repo} → ${p.plan_html}`).join(' ; ')};
+   • give the ABSOLUTE path of each page to publish, and for any page ALREADY published for this ticket, the URL it must be published back to: ${htmlPlans.map((p) => `${p.repo} → ${p.plan_html}${priorArtifact(p.repo) ? ` (UPDATE IN PLACE: pass url=${priorArtifact(p.repo)} to the Artifact tool, per .claude/skills/write-interactive-docs/SKILL.md step 2 — publishing without that url mints a SECOND page for the same plan, which is how one ticket ended up with 18 artifacts. If the tool rejects a url argument, publish NOTHING for this repo and say so in your reply rather than creating a duplicate.)` : ' (not published before — a fresh publish)'}`).join(' ; ')};
    • say that a CSP-safe copy may sit beside it as \`<same-name>.artifact.html\` and that THAT is the one to publish when it exists;
    • state plainly that the reader must READ each file in full before publishing it, since publishing distributes content they did not write;
-   • ask them to reply to the ticket or hold the URL for the run summary — and to publish nothing if the page looks like anything other than an implementation plan.
+   • ask them to reply to the ticket or hold the URL for the run summary — and to publish nothing if the page looks like anything other than an implementation plan;
+   • ask them, AFTER each successful publish, to record the URL for this run so a later invocation updates instead of duplicating: write \`agent_logs/${ticket}-dev-cycle-state/<repo>-artifact_published.json\` (relative to the workspace root — the directory already exists) containing exactly {"repo":"<repo>","milestone":"artifact_published","status":"done","artifact_url":"<the URL the Artifact tool returned>","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"} — one file per repo, replacing any file already at that path;
 3. Report whether the send succeeded, verbatim. Do NOT wait for a reply, do NOT retry more than once, and do NOT do any other work — the run is already moving on to Build.` + LANGUAGE_DIRECTIVE,
     { agentType: 'general-purpose', model: 'haiku', phase: 'Kickoff', label: `publish-request:${ticket}` },
   )
@@ -1809,7 +1880,10 @@ if (htmlPlans.length && RESOLVED_ARTIFACTS) {
 }
 
 const waveList = toWaves(plans)
-if (BASE_OVERRIDE || FEATURE_BASE_OVERRIDE) log(`Base override in effect: ${BASE_OVERRIDE ? `--base ${BASE_OVERRIDE} (all repos)` : `--feature-base ${FEATURE_BASE_OVERRIDE}`} — repo defaults from REPOS[].base were NOT used.`)
+if (BASE_OVERRIDE || FEATURE_BASE_OVERRIDE) log(`Base override in effect: ${BASE_OVERRIDE ? `--base ${BASE_OVERRIDE} (all repos)` : `--feature-base ${FEATURE_BASE_OVERRIDE}${FEATURE_BASE_REPOS.length ? ` scoped to ${FEATURE_BASE_REPOS.join(', ')} — every other repo kept its own REPOS[].base` : ' (all repos)'}`} — resolved bases: ${plans.map((p) => `${p.repo}→${p.base_branch}`).join(', ')}.`)
+const unknownFbr = FEATURE_BASE_REPOS.filter((id) => !REPOS[id])
+if (unknownFbr.length) log(`⚠️ --feature-base-repos names ${unknownFbr.length} repo id(s) that are not in REPOS: ${unknownFbr.join(', ')} — they override nothing. Registered ids: ${Object.keys(REPOS).join(', ')}.`)
+if (FEATURE_BASE_REPOS.length && !FEATURE_BASE_OVERRIDE) log(`⚠️ --feature-base-repos was given without --feature-base — nothing to scope, every repo used its own REPOS[].base.`)
 log(`Plan ${ticket}: ${plans.map((p) => `${p.repo}@${p.work_branch}→${p.base_branch}`).join(', ')}`)
 log(`Plan artifacts: ${plans.map((p) => `${p.repo}=${p.plan_path}`).join(', ')}`)
 if (RESOLVED_PLAN_TO_HTML) log(`Plan HTML: ${plans.map((p) => `${p.repo}=${p.plan_html ?? '(not rendered)'}`).join(', ')}`)

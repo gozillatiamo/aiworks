@@ -155,6 +155,13 @@ body="$(jq -n --argjson s "$START" --argjson e "$END" --argjson step "$STEP" \
 resp="$(curl -sS -X POST -H "${SIGNOZ_AUTH_HEADER}: ${SIGNOZ_API_KEY}" -H 'Content-Type: application/json' \
   --data "$body" "${SIGNOZ_BASE_URL}/api/v4/query_range")" || { echo "signoz request failed" >&2; exit 1; }
 
+# A query too broad for the backend to finish comes back as a plain-text gateway error ("error
+# code: 504"), not JSON and not an .error field — and the renderer below then dies inside json.load
+# with a decoder traceback that reads like a bug in this script.
+jq -e . >/dev/null 2>&1 <<<"$resp" || {
+  echo "signoz returned a non-JSON response: ${resp:0:120}" >&2
+  echo "the query was probably too broad to finish — narrow --since or add a filter" >&2; exit 1; }
+
 if jq -e '.error' >/dev/null 2>&1 <<<"$resp"; then
   echo "signoz rejected the request: $(jq -r '.error' <<<"$resp")" >&2; exit 1
 fi

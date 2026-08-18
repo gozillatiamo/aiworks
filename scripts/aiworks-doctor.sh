@@ -1405,14 +1405,17 @@ check_credentials() {
   skip $g "notify ($(cfg notify.provider))" \
        "no read-only probe exists — a dry run never authenticates and a real send would post"
 
+  # --since -5m, not find-traces' default -7d: an unfiltered count over seven days aggregates every
+  # span in the estate, takes ~60s, and intermittently hits the gateway timeout — a failure probe()
+  # would then report as a rejected credential. Five minutes proves the same thing in ~2s.
   local op; op="$(cfg observability.provider)"
   # Default matches workspace.config.example.yaml (off) — same gate as check_adapters.
   cfg_bool observability.enabled false
   if [[ $? == 1 ]]; then
     skip $g "observability" "observability.enabled is false"
   elif [[ -x "$ROOT/scripts/observability/find-traces.sh" ]]; then
-    probe $g "observability ($(cfg observability.provider))" "\$EDITOR scripts/observability/.env" \
-          "$ROOT/scripts/observability/find-traces.sh" --limit 1
+    probe $g "observability ($op)" "\$EDITOR scripts/observability/.env" \
+          "$ROOT/scripts/observability/find-traces.sh" --since -5m --limit 1
   else
     skip $g "observability" "find-traces.sh not present"
   fi
