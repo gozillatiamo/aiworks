@@ -96,6 +96,10 @@ const runStateRow = (repo, milestone, extra = {}) => ({ repo, milestone, status:
 const builtRow = (repo, sha) => runStateRow(repo, 'built', { work_branch: 'feature/FM-12', head_sha: sha || `sha-${repo}` })
 const prRow = (repo, n) => runStateRow(repo, 'pr_open', { pr_number: n, pr_url: `https://x/${n}` })
 const reviewedRow = (repo) => runStateRow(repo, 'reviewed')
+// REVIEW LEDGER rows (ADR 0021). 'done' => that gate is frozen; 'in-progress' + first_pass
+// => it did its one complete pass but findings are still open, so it RE-VISITS on resume.
+const gatePassedRow = (repo, key) => ({ ...runStateRow(repo, `gate_${key}`), first_pass: true, head_sha: `sha-${repo}` })
+const gateFirstPassRow = (repo, key) => ({ ...runStateRow(repo, `gate_${key}`), status: 'in-progress', first_pass: true, head_sha: `sha-${repo}` })
 // A repo that should return 'ready' with ZERO agent spawns this run — fully resumed.
 const readyRows = (repo, n) => [builtRow(repo), prRow(repo, n), reviewedRow(repo)]
 
@@ -428,6 +432,65 @@ const BASE = {
       report('G7_build_prompt_has_no_suite_execution', buildPrompt.includes('NO SUITE EXECUTION AT BUILD'))
       report('G7_build_prompt_omits_candidate_stack', !buildPrompt.includes('CANDIDATE STACK'))
       report('G7_gate_prompt_has_candidate_stack', gatePrompt.includes('CANDIDATE STACK'))
+    } else if (SCENARIO === 'G8A') {
+      // ADR 0021 — a gate whose ledger row says PASSED is frozen: the review loop is skipped
+      // outright even though no 'reviewed' row exists (the merge phase writes that one, so a run
+      // that died before the merge never had it). No reviewer is spawned at all.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [builtRow('db'), prRow('db', 7), gatePassedRow('db', 'review')] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G8A_no_reviewer_spawned', !SPAWNED.some((l) => l.startsWith('review:FM-12:db')))
+      report('G8A_skip_logged_from_ledger', LINES.some((l) => l.includes('[db] review SKIPPED') && l.includes('every gate is ledgered PASSED')))
+      report('G8A_ledger_line_says_frozen', LINES.some((l) => l.includes('review ledger') && l.includes('PASSED (frozen')))
+      report('G8A_repo_ready', !!result)
+    } else if (SCENARIO === 'G8B') {
+      // ADR 0021 — a gate that completed its first pass with findings still open resumes in
+      // RE-VISIT mode, NOT as a second "first review". This is the regression the ledger exists
+      // for: without the row, round 1 of the next invocation re-derives a whole new finding set.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [builtRow('db'), prRow('db', 7), gateFirstPassRow('db', 'review')] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: ['t1'], still_open: [] },
+      }
+      await runOnce(ARGS, canned)
+      const p = PROMPTS['review:FM-12:db#1'] || ''
+      report('G8B_reviewer_spawned', SPAWNED.includes('review:FM-12:db#1'))
+      report('G8B_mode_is_revisit', p.includes('RE-VISIT (round 1)'))
+      report('G8B_not_first_review', !p.includes('First review (round 1)'))
+      report('G8B_told_first_pass_was_earlier_invocation', p.includes('EARLIER INVOCATION'))
+      report('G8B_ledger_line_says_revisit_only', LINES.some((l) => l.includes('review ledger') && l.includes('re-visit only')))
+    } else if (SCENARIO === 'G8C') {
+      // No ledger at all => a genuine first pass, and the brief carries the three contracts the
+      // ledger depends on: the gate tag, the resolve-what-you-own rule, and the checkpoint write.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+      }
+      await runOnce(ARGS, canned)
+      const p = PROMPTS['review:FM-12:db#1'] || ''
+      report('G8C_mode_is_first_review', p.includes('First review (round 1)'))
+      report('G8C_no_earlier_invocation_claim', !p.includes('EARLIER INVOCATION'))
+      report('G8C_prompt_has_gate_tag_rule', p.includes('[gate:review]') && p.includes('THREAD OWNERSHIP'))
+      report('G8C_prompt_has_resolve_rule', p.includes('THREAD RESOLUTION') && p.includes('pr-resolve-thread.sh'))
+      report('G8C_prompt_has_ledger_checkpoint', p.includes('REVIEW-LEDGER CHECKPOINT') && p.includes('db-gate_review.json'))
+      report('G8C_prompt_first_pass_is_only_pass', p.includes('across INVOCATIONS'))
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
@@ -494,6 +557,15 @@ out="$(FIXTURE_NOTIFY_DM=U000000000000 run_scenario G6C)"; [[ "$VERBOSE" -eq 1 ]
 
 echo "── G7 — gate-only build (C1)"
 out="$(run_scenario G7)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G8a — review ledger (ADR 0021): a passed gate is frozen, loop skipped with no 'reviewed' row"
+out="$(run_scenario G8A)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G8b — review ledger: first pass on record resumes as RE-VISIT, not a second first review"
+out="$(run_scenario G8B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G8c — no ledger: genuine first pass, brief carries tag + resolve + checkpoint contracts"
+out="$(run_scenario G8C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi
