@@ -148,6 +148,12 @@ monitoring:
     onegame/staging: onegame-427115
     onegame/prod: onegame-427115
 
+test_suite:
+  max_fix_rounds: 2
+
+dev_cycle:
+  token_budget: 2000000
+
 products:
   - id: ofb-platform
     repos:
@@ -155,6 +161,8 @@ products:
         kind: test-suite
         desc: "The cross-repo QA suite for the front-end repo. It's contains the E2E UI tests for the front-end (OHANABET skin)."
         lang: cypress
+        green: "tests via cypress passed successfully"
+
       - url: git@gitlab.com:bluepicode/ofb/turnover-commission-batch.git
         kind: backend
         desc: A Rust batch job that closes each turnover-commission round — reads the daily player turnover accumulator, computes the multi-level referral commission per player, and rolls it up into the claimable summary.
