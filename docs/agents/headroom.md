@@ -54,8 +54,15 @@ The knobs live in `.claude/settings.json` `env`, at the root and in every repo:
 |---|---|---|---|
 | `HCAT_GATE_BYTES` | `65536` | `16384` | at 16 KB the gate denies `.claude/settings.json` (~18 KB) and redirects a file agents must edit **exactly** to a lossy rendering |
 | `HCAT_GATE_NO_SNIFF` | `1` | off | the 512-byte structural sniff catches extensionless and `.txt` files whose extension "lies" — a false positive there costs accuracy for a guess |
-| `DANGI_NUDGE_BYTES` | `32768` | `4096` | at 4 KB ordinary `grep`/`git log` output triggers a nudge; headroom's own docs say search results are already minimal, so those nudges are pure token drip |
+| `DANGI_NUDGE_BYTES` | `32768` (set, but **DEAD** since plugin 2.7.0) | `4096`, hardcoded | the intent stands — at 4 KB ordinary `grep`/`git log` output triggers a nudge — but 2.7.0 hardcodes `NUDGE_BYTES=4096` in its own script and never reads the env, so setting it changes nothing |
 | `DANGI_NO_NOTIFY` | `1` | off | desktop popups — this workspace already has `voice` and `stagehand` for that |
+
+`DANGI_NUDGE_BYTES` is kept in `.claude/settings.json` as a statement of the intended threshold, not
+because it works: verified against the installed plugin (`~/.claude/plugins/cache/headroom-tools/headroom-usage-indicator/2.7.0/`)
+— no file under it references the variable, and the plugin's own design note calls `NUDGE_BYTES` a
+hardcoded script variable with no env override. `aiworks doctor --only headroom` warns when the env
+sets it and the installed plugin still ignores it, so the day a release reads it, the warning
+disappears on its own. No upstream report filed.
 
 Escape hatches for a one-off: `HCAT_GATE_OFF=1` disables the gate, `HCAT_GATE_NO_REWRITE=1`
 keeps `cat` from being rewritten.

@@ -1158,6 +1158,25 @@ check_headroom() {
          "claude plugin install $key -s user" slow
   fi
 
+  # ── a knob the installed plugin does not read (C15) ──
+  # DANGI_NUDGE_BYTES is set in .claude/settings.json env. Plugin 2.7.0 hardcodes NUDGE_BYTES=4096
+  # and never reads it, so the setting is a statement of intent, not a threshold. Warn while that
+  # is true; the check disappears on its own the day a release starts reading it.
+  local want_nudge pdir
+  want_nudge=$(command -v jq >/dev/null 2>&1 && jq -r '.env.DANGI_NUDGE_BYTES // ""' "$ROOT/.claude/settings.json" 2>/dev/null)
+  if [[ -n "${want_nudge:-}" ]]; then
+    pdir="$(ls -dt "$HOME"/.claude/plugins/cache/*/headroom-usage-indicator/*/ 2>/dev/null | head -1)"
+    if [[ -z "$pdir" ]]; then
+      skip $g "nudge threshold" "headroom plugin not installed on this machine — nothing to compare"
+    elif grep -rq 'DANGI_NUDGE_BYTES' "$pdir"scripts "$pdir"hooks 2>/dev/null; then
+      pass $g "nudge threshold" "the installed plugin reads DANGI_NUDGE_BYTES (=$want_nudge)"
+    else
+      warn $g "DANGI_NUDGE_BYTES is set but the installed plugin ignores it" \
+           "settings.json asks for $want_nudge; $(basename "$(dirname "$pdir")")/$(basename "$pdir") hardcodes NUDGE_BYTES=4096, so every tool result over 4 KB still nudges" \
+           "see: docs/agents/headroom.md — the knob is documented DEAD; nothing to fix locally" slow
+    fi
+  fi
+
   # ── the savings badge (per-person: it edits a MACHINE-GLOBAL user settings file) ──
   cfg_bool headroom.statusline true
   if [[ $? == 1 ]]; then
