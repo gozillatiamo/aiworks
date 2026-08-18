@@ -451,6 +451,15 @@ const codegraphClause = (repoPath) => ` CODEGRAPH FIRST (this repo carries a \`.
 // concurrent build agents never touch the same file and a re-run just overwrites its own.
 const stateWrite = (repo, milestone, extra = '') => ` RUN-STATE CHECKPOINT (mandatory, do it as your LAST action before the structured result, with the Write tool — the directory already exists, created at Kickoff, so no mkdir needed): Write \`agent_logs/${ticket}-dev-cycle-state/${repo}-${milestone}.json\` at the WORKSPACE ROOT — the dir holding .claude/, NOT this repo's agent_logs/ (one file per checkpoint; overwriting your own file on a re-run is expected). Its content is exactly: {"repo":"${repo}","milestone":"${milestone}","status":"done","work_branch":"<the branch you worked>","head_sha":"<git rev-parse HEAD, the full sha>","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"${extra}}. head_sha must be the sha you actually read with \`git rev-parse HEAD\` after your last commit — a wrong sha makes the next invocation redo this work, which is the whole point of the row. If you are ending with status other than complete, write the SAME file with "status":"in-progress" instead, so a resume re-runs this milestone.`
 
+// REVIEW LEDGER (docs/agents/review-ledger.md). A gate's own outcome, checkpointed per repo per
+// gate — because the review<->fix loop's memory used to live only in this process's local
+// variables. A run that died before the merge phase left NOTHING behind, so the next invocation
+// re-ran every gate in FIRST-REVIEW mode and posted a fresh finding set the developer had never
+// been given a chance to fix. One row carries the two facts that stop that: FIRST PASS DONE (=>
+// re-visit, never a second first review) and PASSED (=> frozen, not re-reviewed at all). One file
+// per gate, not one per repo: the three gates write concurrently and would race a shared file.
+const gateRow = (repo, key) => ` REVIEW-LEDGER CHECKPOINT (mandatory, as your LAST action before the structured result, with the Write tool — the directory already exists, created at Kickoff, so no mkdir needed): Write \`agent_logs/${ticket}-dev-cycle-state/${repo}-gate_${key}.json\` at the WORKSPACE ROOT — the dir holding .claude/, NOT this repo's agent_logs/ — overwriting your own file from an earlier round or an earlier invocation. Content exactly: {"repo":"${repo}","milestone":"gate_${key}","status":"<done|in-progress>","first_pass":true,"head_sha":"<git rev-parse HEAD, the full sha>","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. Use "status":"done" ONLY when your verdict is a genuine pass AND every review thread you own is resolved; "in-progress" for anything else. WRITE THE ROW EITHER WAY — first_pass:true is what tells the next invocation you already did your ONE complete review, so skipping the row on an open verdict is precisely what makes a later run re-derive a whole new finding set instead of re-visiting yours. Never write "done" for a gate that could not run (gate_unavailable): an un-run gate must not read as proven.`
+
 // ──────────────────────────────────────────────────────────────────────────
 // Inputs
 // ──────────────────────────────────────────────────────────────────────────
@@ -840,6 +849,11 @@ const GATE_SCHEMA = {
       },
     },
     improvements_filed: { type: 'array', items: { type: 'string' } },
+    // THREAD RESOLUTION (docs/agents/review-ledger.md) — the review threads this gate ticked
+    // Resolve on, and the ones it deliberately left open. A pass carrying a non-empty still_open
+    // is the one contradiction the gate's brief forbids it to return.
+    resolved_threads: { type: 'array', items: { type: 'string' } },
+    still_open: { type: 'array', items: { type: 'string' } },
     // RE-VISIT ONLY: the developer's fix DIRECTLY caused a new blocking problem (a regression the
     // fix introduced, not a pre-existing issue). The workflow HALTS the repo for human action.
     fix_regression: { type: 'boolean' },
@@ -872,6 +886,11 @@ const REVIEW_SCHEMA = {
         },
       },
     },
+    // THREAD RESOLUTION (docs/agents/review-ledger.md) — the review threads this gate ticked
+    // Resolve on, and the ones it deliberately left open. A pass carrying a non-empty still_open
+    // is the one contradiction the gate's brief forbids it to return.
+    resolved_threads: { type: 'array', items: { type: 'string' } },
+    still_open: { type: 'array', items: { type: 'string' } },
     // RE-VISIT ONLY: the developer's fix DIRECTLY caused a new blocking problem (a regression the
     // fix introduced, not a pre-existing issue). The workflow HALTS the repo for human action.
     fix_regression: { type: 'boolean' },
@@ -1424,13 +1443,30 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
   }
 
   const verdict = {}, done = {}, didFirstReview = {}
+  // Which gates arrived already-settled from the LEDGER rather than from this process. Used to
+  // tell a resumed re-visit that it holds no memory of its own first pass (docs/adr/0021).
+  const resumedFirstPass = {}
   // Gates (guard/perf) that reported gate_unavailable — frozen as UNAVAILABLE (not a pass,
   // not a dev-fixable finding). key → reason. Surfaced loudly by the workflow (fail-open).
   const gatesUnavail = {}
-  // RESUME: this repo already reached 'reviewed' on an earlier invocation and its branch has not
-  // moved since — skip the whole review↔fix loop rather than re-paying for it (docs/adr/0018).
-  if (doneAt(R, 'reviewed') && pr) {
-    log(`[${R}] review SKIPPED — run state says reviewed and the branch has not moved. PR ${pr.pr_number ?? '?'}.`)
+  // REVIEW LEDGER — rehydrate BEFORE the loop opens (docs/agents/review-ledger.md). A gate whose
+  // row says done is FROZEN: not re-reviewed, not even re-visited. A gate that merely completed a
+  // pass resumes in RE-VISIT mode, so its first review stays the closed finding set ACROSS
+  // invocations, instead of being re-derived as a second "first review" that surfaces findings the
+  // developer was never given the chance to fix — the failure this ledger exists to end.
+  reviewers.forEach((rv) => {
+    const m = `gate_${rv.key}`
+    if (doneAt(R, m)) { done[rv.key] = true; didFirstReview[rv.key] = true; resumedFirstPass[rv.key] = true }
+    else if (stateRows.some((r) => r.repo === R && r.milestone === m && r.first_pass === true)) { didFirstReview[rv.key] = true; resumedFirstPass[rv.key] = true }
+  })
+  if (reviewers.some((rv) => resumedFirstPass[rv.key])) log(`[${R}] review ledger: ${reviewers.filter((rv) => resumedFirstPass[rv.key]).map((rv) => `${rv.key} ${done[rv.key] ? 'PASSED (frozen, never re-reviewed)' : 'first pass done → re-visit only'}`).join(', ')}.`)
+  // RESUME: skip the whole review↔fix loop rather than re-paying for it (docs/adr/0018) — either
+  // because this repo already reached 'reviewed', or because every individual gate is ledgered
+  // green and only the merge phase never got far enough to write that row. Deliberately
+  // head-agnostic: a passed gate stays passed (docs/adr/0021), so a commit landing afterwards does
+  // not reopen a settled review. That is the trade-off the ADR records, not an oversight.
+  if ((doneAt(R, 'reviewed') || (reviewers.length > 0 && reviewers.every((rv) => done[rv.key] === true))) && pr) {
+    log(`[${R}] review SKIPPED — ${doneAt(R, 'reviewed') ? "run state says reviewed" : "every gate is ledgered PASSED"}. PR ${pr.pr_number ?? '?'}.`)
     return { repo: R, status: 'ready', plan: rp, pr, reviewRound: 0, verdict: {}, gatesUnavailable: {}, deferred: deferredScope, met_acceptance: dev.met_acceptance || [], build: { summary: dev.summary, fixed: [] } }
   }
   let reviewRound = 0, fixPasses = 0, lastFixed = []
@@ -1463,14 +1499,29 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
     // first review is the COMPLETE, CLOSED finding set: confirm your OWN prior findings are addressed,
     // add nothing new. The ONE exception is a fix-CAUSED regression → fix_regression + a loud comment;
     // the workflow halts the repo for human action rather than looping the dev.
+    // A first pass that happened in an EARLIER invocation left nothing in this process — only its
+    // tagged threads on the PR/MR. Say so explicitly, or the gate reads "your first review" as
+    // something it never did, finds no memory of it, and quietly reviews afresh.
+    const resumedNote = (rv) => (resumedFirstPass[rv.key] && verdict[rv.key] == null)
+      ? ` YOUR FIRST REVIEW HAPPENED IN AN EARLIER INVOCATION of this workflow, not in this process — you hold no memory of it, and that is expected, not a gap. Its findings ARE the \`[gate:${rv.key}]\`-tagged threads already on this PR/MR: that thread list is the authoritative and COMPLETE record of your closed finding set. Read it and work from it. The absence of your own recollection is NOT licence to review afresh.`
+      : ''
+    // THREAD OWNERSHIP. All three gates post through the same adapter token, so the forge shows one
+    // author for every comment — nothing in the thread itself says which gate raised it. The tag is
+    // what survives a process boundary, and it is how a re-visit finds its OWN closed finding set.
+    const ownTag = (rv) => ` THREAD OWNERSHIP — prefix EVERY comment you post on this PR/MR with \`[gate:${rv.key}]\`, before any other prefix (so a fold-in reads "[gate:${rv.key}] [minor / fold-in] …"). Every gate posts as the SAME forge user, so this tag is the only thing that lets a later round — or a later invocation of this workflow, which holds none of your context — tell your threads from another gate's. An untagged comment is an orphan no re-visit will ever pick up.`
+    // THREAD RESOLUTION. GitLab's "Resolve thread" / GitHub's "Resolve conversation" is not
+    // decoration: an unresolved thread is the forge's own record that a finding is still open. The
+    // fixer ticks the ones it fixed, but the gate OWNS the judgement, so the invariant lives here —
+    // a gate may not pass while a thread it opened is unresolved.
+    const resolveRule = (rv) => ` THREAD RESOLUTION — you OWN every thread you opened, and ${rv.key === 'review' ? 'approved:true' : 'passed:true'} asserts you have none of them left open. List them with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\` (yours are the ones tagged \`[gate:${rv.key}]\`) and settle EACH one: where the developer's fix genuinely resolves it, tick Resolve yourself — \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — and where it does not, leave it unresolved (or reopen one the developer closed prematurely, \`--unresolve\`, with a comment saying why) and do NOT pass. Return the ids you resolved in resolved_threads and the ones you left in still_open. A pass sitting above an unresolved thread you own is the one outcome this contract forbids; so is resolving a thread to make the loop end.`
     const revisitTask = (rv) => {
       const recheck = rv.key === 'review'
         ? `Do NOT run /review again — that re-derives a full review from scratch and surfaces new findings, exactly what re-visit forbids. Instead list the review threads YOU opened (\`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`) and, for each must-fix you raised in your first review, confirm the developer's fix + reply genuinely resolve it. The green gate is NOT scoped down by a re-visit: the developer changed code, so RE-RUN the suite (\`scripts/dev.sh test\` from inside ${R}, plus analyze/gen where this repo's green needs them) and return a FRESH tests_green + tests_receipt — last round's green proves nothing about this commit, and a fix that resolves your thread while breaking a test is exactly what this catches. Return approved:true ONLY when EVERY one of your first-review must-fixes is resolved AND tests_green is true; else approved:false listing which of YOUR threads remain open (a newly-red suite counts as one).${NO_SELF_APPROVE}`
         : `Do NOT re-scan or re-profile broadly. Re-check ONLY the blocking + fold_in items YOU raised in your first review (\`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\` / \`pr-threads.sh\`): confirm each is resolved on the PR/MR. Return passed:true ONLY when EVERY one of your first-review items is resolved; else passed:false listing which of YOUR items remain. File NO new Improvement tickets and add NO new blocking/fold_in items.`
-      return `RE-VISIT (round ${reviewRound}) of ${prRef}. ${inRepo} Your first review is the COMPLETE, CLOSED finding set — you are ONLY confirming your OWN prior findings are addressed, NOT reviewing afresh. Raise, comment on, or file NOTHING new.${changed} ${recheck}
+      return `RE-VISIT (round ${reviewRound}) of ${prRef}.${resumedNote(rv)} ${inRepo} Your first review is the COMPLETE, CLOSED finding set — you are ONLY confirming your OWN prior findings are addressed, NOT reviewing afresh. Raise, comment on, or file NOTHING new.${changed} ${recheck}
 THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY caused a NEW blocking problem (a regression the fix introduced — NOT a pre-existing issue your first review missed), do NOT fold it into the loop. Post ONE loud PR/MR comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "⚠️ REGRESSION: <what the fix broke + evidence it was this fix>"\`, then return ${rv.key === 'review' ? 'approved:false' : 'passed:false'} with fix_regression:true and regression_detail (what broke, file:line, why it is the fix). The workflow then HALTS this repo loudly for human action — it is not yours to fix in-loop.`
     }
-    const scopeNote = `First review (round ${reviewRound}): this is your ONE complete pass — review the whole change set and report EVERY must-fix together in a single batch, because later rounds only RE-VISIT these findings and add nothing new.`
+    const scopeNote = `First review (round ${reviewRound}): this is your ONE complete pass — review the whole change set and report EVERY must-fix together in a single batch, because later rounds only RE-VISIT these findings and add nothing new. This holds across INVOCATIONS, not just rounds: if this workflow is re-run later, your finding set is read back from the threads you leave here, and nothing outside it is ever raised again. So sweep the whole change set NOW rather than triaging the obvious first and expecting a later pass to catch the rest — there is no later pass. Before you return, ask yourself once what part of the diff you have not actually looked at, and look at it. If you nonetheless notice something outside this closed set on a later round, do NOT post it: name it in your verdict's conclusion as out-of-scope-for-this-PR so a human can decide, ${STRICT ? 'which under review.level=strict is the only place it belongs' : 'or file it as an Improvement'}.`
     // THE BAR, INLINE. A reviewer is asked to judge the diff against the ticket's requirements, but
     // no reviewer holds a tracker grant — so a brief that says "read the ticket" points at a door
     // it cannot open, and the agent falls back to inferring the bar from commit messages. The
@@ -1490,10 +1541,13 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
           ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} You are the REPORTER for this repo's configured static-analysis tool on ${ticket} in ${R}, on ${onPr} You do not audit the code yourself and you do not write a security assessment: you run the configured scanner, relay what IT reported, and triage those findings. Every judgement below belongs to the tool; your job is to fetch it, classify it and post it. The workspace's configured quality-gate provider is quality_gate.provider="${QUALITY_GATE}" (mirrored from workspace.config.yaml — do NOT re-read the file). If it is 'none', skip the scan and pass cleanly. Otherwise (SonarQube) run the gate by whichever channel is LIVE in THIS run-context: FIRST try the SonarQube MCP — if the mcp__sonarqube tools are not already in your toolset, load them with ToolSearch (e.g. \`select:mcp__sonarqube__get_project_quality_gate_status,mcp__sonarqube__search_sonar_issues_in_projects,mcp__sonarqube__search_security_hotspots\`) and read the quality-gate status, the issue list and the hotspot list the tool reports for the PR SHA; if the MCP is NOT reachable, FALL BACK to the installed \`sonar\` CLI over Bash (\`sonar analyze\` / \`sonar verify --file <changed-file>\`). GATE-UNAVAILABLE: if NEITHER channel can actually run the scan (no MCP AND no working CLI/auth), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason naming both channels you tried and why each failed, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the configured SonarQube gate could NOT run in this run-context; never fabricate a green status. For each finding the tool marks BLOCKING, post a PR/MR comment carrying the tool's own rule id, file:line and suggested remediation, and list it under "blocking" — quote the tool, do not restate it as your own conclusion. As a light secondary pass, check whether its output happens to touch this repo's declared sensitive areas (${desc.guardianFocus}) and say so if it does; finding nothing there is the normal result, not a gap in your work. Triage every NON-blocking finding into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR fix (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the exact remediation and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have hardening (needs its own design, touches multiple layers, changes a contract/permission model, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. Return passed:false while ANY blocking OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY obtained a green quality-gate result (or the provider is 'none') AND no fold_in item is left unresolved — NEVER passed:true for a scan you could not run (use gate_unavailable for that). Return the structured gate result.`
           : `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Performance review of ${ticket} in ${R} on ${onPr} Profile the changed flows with this repo's profiling tooling (e.g. for a Flutter app every profiling command goes through scripts/perf.sh, never raw flutter/dart: perf.sh build --profile, perf.sh run --profile + perf.sh devtools); measure jank, startup, memory, rebuild storms, unbounded lists, costly/unindexed queries; mandatory animations stay 60fps. For each CRITICAL regression post a PR/MR comment WITH the measurement as evidence and list it under "blocking". Triage every NON-blocking optimization into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR optimization (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope; e.g. MediaQuery.of(context).size → MediaQuery.sizeOf(context), or an O(n²) lookup → a Set) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the measurement/mechanism + exact fix direction and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have optimization (needs its own design, touches multiple layers, changes a query/index/schema, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have; e.g. a composite (status, createdAt) index) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. GATE-UNAVAILABLE: if your profiling tooling cannot actually run in this run-context (e.g. scripts/perf.sh / the profiler is unavailable so you could measure nothing), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason explaining what you tried and why it couldn't run, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the performance gate could NOT run; never fabricate a clean profile. Return passed:false while ANY blocking regression OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY profiled the changed flows AND found zero blocking regressions AND no fold_in item is left unresolved — NEVER passed:true for a profile you could not run (use gate_unavailable for that). Return the structured gate result.`
 
+    // Ownership + resolution ride on BOTH modes: the first review must tag what it posts, the
+    // re-visit must resolve what it tagged. Appending once here beats threading them through five
+    // prompt variants.
     const promptFor = (rv) =>
-      modeThisRound[rv.key] === 'revisit'
+      (modeThisRound[rv.key] === 'revisit'
         ? `${tag(R, rv.role, 'review', reviewRound)} ${revisitTask(rv)}`
-        : firstReviewPrompt(rv)
+        : firstReviewPrompt(rv)) + ownTag(rv) + resolveRule(rv)
 
     const openReviewers = reviewers.filter((rv) => !done[rv.key])
     reviewers.filter((rv) => done[rv.key]).forEach((rv) => log(`[${R}] review round ${reviewRound}: ${rv.key} ${done[rv.key] === 'unavailable' ? 'UNAVAILABLE (gate could not run)' : 'already PASSED'} — frozen, not re-reviewed.`))
@@ -1504,6 +1558,9 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // (inconclusive, re-run next round) — distinct from the code reviewer REPORTING
     // gate_unavailable, which means its test gate could not run and HALTS the repo (never
     // fail-open: an unverified suite must not reach a merge).
+    // No gateRow here, deliberately: the backstop is a neutral checklist standing in for a gate
+    // that died, not the configured gate itself. Freezing the real guard gate for every future
+    // invocation on the strength of a substitute pass would be a stronger claim than it earned.
     const guardBackstop = async (msg) => {
       log(`⚠️  [${R}] guardian subagent could not complete (${msg}) — running checklist inline via neutral agent (backstop).`)
       try {
@@ -1519,7 +1576,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     }
     const runReviewer = async (rv) => {
       try {
-        return await agent(promptFor(rv) + VERDICT_BEFORE_BUDGET + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE + codegraphClause(desc.path), { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
+        return await agent(promptFor(rv) + VERDICT_BEFORE_BUDGET + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE + codegraphClause(desc.path) + gateRow(R, rv.key), { agentType: rv.role, phase: 'Review', label: `${rv.key}:${ticket}:${R}#${reviewRound}`, schema: rv.schema })
       } catch (e) {
         const msg = String(e?.message || e).slice(0, 200)
         if (rv.key === 'guard') return guardBackstop(msg)
@@ -1650,7 +1707,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       : ''
     // Developer fixes the WHOLE combined batch (every open reviewer's PR comments) in ONE pass, pushing to the PR.
     const fix = await safeAgent(
-      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}.${upstreamRepairClause}${pendingSyncClause} In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
+      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line AND its \`[gate:review|guard|perf]\` tag to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Ticking Resolve is part of the fix, not paperwork after it: an unresolved thread is the forge's own record that the finding is still open, the gates re-check exactly that list, and a fix you never resolved reads to every later reader — and to the next invocation of this workflow — as never done. Count the threads you resolved against the comments you fixed before you return; if the two numbers differ, you are not finished. Keep ${desc.green}.${upstreamRepairClause}${pendingSyncClause} In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
       { agentType: desc.build, phase: 'Review', label: `pr-fix:${ticket}:${R}#${reviewRound}`, schema: DEV_SCHEMA },
     )
     // STALL DETECTOR — the same unresolved finding set, with no new commit, surviving two
@@ -1762,7 +1819,9 @@ const RUN_STATE_SCHEMA = {
         required: ['repo', 'milestone', 'status'],
         properties: {
           repo: { type: 'string' },                // a REPOS key, or "all" for a run-level row
-          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'reviewed', 'test_suite', 'merged', 'distributed', 'artifact_published'] },
+          // gate_review | gate_guard | gate_perf are the REVIEW LEDGER rows (docs/adr/0021):
+          // one per repo per gate, carrying first_pass and whether that gate passed.
+          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'gate_review', 'gate_guard', 'gate_perf', 'reviewed', 'test_suite', 'merged', 'distributed', 'artifact_published'] },
           status: { type: 'string', enum: ['done', 'in-progress'] },
           work_branch: { type: ['string', 'null'] },
           head_sha: { type: ['string', 'null'] },   // the sha recorded WHEN the milestone landed
@@ -1777,6 +1836,7 @@ const RUN_STATE_SCHEMA = {
           acceptance: { type: 'array', items: { type: 'string' } }, // C10 — rehydrates the reviewers' BAR
           artifact_url: { type: ['string', 'null'] }, // C11 — the published plan page for this repo
           degraded: { type: 'boolean' },            // proof no longer holds → NOT skippable
+          first_pass: { type: ['boolean', 'null'] }, // gate_* rows — this gate completed its ONE full review
         },
       },
     },
@@ -1787,7 +1847,7 @@ const runState = await safeAgent(
 1. \`ls agent_logs/${ticket}-dev-cycle-state/*.json\` from your cwd (the workspace root). ONE FILE PER CHECKPOINT (not one shared file), named \`<repo>-<milestone>.json\`. If the directory does not exist or is empty, return found:false with rows:[] — that is the normal first-invocation answer, not an error.
 2. \`cat\` each file and parse it as one JSON object. A file that fails to parse is DISCARDED with no attempt to repair it. There is no duplicate-row question here — each (repo, milestone) has its own path, so nothing to dedupe.
 3. For every row carrying a work_branch AND a milestone OTHER than "planned", resolve what that branch points at NOW, using the repo dir from this map (do NOT cd; use git -C): ${Object.entries(REPOS).map(([id, d]) => `${id}=${d.path}`).join(', ')}. Run \`git -C <that dir> rev-parse --verify <work_branch>\` and put the result in live_sha (null when the branch does not exist). For a "planned" row, ALSO measure the plan markdown it points at: \`wc -c < "<plan_path>"\` and put the byte count in plan_bytes (0 when the file is missing or unreadable — never guess a size, and never create the file).
-4. DEGRADE mechanically, by what each milestone's proof actually IS. For every milestone EXCEPT "planned": set degraded:true AND status:"in-progress" on any row whose live_sha is null or differs from its recorded head_sha — a moved head means the milestone is no longer proven, full stop. For a "planned" row the proof is the PLAN FILE, not the branch head (commits landing on a work branch are the build doing its job and do not invalidate the plan that produced them): set degraded:true AND status:"in-progress" when plan_bytes is 0/absent or the row carries no plan_path, and otherwise leave degraded:false — do NOT compare its head_sha to live_sha at all. Do not reason about whether a difference matters; apply exactly these two rules.
+4. DEGRADE mechanically, by what each milestone's proof actually IS. For every milestone EXCEPT "planned": set degraded:true AND status:"in-progress" on any row whose live_sha is null or differs from its recorded head_sha — a moved head means the milestone is no longer proven, full stop. For a "planned" row the proof is the PLAN FILE, not the branch head (commits landing on a work branch are the build doing its job and do not invalidate the plan that produced them): set degraded:true AND status:"in-progress" when plan_bytes is 0/absent or the row carries no plan_path, and otherwise leave degraded:false — do NOT compare its head_sha to live_sha at all. The gate_* rows (the review ledger) and the test_suite row are a THIRD proof class and are NEVER degraded: their proof is the gate's own recorded verdict plus the threads it left on the PR/MR, not a branch head. Leave them degraded:false even when live_sha is null, and never compare their head_sha (it is an audit trail, not a claim about the branch NOW) — a passed gate stays passed, which is deliberate (docs/adr/0021), not an oversight for you to correct. Do not reason about whether a difference matters; apply exactly these two rules.
 5. Return every row you parsed, degraded flags applied, plus found and the directory path. Add nothing, invent nothing, and never fabricate a head_sha you did not read from a file.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', model: 'haiku', phase: 'Scope', label: `run-state:${ticket}`, schema: RUN_STATE_SCHEMA },
 )
