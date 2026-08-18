@@ -95,12 +95,13 @@ run-state row is the only mechanism that can make a resumed Kickoff cheap, and 8
 records `title` and `acceptance` alongside `ticket_fp` and `plan_path`.
 
 A `planned` row is therefore skippable, but only when the plan file it points at still exists and is
-non-empty AND the ticket's fingerprint — title + acceptance criteria + comment count, normalized and
-hashed, since no tracker provider's adapter exposes an `updated` timestamp — matches the fingerprint
-recorded at plan time. This ticket was hand-edited mid-run once already, so an unguarded skip would have
-built every repo against superseded acceptance criteria. On a mismatch, EVERY `planned` row for the run is
-invalidated and all repos re-plan: a partial re-plan is the worse failure, because it leaves sibling repos
-planned against two different readings of one ticket.
+non-empty AND the ticket's fingerprint — title + acceptance criteria, normalized and hashed, since no
+tracker provider's adapter exposes an `updated` timestamp (see the addendum below for why the comment
+count that originally rode along with these was dropped) — matches the fingerprint recorded at plan time.
+This ticket was hand-edited mid-run once already, so an unguarded skip would have built every repo against
+superseded acceptance criteria. On a mismatch, EVERY `planned` row for the run is invalidated and all
+repos re-plan: a partial re-plan is the worse failure, because it leaves sibling repos planned against two
+different readings of one ticket.
 
 Two consequences for the loader. First, `planned` is proven by its PLAN FILE, not by a branch head: the
 loader measures `wc -c` on the recorded `plan_path` and stops comparing `head_sha` for that milestone —
@@ -112,3 +113,44 @@ session — the only holder of the `Artifact` tool) rather than patched into the
 this ADR's unique-path-per-(repo, milestone) property: no read-modify-write, no row an agent can corrupt
 by re-emitting one it did not own. Later runs pass that URL back so the page is updated in place; a repo
 whose Kickoff was skipped renders no page and so is published not at all.
+
+## Addendum — upstream degrade, per-suite gate rows, and a fingerprint without the comment count
+
+**Upstream degrade.** A `built`/`reviewed` row only proves ITS OWN repo's head — it says nothing
+about whether the upstream it was built or reviewed against is still the upstream that would be
+built against today. A measured run hit exactly that gap: a DB repo's head moved after its own
+`built` row was recorded, a downstream service repo's build (which carries the submodule-pin
+clause that would have caught this) was skipped because its OWN row still looked fresh, and the
+reviewer ended up reading a stale vendored schema. The fix walks every scoped repo's declared
+`depends_on` edges to a fixpoint: whenever an upstream's `built`/`reviewed` row is itself degraded
+or missing, every downstream row degrades too, in one pass, so a chain (`db` → `svc` → `e2e`)
+propagates instead of stopping at the first hop. This runs in JS, in the Scope stage, right after
+`out_of_reach` is settled — deliberately NOT inside the run-state loader prompt, because
+`depends_on` does not exist until Scope has run, and the loader runs BEFORE Scope. Doing it in JS
+also makes it free (no extra agent call) and directly testable offline. An upstream with no row at
+all is not itself a degrade signal — nothing was proven for it, so there is nothing to invalidate,
+and the downstream's own `built`-row skip for that upstream simply never fires.
+
+**Per-suite gate rows.** The original single `all-test_suite.json` row assumed one test-suite repo
+per run. A ticket can scope more than one (an E2E suite and an API suite, say), and each needs its
+OWN resume proof — a `${repo}-test_suite.json` row, mirroring the `built`/`reviewed` naming already
+used per repo. A pre-existing `all-test_suite.json` row from a run before this split matches no
+suite repo's new row name, so the first resume after this change simply runs every gate once more.
+That is the safe direction (never a false skip) and is expected to cost exactly one extra run, once.
+
+**Fingerprint without the comment count.** The original design hashed title + acceptance criteria
++ comment count, on the reasoning that a comment can carry a real requirement change a title/body
+edit would miss. In practice this was self-defeating: the run itself posts comments (status moves,
+gate results, dev-status updates), so the comment count climbs on every single invocation, and the
+very next resume read a changed fingerprint and re-planned every repo from scratch — the fingerprint
+was invalidating the plan it had just written. Own-comment exclusion was considered and declined:
+excluding comments authored by "the run itself" needs a stable identity to filter on, and none is
+cheaply available — the Jira adapter renders each comment as `author.displayName` (falling back to
+`accountId`), while the adapter's own identity lives only in `scripts/tracker/.env` (`JIRA_EMAIL`),
+which is unreadable by policy and would not match a displayName even if it were read. No provider
+adapter exposes a self-identity call (`myself`/`users/me`/`viewer` — grepped, none exist), and
+adding one is new adapter surface bought for a single hash input. So the fingerprint now hashes
+title + acceptance criteria only. The accepted trade: a requirement change that lives ONLY in a
+comment, never folded into the ticket's body or acceptance criteria, no longer invalidates a plan —
+that belongs in the body/acceptance in the first place, and the alternative (measured) invalidated
+every plan on every resume.

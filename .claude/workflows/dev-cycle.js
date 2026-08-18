@@ -190,10 +190,23 @@ let RESOLVED_LANGUAGE = (typeof LANGUAGE !== 'undefined' ? LANGUAGE : 'en')
 let RESOLVED_PLAN_TO_HTML = (typeof PLAN_TO_HTML !== 'undefined' ? PLAN_TO_HTML : false)
 let RESOLVED_AUTO_APPROVE = (typeof AUTO_APPROVE_PLAN !== 'undefined' ? AUTO_APPROVE_PLAN : false)
 let RESOLVED_ARTIFACTS = false
+// C11 — the version of THIS script. Logged first (before even the resolver agent below, so a
+// hung/failed resolver still leaves the version on record) so a run's own output says which copy
+// is executing: the engine persists a copy per run, and a scratchpad hand-copy predating a change
+// looks identical in the log otherwise (it cost one run a full 8-repo re-plan). Scheme: the date
+// the change set landed plus a same-day counter — bump it in the SAME commit as any behaviour change.
+// DEVIATION from the plan's example log line: `ticket`/`dryRun`/`approvePlan` are declared further
+// below in the Inputs section, so referencing them THIS early throws (TDZ) — version-only here.
+const DEVCYCLE_VERSION = '2026-08-18.1'
+log(`${meta.name} v${DEVCYCLE_VERSION}`)
+// C14 — MECHANICAL STEPS run on haiku, explicitly, so it never depends on an agent file staying
+// haiku: this resolver, the status mover, the ws-root/plan-guard/publish-request kickoff steps, the
+// run-state loader, and the Summary phase's incomplete-run DM. Every judgment agent (planner,
+// developer, reviewer, guardian, performance, qa-runner/qa-planner) is untouched.
 try {
   const cfgCheck = await agent(
     'Resolve three workspace config values, local-first. Read `workspace.config.local.yaml` in the repo root if it exists; else read `workspace.config.yaml`. (1) language: if the local file exists AND has a `language:` line, that value wins, source="workspace.config.local.yaml"; otherwise use `workspace.config.yaml`\'s `language:` line (default "en" if absent), source="workspace.config.yaml". (2) plan_to_html: if the local file exists AND has a `planning:` block, read `to_html` from THAT block ONLY — the merge is shallow per top-level key, so a local `planning:` block replaces the shared one whole and a `to_html` absent from it means false, NOT the shared file\'s value; otherwise use `workspace.config.yaml`\'s `planning.to_html` (default false if absent). (3) auto_approve: report this key ONLY when the local file exists AND has a `planning:` block — then read `auto_approve` from THAT block ONLY, and an `auto_approve` absent from that block means false, NOT the shared file value. If there is no local file, or it has no `planning:` block, OMIT auto_approve from your answer entirely so the workflow keeps its committed default. (4) artifacts_enabled: read `artifacts.enabled` the same shallow-merge way — a local `artifacts:` block replaces the shared one whole, so `enabled` absent from a local `artifacts:` block means false; with no local `artifacts:` block use `workspace.config.yaml`\'s `artifacts.enabled` (false if absent). Return ONLY the resolved language ("en" or "th"), plan_to_html (boolean), auto_approve (boolean — omitted entirely unless a local `planning:` block exists), artifacts_enabled (boolean), and the source file — nothing else, no other files, no other analysis.',
-    { agentType: 'documentor', label: 'resolve-runtime-config', schema: RUNTIME_SCHEMA },
+    { agentType: 'documentor', model: 'haiku', label: 'resolve-runtime-config', schema: RUNTIME_SCHEMA },
   )
   if (cfgCheck?.language === 'en' || cfgCheck?.language === 'th') RESOLVED_LANGUAGE = cfgCheck.language
   if (typeof cfgCheck?.plan_to_html === 'boolean') RESOLVED_PLAN_TO_HTML = cfgCheck.plan_to_html
@@ -308,6 +321,9 @@ const dryRun = /--dry-run\b/i.test(rawArg) || opt.dryRun === true
 // PLAN APPROVAL — when AUTO_APPROVE_PLAN is false the run STOPS after Kickoff so a human can
 // review the plan(s) before build. Re-run with "--approve-plan" (or opt.approvePlan) to proceed.
 const approvePlan = /--approve-plan\b/i.test(rawArg) || opt.approvePlan === true
+// C11 — the ticket-scoped half of the version line (the version-only half already logged above,
+// before `ticket` existed): now that it does, restate it WITH the ticket + run flags.
+log(`${meta.name} v${DEVCYCLE_VERSION} — ${ticket}${dryRun ? ' (dry run)' : ''}${approvePlan ? ' (plan approved)' : ''}`)
 
 // Machine-readable marker prefixed on EVERY agent prompt so
 // summarize-workflow-performance can attribute each transcript to a repo+role.
@@ -413,10 +429,11 @@ const SCOPE_SCHEMA = {
   required: ['ticket', 'type', 'repos'],
   properties: {
     ticket: { type: 'string' }, title: { type: 'string' },
-    // C10 — the fingerprint inputs. Scope is the ONE stage that reads the live ticket, and it
-    // already walks the acceptance criteria one by one (out_of_reach), so both are free here.
+    // C12 — the fingerprint inputs. Deliberately NOT the comment count: this run posts comments
+    // itself, so a count-based fingerprint invalidated every plan it had just written (docs/adr/0018
+    // addendum). Scope is the ONE stage that reads the live ticket, and it already walks the
+    // acceptance criteria one by one (out_of_reach), so this list is free here.
     acceptance: { type: 'array', items: { type: 'string' } }, // the ticket's criteria, VERBATIM
-    comment_count: { type: 'number' },                        // how many comments the ticket has now
     type: { type: 'string', enum: ['feature', 'bug', 'polish'] },
     tracker_reachable: { type: 'boolean' }, // false → scope could NOT read the live ticket via the adapter (writes won't persist this run)
     // OUT OF REACH — acceptance criteria no repo in THIS workspace can satisfy, declared once here
@@ -808,7 +825,13 @@ let qualityGateUnavailable = null
 // (the environment's noise floor is wider than the effect). Same loud-skip treatment: the run
 // continues, and the summary says plainly that "no slower than base" is unproven.
 let loadtestGateUnavailable = null
+// C9 — set when the run stops itself on its own token budget (see budgetStop below). writeSummary
+// reads this to put a prominent banner at the top of the summary before it is ever assigned.
+let budgetStopped = null
 const tick = (label) => { const now = budget.spent(); spend.push({ label, out: now - mark }); mark = now }
+// C9 — the run's own ceiling. Checked only at PHASE BOUNDARIES: mid-phase there is nothing to
+// stop cleanly, and every milestone is already checkpointed, so stopping here loses no work.
+const overBudget = () => TOKEN_BUDGET > 0 && budget.spent() > TOKEN_BUDGET
 
 // agent() THROWS when a subagent never returns StructuredOutput (after the engine's
 // retries/nudges) — an uncaught throw aborts the ENTIRE run. safeAgent swallows that to
@@ -885,13 +908,22 @@ const stallFp = (rows) => JSON.stringify(rows.map(([key, v]) => [
 // Required closing step — runs the per-repo/role usage parser over the run's
 // transcripts and writes the run-summary file. This agent's prompt intentionally
 // OMITS the [dev-cycle …] marker so the parser does NOT count the recorder itself.
+//
+// C10 — WHICH ENDING EARNS THE CHANNEL. Only a run that took the ticket as far as a run can:
+// every scoped repo reviewed-ready, the gate green (or legitimately skipped), and the merge/
+// distribute left as the human `!` steps this workflow never performs itself. Everything else —
+// blocked, halted, stalled, unverified, budget-stopped, plan-missing, dry-run, awaiting approval —
+// is a private matter for the person who started it, and gets a DM instead of team-wide noise.
+const COMPLETE_ENDINGS = ['merge-skipped', 'awaiting-human-ship']
+const DM_PLACEHOLDER = /^U0{6,}/
+const dmTarget = NOTIFY && NOTIFY_DM && !DM_PLACEHOLDER.test(NOTIFY_DM) ? NOTIFY_DM : null
 async function writeSummary(runStatus, runResult, deferredScopeRun = []) {
   phase('Summary')
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.${['repo-unresolved', 'review-regression-halt', 'review-tests-unverified', 'review-stalled', 'review-blocked-on'].includes(runStatus) ? ' Also state plainly, near the top, whether the cross-repo test-suite gate ran: on a stopped run it did NOT, so the change set is UNVALIDATED end-to-end and the run summary must not read as though it were.' : ''}
 ${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}
-${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
+${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}${budgetStopped ? `2e. 🛑 BUDGET STOP — put this as the FIRST line of the file, as a prominent banner: "${budgetStopped}" Say plainly which phases did NOT run, so nobody reads this summary as a completed cycle.\n` : ''}3. WRITE that narrative with the Write tool to agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md at the WORKSPACE (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. As the LAST step, RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write the file AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.` + LANGUAGE_DIRECTIVE,
     { agentType: 'documentor', phase: 'Summary', label: `summary:${ticket}`, schema: SUMMARY_SCHEMA },
@@ -899,7 +931,30 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
   tick('summary')
   if (s && s.token_table_appended === false) log('⚠️ Summary file written but the token/time table was NOT appended (parser empty/failed) — run parse_workflow_usage.py manually.')
   log(`Run summary: ${s?.summary_path ?? '(summary agent did not converge)'}`)
-  return s ?? { summary_path: null, token_table_appended: false, note: 'summary agent did not converge' }
+  const result = s ?? { summary_path: null, token_table_appended: false, note: 'summary agent did not converge' }
+  // C10 — every ending EXCEPT the two COMPLETE ones DMs the configured member instead of posting
+  // to the channel; folded into writeSummary so every return path is covered by construction.
+  if (!COMPLETE_ENDINGS.includes(runStatus) && dmTarget) {
+    await safeAgent(
+      `${tag('all', 'notifier', 'dm')} Send ONE Slack DIRECT MESSAGE about an INCOMPLETE dev-cycle run. Run it from the WORKSPACE (org) ROOT; do NOT cd, do NOT touch git or the tracker, do NOT post to any channel. The command is a mutating adapter call, so it must be the WHOLE Bash command — no pipe, no &&, no $( ), no heredoc:
+
+scripts/notify/send.sh --channel ${dmTarget} ${JSON.stringify(`${ticket} dev-cycle ended: ${runStatus}. Summary: ${result.summary_path || '(none written)'}. Resume: /dev-cycle ${ticket}`)}
+
+On success it prints \`ok=1\`. Return sent:true ONLY if it exited 0, with the permalink when printed; on ANY failure return sent:false with the command's stderr in note. Do NOT retry more than once and send nothing else.`,
+      { agentType: 'documentor', model: 'haiku', phase: 'Summary', label: `dm:${ticket}:${runStatus}`, schema: NOTIFY_SCHEMA },
+    )
+  }
+  return result
+}
+
+// C9 — the run's own budget-stop checkpoint. Called at each phase boundary; writes the same
+// summary + returns the same result shape every other terminal path does, so a budget stop is
+// just another handoff — resumable, never a crash.
+const budgetStop = async (nextPhase, payload, deferredScopeRun = []) => {
+  budgetStopped = `Run stopped on its own token budget before the ${nextPhase} phase: ${budget.spent()} > ${TOKEN_BUDGET} (workspace.config.yaml dev_cycle.token_budget). Nothing failed — the run ran out of the budget it was given. Re-run \`/dev-cycle ${ticket}\` (run state resumes every milestone already proven) or raise the ceiling with \`--token-budget <n>\`.`
+  log(`⛔ BUDGET STOP — ${budgetStopped}`)
+  const summary = await writeSummary('budget-stopped', { ticket, stopped_before: nextPhase, spent: budget.spent(), token_budget: TOKEN_BUDGET, ...payload }, deferredScopeRun)
+  return { ticket, status: 'budget-stopped', stopped_before: nextPhase, spent: budget.spent(), token_budget: TOKEN_BUDGET, budgetStopped, summary, spend, ...payload }
 }
 
 // ── Notify (review request) — OPTIONAL phase, runs LAST (after Summary) ──
@@ -1447,7 +1502,7 @@ phase('Scope')
 const testSuiteRepoIds = Object.keys(REPOS).filter((id) => REPOS[id].testSuite)
 const scope = await safeAgent(
   `${tag('all', 'cto', 'scope')} You are the scoping stage for ${ticket}. Read the ticket via the tracker adapter (\`scripts/tracker/get-ticket-details.sh ${ticket}\`, + \`get-ticket-comments.sh\`) and decide which of the workspace's repos it requires changes in: ${Object.keys(REPOS).join(', ')} (only these are registered). For each touched repo return { repo, depends_on (other touched repo ids that must be built/merged first — typically a backend → app → test-suite order), summary (what that repo must change) }. The registered cross-repo test-suite (QA) repo(s) are: ${testSuiteRepoIds.length ? testSuiteRepoIds.join(', ') : 'none'}. When this change should be validated end-to-end by the cross-repo test suite (E2E / API / load) against the candidate build, set test_suite.needed:true AND include that test-suite repo in \`repos\`, with depends_on listing the app/service repos it validates (so it builds + merges LAST). The gate CANNOT run unless the test-suite repo is in \`repos\` — needed:true on its own does nothing. If no test-suite repo is registered, leave needed:false. Most tickets touch only the app repo; when they also need end-to-end validation, return the app repo PLUS the test-suite repo. Also set tracker_reachable: true ONLY if the adapter actually returned the live ticket this call — set it false if the tracker was unreachable and you proceeded from inline/contextual info (the run then loudly flags that Status moves, comments, and improvement tickets did NOT persist).
-OUT OF REACH — read the ticket's acceptance criteria one by one and ask of each: can ANY repo registered above satisfy it? List in \`out_of_reach\` only those that cannot be satisfied here BY CONSTRUCTION — the owner is a repo this workspace does not hold (gateway/infra config, a third party's system), or the work needs an access only a person has (a dashboard, a certificate, a production credential). Quote the criterion, say concretely why, and name who CAN do it. Judge reachability, NOT difficulty: a criterion that is merely hard, or whose real obstacle only appears once someone reads the code, is NOT out of reach — the build will discover those and hand back \`deferred\`, which gets adjudicated then. An empty list is the normal, healthy answer, and a criterion you are unsure about belongs OUT of the list. Then set \`deliverable_now\`: true if at least ONE acceptance criterion remains reachable here, false ONLY if the ticket asks for nothing this workspace can deliver — false STOPS the run immediately, before any branch or plan exists, so do not use it to express that a ticket is partly blocked. Also return, for the run's ticket-change fingerprint: \`title\` (the ticket's title verbatim), \`acceptance\` (every acceptance criterion of the ticket, copied VERBATIM, one array element per criterion, in the order they appear — this is the same list you just walked for out_of_reach, so copy it rather than re-deriving it), and \`comment_count\` (how many comments \`get-ticket-comments.sh\` returned — a plain integer, 0 when there are none). Copy, do not paraphrase, summarize, re-order or renumber: a later invocation compares this text to decide whether the ticket changed, so a rewording you invent reads as a human edit and costs a full re-plan. Return the structured scope.`,
+OUT OF REACH — read the ticket's acceptance criteria one by one and ask of each: can ANY repo registered above satisfy it? List in \`out_of_reach\` only those that cannot be satisfied here BY CONSTRUCTION — the owner is a repo this workspace does not hold (gateway/infra config, a third party's system), or the work needs an access only a person has (a dashboard, a certificate, a production credential). Quote the criterion, say concretely why, and name who CAN do it. Judge reachability, NOT difficulty: a criterion that is merely hard, or whose real obstacle only appears once someone reads the code, is NOT out of reach — the build will discover those and hand back \`deferred\`, which gets adjudicated then. An empty list is the normal, healthy answer, and a criterion you are unsure about belongs OUT of the list. Then set \`deliverable_now\`: true if at least ONE acceptance criterion remains reachable here, false ONLY if the ticket asks for nothing this workspace can deliver — false STOPS the run immediately, before any branch or plan exists, so do not use it to express that a ticket is partly blocked. Also return, for the run's ticket-change fingerprint: \`title\` (the ticket's title verbatim) and \`acceptance\` (every acceptance criterion of the ticket, copied VERBATIM, one array element per criterion, in the order they appear — this is the same list you just walked for out_of_reach, so copy it rather than re-deriving it). Copy, do not paraphrase, summarize, re-order or renumber: a later invocation compares this text to decide whether the ticket changed, so a rewording you invent reads as a human edit and costs a full re-plan. Return the structured scope.`,
   { agentType: 'cto', phase: 'Scope', label: `scope:${ticket}`, schema: SCOPE_SCHEMA },
 )
 if (!scope) throw new Error(`dev-cycle: scope stage did not converge for ${ticket}`)
@@ -1504,8 +1559,8 @@ while (degradePass++ < Object.keys(declaredUpstreams).length + 1) {
 // get-ticket-details.sh prints one, replace the whole hash with that field.
 const fpNorm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
 const fpHash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(16) }
-const TICKET_FP = fpHash([fpNorm(scope.title), ...(scope.acceptance || []).map(fpNorm), `c=${scope.comment_count ?? '?'}`].join('|'))
-log(`[scope] ticket fingerprint fp=${TICKET_FP} (title + ${(scope.acceptance || []).length} acceptance criterion/criteria + ${scope.comment_count ?? '?'} comment(s)) — a Kickoff already recorded under this fp is skippable.`)
+const TICKET_FP = fpHash([fpNorm(scope.title), ...(scope.acceptance || []).map(fpNorm)].join('|'))
+log(`[scope] ticket fingerprint fp=${TICKET_FP} (title + ${(scope.acceptance || []).length} acceptance criterion/criteria; comments deliberately excluded — this run posts its own) — a Kickoff already recorded under this fp is skippable.`)
 const testSuiteRequested = scope.test_suite?.needed === true
 // A flagged test-suite gate is only RUNNABLE if the test-suite repo is in the built set
 // (its qa-planner/qa-runner author + build the specs the gate runs). The scope agent can
@@ -1551,6 +1606,7 @@ if (scope.deliverable_now === false) {
 //    plan + automation plan and does NOT branch (qa-runner branches at build).
 //    The WORKFLOW owns the ticket status — it moves the ticket to in_progress ONCE here
 //    (not the per-repo planners), so a multi-repo ticket can't thrash its status.
+if (overBudget()) return await budgetStop('Kickoff', { ticket, repos: scoped.map((r) => r.repo), testSuiteRequested })
 phase('Kickoff')
 await moveTicket(['in_progress'], 'kickoff started', 'Kickoff')
 const branchKind = scope.type === 'bug' ? 'fix' : 'feature' // polish rides the feature flow
@@ -1817,6 +1873,7 @@ if (!RESOLVED_AUTO_APPROVE && !approvePlan) {
 // concurrently regardless of depends_on. depends_on is still honored at Merge
 // (mergeOrder, below) so the squash-merges land upstream → downstream. Reviewers
 // (code-reviewer + guardian + performance) all review the OPEN PR.
+if (overBudget()) return await budgetStop('Build', { ticket, repos: plans.map((p) => p.repo), plans, testSuiteRequested, testSuiteGateUnavailable })
 phase('Build')
 const repoResults = {}
 const buildIds = waveList.flat() // every scoped repo, in dependency (merge) order
@@ -1858,13 +1915,11 @@ if (aborted.length) {
   const blocked = aborted.filter((id) => repoResults[id]?.status === 'review-blocked-on')
   if (blocked.length) log(`⛔⛔ BLOCKED ON ANOTHER REPO — ${blocked.map((id) => `${id} → ${(repoResults[id]?.blockedOn || []).join('+')}`).join(' | ')}. Land the upstream, then re-run; the run state resumes each repo from its own milestone.`)
   const runStatus = regressionHalts.length ? 'review-regression-halt' : testsUnverified.length ? 'review-tests-unverified' : blocked.length ? 'review-blocked-on' : stalls.length ? 'review-stalled' : 'repo-unresolved'
+  // C10 — this is NOT a complete ending (the change set is not merge-ready), so the channel
+  // Notify digest is superseded by writeSummary's own incomplete-run DM: no separate review
+  // request here. The Summary written below is what a human needs to pick this back up.
   const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, regressionHalts, testsUnverified, stalls, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable })
-  // The barrier stays hard — no partial merge across repos — but a stopped invocation should
-  // still leave the artifacts a human needs. The Summary is written above; the review request
-  // is the other half: several repos DID open a reviewed PR/MR, and those are worth a human's
-  // eyes even though the change set as a whole is not merge-ready.
-  const notify = await notifyReview(buildIds)
-  return { ticket, status: runStatus, aborted, handoffs, regressionHalts, testsUnverified, stalls, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, notify, spend }
+  return { ticket, status: runStatus, aborted, handoffs, regressionHalts, testsUnverified, stalls, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.
@@ -1901,6 +1956,7 @@ await moveTicket(['ready_to_merge', 'ready_to_test'], runDeferred.length ? `all 
 // run BEFORE the final merge so we validate the candidate, not after committing it. Runs
 // when a test-suite gate is needed, a test-suite repo is in scope, and at least one
 // non-test-suite (app/service) repo is present for the suite to run against.
+if (overBudget()) return await budgetStop('Test suite', { ticket, mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
 const testSuiteRepos = mergeOrder.filter((id) => REPOS[id].testSuite)
 let testSuite = null
 // RESUME, per suite (C5): the gate never fails open (docs/agents/loadtest-gate.md), so a skip is
@@ -2104,6 +2160,7 @@ if (dryRun) {
 // when a repo opts OUT, its reviewed + validated PR/MR is left OPEN for a human and the run stops
 // here — NOTHING is merged or distributed (review + the test-suite gate still ran, so the human
 // merges a fully-validated candidate). Exactly like a dry-run, but with real, reviewed PRs.
+if (overBudget()) return await budgetStop('Merge', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
 phase('Merge')
 // The `!` hand-off (auto-merge ON). The squash-merge — and everything downstream (distribute,
 // close) — is outward + irreversible. Under auto-mode the permission classifier clears these ONLY
