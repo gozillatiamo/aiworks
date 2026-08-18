@@ -83,3 +83,32 @@ unreachable), so that one row is a known, accepted gap in a best-effort run.
   agents never share a path, so there is no read-modify-write and no row an agent could corrupt
   by re-emitting one it didn't own. Its content is machine data, never prose, so it carries no
   localization surface.
+
+## Addendum — the `planned` row now skips, guarded by a ticket fingerprint
+
+The original decision recorded that "a `planned` milestone is recorded but never used to skip anything",
+resting on two premises. A real multi-repo run disproved both. The kickoff planners were NOT inside the
+engine's cached prefix: the run was re-invoked with a fresh `Workflow()` call and no `resumeFromRunId`,
+which is an ordinary way to re-invoke a ticket and leaves the engine's cache doing nothing — so the
+run-state row is the only mechanism that can make a resumed Kickoff cheap, and 8-9 planner spawns at
+300k-800k tokens each were paid again per invocation. And a plan row CAN carry the reviewers' bar: it now
+records `title` and `acceptance` alongside `ticket_fp` and `plan_path`.
+
+A `planned` row is therefore skippable, but only when the plan file it points at still exists and is
+non-empty AND the ticket's fingerprint — title + acceptance criteria + comment count, normalized and
+hashed, since no tracker provider's adapter exposes an `updated` timestamp — matches the fingerprint
+recorded at plan time. This ticket was hand-edited mid-run once already, so an unguarded skip would have
+built every repo against superseded acceptance criteria. On a mismatch, EVERY `planned` row for the run is
+invalidated and all repos re-plan: a partial re-plan is the worse failure, because it leaves sibling repos
+planned against two different readings of one ticket.
+
+Two consequences for the loader. First, `planned` is proven by its PLAN FILE, not by a branch head: the
+loader measures `wc -c` on the recorded `plan_path` and stops comparing `head_sha` for that milestone —
+under the head rule every `planned` row degraded the moment the build made its first commit (and the
+test-suite repo's row degraded immediately, since its branch is created at build time, not plan time), so
+the skip could never have fired. Every other milestone keeps the head rule unchanged. Second, a published
+plan Artifact's URL is recorded as its OWN row (`<repo>-artifact_published.json`, written by the main
+session — the only holder of the `Artifact` tool) rather than patched into the `planned` row, preserving
+this ADR's unique-path-per-(repo, milestone) property: no read-modify-write, no row an agent can corrupt
+by re-emitting one it did not own. Later runs pass that URL back so the page is updated in place; a repo
+whose Kickoff was skipped renders no page and so is published not at all.
