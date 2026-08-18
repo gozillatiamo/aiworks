@@ -13,6 +13,7 @@ notify:
   enabled: true
   provider: slack
   channel: "#dev-oneforbet"
+  dm_on_incomplete: "U081LPQ4REH"
 
 observability:
   enabled: true
