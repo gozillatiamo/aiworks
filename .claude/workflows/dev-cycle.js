@@ -129,6 +129,15 @@ const STATUS = {
   done: 'DONE',
 }
 const REPOS = {
+  'agent-ofb-cypress': {
+    path: 'agent-ofb-cypress', kind: 'test-suite',
+    base: { feature: 'main', fix: 'main' },
+    plan: 'qa-planner', build: 'qa-runner', review: null,
+    guard: false, perf: false,
+    green: 'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand',
+    testSuite: true,
+    distribute: null,
+  },
   'turnover-commission-batch': {
     path: 'turnover-commission-batch', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },

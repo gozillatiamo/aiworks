@@ -1,5 +1,10 @@
 # ofb-platform — mani projects. path is relative to THIS file dir (mani.d/), so ../agent-db resolves under the workspace root.
 projects:
+  agent-ofb-cypress:
+    desc: "The cross-repo QA suite for the front-end repo. It's contains the E2E UI tests for the front-end (OHANABET skin)."
+    url: git@gitlab.com:bluepicode/qa/agent-ofb-cypress.git
+    path: ../agent-ofb-cypress
+    tags: [ofb-platform, cypress]
   turnover-commission-batch:
     desc: A Rust batch job that closes each turnover-commission round — reads the daily player turnover accumulator, computes the multi-level referral commission per player, and rolls it up into the claimable summary.
     url: git@gitlab.com:bluepicode/ofb/turnover-commission-batch.git

@@ -142,3 +142,4 @@ workspace.config.local.yaml
 .obsidian/workspace-mobile.json
 .obsidian/graph.json
 # <<< aiworks sync: obsidian
+/agent-ofb-cypress/
