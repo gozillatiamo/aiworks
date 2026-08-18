@@ -18,16 +18,19 @@
 #   2. Run ONE Bash tool call in the MAIN session.
 #   3. Spawn a trivial subagent (Agent tool / Task) that runs ONE Bash tool call.
 #   4. cat "${TMPDIR:-/tmp}/hook-signal-probe.log" — two lines. Compare:
-#        - the MAIN line should show agent_id= (empty), no /subagents/ in
-#          transcript_path, and child=(empty or unset).
-#        - the SUBAGENT line should show at least one of: a non-empty agent_id,
-#          transcript_path containing /subagents/, or child=1.
+#        - the MAIN line should show agent_id= (empty).
+#        - the SUBAGENT line should show a non-empty agent_id.
 #   5. Remove the temporary hook from settings.local.json when done.
 #
-# If the subagent line confirms a signal, the guard's discriminator is CONFIRMED —
-# flipping the Kickoff marker's `armed:false` to `armed:true` (dev-cycle.js's
-# ws-root step, C7) is then a one-word, low-risk change: the guard would be live
-# for the WHOLE run, not just after it ends.
+# MEASURED once already (2026-08-18, macOS, org workspace) — expect the same:
+#   - agent_id DISCRIMINATES: non-empty on the subagent line, empty on main.
+#   - child=1 on BOTH lines — the hook process is itself a Claude-spawned child, so
+#     CLAUDE_CODE_CHILD_SESSION is NOT a discriminator (the guard no longer reads it).
+#   - transcript_path names the MAIN session transcript on BOTH lines.
+#   - a user's own `!`-typed command ALSO fires this hook, main-shaped — which is why
+#     the guard exempts the ship verbs (git merge|push); see docs/adr/0019.
+# A machine where the MAIN line shows a non-empty agent_id, or the SUBAGENT line an
+# empty one, breaks the guard's discriminator — report it before trusting the guard.
 #
 # Reads the hook payload from stdin, appends one line, exits 0. Never blocks.
 

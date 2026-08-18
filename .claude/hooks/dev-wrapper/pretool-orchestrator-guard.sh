@@ -22,18 +22,23 @@
 #           `subagents/agent-*.jsonl` AND a workflow agent's
 #           `subagents/workflows/wf_*/agent-*.jsonl` — a case-glob on the LEAF alone is
 #           too narrow to catch the workflow shape, so this is a substring test).
-#   ALLOW — `CLAUDE_CODE_CHILD_SESSION` env = "1" (measured true in a subagent's own
-#           Bash environment).
 #   ALLOW — `.transcript_path` is EMPTY/unknown (inconclusive ⇒ never deny on a guess).
+#   ⚠️ `CLAUDE_CODE_CHILD_SESSION` is deliberately NOT a signal: measured with
+#   scripts/hook-signal-probe.sh, the hook process sees child=1 on EVERY call — main
+#   and subagent alike (the hook process is itself a Claude-spawned child) — so an
+#   allow on it made this guard permanently inert. `agent_id` is the one signal the
+#   same probe confirmed to discriminate; `transcript_path` pointed at the MAIN
+#   session transcript for both callers, so its allow is kept only as belt-and-braces.
 #   Only when NONE of the above fire (i.e. a non-empty transcript_path that does NOT
 #   name a subagent transcript) does this guard treat the caller as MAIN and apply the
 #   deny set below.
 #
-# ARMED WINDOW. A marker file, written by the run itself (Kickoff: armed:false so the
-# run's OWN agents stay free to edit repos; Summary: armed:true once the run is over —
-# see docs/adr/0019) gates the whole guard: no marker, or armed:false, or a session
-# mismatch ⇒ exit 0 immediately. This guard is inert DURING a run by design; it only
-# ever fires in the window after a run has ended in THIS session.
+# ARMED WINDOW. A marker file, written by the run itself (Kickoff: armed:true from the
+# very start — the run's OWN agents pass on the payload's agent_id, probe-confirmed;
+# Summary rewrites it with run_state:"ended" — see docs/adr/0019) gates the whole
+# guard: no marker, or armed:false, or a session mismatch ⇒ exit 0 immediately. The
+# MAIN session is held to orchestration for the whole run and for the rest of the
+# session after it.
 #
 # DENY SET (only once armed + session-matched + caller identified as MAIN):
 #   • Write|Edit|NotebookEdit landing inside a PRODUCT REPO (a first-level directory of
@@ -42,7 +47,12 @@
 #     (a hand-written run-state row).
 #   • A Bash `git` invocation whose resolved directory (honouring an explicit
 #     `git -C <dir>`, else the payload cwd) is inside a product repo AND whose verb
-#     mutates history: commit|apply|am|rebase|merge|cherry-pick|revert|reset|push|stash.
+#     mutates history: commit|apply|am|rebase|cherry-pick|revert|reset|stash.
+#     ⚠️ merge|push are deliberately NOT denied: they are the sanctioned HUMAN ship
+#     verbs (the run emits Merge/Distribute as `!` command templates), and the probe
+#     measured that hooks fire main-shaped on a user's own `!` input too — denying
+#     them would block the ship flow itself. The measured leak (edits, commits, a
+#     destructive rebase, forged state rows) stays fully covered.
 #     Read verbs (status|log|diff|show|rev-parse|ls-remote|branch|checkout|switch|
 #     fetch|worktree|config|…) stay free — `checkout`/`switch` are how a human inspects
 #     a branch, and the submodule/plan-guard hooks already cover their own concerns.
@@ -75,8 +85,9 @@ msession=$(jq -r '.session_id // ""' "$marker" 2>/dev/null)
 psession=$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null)
 [ -n "$msession" ] && [ "$msession" = "${psession:-${CLAUDE_CODE_SESSION_ID:-}}" ] || exit 0
 
-# --- 2. who is calling? triple-redundant toward ALLOW -------------------------------
-[ "${CLAUDE_CODE_CHILD_SESSION:-}" = "1" ] && exit 0
+# --- 2. who is calling? redundant toward ALLOW --------------------------------------
+# (no CLAUDE_CODE_CHILD_SESSION check: the hook env carries child=1 for EVERY caller —
+#  measured via scripts/hook-signal-probe.sh — so that allow made the guard inert)
 agent_id=$(printf '%s' "$input" | jq -r '.agent_id // ""' 2>/dev/null)
 [ -n "$agent_id" ] && exit 0
 tp=$(printf '%s' "$input" | jq -r '.transcript_path // ""' 2>/dev/null)
@@ -140,7 +151,7 @@ cwd="${pcwd:-$root}"
 cmd_norm=$(printf '%s' "$cmd" | sed -E 's/[0-9]*>&[0-9-]+//g; s/&>>?/>/g')
 segments=$(printf '%s' "$cmd_norm" | sed -E 's/(\|\||&&|[;|&])/\n/g')
 
-MUT_GIT='commit|apply|am|rebase|merge|cherry-pick|revert|reset|push|stash'
+MUT_GIT='commit|apply|am|rebase|cherry-pick|revert|reset|stash'
 
 while IFS= read -r seg; do
   seg=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)+//')
