@@ -42,11 +42,26 @@ state), `pr-unresolved` (the PR/MR could not be opened), `review-unresolved` (fi
 at the round cap), `review-tests-unverified` (the reviewer could not run the suite, so nothing can
 say the branch is green), `review-regression-halt` (a fix caused a new blocking problem),
 `review-stalled` (the same findings survived two rounds with no new commit), and
-`review-blocked-on` (a finding names a declared upstream that is not ready yet).
+`review-blocked-on` (a finding names a declared upstream that is not ready yet, or a **cross-repo
+escalation** could not land: the target is outside the run, the routed fix failed its scoped
+re-gate, or the same finding escalated twice).
 
 **Repair loop**:
 A bounded fix→re-review→re-run cycle a gate runs itself instead of halting, when the cause is
 named and owned inside the run.
+
+**Cross-repo escalation**:
+A review-fix pass proving, with observed evidence, that a finding's root fix must land in ANOTHER
+repo of the same run (`upstream_fix_needed`), and the workflow routing a scoped fix pass there
+instead of re-confirming the gap every round. One level deep, one attempt per (repo, finding);
+a repo outside the run's scope halts for a human instead. *Avoid*: upstream sync (that is bringing
+an EXISTING upstream fix forward — escalation is asking for one that does not exist yet).
+→ [ADR-0020](docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md)
+
+**Scoped re-gate**:
+The code-review gate run over ONLY the commits a cross-repo escalation landed on an
+already-reviewed branch — fix diff + suite green, never a fresh full review. Approval refreshes
+that repo's `reviewed` checkpoint; anything less halts. Never fails open.
 
 **Gate-only verification**:
 A suite is EXECUTED at its gate, against the reviewed candidate — never during the build that
