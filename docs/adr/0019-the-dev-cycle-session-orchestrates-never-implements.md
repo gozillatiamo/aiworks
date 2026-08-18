@@ -58,21 +58,26 @@ plain subagent transcript and a WORKFLOW agent's `subagents/workflows/wf_*/agent
 session) — and an EMPTY/unknown `transcript_path` as inconclusive, never a reason to deny. Only
 a non-empty transcript_path naming none of those is treated as MAIN.
 
-What is **measured**: the child-session env var and a subagent transcript's shape. What is
-**not yet measured on this machine**: what a hook subprocess itself observes for either signal
-— this session held no grant to wire a temporary hook and read its own output. `scripts/
-hook-signal-probe.sh` ships as the one-time, standalone way an org closes that gap before
-trusting the discriminator further (see its own header for the wiring steps).
+The probe has since been run for real (`scripts/hook-signal-probe.sh`, wired temporarily as a
+PreToolUse hook). Three measured facts now govern the design:
 
-Because that one piece is unverified here, arming happens at the **Summary** phase — after the
-run is already over — rather than at Kickoff. The measured leak this ADR fixes was itself
-POST-run, so arming at the end covers the actual incident with zero pipeline risk: even if the
-discriminator turned out to be wrong in some untested shape, the worst case is a guard that is
-inert exactly when it always was (during a run), never one that falsely blocks a live run's own
-agents. If `hook-signal-probe.sh` confirms the discriminator holds for a hook subprocess too,
-flipping the Kickoff marker's `armed:false` to `armed:true` is a one-word change to
-`dev-cycle.js`, and the guard needs no further edit — it would then cover a hand-edit made
-DURING a run as well as after one.
+1. **`agent_id` discriminates** — present in the hook payload for a subagent's tool call,
+   absent for the main session's own. It is the guard's one real signal.
+2. **`CLAUDE_CODE_CHILD_SESSION` does not** — the hook subprocess sees `child=1` on EVERY
+   call, main and subagent alike (the hook process is itself a Claude-spawned child). An
+   early allow on it made the guard permanently inert; it is no longer consulted.
+   `transcript_path` pointed at the MAIN transcript for both callers, so its allow survives
+   only as belt-and-braces.
+3. **A user's own `!`-typed command fires hooks too, main-shaped** — indistinguishable from
+   the model's call in the payload. The Merge/Distribute ship steps are deliberately human
+   `!` commands (`git merge`, `git push` in product repos), so those two verbs are exempt
+   from the deny set; the measured leak (edits, commits, a destructive rebase, forged state
+   rows) stays fully covered.
+
+With the discriminator confirmed, arming moved from Summary to **Kickoff**: the marker is
+written `armed:true` at run start, so the main session is held to orchestration DURING the run
+as well as after it. The run's own agents pass on `agent_id`; Summary still rewrites the marker
+with `run_state:"ended"`.
 
 ## Consequences
 
@@ -81,9 +86,11 @@ DURING a run as well as after one.
   starting a fresh session.
 - Scratchpad work, `.claude/`, `docs/`, `scripts/`, and root `agent_logs/` summaries stay
   writable throughout; read-only git diagnosis (`status`/`log`/`diff`/`show`) is never blocked.
-- A stale marker from a crashed run — `armed:true` for a ticket nobody resumed — is disarmed
-  automatically the moment that ticket's Kickoff runs again; it never needs a person to clear
-  it by hand.
-- An inert guard (the failure direction this ADR chooses on purpose whenever the discriminator
-  cannot positively identify main) is the accepted residual gap until `hook-signal-probe.sh`'s
-  confirmation lands and, if it holds, the arming window is moved to cover a run's own middle.
+- A stale marker from a crashed run stays `armed:true` for that session — which is the correct
+  reading: a crashed run is exactly when hand-fixing tempts, and the next Kickoff refreshes the
+  marker anyway.
+- An inert guard (the failure direction whenever the discriminator cannot positively identify
+  main) remains the chosen residual: a payload with no `agent_id`, no `/subagents/` transcript
+  and an EMPTY transcript_path is inconclusive and passes. `git merge`/`git push` in a product
+  repo pass by design — they are the ship verbs a human runs via `!`, and hooks fire
+  main-shaped on those too (measured).
