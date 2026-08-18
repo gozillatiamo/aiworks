@@ -36,6 +36,14 @@ A fresh invocation mints a new run id, so the previous run's agent cache is not
 reused and the early phases run again. That is the cost, and it is the correct cost:
 the alternative is a run whose gates disagree with the config the repo actually has.
 
+A **copy** is the fourth case, and the one that hides. `/dev-cycle` invoked by name runs
+`.claude/workflows/dev-cycle.js`; a scratchpad or hand-edited copy runs whatever that file said
+when it was copied, and its log is indistinguishable — except for one line. Every dev-cycle run
+prints `dev-cycle v<DEVCYCLE_VERSION>` first: compare it with the const at the top of
+`.claude/workflows/dev-cycle.js`. If they differ, the run is stale, and no amount of re-running it
+picks the change up. Invoke **by name**. (Measured: a stale copy predating the Kickoff skip-gate
+re-planned all 8 repos — 1.36M tokens — because the gate it needed did not exist in the copy.)
+
 ## Never hand-edit the persisted script
 
 An agent must not edit a persisted run script to change a constant — not to disable a

@@ -44,6 +44,20 @@ say the branch is green), `review-regression-halt` (a fix caused a new blocking 
 `review-stalled` (the same findings survived two rounds with no new commit), and
 `review-blocked-on` (a finding names a declared upstream that is not ready yet).
 
+**Repair loop**:
+A bounded fix→re-review→re-run cycle a gate runs itself instead of halting, when the cause is
+named and owned inside the run.
+
+**Gate-only verification**:
+A suite is EXECUTED at its gate, against the reviewed candidate — never during the build that
+authors it.
+
+**Orchestrator session**:
+The session that launched a workflow; it directs agents and never implements the work itself.
+
+**Run budget**:
+The token ceiling a run stops itself at, at a phase boundary, leaving a resumable checkpoint.
+
 **prd** / **brd**:
 Workflows that produce a Product / Business Requirements Document from a brief.
 

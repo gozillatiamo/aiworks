@@ -77,6 +77,11 @@ function scopeFor(scenario) {
   }
   // C — the ticket was edited between invocations: the title a human would notice changed.
   if (scenario === 'C') return { ...base, title: 'T (edited)' }
+  // E1/E2 (C12) — the fingerprint must ignore comment_count: E1 carries it, E2 drops the field
+  // entirely. Title + acceptance are IDENTICAL between the two, so a correct fingerprint must
+  // come out identical too.
+  if (scenario === 'E1') return { ...base, comment_count: 2 }
+  if (scenario === 'E2') { const { comment_count, ...rest } = base; return rest }
   return base
 }
 
@@ -86,7 +91,7 @@ function rowsFor(scenario, fp) {
     // C11's URL-threading fires even when C10's skip does not (they are independent rows).
     return [{ repo: 'your-app', milestone: 'artifact_published', status: 'done', artifact_url: 'https://claude.ai/public/artifacts/abc' }]
   }
-  if (scenario === 'B' || scenario === 'C') {
+  if (scenario === 'B' || scenario === 'C' || scenario === 'E1' || scenario === 'E2') {
     return ['your-app', 'your-tests'].map((repo) => ({
       repo, milestone: 'planned', status: 'done', degraded: false,
       ticket_fp: fp, plan_path: `/tmp/ws/${repo}/plan.md`, plan_bytes: 4096,
@@ -164,6 +169,18 @@ function report(name, ok, detail) {
     } else if (SCENARIO === 'D2') {
       await runOnce(ARGS, cannedFor('D', ''))
       report('scenario-D2_unscoped-base-applies-to-both', LINES.some((l) => l.includes('your-app@feature/FM-12→release/1.4')) && LINES.some((l) => l.includes('your-tests@feature/FM-12→release/1.4')))
+    } else if (SCENARIO === 'E1' || SCENARIO === 'E2') {
+      // C12 — the fingerprint must ignore comment_count. Pre-existing 'planned' rows are recorded
+      // under FP (computed upstream from scenario A, i.e. WITHOUT comment_count); this run's canned
+      // scope differs from A only in whether/how comment_count is present. A correct fingerprint
+      // still matches FP in both variants, so the skip fires and no kickoff is spawned.
+      await runOnce(ARGS, cannedFor(SCENARIO, FP))
+      report(`scenario-${SCENARIO}_skip_no-kickoff-spawned`, !SPAWNED.some((l) => l.startsWith('kickoff:')))
+      report(`scenario-${SCENARIO}_skip_kickoff-skipped-logged-twice`, LINES.filter((l) => l.includes('Kickoff SKIPPED')).length === 2)
+      const fpLine = LINES.find((l) => /fp=([0-9a-f]+)/.test(l))
+      const fp = fpLine ? fpLine.match(/fp=([0-9a-f]+)/)[1] : null
+      report(`scenario-${SCENARIO}_fingerprint-logged`, !!fp)
+      if (fp) console.log(`FP=${fp}`)
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
@@ -215,6 +232,21 @@ echo "── scenario D2 — no regression: --feature-base alone still applies t
 outD2="$(run_scenario D2 "" "FM-12 --feature-base release/1.4")"
 [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outD2" | sed 's/^/      /'
 ingest "$outD2"
+
+echo "── scenario E — fingerprint ignores comment_count (C12)"
+outE1="$(run_scenario E1 "$FP")"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outE1" | sed 's/^/      /'
+ingest "$outE1"
+FP_E1="$(grep -o 'FP=[0-9a-f]\+' <<<"$outE1" | head -1 | cut -d= -f2)"
+outE2="$(run_scenario E2 "$FP")"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outE2" | sed 's/^/      /'
+ingest "$outE2"
+FP_E2="$(grep -o 'FP=[0-9a-f]\+' <<<"$outE2" | head -1 | cut -d= -f2)"
+if [[ -n "$FP_E1" && "$FP_E1" == "$FP_E2" ]]; then
+  pass "scenario-E_fingerprint-identical-with-and-without-comment_count (fp=$FP_E1)"
+else
+  fail "scenario-E_fingerprint-identical-with-and-without-comment_count (E1=$FP_E1 E2=$FP_E2)"
+fi
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

@@ -32,6 +32,9 @@ The freshest verdict lives in the run log, and `why` reads it without a re-run:
 - **No log** (`no test run yet` / `no logs for 'test'`) → there are no results to report. Stop and tell the user to run `/coding-automate <KEY>` first — **don't fabricate a result.**
 - The `SUMMARY:` lines are the harness's own account of what ran, and their shape **is** the report's shape. One tool that ran → one result column. Several (`cypress … newman …`) → one column each. Be faithful to what the summary actually says: if the run is one combined flow rather than per-test results, report at that granularity and note it rather than inventing per-scenario detail.
 - Map each test-plan `TC<nnn>` to its outcome: ✅ pass, ❌ fail, or — not automated (Manual-only/Partial from the plan).
+- If a repo's `why` output is still long, put it in a file and pull the rows you report
+  (`scripts/dev.sh why test > /tmp/why.log 2>&1` then `grep -n -E 'SUMMARY|✗|failed' /tmp/why.log`).
+  The report needs per-TC outcomes, not the transcript.
 
 ## 3. Collect the evidence — `scripts/dev.sh artifacts`
 

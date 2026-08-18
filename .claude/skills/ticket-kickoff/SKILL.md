@@ -27,6 +27,10 @@ A ticket reference (e.g. `FM-12` / `APP-123`, or a bare number). The id prefix i
    scripts/tracker/get-ticket-details.sh  <KEY>
    scripts/tracker/get-ticket-comments.sh <KEY>   # prior QA/bug notes may live here
    ```
+   Both commands can print a lot (a long body, dozens of comments). Redirect and read what you
+   need — `scripts/tracker/get-ticket-comments.sh <KEY> > /tmp/<KEY>-comments.txt 2>&1` then
+   `grep -n -i 'acceptance\|regression\|blocked' /tmp/<KEY>-comments.txt` / `tail -n 40` — rather
+   than pasting the whole dump into context. Quote only the lines you actually act on.
    Note the title, type, status, and the acceptance criteria from the body.
 
 2. **Classify → pick base + branch** (branch model from `workspace.config.yaml`):

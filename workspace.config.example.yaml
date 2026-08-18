@@ -129,6 +129,14 @@ notify:
   provider: slack                  # slack (the only provider today)
   channel: "#code-reviews"         # the Slack channel the digest is posted to (id or #name). The token/
                                    #   webhook live in scripts/notify/.env (seeded by `aiworks sync`).
+  dm_on_incomplete: "U00000000000" # a Slack MEMBER id (not a channel). Every run that ends WITHOUT
+                                   #   completing the ticket — blocked, halted, stalled, budget-stopped,
+                                   #   plan-missing, dry-run, awaiting plan approval — sends ONE direct
+                                   #   message here (status, summary path, resume command) and posts
+                                   #   NOTHING to the channel. The channel digest is reserved for a run
+                                   #   that finished. Replace the placeholder with your own id
+                                   #   (scripts/notify/send.sh --lookup-user <name>); leave it as-is or
+                                   #   empty to disable the DM.
 
 # ── Observability (the traces/logs the perf + triage agents read) ──────────────
 # Where the performance-engineer and oncall agents get ground truth about a
@@ -220,6 +228,24 @@ loadtest:
                                    #   worktree. The base SHA in the key makes a moved base
                                    #   self-invalidating; the env fingerprint stops a baseline from
                                    #   one machine being compared against a candidate from another.
+
+# ── Cross-repo test-suite gate ─────────────────────────────────────────────────
+test_suite:
+  max_fix_rounds: 2                # a red at the cross-repo gate is CLASSIFIED, then acted on: an
+                                   #   automation bug the suite repo fixes itself, an app bug the
+                                   #   named repo's developer fixes (re-reviewed, then re-run), or a
+                                   #   missing prerequisite the suite repo seeds. This caps those
+                                   #   loops. 0 disables repair: the first red halts with evidence.
+
+# ── dev-cycle run limits ───────────────────────────────────────────────────────
+dev_cycle:
+  token_budget: 2000000            # the run's own spend ceiling — OUTPUT tokens across the run's
+                                   #   agents (the unit budget.spent() reports). Checked at every
+                                   #   phase boundary; over it the run writes its checkpoint +
+                                   #   summary, sends the incomplete-run DM, skips the channel
+                                   #   notification and stops with status budget-stopped. Fully
+                                   #   resumable — re-run and the run state replays every milestone
+                                   #   already proven. 0 = no cap.
 
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:

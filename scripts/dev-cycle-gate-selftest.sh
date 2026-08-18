@@ -1,0 +1,500 @@
+#!/usr/bin/env bash
+#
+# dev-cycle-gate-selftest.sh — offline, zero-token proof of the DEVCYCLE-RESILIENCE
+# gate/repair changes: C1 (gate-only build), C2 (upstream degrade), C3 (blocked-on
+# repair vs hard halt), C4 (red-gate triage), C5 (multi-suite fan-out), C9 (budget
+# stop), C10 (notify vs DM).
+#
+# Same construction as scripts/dev-cycle-kickoff-selftest.sh: the REAL workflow
+# source, stripped of `export` and wrapped in the engine's own function-body
+# context, then driven with canned agent() responses so the real branch logic runs
+# with no network and no tokens. Additionally substitutes the CONFIG block (between
+# the AIWORKS:CONFIG markers) with a small fixture registry (2-4 repos, at least one
+# test_suite:true) when CONFIG_FIXTURE is set — needed for a second test-suite repo
+# (G3) and for NOTIFY/NOTIFY_DM (G5/G6), which the real committed config does not
+# carry in a form this suite can rely on staying stable.
+#
+# Usage: scripts/dev-cycle-gate-selftest.sh [-v]
+set -uo pipefail
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+WORKFLOW="$DIR/.claude/workflows/dev-cycle.js"
+VERBOSE=0; [[ "${1:-}" == "-v" ]] && VERBOSE=1
+
+c_ok=$'\033[1;32m'; c_err=$'\033[1;31m'; c_off=$'\033[0m'
+[[ -t 1 ]] || { c_ok=; c_err=; c_off=; }
+PASS=0; FAIL=0
+pass() { PASS=$((PASS+1)); printf '  %s✓%s %s\n' "$c_ok" "$c_off" "$1"; }
+fail() { FAIL=$((FAIL+1)); printf '  %s✗%s %s\n' "$c_err" "$c_off" "$1"; }
+
+command -v node >/dev/null 2>&1 || { echo "node not found — cannot run selftest" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "python3 not found — cannot build the harness" >&2; exit 1; }
+[[ -f "$WORKFLOW" ]] || { echo "workflow not found: $WORKFLOW" >&2; exit 1; }
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+HARNESS="$TMP/harness.cjs"
+
+# A small, self-contained REPOS registry: two code repos ('db','svc', db→svc chain
+# available for C2/C3) and two test-suite repos ('e2e','api', for C5's fan-out).
+# NOTIFY_DM/TEST_SUITE.maxFixRounds/DEV_CYCLE.tokenBudget read from process.env so one
+# generated harness serves every scenario without being regenerated per run.
+CONFIG_FIXTURE='const TICKET_PREFIX = "FM"
+const AUTO_MERGE = false
+const AUTO_APPROVE_PLAN = true
+const PLAN_TO_HTML = false
+const NOTIFY = true
+const NOTIFY_PROVIDER = "slack"
+const NOTIFY_CHANNEL = "#code-reviews"
+const NOTIFY_DM = process.env.FIXTURE_NOTIFY_DM || "U012345"
+const DESIGN_ENABLED = false
+const QUALITY_GATE = "none"
+const REVIEW_LEVEL = "strict"
+const LANGUAGE = "en"
+const LOADTEST = { tolerancePct: 10, noiseRuns: 2, noiseCeilingMultiple: 2, maxFixRounds: 2, baselineCache: "~/.cache/x" }
+const TEST_SUITE = { maxFixRounds: Number(process.env.FIXTURE_TS_MAX_FIX_ROUNDS || 2) }
+const DEV_CYCLE = { tokenBudget: Number(process.env.FIXTURE_TOKEN_BUDGET || 0) }
+const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", testing: "Testing", done: "Done" }
+const REPOS = {
+  db:  { path: "db",  kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "db green" },
+  svc: { path: "svc", kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "svc green" },
+  e2e: { path: "e2e", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "e2e green", testSuite: true },
+  api: { path: "api", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "api green", testSuite: true },
+}'
+
+python3 - "$WORKFLOW" "$HARNESS" <<PY
+import re, sys
+src = open(sys.argv[1]).read()
+src = re.sub(r'^export\s+', '', src, count=1, flags=re.M)
+fixture = """$CONFIG_FIXTURE"""
+src = re.sub(
+    r'// >>> AIWORKS:CONFIG START.*?// <<< AIWORKS:CONFIG END >>>',
+    fixture, src, count=1, flags=re.S)
+open(sys.argv[2], 'w').write(
+    "module.exports = (async function(args,budget,phase,agent,log,parallel,pipeline,workflow){\n"
+    + src + "\n});\n")
+PY
+grep -q 'const REPOS = {' "$HARNESS" || { echo "CONFIG_FIXTURE substitution failed — marker text may have drifted" >&2; exit 1; }
+
+DRIVER="$TMP/driver.cjs"
+cat > "$DRIVER" <<'NODE'
+const HARNESS = process.env.HARNESS
+const SCENARIO = process.env.SCENARIO
+const ARGS = process.env.ARGS || 'FM-12 --approve-plan'
+
+const LINES = []
+const SPAWNED = []
+const PROMPTS = {}
+const PHASES = []
+
+const REPO_PLAN = (repo, base) => ({
+  repo, title: 'T', acceptance: [`${repo} does its part`],
+  base_branch: base, work_branch: 'feature/FM-12',
+  plan_path: `/tmp/ws/${repo}/plan.md`, plan_html: null,
+  summary: 'planned', unverified_claims: [],
+})
+const planGuardOk = (repos) => ({ repos: repos.map((r) => ({ repo: r, ok: ['x'], relocated: [], missing: [] })) })
+const runStateRow = (repo, milestone, extra = {}) => ({ repo, milestone, status: 'done', recorded_at: '2026-01-01T00:00:00Z', degraded: false, ...extra })
+const builtRow = (repo, sha) => runStateRow(repo, 'built', { work_branch: 'feature/FM-12', head_sha: sha || `sha-${repo}` })
+const prRow = (repo, n) => runStateRow(repo, 'pr_open', { pr_number: n, pr_url: `https://x/${n}` })
+const reviewedRow = (repo) => runStateRow(repo, 'reviewed')
+// A repo that should return 'ready' with ZERO agent spawns this run — fully resumed.
+const readyRows = (repo, n) => [builtRow(repo), prRow(repo, n), reviewedRow(repo)]
+
+async function runOnce(argsStr, canned, opts = {}) {
+  const spendJumpAfterPhase = opts.spendJumpAfterPhase || null
+  const spendValue = opts.spendValue || 999999999
+  const budget = { spent: () => (spendJumpAfterPhase && PHASES.includes(spendJumpAfterPhase)) ? spendValue : 0 }
+  const phase = (name) => { PHASES.push(name) }
+  const log = (s) => LINES.push(String(s))
+  const parallel = (fns) => Promise.all(fns.map((f) => f()))
+  const agent = async (prompt, opts2) => {
+    const label = opts2 && opts2.label
+    if (label) { SPAWNED.push(label); PROMPTS[label] = prompt }
+    if (!label || !(label in canned)) throw new Error('selftest: unstubbed agent label ' + label)
+    return canned[label]
+  }
+  const wf = require(HARNESS)
+  return wf(argsStr, budget, phase, agent, log, parallel, undefined, undefined)
+}
+
+function report(name, ok, detail) {
+  console.log(`RESULT ${name} ${ok ? 'PASS' : 'FAIL'}${detail ? ' ' + detail : ''}`)
+}
+
+const BASE = {
+  'resolve-runtime-config': { language: 'en', plan_to_html: false, auto_approve: true, artifacts_enabled: false },
+  'ws-root:FM-12': { workspace_root: '/tmp/ws' },
+  'status:FM-12:in_progress': { moved: true },
+  'status:FM-12:ready_to_test': { moved: true },
+  'status:FM-12:testing': { moved: true },
+}
+
+;(async () => {
+  try {
+    if (SCENARIO === 'G1') {
+      // C2 — upstream degrade. db's 'built' row has moved (live_sha != head_sha, so the loader
+      // already marked it degraded); svc's 'built' row is NOT degraded; svc depends_on db;
+      // e2e depends_on svc (chain). Assert: svc degrades TOO, in the same pass; build:FM-12:svc
+      // IS spawned (its own 'built' row is no longer skippable); "[svc] build SKIPPED" never logs.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [
+          builtRow('db', 'sha-db-OLD'), { ...runStateRow('db', 'built', { degraded: true }) },
+          builtRow('svc'), builtRow('e2e'),
+        ] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+      }
+      await runOnce(ARGS, canned)
+      report('G1_svc_degraded_logged', LINES.some((l) => l.includes('svc') && l.includes('DEGRADED') && l.includes('declared upstream db')))
+      report('G1_build_svc_spawned', SPAWNED.includes('build:FM-12:svc'))
+      report('G1_build_svc_not_skipped', !LINES.some((l) => l.includes('[svc] build SKIPPED')))
+      report('G1_chain_e2e_also_degraded', LINES.some((l) => l.includes('e2e') && l.includes('DEGRADED') && l.includes('declared upstream svc')))
+    } else if (SCENARIO === 'G2A') {
+      // C3 — repair path. db has NO row at all this run (repoResults[db] is undefined during
+      // Build by construction — the whole batch's results are assigned only after every
+      // sibling's pipeline has returned, so "no repoResults entry" is the ONLY reachable case
+      // for a same-batch sibling; see docs/adr/0019 / the change-set report for the measured
+      // limit this implies for a genuine hard-halt). svc's reviewer names db in a comment.
+      // Expect: NOT review-blocked-on; pr-fix:FM-12:svc#1 spawned with UPSTREAM SYNC + path "db".
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }],
+          test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/9', pr_number: 9 },
+        'review:FM-12:svc#1': { approved: false, tests_green: true, tests_receipt: 'ok', comments: [{ file_line: 'a:1', issue: 'needs the change in db', severity: 'blocking' }] },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G2A_not_blocked_on', !(result && result.status === 'review-blocked-on'))
+      report('G2A_pr_fix_spawned', SPAWNED.includes('pr-fix:FM-12:svc#1'))
+      const p = PROMPTS['pr-fix:FM-12:svc#1'] || ''
+      report('G2A_prompt_has_upstream_sync', p.includes('UPSTREAM SYNC'))
+      report('G2A_prompt_names_db_path', p.includes('path "db"'))
+    } else if (SCENARIO === 'G2B') {
+      // C3, LOGIC LEVEL (not end-to-end — see G2A's note on why repoResults[id] cannot hold a
+      // value for a same-batch sibling). Re-implements upstreamState()/hardBlockers verbatim
+      // against a MOCKED repoResults, to prove the CLASSIFICATION itself is correct: a sibling
+      // whose pipeline genuinely finished WITHOUT reaching 'ready' (repoResults populated —
+      // reachable only on an already-resolved batch, e.g. a resumed second wave in a future
+      // engine shape) is a hard blocker, never silently repaired.
+      const repoResults = { db: { status: 'build-unresolved' } }
+      const doneAt = () => false
+      const upstreamState = (id) => repoResults[id] ? repoResults[id].status : (doneAt(id, 'reviewed') ? 'ready' : 'pending')
+      const named = ['db']
+      const hardBlockers = named.filter((id) => upstreamState(id) !== 'ready' && upstreamState(id) !== 'pending')
+      report('G2B_logic_hard_blocker_when_repoResults_populated_nonready', hardBlockers.length === 1 && hardBlockers[0] === 'db')
+      const repoResults2 = {}
+      const upstreamState2 = (id) => repoResults2[id] ? repoResults2[id].status : (doneAt(id, 'reviewed') ? 'ready' : 'pending')
+      const hardBlockers2 = named.filter((id) => upstreamState2(id) !== 'ready' && upstreamState2(id) !== 'pending')
+      report('G2B_logic_no_hard_blocker_when_repoResults_empty_pending', hardBlockers2.length === 0)
+    } else if (SCENARIO === 'G3') {
+      // C5 — multi-suite fan-out. TWO test-suite repos (e2e, api), both scoped, db as the one
+      // app repo. All three fully resumed-ready except the two gates, which must BOTH run.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), ...readyRows('api', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }, { repo: 'api', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e', 'api']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'kickoff:FM-12:api': REPO_PLAN('api', 'main'),
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'test-suite:FM-12:api': { passed: false, receipt: { command: 'scripts/dev.sh test api', exit_code: 1, summary_line: '1 failed' }, failures: [{ case: 'TC1', evidence: 'boom' }], triage: [] },
+        'audit:FM-12:api': { posted: true, detail: 'result posted' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G3_both_gates_spawned', SPAWNED.includes('test-suite:FM-12:e2e') && SPAWNED.includes('test-suite:FM-12:api'))
+      report('G3_api_red_fails_the_run_naming_api', result && result.status === 'test-suite-failed' && String(result.why || '').includes('api'))
+      const e2eRow = "agent_logs/FM-12-dev-cycle-state/e2e-test_suite.json"
+      const apiRow = "agent_logs/FM-12-dev-cycle-state/api-test_suite.json"
+      report('G3_e2e_prompt_names_its_own_run_state_row', (PROMPTS['test-suite:FM-12:e2e'] || '').includes(e2eRow))
+      report('G3_api_prompt_names_its_own_run_state_row', (PROMPTS['test-suite:FM-12:api'] || '').includes(apiRow))
+    } else if (SCENARIO === 'G3_GREEN') {
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), ...readyRows('api', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }, { repo: 'api', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e', 'api']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'kickoff:FM-12:api': REPO_PLAN('api', 'main'),
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'test-suite:FM-12:api': { passed: true, receipt: { command: 'scripts/dev.sh test api', exit_code: 0, summary_line: '3 passed' } },
+        'audit:FM-12:api': { posted: true, detail: 'result posted' },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G3_GREEN_reaches_merge_gate', result && (result.status === 'merge-skipped' || result.status === 'awaiting-human-ship'))
+    } else if (SCENARIO === 'G4') {
+      // C4 — red-gate triage. Gate 1 returns passed:false + one "app" red naming svc. The fix +
+      // re-review stubs return green; gate 2 (round 1's re-run) returns green.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'expected 200 got 500' }] },
+        'gate-fix:FM-12:svc#1': { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['svc/src/x.rs'] },
+        'gate-review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok' },
+        'test-suite:FM-12:e2e#r1': { passed: true, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G4_fix_then_review_spawned_in_order', SPAWNED.indexOf('gate-fix:FM-12:svc#1') >= 0 && SPAWNED.indexOf('gate-review:FM-12:svc#1') > SPAWNED.indexOf('gate-fix:FM-12:svc#1'))
+      report('G4_gate_reran', SPAWNED.includes('test-suite:FM-12:e2e#r1'))
+      report('G4_run_proceeds_past_gate', !!result && result.status !== 'test-suite-failed' && result.status !== 'test-suite-unverified')
+    } else if (SCENARIO === 'G4_REGRESSION_NOT_GREEN') {
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'expected 200 got 500' }] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'gate-fix:FM-12:svc#1': { work_branch: 'feature/FM-12', summary: 'attempted', status: 'complete', fixed: ['svc/src/x.rs'] },
+        'gate-review:FM-12:svc#1': { approved: false, tests_green: false, conclusion: 'still red' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G4b_halts_when_fix_not_reviewed_green', !!result && (result.status === 'test-suite-failed'))
+      report('G4b_no_second_round_spawned', !SPAWNED.includes('gate-fix:FM-12:svc#2'))
+    } else if (SCENARIO === 'G4_ROUNDS_EXHAUSTED') {
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        // Same "app" red every round, twice — the default max_fix_rounds is 2.
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'still 500' }] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'gate-fix:FM-12:svc#1': { work_branch: 'feature/FM-12', summary: 'try 1', status: 'complete', fixed: [] },
+        'gate-review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok' },
+        'test-suite:FM-12:e2e#r1': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'still 500' }] },
+        'gate-fix:FM-12:svc#2': { work_branch: 'feature/FM-12', summary: 'try 2', status: 'complete', fixed: [] },
+        'gate-review:FM-12:svc#2': { approved: true, tests_green: true, tests_receipt: 'ok' },
+        'test-suite:FM-12:e2e#r2': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'still 500' }] },
+      }
+      const result = await runOnce(ARGS, canned, {})
+      report('G4c_rounds_exhausted_fails_the_gate', !!result && result.status === 'test-suite-failed')
+      report('G4c_third_round_never_spawned', !SPAWNED.includes('gate-fix:FM-12:svc#3'))
+    } else if (SCENARIO === 'G4_PRE_EXISTING') {
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'red on base too', pre_existing_on_base: true }] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G4d_pre_existing_no_fix_spawned', !SPAWNED.some((l) => l.startsWith('gate-fix:')))
+      report('G4d_halts_with_evidence', !!result && result.status === 'test-suite-failed')
+    } else if (SCENARIO === 'G5') {
+      // C9 — budget stop. spent() jumps to a big number the moment phase('Kickoff') has fired,
+      // so the "before Build" overBudget() check (which runs after phase('Kickoff') but before
+      // phase('Build')) is the first one to trip.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'summary:FM-12': { summary_path: '/tmp/x.md', token_table_appended: true, note: 'ok' },
+      }
+      const result = await runOnce(ARGS, canned, { spendJumpAfterPhase: 'Kickoff' })
+      report('G5_status_budget_stopped', !!result && result.status === 'budget-stopped', `got=${result && result.status}`)
+      report('G5_stopped_before_build', !!result && result.stopped_before === 'Build')
+      report('G5_summary_spawned', SPAWNED.includes('summary:FM-12'))
+      report('G5_notify_not_spawned', !SPAWNED.includes('notify:FM-12'))
+      report('G5_dm_spawned', SPAWNED.includes('dm:FM-12:budget-stopped'))
+      report('G5_no_build_spawned', !SPAWNED.some((l) => l.startsWith('build:')))
+    } else if (SCENARIO === 'G6A') {
+      // C10 — a full green run, AUTO_MERGE=false (the fixture's committed value) ⇒ 'merge-skipped'
+      // is a COMPLETE ending: notify:FM-12 fires, no dm: label.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'x' },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G6a_status_merge_skipped', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+      report('G6a_notify_spawned', SPAWNED.includes('notify:FM-12'))
+      report('G6a_no_dm_spawned', !SPAWNED.some((l) => l.startsWith('dm:')))
+    } else if (SCENARIO === 'G6B') {
+      // Same shape, gate fails with an unclassified red (no triage) ⇒ test-suite-failed, an
+      // INCOMPLETE ending: dm:FM-12:test-suite-failed fires, no notify:FM-12.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G6b_status_test_suite_failed', !!result && result.status === 'test-suite-failed')
+      report('G6b_dm_spawned', SPAWNED.includes('dm:FM-12:test-suite-failed'))
+      report('G6b_no_notify_spawned', !SPAWNED.includes('notify:FM-12'))
+      const dmPrompt = PROMPTS['dm:FM-12:test-suite-failed'] || ''
+      report('G6b_dm_prompt_has_summary_and_resume', dmPrompt.includes('/dev-cycle FM-12') && dmPrompt.includes('Summary'))
+    } else if (SCENARIO === 'G6C') {
+      // Same red gate, but notify.dm_on_incomplete left at the shipped placeholder ⇒ neither
+      // label fires.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G6c_neither_label_spawned', !SPAWNED.some((l) => l.startsWith('dm:') || l === 'notify:FM-12'))
+    } else if (SCENARIO === 'G7') {
+      // C1 — gate-only build. e2e's build is NOT resumed (must actually run, to capture its
+      // prompt); db is fully resumed-ready. Assert the build prompt forbids suite execution and
+      // omits CANDIDATE STACK, while the gate prompt carries CANDIDATE STACK.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'automated', status: 'complete', fixed: ['e2e/specs/x.spec.ts'] },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/5', pr_number: 5 },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'x' },
+        'notify:FM-12': { sent: true },
+      }
+      await runOnce(ARGS, canned)
+      const buildPrompt = PROMPTS['build:FM-12:e2e'] || ''
+      const gatePrompt = PROMPTS['test-suite:FM-12:e2e'] || ''
+      report('G7_build_prompt_has_no_suite_execution', buildPrompt.includes('NO SUITE EXECUTION AT BUILD'))
+      report('G7_build_prompt_omits_candidate_stack', !buildPrompt.includes('CANDIDATE STACK'))
+      report('G7_gate_prompt_has_candidate_stack', gatePrompt.includes('CANDIDATE STACK'))
+    } else {
+      throw new Error('unknown scenario ' + SCENARIO)
+    }
+  } catch (e) {
+    report(`scenario-${SCENARIO}_crashed`, false, String((e && e.stack) || e).split('\n')[0])
+    process.exitCode = 1
+  }
+})()
+NODE
+
+run_scenario() {
+  local scenario="$1"; shift
+  HARNESS="$HARNESS" SCENARIO="$scenario" ARGS="${ARGS:-FM-12 --approve-plan}" "$@" node "$DRIVER" 2>&1
+}
+
+ingest() {
+  local out="$1"
+  while IFS= read -r line; do
+    case "$line" in
+      RESULT\ *\ PASS*) pass "${line#RESULT }" ;;
+      RESULT\ *\ FAIL*) fail "${line#RESULT }" ;;
+    esac
+  done <<<"$out"
+}
+
+echo "── G1 — upstream-degrade (C2), chain propagation"
+out="$(run_scenario G1)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G2a — blocked-on: repair path (C3)"
+out="$(run_scenario G2A)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G2b — blocked-on: hard-halt classification (C3, logic-level — see driver comment)"
+out="$(run_scenario G2B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G3 — multi-suite fan-out (C5), one suite red fails the run"
+out="$(run_scenario G3)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G3 (both green) — reaches the merge gate"
+out="$(run_scenario G3_GREEN)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G4 — red-gate triage (C4), app red fixed within budget"
+out="$(run_scenario G4)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G4 variant — fix not reviewed-green halts, no second round"
+out="$(run_scenario G4_REGRESSION_NOT_GREEN)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G4 variant — max_fix_rounds exhausted"
+out="$(run_scenario G4_ROUNDS_EXHAUSTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G4 variant — pre_existing_on_base: true skips the fix"
+out="$(run_scenario G4_PRE_EXISTING)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G5 — budget stop (C9)"
+out="$(FIXTURE_TOKEN_BUDGET=1000000 run_scenario G5)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G6a — notify (complete ending: merge-skipped)"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G6A)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G6b — DM (incomplete ending: test-suite-failed)"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G6B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G6c — dm_on_incomplete left at the placeholder: neither fires"
+out="$(FIXTURE_NOTIFY_DM=U000000000000 run_scenario G6C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G7 — gate-only build (C1)"
+out="$(run_scenario G7)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo
+if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi
+printf '%s%d passed%s\n' "$c_ok" "$PASS" "$c_off"
