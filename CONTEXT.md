@@ -28,8 +28,39 @@ cache still covers, and does the rest live. This is what a human means by "the t
 
 **Review round**:
 One turn of a single repo's review↔fix loop, counted per repo and capped. Several review rounds
-happen inside one invocation, and a new invocation restarts a repo's rounds at one. *Avoid*: round
+happen inside one invocation, and a new invocation restarts a repo's rounds at one — the *counter*
+restarts, never the mode: a gate that already did its first pass re-visits. *Avoid*: round
 (unqualified), review cycle.
+
+**First pass**:
+A gate's one complete review of a change set — its whole sweep, every must-fix reported together.
+There is exactly one per gate per repo, and it survives a re-run: what it found is the **closed
+finding set**, and no later round or later invocation adds to it. *Avoid*: first review round
+(conflates the pass with the counter), initial review.
+
+**Re-visit**:
+A gate confirming its own closed finding set is addressed, raising nothing new — the mode every
+pass after the first one runs in. Not a second first pass. The one thing it may raise is a
+regression the fix itself caused, which halts the repo rather than extending the loop. *Avoid*:
+re-review (reads as "review again from scratch", the exact thing it is not).
+
+**Review ledger**:
+What a gate leaves behind so a later invocation knows what it already did: its tagged threads on
+the PR/MR (the finding set) plus one `gate_<key>` run-state row per repo (that a first pass
+happened, and whether it passed). → [ADR 0021](docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md),
+[docs/agents/review-ledger.md](docs/agents/review-ledger.md)
+
+**Frozen gate**:
+A gate whose ledger row says it passed. It is not re-reviewed and not re-visited, on any later
+round or invocation — deliberately, and deliberately not invalidated by commits landing afterwards.
+The code reviewer's test-green receipt is the one exempt part: findings stay closed, the suite
+re-runs. *Avoid*: cached gate, skipped gate.
+
+**Thread resolution**:
+The forge's own record that a finding is settled — GitLab "Resolve thread", GitHub "Resolve
+conversation", written through `scripts/vcs/pr-resolve-thread.sh`. The fixer ticks what it fixed;
+the owning gate makes the final call and may not pass while a thread it owns is unresolved.
+*Avoid*: closing a comment, marking done.
 
 **Wave**:
 A dependency batch of repos, derived from each repo's declared upstreams. Waves order the merge,
