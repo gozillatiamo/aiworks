@@ -379,8 +379,12 @@ let RESOLVED_ARTIFACTS = false
 // the change set landed plus a same-day counter — bump it in the SAME commit as any behaviour change.
 // DEVIATION from the plan's example log line: `ticket`/`dryRun`/`approvePlan` are declared further
 // below in the Inputs section, so referencing them THIS early throws (TDZ) — version-only here.
-const DEVCYCLE_VERSION = '2026-08-18.2'
-log(`${meta.name} v${DEVCYCLE_VERSION}`)
+const DEVCYCLE_VERSION = '2026-08-18.3'
+// `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
+// `export const meta = {...}` block before executing the script body, so `meta.name` throws
+// "meta is not defined" live even though it type-checks in the offline compile probe (a
+// hand-rolled wrapper that keeps the literal source, meta included, in scope). Literal name.
+log(`dev-cycle v${DEVCYCLE_VERSION}`)
 // C14 — MECHANICAL STEPS run on haiku, explicitly, so it never depends on an agent file staying
 // haiku: this resolver, the status mover, the ws-root/plan-guard/publish-request kickoff steps, the
 // run-state loader, and the Summary phase's incomplete-run DM. Every judgment agent (planner,
@@ -505,7 +509,7 @@ const dryRun = /--dry-run\b/i.test(rawArg) || opt.dryRun === true
 const approvePlan = /--approve-plan\b/i.test(rawArg) || opt.approvePlan === true
 // C11 — the ticket-scoped half of the version line (the version-only half already logged above,
 // before `ticket` existed): now that it does, restate it WITH the ticket + run flags.
-log(`${meta.name} v${DEVCYCLE_VERSION} — ${ticket}${dryRun ? ' (dry run)' : ''}${approvePlan ? ' (plan approved)' : ''}`)
+log(`dev-cycle v${DEVCYCLE_VERSION} — ${ticket}${dryRun ? ' (dry run)' : ''}${approvePlan ? ' (plan approved)' : ''}`)
 
 // Machine-readable marker prefixed on EVERY agent prompt so
 // summarize-workflow-performance can attribute each transcript to a repo+role.
@@ -775,6 +779,23 @@ const DEV_SCHEMA = {
       items: {
         type: 'object', required: ['command', 'exit_code'],
         properties: { command: { type: 'string' }, exit_code: { type: 'number' }, summary_line: { type: 'string' } },
+      },
+    },
+    // REVIEW-FIX PASS ONLY. A reviewer finding whose ROOT fix must land in ANOTHER repo of this
+    // run — e.g. a missing index only the migration repo can add, vendored here as a read-only
+    // submodule the guard forbids editing. Declaring it here is what stops the loop from
+    // re-confirming the same gap round after round: the workflow routes a scoped fix pass to that
+    // repo instead. Same evidence standard as a deferral — an entry without OBSERVED evidence
+    // (the fetch/grep that proves the fix exists neither here nor upstream) is ignored.
+    upstream_fix_needed: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['repo', 'finding', 'evidence'],
+        properties: {
+          repo: { type: 'string' },     // the workspace repo id that owns the fix
+          finding: { type: 'string' },  // the finding restated as WHAT must change in that repo
+          evidence: { type: 'string' }, // what you OBSERVED: commands + results proving it is absent both here and upstream
+        },
       },
     },
     decision_needed: { type: 'string' },       // the fork a human must settle (e.g. keep the partial work vs reset)
@@ -1081,10 +1102,16 @@ function toWaves(plans) {
 // new commit in between means the loop is not converging — it is repeating. Pure and top-level
 // on purpose: the one thing worth a runnable check here is that it is stable under key order
 // and reordered findings, and unstable when a finding actually changes.
+// Keyed on WHERE the findings sit (file_line / scope), never on the reviewer's PHRASING of them:
+// `issue` and `title` are free text a re-visit re-words every round ("Round-3 re-visit …"), so a
+// fingerprint that includes them never matches and the detector never trips — measured: five
+// consecutive no-commit rounds re-confirming one unchanged finding, each round restated afresh.
+// Two different findings at the same location collide into one key; with no new commit between
+// rounds that collision still reads "stuck at the same place", which is the condition being tested.
 const stallFp = (rows) => JSON.stringify(rows.map(([key, v]) => [
   key,
-  (v?.comments || []).map((c) => `${c?.file_line}|${c?.issue}`).sort(),
-  (v?.blocking || []).map((b) => `${b?.title}|${b?.scope}`).sort(),
+  (v?.comments || []).map((c) => String(c?.file_line ?? '?')).sort(),
+  (v?.blocking || []).map((b) => String(b?.scope ?? '?')).sort(),
 ]).sort())
 
 // Required closing step — runs the per-repo/role usage parser over the run's
@@ -1201,8 +1228,13 @@ async function runRepoPipeline(rp, desc, branchKind) {
   // cwd it did not have, and the only one-liner that fixes it (`cd <repo> && <writer>`) is the
   // exact compound form the adapter guard denies silently. Hand it the absolute path and the
   // cd-persists fact instead; that is the whole gap the two side-door incidents fell through.
-  const absRepo = haveAbs ? `${WORKSPACE_ROOT}/${desc.path}` : desc.path
-  const inRepo = `Work in the ${R} repo — its path is ${absRepo}. Your shell starts at the workspace root and Bash cwd PERSISTS between tool calls, so enter the repo with ONE standalone \`cd ${absRepo}\` call and stay there; never prefix a later command with \`cd … &&\`. VCS ADAPTER CALLS NEED MORE THAN THAT: several repos build in parallel this run, sharing ONE Bash session, so a concurrent repo's \`cd\` can leave you pointed at the wrong repo at the exact moment you call \`scripts/vcs/*.sh\` — cwd alone is not reliable for that adapter here. Resolve VCS_REPO ONCE, in its own standalone command: \`git -C ${absRepo} remote get-url origin\`. From what it prints, strip the leading \`git@<host>:\` or \`https://<host>/\` and any trailing \`.git\` — what remains (\`owner/repo\` on GitHub, \`group/subgroup/project\` on GitLab) is this repo's VCS_REPO. Prefix EVERY \`scripts/vcs/*.sh\` call for the rest of this task with it, as a plain env-var on the SAME bare line as the writer — \`VCS_REPO=<that value> scripts/vcs/<script>.sh …\` — never inside \`$( )\`, a pipe, or \`&&\` (any of those denies the call silently, same as wrapping the writer itself).`
+  // Parameterized by repo id (not fixed to R) because a cross-repo escalation briefs agents that
+  // work in ANOTHER repo of this run — same shell + adapter discipline, different path.
+  const shellClauseFor = (id) => {
+    const abs = haveAbs ? `${WORKSPACE_ROOT}/${REPOS[id].path}` : REPOS[id].path
+    return `Work in the ${id} repo — its path is ${abs}. Your shell starts at the workspace root and Bash cwd PERSISTS between tool calls, so enter the repo with ONE standalone \`cd ${abs}\` call and stay there; never prefix a later command with \`cd … &&\`. VCS ADAPTER CALLS NEED MORE THAN THAT: several repos build in parallel this run, sharing ONE Bash session, so a concurrent repo's \`cd\` can leave you pointed at the wrong repo at the exact moment you call \`scripts/vcs/*.sh\` — cwd alone is not reliable for that adapter here. Resolve VCS_REPO ONCE, in its own standalone command: \`git -C ${abs} remote get-url origin\`. From what it prints, strip the leading \`git@<host>:\` or \`https://<host>/\` and any trailing \`.git\` — what remains (\`owner/repo\` on GitHub, \`group/subgroup/project\` on GitLab) is this repo's VCS_REPO. Prefix EVERY \`scripts/vcs/*.sh\` call for the rest of this task with it, as a plain env-var on the SAME bare line as the writer — \`VCS_REPO=<that value> scripts/vcs/<script>.sh …\` — never inside \`$( )\`, a pipe, or \`&&\` (any of those denies the call silently, same as wrapping the writer itself).`
+  }
+  const inRepo = shellClauseFor(R)
 
   // BUILD — initial implementation from the plan. Code repos: developer (TDD).
   // The test-suite repo: qa-runner branches, implements POM, iterates SCOPED, then
@@ -1403,6 +1435,13 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
   }
   let reviewRound = 0, fixPasses = 0, lastFixed = []
   let lastFp = null, stalled = 0
+  // Cross-repo escalation bookkeeping. xrepoDone: one attempt per (repo, finding) — a repeat means
+  // the routed fix did not settle it, which is a human call, not a ping-pong. pendingSync: an
+  // escalated fix that landed upstream last round; the NEXT fix pass here must sync it forward
+  // (pin bump / re-vendor) — carried explicitly so the sync never depends on a reviewer happening
+  // to re-name the upstream this round.
+  const xrepoDone = new Set()
+  let pendingSync = []
   while (reviewRound < MAX_REVIEW_ROUNDS) {
     reviewRound++
     const isRetest = fixPasses > 0
@@ -1532,7 +1571,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
           const up = repoResults[id]?.plan || plans.find((p) => p.repo === id)
           const br = up?.work_branch || `${branchKind}/${ticket}`
           return `${id} (path "${REPOS[id].path}", branch ${br}, state ${upstreamState(id)})`
-        }).join('; ')}. For EACH: (1) detect, do not guess — \`git config -f .gitmodules --get-regexp path\` from this repo's root; if that path is declared, bring the pin forward to the tip of that branch on origin and commit the pointer move on its own (\`git -C <path> fetch origin && git -C <path> checkout origin/<branch> && git add <path> && git commit -m "chore(<path>): sync ${ticket} upstream pin"\`); NEVER edit files inside the submodule checkout — a guard blocks it. (2) If it is NOT a submodule, the sync is in code you own: re-generate or re-copy the vendored contract/schema from the upstream repo's tree at that branch and reconcile the callers here. (3) If neither applies, say so in "remaining" and reply on the thread with what you checked — do not invent a change.`
+        }).join('; ')}. For EACH: (1) detect, do not guess — \`git config -f .gitmodules --get-regexp path\` from this repo's root; if that path is declared, bring the pin forward to the tip of that branch on origin and commit the pointer move on its own (\`git -C <path> fetch origin && git -C <path> checkout origin/<branch> && git add <path> && git commit -m "chore(<path>): sync ${ticket} upstream pin"\`); NEVER edit files inside the submodule checkout — a guard blocks it. (2) If it is NOT a submodule, the sync is in code you own: re-generate or re-copy the vendored contract/schema from the upstream repo's tree at that branch and reconcile the callers here. (3) If neither applies — the pin is already at the upstream tip and the fix does not EXIST there to sync forward — then the finding needs NEW work in that repo, which you cannot do from here: declare it in "upstream_fix_needed" (the repo id, the finding restated as what must change THERE, and evidence — the exact fetch/grep results proving it is absent both here and upstream), reply on the thread with what you checked, and do NOT invent a change here or edit the submodule checkout. The workflow routes a scoped fix pass to that repo on the strength of your evidence — an undeclared gap just re-confirms itself next round.`
       : ''
     if (repairOn.length) log(`[${R}] review finding names declared upstream ${repairOn.join(', ')} (state: ${repairOn.map((id) => upstreamState(id)).join(', ')}) — routing to the fix pass with the upstream head, not halting.`)
 
@@ -1603,9 +1642,15 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       continue
     }
 
+    // An escalated fix that landed upstream LAST round gets synced forward THIS round — named
+    // explicitly, because upstreamRepairClause only fires when a reviewer verdict happens to
+    // re-name the upstream, and the sync must not hang on that.
+    const pendingSyncClause = pendingSync.length
+      ? ` ESCALATED FIX LANDED UPSTREAM: ${pendingSync.map((s) => `${s.repo} (branch ${s.branch})`).join('; ')} now carries the fix this repo's review was blocked on. Bring THIS repo forward FIRST, exactly as the UPSTREAM SYNC steps describe (pin bump to the tip of that branch on origin when .gitmodules declares the path, else re-generate the vendored contract), commit the sync on its own, then reply on and resolve the thread(s) that finding held open.`
+      : ''
     // Developer fixes the WHOLE combined batch (every open reviewer's PR comments) in ONE pass, pushing to the PR.
     const fix = await safeAgent(
-      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}.${upstreamRepairClause} In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
+      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (git push). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Keep ${desc.green}.${upstreamRepairClause}${pendingSyncClause} In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
       { agentType: desc.build, phase: 'Review', label: `pr-fix:${ticket}:${R}#${reviewRound}`, schema: DEV_SCHEMA },
     )
     // STALL DETECTOR — the same unresolved finding set, with no new commit, surviving two
@@ -1613,12 +1658,82 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // still-open reviewers' verdicts BEFORE the fix (what this round actually had to resolve).
     const fpThisRound = stallFp(openReviewers.filter((rv) => !done[rv.key]).map((rv) => [rv.key, verdict[rv.key]]))
     if (fix) fixPasses++
+    pendingSync = []
     lastFixed = Array.isArray(fix?.fixed) ? fix.fixed : []
     const noNewCommit = !(fix?.commits > 0)
     if (fpThisRound === lastFp && noNewCommit) stalled++; else stalled = 0
     lastFp = fpThisRound
     log(`[${R}] review-fix round ${reviewRound}: ${fix?.summary?.slice(0, 60) ?? 'done'}${lastFixed.length ? ` (scope: ${lastFixed.length})` : ''}`)
     tick(`${R}:pr-fix#${reviewRound}`)
+
+    // CROSS-REPO ESCALATION — the fix pass proved (with evidence) that a finding's root fix lives
+    // in ANOTHER repo of this run: e.g. a missing index only the migration repo can add, vendored
+    // here as a guard-blocked read-only submodule. Without this route the loop can only re-confirm
+    // the same gap round after round — measured: five no-commit rounds ending in the same human
+    // call this block now makes explicit. TIERED: a repo of this run gets a scoped fix pass and a
+    // scoped re-gate there (never-fail-open holds — un-reviewed upstream code must not ride the
+    // merge train); a repo outside the run is scope the ticket never authorized, so it halts for a
+    // human. ONE level deep and ONE attempt per (repo, finding): a chained or repeated escalation
+    // halts too. Runs BEFORE the stall halt on purpose — an escalation round legitimately makes no
+    // commit in THIS repo, and a successful escalation resets the stall counter (the loop is moving
+    // again, just not here). The sync-forward happens on the NEXT fix pass via pendingSync.
+    const escalations = (Array.isArray(fix?.upstream_fix_needed) ? fix.upstream_fix_needed : [])
+      .filter((e) => e?.repo && e?.finding && String(e?.evidence || '').trim().length > 20)
+    let escalatedOk = 0
+    for (const esc of escalations) {
+      const T = esc.repo
+      const escKey = `${T}::${String(esc.finding).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 160)}`
+      const tPlan = repoResults[T]?.plan || plans.find((p) => p.repo === T)
+      const escHalt = (summary, remaining, decision) => ({ repo: R, status: 'review-blocked-on', plan: rp, pr, reviewRound, verdict, blockedOn: [T], handoff: { status: 'blocked', summary, remaining, decision_needed: decision } })
+      if (!REPOS[T] || !tPlan) {
+        log(`⛔ [${R}] CROSS-REPO FIX NEEDED IN ${T}, which is ${REPOS[T] ? 'not part of this run' : 'not a declared workspace repo'} — scope the ticket never authorized; halting for a human. Finding: ${String(esc.finding).slice(0, 160)}`)
+        return escHalt(`review finding needs new work in ${T}, outside this run's scope`, `${esc.finding} — evidence: ${esc.evidence}`, `whether to widen ${ticket} to include ${T}, ship the gap as a follow-up there, or waive the finding`)
+      }
+      if (xrepoDone.has(escKey)) {
+        log(`⛔ [${R}] REPEATED cross-repo escalation to ${T} for the same finding — the routed fix did not settle it; halting for a human rather than ping-ponging.`)
+        return escHalt(`escalated fix in ${T} did not settle the finding`, `${esc.finding} — a scoped fix pass already ran in ${T} this run and the finding is still open here`, `whether the ${T} fix actually addresses the finding, or the finding should be waived / re-scoped`)
+      }
+      if (!repoResults[T] && !doneAt(T, 'reviewed')) {
+        log(`[${R}] cross-repo escalation to ${T} deferred — its own pipeline is still in flight this run; re-checking next round rather than racing its build agent on the same clone.`)
+        continue
+      }
+      xrepoDone.add(escKey)
+      const tDesc = REPOS[T]
+      const tBranch = tPlan.work_branch || `${branchKind}/${ticket}`
+      const tBase = tPlan.base_branch || tDesc.base[branchKind]
+      const tRow = rowAt(T, 'pr_open')
+      const tPr = repoResults[T]?.pr || (tRow ? { pr_number: tRow.pr_number, pr_url: tRow.pr_url } : null)
+      log(`[${R}] CROSS-REPO ESCALATION → ${T} (round ${reviewRound} budget): ${String(esc.finding).slice(0, 140)}`)
+      const tFix = await safeAgent(
+        `${tag(T, tDesc.build, 'xrepo-fix', reviewRound)} Scoped cross-repo fix for ${ticket} in ${T}, escalated from the ${R} review with evidence. THE ONE FINDING to implement — nothing else, no drive-by cleanups, no other threads: ${esc.finding} Evidence from the escalating repo: ${esc.evidence} ${shellClauseFor(T)} Get on the ticket branch first: \`git fetch origin\`; if ${tBranch} exists on origin, switch to it (tracking origin), else \`git switch -c ${tBranch} origin/${tBase}\`. Implement ONLY this finding in this repo's own idiom (read its CLAUDE.md and docs/adr/ first), commit conventionally (\`fix(${ticket}): <what> Refs ${ticket}\`), keep ${tDesc.green}, and push. THE PR/MR: ${tPr ? `this run opened ${tPr.pr_url} (number ${tPr.pr_number ?? '?'}) for this repo — if it is still OPEN, your push lands on it and you are done; if it already MERGED, open a follow-up PR/MR for ${tBranch} → ${tBase} via \`scripts/vcs/open-pr.sh\`` : `no PR/MR is recorded for this repo this run — open one for ${tBranch} → ${tBase} via \`scripts/vcs/open-pr.sh\``}. ONE LEVEL ONLY: if this fix itself turns out to need work in yet ANOTHER repo, do NOT recurse and do NOT declare upstream_fix_needed — return status="blocked" with that repo and your evidence in "remaining"; a chained escalation is a human call. Return the DEV_SCHEMA handoff: status="complete" ONLY when the finding is implemented and this repo is green.` + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE + stateWrite(T, 'built'),
+        { agentType: tDesc.build, phase: 'Review', label: `xrepo-fix:${ticket}:${T}#${reviewRound}`, schema: DEV_SCHEMA },
+      )
+      if (!tFix || tFix.status !== 'complete') {
+        log(`⛔ [${R}] escalated fix pass in ${T} did not complete (${tFix?.status ?? 'no handoff'}) — halting for a human. ${String(tFix?.remaining || '').slice(0, 200)}`)
+        return escHalt(`escalated fix in ${T} did not complete`, tFix?.remaining || 'the routed fix pass returned no structured handoff', tFix?.decision_needed || `whether ${T} can actually absorb this fix for ${ticket}, and who lands it`)
+      }
+      // SCOPED RE-GATE — the escalated commits are new, un-reviewed code on a branch this run
+      // already reviewed once, so they get their own gate before anything syncs them forward:
+      // code gate only, scoped to the fix diff, suite green required (never fail open). Approval
+      // refreshes the repo's 'reviewed' checkpoint so a resume does not degrade it.
+      if (tDesc.review) {
+        const tGate = await safeAgent(
+          `${tag(T, tDesc.review, 'xrepo-regate', reviewRound)} ${levelDirective} SCOPED re-gate of a cross-repo fix for ${ticket} in ${T} — NOT a fresh full review; this run already reviewed this repo once. Since then exactly one escalated fix landed on ${tBranch}, for this finding from the ${R} review: ${esc.finding} ${shellClauseFor(T)} Judge ONLY the new commits (\`git fetch origin\` then read the fix commits on ${tBranch}; the fix agent reports its files as: ${(Array.isArray(tFix.fixed) ? tFix.fixed : []).join(', ') || `unreported — locate them from the latest fix(${ticket}) commits`}): does the diff genuinely implement the finding, in this repo's idiom, with no collateral change beyond it? Post any must-fix inline on the PR/MR as usual. ${greenGateFor(T, tBranch)} Return approved:true ONLY when the fix meets the finding AND tests_green is true.${NO_SELF_APPROVE}` + VERDICT_BEFORE_BUDGET + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE + stateWrite(T, 'reviewed') + ` Write that RUN-STATE file ONLY if your verdict is approved:true with tests_green:true — an unapproved re-gate must NOT refresh the reviewed checkpoint.`,
+          { agentType: tDesc.review, phase: 'Review', label: `xrepo-regate:${ticket}:${T}#${reviewRound}`, schema: REVIEW_SCHEMA },
+        )
+        if (!(tGate?.approved === true && tGate?.tests_green === true)) {
+          log(`⛔ [${R}] scoped re-gate in ${T} did not approve the escalated fix (approved=${tGate?.approved ?? 'no verdict'}, tests_green=${tGate?.tests_green ?? '?'}) — halting for a human; nothing syncs forward un-reviewed.`)
+          return escHalt(`escalated fix in ${T} failed its scoped re-gate`, tGate?.conclusion || tGate?.unavailable_reason || 'the re-gate returned no verdict', `whether the ${T} fix is genuinely wrong, or the gate needs a human re-run there`)
+        }
+      } else {
+        log(`[${R}] ${T} declares no code reviewer — the escalated fix rides to the cross-repo test-suite gate, same as that repo's own pipeline.`)
+      }
+      pendingSync.push({ repo: T, branch: tBranch })
+      escalatedOk++
+      log(`✅ [${R}] escalated fix landed and re-gated in ${T} (${tBranch}) — next fix pass here syncs it forward and resolves the blocked thread(s).`)
+    }
+    if (escalatedOk) stalled = 0
+
     if (stalled >= 1) {
       log(`⛔ [${R}] REVIEW STALLED — the same unresolved finding set survived two rounds with no new commit on ${rp.work_branch}. Halting this repo rather than spending the remaining ${MAX_REVIEW_ROUNDS - reviewRound} round(s) on a finding it cannot converge on; PR left OPEN.`)
       return { repo: R, status: 'review-stalled', plan: rp, pr, reviewRound, verdict, handoff: { status: 'blocked', summary: `review loop stalled at round ${reviewRound}`, remaining: `the same finding set was still open after a fix round that produced no commit. Unresolved: ${String(fpThisRound).slice(0, 400)}`, decision_needed: 'whether the finding is genuinely actionable, or should be waived / re-scoped' } }
