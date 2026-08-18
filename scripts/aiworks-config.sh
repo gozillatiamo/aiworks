@@ -32,6 +32,9 @@
 #   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
 #   review.level                     → const REVIEW_LEVEL            (dev-cycle.js; 'strict' ⇒ must-fixes only, no nice-to-have)
 #   loadtest.*                       → const LOADTEST                (dev-cycle.js; the base-branch non-degradation gate)
+#   test_suite.max_fix_rounds        → const TEST_SUITE              (dev-cycle.js; the cross-repo gate's own red-triage loop)
+#   dev_cycle.token_budget           → const DEV_CYCLE               (dev-cycle.js; the run's own spend ceiling)
+#   notify.dm_on_incomplete          → const NOTIFY_DM                (dev-cycle.js; a Slack member id DMed on a non-complete ending)
 #   language                         → const LANGUAGE                (dev-cycle.js AND prd.js; 'en' default | 'th' ⇒ English spine, Thai prose)
 #   planning.auto_approve            → const AUTO_APPROVE_PLAN
 #   planning.to_html                 → const PLAN_TO_HTML
@@ -361,6 +364,11 @@ RL_RAW='strict' # review.level — 'strict' (must-fixes only) unless the org dec
 # match the workflow's fallbacks; every one is a number the gate reads at runtime.
 LT_TOL='10'; LT_NOISE_RUNS='2'; LT_NOISE_CEIL='2'; LT_FIX_ROUNDS='2'
 LT_CACHE='~/.cache/aiworks/loadtest-baselines'
+# test_suite.max_fix_rounds — the cross-repo gate's own bounded red-triage loop (C4).
+TS_FIX_ROUNDS='2'
+# dev_cycle.token_budget — the run's own spend ceiling (C9), and notify.dm_on_incomplete (C10).
+DC_TOKEN_BUDGET='2000000'
+NOTIFY_DM=''
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
                   # in declared order. The workflow drives a monotonic subset (STATUS_ORDER); the
                   # rest are carried for humans/other tools — so a rich board isn't silently dropped.
@@ -376,6 +384,7 @@ while IFS=$'\t' read -r k v; do
     NOTIFY_ENABLED)  NT_RAW="$v" ;;
     NOTIFY_PROVIDER) NOTIFY_PROVIDER="$v" ;;
     NOTIFY_CHANNEL)  NOTIFY_CHANNEL="$v" ;;
+    NOTIFY_DM)       NOTIFY_DM="$v" ;;
     DESIGN_ENABLED)     DESIGN_EN_RAW="$v" ;;
     DESIGN_FIGMA_KEY)   DESIGN_KEY="$v" ;;
     DESIGN_PAGE_NAMING) DESIGN_PAGE="$v" ;;
@@ -389,6 +398,8 @@ while IFS=$'\t' read -r k v; do
     LT_NOISE_CEILING)   LT_NOISE_CEIL="$v" ;;
     LT_MAX_FIX_ROUNDS)  LT_FIX_ROUNDS="$v" ;;
     LT_BASELINE_CACHE)  LT_CACHE="$v" ;;
+    TS_MAX_FIX_ROUNDS)  TS_FIX_ROUNDS="$v" ;;
+    DC_TOKEN_BUDGET)    DC_TOKEN_BUDGET="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
 done < <(
@@ -410,6 +421,7 @@ done < <(
     sec=="notify"       && /^  enabled:/         { print "NOTIFY_ENABLED\t"  val($0); next }
     sec=="notify"       && /^  provider:/        { print "NOTIFY_PROVIDER\t" val($0); next }
     sec=="notify"       && /^  channel:/         { print "NOTIFY_CHANNEL\t"  val($0); next }
+    sec=="notify"       && /^  dm_on_incomplete:/ { print "NOTIFY_DM\t"      val($0); next }
     sec=="design"       && /^  enabled:/         { print "DESIGN_ENABLED\t"     val($0); next }
     sec=="design"       && /^  figma_file_key:/  { print "DESIGN_FIGMA_KEY\t"   val($0); next }
     sec=="design"       && /^  page_naming:/     { print "DESIGN_PAGE_NAMING\t" val($0); next }
@@ -423,6 +435,8 @@ done < <(
     sec=="loadtest"     && /^  noise_ceiling_multiple:/ { print "LT_NOISE_CEILING\t" val($0); next }
     sec=="loadtest"     && /^  max_fix_rounds:/       { print "LT_MAX_FIX_ROUNDS\t" val($0); next }
     sec=="loadtest"     && /^  baseline_cache:/       { print "LT_BASELINE_CACHE\t" val($0); next }
+    sec=="test_suite"   && /^  max_fix_rounds:/       { print "TS_MAX_FIX_ROUNDS\t" val($0); next }
+    sec=="dev_cycle"    && /^  token_budget:/         { print "DC_TOKEN_BUDGET\t"   val($0); next }
   ' "$WC"
 )
 AUTO_MERGE="$(jsbool "$AM_RAW" true)"
@@ -441,6 +455,8 @@ case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # cl
 [[ "$LT_NOISE_CEIL" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_CEIL" -ge 1 ]] || LT_NOISE_CEIL='2'
 [[ "$LT_FIX_ROUNDS" =~ ^[0-9]+$ ]]  || LT_FIX_ROUNDS='2'
 LT_CACHE="${LT_CACHE:-~/.cache/aiworks/loadtest-baselines}"
+[[ "$TS_FIX_ROUNDS" =~ ^[0-9]+$ ]]    || TS_FIX_ROUNDS='2'
+[[ "$DC_TOKEN_BUDGET" =~ ^[0-9]+$ ]]  || DC_TOKEN_BUDGET='2000000'
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
 LANGUAGE="$(printf '%s' "${LANG_RAW:-en}" | tr '[:upper:]' '[:lower:]')"
@@ -610,6 +626,7 @@ const PLAN_TO_HTML = ${TO_HTML}     // from workspace.config.yaml planning.to_ht
 const NOTIFY = ${NOTIFY}        // from workspace.config.yaml notify.enabled; true + AUTO_MERGE false ⇒ Notify phase posts a review-request
 const NOTIFY_PROVIDER = $(jsq "$NOTIFY_PROVIDER") // from workspace.config.yaml notify.provider (scripts/notify/ adapter)
 const NOTIFY_CHANNEL = $(jsq "$NOTIFY_CHANNEL")  // from workspace.config.yaml notify.channel; the chat channel the digest goes to
+const NOTIFY_DM = $(jsq "${NOTIFY_DM:-U00000000000}")  // from workspace.config.yaml notify.dm_on_incomplete; a Slack MEMBER id — every non-complete ending DMs it instead of posting to the channel
 const DESIGN_ENABLED = ${DESIGN_ENABLED}     // from workspace.config.yaml design.enabled; false ⇒ Figma OFF workspace-wide (dev/QA build from spec, not a Figma screenshot)
 const QUALITY_GATE = $(jsq "$QUALITY_GATE")     // from workspace.config.yaml quality_gate.provider; 'none' ⇒ guardian gate skips+passes (no SonarQube attempt)
 const REVIEW_LEVEL = $(jsq "$REVIEW_LEVEL")     // from workspace.config.yaml review.level; 'strict' ⇒ Review gates report must-fixes ONLY (no fold-ins/Improvement tickets); 'thorough' ⇒ + nice-to-have
@@ -620,6 +637,12 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   noiseCeilingMultiple: ${LT_NOISE_CEIL},     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
   maxFixRounds: ${LT_FIX_ROUNDS},             // attributed-regression → developer fix → re-run loops before halting
   baselineCache: $(jsq "$LT_CACHE"),
+}
+const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
+  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → re-review → re-run loops before halting
+}
+const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
+  tokenBudget: ${DC_TOKEN_BUDGET},        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
 }
 const STATUS = {
 ${status_body}}
