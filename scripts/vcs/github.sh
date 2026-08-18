@@ -250,7 +250,8 @@ _gh_nwo() {
       *) die "VCS_REMOTE=$VCS_REMOTE points at '$url', which is not a github.com remote — set VCS_PROVIDER to match it" ;;
     esac
   fi
-  nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+  nwo="$(vcs_repo_ref)"
+  [[ -n "$nwo" ]] || nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
   [[ -n "$nwo" ]] && { printf '%s' "$nwo"; return 0; }
   url="$(git remote get-url origin 2>/dev/null || true)"; url="${url%.git}"
   case "$url" in *github.com[:/]*) printf '%s' "${url#*github.com[:\/]}" ;; *) printf '%s' "$url" ;; esac

@@ -23,7 +23,9 @@
 #
 # default-branch and the media helpers below are provider-neutral, so they live here.
 #
-# All commands run against the repo in the current working directory.
+# The repo a call acts on defaults to the current working directory's git remote. An explicit
+# VCS_REPO overrides that default for every provider (vcs_repo_ref below): a parallel() wave of
+# per-repo agents shares one Bash cwd, so the cwd default alone mis-targets writes in that case.
 
 set -euo pipefail
 
@@ -38,6 +40,7 @@ VCS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # while reporting success. Snapshot the caller's values and put them back afterwards.
 _vcs_arg_provider="${VCS_PROVIDER:-}"
 _vcs_arg_remote="${VCS_REMOTE:-}"
+_vcs_arg_repo="${VCS_REPO:-}"
 if [[ -f "$VCS_DIR/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
@@ -46,7 +49,16 @@ if [[ -f "$VCS_DIR/.env" ]]; then
 fi
 [[ -n "$_vcs_arg_provider" ]] && VCS_PROVIDER="$_vcs_arg_provider"
 [[ -n "$_vcs_arg_remote" ]] && VCS_REMOTE="$_vcs_arg_remote"
-unset _vcs_arg_provider _vcs_arg_remote
+[[ -n "$_vcs_arg_repo" ]] && VCS_REPO="$_vcs_arg_repo"
+unset _vcs_arg_provider _vcs_arg_remote _vcs_arg_repo
+
+# Project/repo the call acts on: explicit VCS_REPO wins, else the provider's own cwd-derived
+# default (unchanged behaviour for every existing caller that never sets VCS_REPO).
+vcs_repo_ref() { printf '%s' "${VCS_REPO:-}"; }
+
+# GitLab's URL-encoded project-path form (owner%2Frepo). No `${var//…}` substitution — it behaves
+# differently on bash 3.2 (macOS's /bin/bash) vs 5.x for this pattern; sed is portable.
+vcs_urlencode_path() { printf '%s' "$1" | sed 's@/@%2F@g'; }
 
 die() { echo "error: $*" >&2; exit 1; }
 command -v git >/dev/null || die "git is required"
@@ -112,9 +124,12 @@ vcs_media_asset_name() {
 # Fail LOUD instead — the difference between "I misread this error as a broken adapter" and
 # "I cd into the repo and retry" is the whole distance between those two outcomes.
 # Framework work on the workspace's own repo is real: set VCS_ALLOW_META_REPO=1 deliberately.
+# An explicit VCS_REPO satisfies the guard the same way: it is exactly the signal "nothing
+# tells you which repo you're in" was missing, so a caller that names the repo explicitly is not
+# the blind cwd case this guard exists to catch. With NEITHER set, it still dies loud.
 case "$(basename "${0:-}")" in
   open-pr.sh|merge-pr.sh|close-pr.sh|pr-approve.sh|pr-comment.sh|pr-resolve-thread.sh|upload-media.sh)
-    if [[ "${VCS_ALLOW_META_REPO:-0}" != 1 ]]; then
+    if [[ "${VCS_ALLOW_META_REPO:-0}" != 1 && -z "${VCS_REPO:-}" ]]; then
       _top=$(git rev-parse --show-toplevel 2>/dev/null || true)
       if [[ -n "$_top" && -f "$_top/workspace.config.yaml" ]]; then
         die "$(basename "$0") was run from the WORKSPACE root ($_top), so it would act on the workspace repo itself, not on a product repo.
