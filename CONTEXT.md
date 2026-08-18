@@ -20,6 +20,30 @@ fans out and sequences agents rather than reasoning turn-by-turn.
 The end-to-end delivery Workflow for a single ticket: plan → build → PR/MR → review → test gate
 → merge → distribute. → `.claude/workflows/dev-cycle.js`
 
+**Invocation**:
+One `Workflow` call. A run that is stopped and started again is a second invocation of the same
+ticket, not a continuation of the first: it re-reads the script, replays whatever the engine's
+cache still covers, and does the rest live. This is what a human means by "the third round".
+*Avoid*: round, pass, attempt, retry.
+
+**Review round**:
+One turn of a single repo's review↔fix loop, counted per repo and capped. Several review rounds
+happen inside one invocation, and a new invocation restarts a repo's rounds at one. *Avoid*: round
+(unqualified), review cycle.
+
+**Wave**:
+A dependency batch of repos, derived from each repo's declared upstreams. Waves order the merge,
+not the build: every scoped repo builds concurrently. *Avoid*: stage, phase, batch.
+
+**Repo status** (dev-cycle):
+The verdict one repo's pipeline returns. `ready` is the only one that lets the change set proceed;
+the rest each name a different stop: `build-unresolved` (the build did not hand back a complete
+state), `pr-unresolved` (the PR/MR could not be opened), `review-unresolved` (findings still open
+at the round cap), `review-tests-unverified` (the reviewer could not run the suite, so nothing can
+say the branch is green), `review-regression-halt` (a fix caused a new blocking problem),
+`review-stalled` (the same findings survived two rounds with no new commit), and
+`review-blocked-on` (a finding names a declared upstream that is not ready yet).
+
 **prd** / **brd**:
 Workflows that produce a Product / Business Requirements Document from a brief.
 

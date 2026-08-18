@@ -153,6 +153,7 @@ t "source file untouched"        0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/sr
 t ".html in subdir blocked"      2 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/development-planner/APP-1-svc-plan.html")"
 t "no ticket key untouched"      0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/rollout-plan.md")"
 t "outside any repo fails open"  0 pretool-plan-path-guard.sh "$(jw "/nonexistent-root-xyz/agent_logs/APP-1-plan.md")"
+t "run-state json ignored"       0 pretool-plan-path-guard.sh "$(jw "$TMP/svc/agent_logs/APP-1-dev-cycle-state/svc-built.json")"
 
 echo "--- pretool-config-comment-guard ---"
 HASH='#'   # kept out of the literals so editing this suite through a heredoc stays honest
