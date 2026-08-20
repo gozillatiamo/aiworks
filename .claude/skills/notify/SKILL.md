@@ -1,6 +1,9 @@
 ---
 name: notify
-description: Post a review-request notification — a "Please review, <KEY> <title>." digest of a ticket's open PR/MR per repo — to the team chat through the notify adapter (scripts/notify/). Use as the dev-cycle's Notify phase, or when a user wants to ping the team to review a ticket's open PR(s)/MR(s).
+description: >-
+  Post a review-request notification - a "Please review, <KEY> <title>." digest of a ticket's open
+  PR/MR per repo - to the team chat. Use as the dev-cycle Notify phase, or to ping the team to
+  review a ticket's open PR(s)/MR(s).
 argument-hint: [ticket-number]
 allowed-tools:
   - Bash(scripts/notify/*)

@@ -1,6 +1,10 @@
 ---
 name: plan-automate
-description: Read a test plan (agent_logs/<KEY>-testcases.md) and plan how to automate it in THIS project's Page Object Model — which Page Objects and specs to add or reuse, the selectors to confirm, the runner/wiring changes needed, and which scenarios are automatable vs manual-only. Plan only; writes the plan to agent_logs/ and never writes test code or runs the app.
+description: >-
+  Read a test plan (agent_logs/<KEY>-testcases.md) and plan how to automate it in THIS project's
+  Page Object Model - which Page Objects and specs to add or reuse, the selectors to confirm, the
+  runner wiring needed, and which scenarios are automatable vs manual-only. Plan only: writes to
+  agent_logs/ and never writes test code or runs the app.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---

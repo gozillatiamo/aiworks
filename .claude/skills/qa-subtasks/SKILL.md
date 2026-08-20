@@ -1,6 +1,10 @@
 ---
 name: qa-subtasks
-description: Create per-tool QA sub-tasks (Cypress / Newman / K6) under a parent ticket — BDD scenarios authored by a Senior QA Expert, each created as a child of the parent with the right Component and an Implements link. Goes through the tracker adapter (scripts/tracker/), provider-agnostic and headless-safe — never an Atlassian MCP/OAuth. Accepts an optional positional arg `parent-ticket-number` (e.g. `APP-123`). Use when the user wants QA sub-tasks for a ticket, or as the QA step of /clarifying-ticket.
+description: >-
+  Create per-tool QA sub-tasks (Cypress / Newman / K6) under a parent ticket - BDD scenarios, each
+  a child with the right Component and an Implements link. Headless-safe: goes through the tracker
+  adapter, never an Atlassian MCP or OAuth. Accepts an optional parent ticket key. Use when a
+  ticket needs QA sub-tasks, or as the QA step of /clarifying-ticket.
 argument-hint: "[parent-ticket-number] [tools: E2E API Load]"
 model: opus
 effort: high

@@ -14,8 +14,9 @@
 # spawn a disposable subagent that reads the file and returns conclusions, so the bytes never
 # reach this context at any ratio.
 #
-# Scope is `hcat` only — the verb this workspace introduced. A bare `cat` of a huge file is
-# pre-existing behaviour that posttool-output-warden.sh already reports on.
+# Scope is `hcat` only — the verb this workspace introduced. A bare `cat` of a big file is
+# `pretool-bash-context-guard.sh`'s business now (it used to be merely *reported* on, after the
+# fact, by posttool-output-warden.sh — which is why it stayed the single largest context cost).
 #
 # Exit 0 = allow. Exit 2 = block, stderr is shown to the model as feedback.
 
@@ -31,6 +32,14 @@ tool=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 [ -n "$cmd" ] || exit 0
 case "$cmd" in *hcat*) ;; *) exit 0 ;; esac
+
+# The override this hook's own message promises has to be read OUT OF THE COMMAND STRING. A hook
+# runs in its own process, so `HCAT_MAX_BYTES=<bytes> hcat <file>` never reaches its environment:
+# the assignment applies to the command being judged, which has not run yet. Reading it from the
+# env made the documented escape hatch silently do nothing — you follow the instructions and get
+# blocked again.
+inline=$(printf '%s' "$cmd" | sed -nE 's/.*(^|[[:space:]])HCAT_MAX_BYTES=([0-9]+)([[:space:]].*)?$/\2/p' | head -1)
+[ -n "$inline" ] && MAX_BYTES="$inline"
 
 cwd=$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)
 

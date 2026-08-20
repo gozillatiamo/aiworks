@@ -1,6 +1,11 @@
 ---
 name: coding-automate
-description: Implement an approved automation plan in THIS repo's Page Object Model and verify it. Reads agent_logs/<KEY>-automation-plan.md (the plan to follow) with agent_logs/<KEY>-testcases.md as the reference for expected behaviour/assertions, writes/extends Page Objects and specs strictly POM — each test titled with its TC id and ending in a screenshot capture — then verifies with `scripts/dev.sh test`. On a red run, investigate with `scripts/dev.sh why test`, fix automation issues and re-run; log genuine app bugs to agent_logs/<KEY>-bugs.md. This is the implement+execute step after plan-automate — it writes test code and runs the suite.
+description: >-
+  Implement an approved automation plan in THIS repo's Page Object Model and verify it. Follows
+  agent_logs/<KEY>-automation-plan.md against <KEY>-testcases.md, writes Page Objects and specs
+  strictly POM - each test titled with its TC id, ending in a screenshot - then verifies with
+  `scripts/dev.sh test`. On red, drill with `why test`, fix automation issues and re-run; log
+  genuine app bugs to agent_logs/<KEY>-bugs.md. The implement+execute step after plan-automate.
 argument-hint: "[FM-ticket]"
 arguments: [ticket]
 ---

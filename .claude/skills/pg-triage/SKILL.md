@@ -1,16 +1,13 @@
 ---
 name: pg-triage
 description: >-
-  Use this to get ground truth from the real DEPLOYED Postgres — PRODUCTION or STAGING,
-  read-only — instead of guessing from code, memory, or a local copy. Trigger for: a reported
-  symptom that only deployed data can confirm (wrong balance, bad amount, missing/duplicate
-  record, wrong status, misconfigured row); a direct ask to look up, grab, verify, or compare a
-  specific row, count, or config value in prod or staging, or across several configured
-  databases; checking what a migration or a deploy actually did to the STAGING data; or
-  grounding another skill plan/fix with a real deployed DB fact. One on-demand, read-only MCP
-  covers both environments and always disconnects when done — it never writes or migrates. Do
-  NOT use for the local/dev DB (postgres_main/postgres_secondary), schema migrations,
-  logs/traces, or cache / session / Redis-Stream state (redis-triage).
+  Read-only ground truth from the DEPLOYED Postgres, PRODUCTION or STAGING - not code, memory or a
+  local copy. Triggers: a symptom only deployed data confirms (wrong balance, bad amount, missing
+  or duplicate record, wrong status, a misconfigured row); verifying or comparing a row, count or
+  config value in prod, staging, or across several configured databases; what a migration or
+  deploy did to STAGING data. Never writes or migrates. NOT for the local/dev DB
+  (postgres_main/postgres_secondary), schema migrations, logs and traces (telemetry-triage), or
+  cache/session/Redis-Stream state (redis-triage).
 argument-hint: "[symptom / target / table / ticket-key] [staging|prod]"
 ---
 

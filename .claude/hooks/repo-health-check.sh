@@ -134,11 +134,34 @@ compute
 [ "$total" -eq 0 ] && exit 0   # nothing declared → nothing to inject
 
 # Which event? SessionStart reports always; UserPromptSubmit only when NOT ready.
-event="SessionStart"
+# Read stdin ONCE — the session id comes from the same payload as the event name.
+event="SessionStart"; sid=""
 if [ ! -t 0 ]; then
-  ev="$(cat 2>/dev/null | jq -r '.hook_event_name // empty' 2>/dev/null)"
+  payload="$(cat 2>/dev/null)"
+  ev="$(printf '%s' "$payload" | jq -r '.hook_event_name // empty' 2>/dev/null)"
   [ -n "$ev" ] && event="$ev"
+  sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
 fi
+
+# SAY IT ONCE, THEN STOP REPEATING IT. The healthy path below already avoids per-turn bloat
+# ("stay silent on every prompt"); the not-ready path did not, and re-injected the same ~90-token
+# paragraph on EVERY prompt — measured at 10 identical injections in one session, growing without
+# bound on a long one, for a fact that had not changed since the first. So the full guidance goes
+# out at SessionStart and whenever the STATE changes; an unchanged state gets one short line.
+#
+# The digest is the whole message, so any real change — a repo finishing its clone, setup
+# crashing — differs and re-announces itself in full. That is the property worth keeping: this is
+# a de-duplicator, never a suppressor.
+seen_before() {  # seen_before <message> -> 0 when this exact message already went out this session
+  [ "$event" = "SessionStart" ] && return 1
+  [ -n "$sid" ] || return 1
+  digest="$(printf '%s' "$1" | (command -v shasum >/dev/null 2>&1 && shasum -a 1 || sha1sum) 2>/dev/null | awk '{print $1}')"
+  [ -n "$digest" ] || return 1
+  marker="${TMPDIR:-/tmp}/aiworks-repo-health.$sid.$digest"
+  [ -f "$marker" ] && return 0
+  : > "$marker" 2>/dev/null
+  return 1
+}
 
 # emit additionalContext JSON for $event with message $1. Messages are single-line, plain
 # ASCII with no double-quotes/backticks, so the jq-less fallback stays valid JSON.
@@ -174,5 +197,10 @@ case "$SETUP_STATE" in
     action="Tell the user and offer to run  .superset/setup.sh  to clone and onboard the missing repos. Do not treat the missing repos as a real error until setup has completed."
     ;;
 esac
-emit "[workspace repo health] Only $present_count of $total product repos are cloned in this worktree. NOT ready: $missing. $cause $action"
+full="[workspace repo health] Only $present_count of $total product repos are cloned in this worktree. NOT ready: $missing. $cause $action"
+if seen_before "$full"; then
+  emit "[workspace repo health] Unchanged: $present_count/$total repos cloned, NOT ready: $missing. Guidance already given this session."
+else
+  emit "$full"
+fi
 exit 0

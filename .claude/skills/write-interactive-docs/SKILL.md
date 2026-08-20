@@ -1,24 +1,16 @@
 ---
 name: write-interactive-docs
 description: >-
-  Write a self-contained, interactive HTML document that explains something to a
-  human in plain language — using diagrams, tables, tabs, charts, callouts and
-  comparison sections instead of a wall of text — themed to match the project it
-  came from, with one-click export of the whole page or any single section to
-  Markdown or JSON for feeding to an AI. Use this whenever the user wants to
-  DOCUMENT, EXPLAIN, WRITE UP, or VISUALIZE something for people to read:
-  architecture/system/codebase explainers, design docs, ADRs, RFCs, "how does X
-  work" write-ups, solution proposals, option/trade-off comparisons, onboarding
-  guides, runbooks, research summaries, or turning a PRD/README/markdown into a
-  rich readable page. Trigger it for phrasings like "make a doc/page", "write
-  this up", "explain this visually", "create an interactive explainer", "turn
-  this into HTML docs", "document this so the team gets it", or a shareable
-  single-file HTML explainer — even if they don't say "interactive". ALSO use it
-  to UPDATE or MODIFY an existing interactive doc — partial edits like "tweak this
-  section", "restyle it", "fix that diagram", "make the diagram interactive", or
-  "add a section" — editing just the requested part instead of rebuilding. Prefer
-  this over a plain Markdown reply whenever the user wants something polished,
-  visual, or shareable.
+  Write a self-contained interactive HTML document that explains something to a human - diagrams,
+  tables, tabs, charts, callouts, comparisons instead of a wall of text - themed to its project,
+  with one-click export of the page or any section to Markdown/JSON. For architecture and codebase
+  explainers, design docs, ADRs, RFCs, "how does X work", solution proposals, trade-off
+  comparisons, onboarding guides, runbooks, research summaries, or turning a PRD/README/markdown
+  into a rich readable page. Triggers: DOCUMENT, EXPLAIN, WRITE UP, VISUALIZE for people to read;
+  "make a doc/page", "write this up", "explain this visually", "turn this into HTML docs", a
+  shareable single-file explainer - even without the word "interactive". ALSO for UPDATING one
+  ("tweak this section", "restyle it", "fix that diagram", "add a section") - editing just that
+  part. Prefer this over a plain Markdown reply when the result should be polished or shareable.
 model: sonnet
 effort: low 
 ---

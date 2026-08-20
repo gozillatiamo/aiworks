@@ -1,6 +1,14 @@
 ---
 name: decompose-ticket
-description: Split an oversized ticket (total Dev+QA points over 24) into smaller tickets that can each be built and shipped in parallel (no hard cross-piece dependency), then re-estimate every piece — parallel independence is first-class; only a truly huge ticket (over 36) may instead split along hard 'is blocked by' dependencies, and a ticket with no valid parallel cut is left whole. Two branches by caller: the CTO ADVISES (proposes the seams + independent slices as solution-finding, writes no tickets) and the Product Owner EXECUTES (creates the pieces through the tracker adapter, re-estimates each, wires the split structure). Runs only when a human invokes it — no pipeline auto-runs it (the /prd workflow deliberately has no points ceiling and never splits or flags an oversized ticket). Use when a ticket is too big to size, when asked to break down / split / decompose a <KEY>, or when another role needs an oversized ticket carved into independent, re-estimated pieces.
+description: >-
+  Split an oversized ticket (Dev+QA points over 24) into pieces that can each be built and shipped
+  in PARALLEL - no hard cross-piece dependency - then re-estimate every piece. Parallel
+  independence is first-class; only a truly huge ticket (over 36) may instead split along hard 'is
+  blocked by' dependencies, and a ticket with no valid parallel cut is left whole. Two caller
+  branches: the CTO ADVISES (proposes the seams, writes no tickets) and the Product Owner EXECUTES
+  (creates the pieces through the tracker adapter, re-estimates each, wires the split structure).
+  Human-invoked only - no pipeline auto-runs it, and /prd deliberately has no points ceiling. Use
+  when a ticket is too big to size, or on "break down / split / decompose <KEY>".
 argument-hint: "<KEY> (e.g. APP-1952) [advise|execute]"
 disable-model-invocation: true
 model: opus

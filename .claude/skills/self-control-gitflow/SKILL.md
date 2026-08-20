@@ -1,6 +1,10 @@
 ---
 name: self-control-gitflow
-description: Git branch + PR/MR lifecycle around a coding task. START — branch a fresh `feature/<KEY>` branch off the latest default branch before any coding. FINISH (only after all tests pass) — commit, push, open a PR/MR to the parent/default branch, and squash-merge it yourself via the VCS adapter. Use right before implementation begins, and again once the suite is green (pairs with coding-automate).
+description: >-
+  Git branch + PR/MR lifecycle around a coding task. START: branch a fresh `feature/<KEY>` off the
+  latest default branch before any coding. FINISH (only once all tests pass): commit, push, open a
+  PR/MR to the parent branch, and squash-merge it via the VCS adapter. Use right before
+  implementation begins, and again once the suite is green.
 argument-hint: "[start|finish] [ticket]"
 allowed-tools:
   - Bash(git *)

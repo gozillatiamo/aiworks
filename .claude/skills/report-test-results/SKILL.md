@@ -1,6 +1,12 @@
 ---
 name: report-test-results
-description: Gather the automation run results for a ticket and report them on the ticket as a concise, human-readable summary WITH the run's own screenshots embedded in the comment. One durable comment per suite repo, identified by a `[test-report · <repo>]` marker and UPDATED in place on every re-run rather than posted again. Reads the run summary (`scripts/dev.sh why test`), the run's artifacts (`scripts/dev.sh artifacts`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-TC results table to agent_logs/<KEY>-report.md and posts it with the evidence attached. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
+description: >-
+  Report a finished automation run on its ticket as a human-readable verdict WITH the run's own
+  screenshots embedded - ONE durable comment per suite repo, keyed by a `[test-report - <repo>]`
+  marker and UPDATED in place on every re-run rather than posted again. Reads `scripts/dev.sh why
+  test` + `artifacts`, the logged bugs and the test plan; writes a per-TC table to
+  agent_logs/<KEY>-report.md and posts it with the evidence. Same shape green or red. Reports only
+  - never runs the suite or writes test code.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---
