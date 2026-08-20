@@ -36,6 +36,52 @@ path with `offset`/`limit` — a compressed rendering is for orienting, never fo
 
 `hcat` takes exactly one file argument. No pipes, no globs, no flags.
 
+## The guard that makes this happen, because advice did not
+
+`hcat` was on `PATH` and documented for months and still went unused, because nothing stopped the
+cheaper habit. **Measured over one real session** (~290k tokens
+of messages): `posttool-output-warden.sh` fired **13 times** and changed nothing — it speaks after
+the bytes have landed, and says so itself: *"PostToolUse can't shrink output already received."*
+Over the same session the *blocking* guards fired 3 times and were obeyed 3 times. Same
+information, opposite timing, opposite outcome.
+
+So the enforcement is a **PreToolUse** hook, `pretool-bash-context-guard.sh`, with two rules:
+
+1. **An unbounded read of a file ≥ 8 KiB is blocked** (`BASH_READ_MAX_BYTES`). `cat`, `nl`,
+   `less`, `more`, `bat` — but only when nothing consumes the output. `… | head`, `… | grep`,
+   `… > file`, `sed -n '10,40p'`, and `grep` itself are all allowed, because they are what the
+   block message recommends and blocking them would push you straight back to the bare `cat`.
+   The rule judges only what is **statically knowable**: the file exists, `wc -c` says how big it
+   is, and the command asked for all of it. It deliberately does not try to predict `grep` output.
+   That session's single largest block was one `cat` of a 25 KB `SKILL.md` — ~7,000 tokens, to
+   answer a question that needed about 30 lines.
+
+2. **A read-modify-write patch through a heredoc is blocked** (`BASH_PATCH_GUARD=0` disables just
+   this rule). `python3 - <<'PY' … .read() … open(p,'w').write(…) … PY` pays for the same text
+   twice: the command carries the old block *you already read* plus the new one, and because the
+   write happens outside the tracked `Edit` path the harness then echoes an `edited_text_file`
+   diff back (16.2k tokens over 7 echoes that session, on top of ~50k of command payloads).
+   `Edit` sends `old_string`/`new_string` only and triggers no echo. A **write-only** script —
+   a new file, a computed file — is not a patch and is allowed; requiring a real read *call*
+   (not a bare `open(`) is what separates the two, and is the guard's one measured false positive,
+   now a selftest case.
+
+   ⚠️ Rule 2 knowingly overrides the auto-mode preference for editing files with "sed, heredocs,
+   or short scripts, rather than the dedicated Read, Edit, or Write tools". That preference is
+   about permission friction; this is about context cost, and for this one shape the cost is
+   measured and large. Every other Bash edit still works.
+
+**Both guards' escape hatches are parsed out of the command string, not read from the environment.**
+A hook runs in its own process, so `BASH_READ_MAX_BYTES=… <command>` never reaches its env — the
+assignment applies to the command being judged, which has not run yet. `pretool-hcat-size-guard.sh`
+had promised `HCAT_MAX_BYTES=<bytes> hcat <file>` and silently ignored it for exactly this reason;
+both now honour the inline form. A documented override that does nothing is worse than none: you
+follow the instructions and get blocked again.
+
+Proof lives in `.claude/hooks/dev-wrapper/guards-selftest.sh` (never a scratchpad script) —
+19 cases covering both rules, the bounded forms, operand-position and heredoc false positives,
+and the inline overrides.
+
 ## The gate, and why its defaults are not our defaults
 
 A `PreToolUse` hook watches `Read` and bare `cat`:
@@ -54,15 +100,16 @@ The knobs live in `.claude/settings.json` `env`, at the root and in every repo:
 |---|---|---|---|
 | `HCAT_GATE_BYTES` | `65536` | `16384` | at 16 KB the gate denies `.claude/settings.json` (~18 KB) and redirects a file agents must edit **exactly** to a lossy rendering |
 | `HCAT_GATE_NO_SNIFF` | `1` | off | the 512-byte structural sniff catches extensionless and `.txt` files whose extension "lies" — a false positive there costs accuracy for a guess |
-| `DANGI_NUDGE_BYTES` | `32768` (set, but **DEAD** since plugin 2.7.0) | `4096`, hardcoded | the intent stands — at 4 KB ordinary `grep`/`git log` output triggers a nudge — but 2.7.0 hardcodes `NUDGE_BYTES=4096` in its own script and never reads the env, so setting it changes nothing |
 | `DANGI_NO_NOTIFY` | `1` | off | desktop popups — this workspace already has `voice` and `stagehand` for that |
 
-`DANGI_NUDGE_BYTES` is kept in `.claude/settings.json` as a statement of the intended threshold, not
-because it works: verified against the installed plugin (`~/.claude/plugins/cache/headroom-tools/headroom-usage-indicator/2.7.0/`)
-— no file under it references the variable, and the plugin's own design note calls `NUDGE_BYTES` a
-hardcoded script variable with no env override. `aiworks doctor --only headroom` warns when the env
-sets it and the installed plugin still ignores it, so the day a release reads it, the warning
-disappears on its own. No upstream report filed.
+`DANGI_NUDGE_BYTES` **was** carried here as a statement of the intended threshold. It has been
+removed from `.claude/settings.json`: it never worked (verified against the installed plugin —
+no file under it references the variable, and the plugin's own design note calls `NUDGE_BYTES` a
+hardcoded script variable with no env override), and a config line that states an intention the
+system ignores is worse than no line, because the next reader believes it. `aiworks doctor --only
+headroom` warned about it on every run, which is the correct place for that fact to live. The
+threshold it was reaching for is now enforced for real, by a hook that fires *before* the read —
+see below.
 
 Escape hatches for a one-off: `HCAT_GATE_OFF=1` disables the gate, `HCAT_GATE_NO_REWRITE=1`
 keeps `cat` from being rewritten.
