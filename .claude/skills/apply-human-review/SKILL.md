@@ -5,7 +5,8 @@ description: >-
   `Human:` on the review threads. Use for "take my review", "process/address/apply my review
   comments", "handle my feedback on the MR", "fix what my review flagged" - the user need NOT type
   the `Human:` prefix to trigger this. Also reachable by dev-cycle or code-reviewer after a human
-  reviews an open MR.---
+  reviews an open MR.
+---
 
 # Apply human review
 

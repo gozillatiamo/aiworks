@@ -7,7 +7,8 @@ description: >-
   laptop; a request that reached the gateway but left no trace in the service; failures that are
   intermittent, load-dependent, or hit only some users or replicas; a suspected deploy, migration
   or infrastructure change. For a bug you CAN trigger locally use `diagnosing-bugs` - its loop
-  starts by reproducing, which this situation forbids.---
+  starts by reproducing, which this situation forbids.
+---
 
 # Root cause in a deployed environment
 

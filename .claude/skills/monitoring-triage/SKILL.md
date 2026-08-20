@@ -8,7 +8,8 @@ description: >-
   against its CPU limit; a load balancer whose edge latency exceeds the backend's; capacity,
   saturation, "at its ceiling in the peak window"; a burstable or shared-core tier exhausting its
   allowance. NOT for our own spans and logs (telemetry-triage), app rows (pg-triage), cache or
-  streams (redis-triage), cluster objects and pod logs (k8s-triage).---
+  streams (redis-triage), cluster objects and pod logs (k8s-triage).
+---
 
 Cloud Monitoring answers one question the other triage servers cannot: **what was the managed
 resource underneath us doing?** Reach for it when a span shows time leaving our process and not

@@ -9,7 +9,8 @@ description: >-
   routing and gateway config - ApisixRoute, ApisixUpstream, ApisixConsumer, Ingress, Service,
   Endpoints, timeouts, retries, is the pod really in the endpoint list; node/pod CPU and memory
   pressure, HPA, evictions; what a rollout did to running workloads; any custom resource. NOT for
-  app data (pg-triage), cache or streams (redis-triage), traces and logs (telemetry-triage).---
+  app data (pg-triage), cache or streams (redis-triage), traces and logs (telemetry-triage).
+---
 
 # Kubernetes triage (read-only)
 

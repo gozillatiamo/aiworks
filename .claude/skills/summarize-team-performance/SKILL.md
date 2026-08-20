@@ -3,7 +3,8 @@ name: summarize-team-performance
 description: >-
   Summarize per-role token usage and processing time for one Agent Team mission (TeamCreate ->
   TeamDelete), from the teammates' JSONL transcripts. Use when the user wants a token/time
-  breakdown per role plus a total for a finished team job.---
+  breakdown per role plus a total for a finished team job.
+---
 
 # Summarize Team Performance
 

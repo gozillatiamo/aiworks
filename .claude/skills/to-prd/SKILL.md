@@ -2,7 +2,8 @@
 name: to-prd
 description: >-
   Turn the current conversation into a PRD and publish it to the project issue tracker. Use when
-  the user wants a PRD built from what has already been discussed.---
+  the user wants a PRD built from what has already been discussed.
+---
 
 ## Output language — resolve BEFORE writing (do this FIRST)
 

@@ -5,7 +5,8 @@ description: >-
   background, entities, an evidence-backed verdict, and a runbook of verify + execute steps. Use
   when an operator, admin or support agent reported something wrong in a running environment and
   wants a written answer, or when a root-cause verdict must be handed to whoever acts on it. For a
-  bug reproducible on a laptop the write-up belongs on the ticket.---
+  bug reproducible on a laptop the write-up belongs on the ticket.
+---
 
 # Case file
 

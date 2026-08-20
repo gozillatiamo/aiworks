@@ -5,7 +5,8 @@ description: >-
   are the originating ticket's requirements genuinely met? Judges the diff against the repo's own
   structure, patterns, docs, ADRs and standards along two parallel axes - Spec (is the bar
   cleared?) and Standards (does the implementation hold up?) - reported side by side. Use for a
-  branch, a PR, work-in-progress changes, or "review since X".---
+  branch, a PR, work-in-progress changes, or "review since X".
+---
 
 # Review
 
