@@ -30,12 +30,13 @@ vcs/
 ├── gitlab.sh          # glab implementation
 ├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
 ├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
+├── approve-selftest.sh  # offline regression for the approval read + write (stubbed CLI)
 └── .env.example       # optional VCS_PROVIDER override
 ```
 
 A provider impl defines: `vcs_require_config`, `vcs_open_pr`, `vcs_pr_view`,
 `vcs_pr_comment`, `vcs_pr_comments`, `vcs_pr_threads`, `vcs_pr_resolve_thread`,
-`vcs_merge_pr`, `vcs_approve_pr`, `vcs_upload_media`. **To add a host**
+`vcs_merge_pr`, `vcs_approve_pr`, `vcs_pr_approved`, `vcs_upload_media`. **To add a host**
 (e.g. Bitbucket), drop a new `<provider>.sh` implementing those — nothing else changes.
 Shared media helpers (`vcs_is_image`, `vcs_is_media`, `vcs_media_md`,
 `vcs_media_asset_name`) live in `lib.sh`.
@@ -96,6 +97,13 @@ Handled by the provider CLI, not this adapter:
   note carries `VCS_APPROVAL_MARKER` (`✅ APPROVED`) as its first characters and *is* the
   readable record — which is why that marker is a constant in `lib.sh` and not a caller's
   wording choice.
+
+  `scripts/vcs/approve-selftest.sh` is the regression for both halves, and it runs **offline**
+  because the branches worth proving cannot be shown by a live call: the idempotent early
+  return is an assertion that *nothing was posted* (invisible from outside — the stub logs
+  every CLI invocation so the test can assert `mr note` was never called), a project that
+  requires zero approvals answering `"approved": true` with an empty `approved_by`, and an
+  approvals endpoint that refuses on demand. No network, no credentials, no MR touched.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff
