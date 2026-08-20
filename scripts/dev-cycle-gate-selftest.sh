@@ -491,6 +491,99 @@ const BASE = {
       report('G8C_prompt_has_resolve_rule', p.includes('THREAD RESOLUTION') && p.includes('pr-resolve-thread.sh'))
       report('G8C_prompt_has_ledger_checkpoint', p.includes('REVIEW-LEDGER CHECKPOINT') && p.includes('db-gate_review.json'))
       report('G8C_prompt_first_pass_is_only_pass', p.includes('across INVOCATIONS'))
+    } else if (SCENARIO === 'G9A') {
+      // THE APPROVAL TICK, and the already-approved short-circuit. db's PR predates this
+      // invocation (a pr_open row) and the forge says it is already approved, so NO reviewer is
+      // spawned for it — the tick a human (or an earlier run) left IS the settled review.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [builtRow('db'), prRow('db', 7)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'approval-probe:FM-12:db': { approved: 'yes', command: 'scripts/vcs/pr-view.sh 7 --approved' },
+        'approve:FM-12:db': { posted: [{ repo: 'db', pr: 7, note: 'already approved — nothing to do' }], failed: [] },
+      }
+      await runOnce(ARGS, canned)
+      report('G9A_probe_spawned', SPAWNED.includes('approval-probe:FM-12:db'))
+      report('G9A_no_reviewer_spawned', !SPAWNED.some((l) => l.startsWith('review:FM-12:db')))
+      report('G9A_skip_logged_from_forge', LINES.some((l) => l.includes('ALREADY APPROVED on the forge')))
+      report('G9A_probe_writes_sourced_row', (PROMPTS['approval-probe:FM-12:db'] || '').includes('"source":"forge-approval"'))
+      report('G9A_probe_is_read_then_ledger_only', (PROMPTS['approval-probe:FM-12:db'] || '').includes('no review, no code, no comments'))
+    } else if (SCENARIO === 'G9B') {
+      // "unknown" is NOT "yes". A forge that will not answer must leave the gates to run — a
+      // review skipped on a fiction is the one outcome worse than a review run needlessly.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [builtRow('db'), prRow('db', 7)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'approval-probe:FM-12:db': { approved: 'unknown', note: 'approvals disabled on this instance' },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { posted: [{ repo: 'db', pr: 7 }], failed: [] },
+      }
+      await runOnce(ARGS, canned)
+      report('G9B_reviewer_still_spawned', SPAWNED.includes('review:FM-12:db#1'))
+      report('G9B_unknown_logged_as_unapproved', LINES.some((l) => l.includes('approval state UNKNOWN') && l.includes('never skipping')))
+      report('G9B_tick_still_posted', SPAWNED.includes('approve:FM-12:db'))
+    } else if (SCENARIO === 'G9C') {
+      // The tick is ORCHESTRATOR-owned and lands per gate-that-was-cleared: code repos at the end
+      // of Review, the test-suite repo after ITS gate passes (it has no reviewer at all). And the
+      // brief must carry the VCS_REPO rule — PR numbers collide across repos here.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e' }], test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://y/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { posted: [{ repo: 'db', pr: 7 }], failed: [] },
+        'test-suite:FM-12:e2e': { passed: true, failures: [], receipt: { command: 'scripts/dev.sh test a', exit_code: 0, summary_line: '3 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'run r1 stamp matches' },
+        'approve:FM-12:e2e': { posted: [{ repo: 'e2e', pr: 7 }], failed: [] },
+        'notify:FM-12': { permalink: 'https://slack/x' },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      const code = PROMPTS['approve:FM-12:db'] || ''
+      report('G9C_code_repo_ticked', SPAWNED.includes('approve:FM-12:db'))
+      report('G9C_suite_repo_ticked_separately', SPAWNED.includes('approve:FM-12:e2e'))
+      report('G9C_tick_before_status_move', SPAWNED.indexOf('approve:FM-12:db') < SPAWNED.indexOf('status:FM-12:ready_to_test'))
+      report('G9C_brief_forces_vcs_repo', code.includes('VCS_REPO=') && code.includes('COLLIDE across repos'))
+      report('G9C_brief_forbids_merge', code.includes('Do NOT merge anything'))
+      report('G9C_brief_treats_idempotent_as_success', code.includes('already approved') && code.includes('is a SUCCESS'))
+      report('G9C_audit_reads_the_marker', (PROMPTS['audit:FM-12:e2e'] || '').includes('find-ticket-comment.sh') && (PROMPTS['audit:FM-12:e2e'] || '').includes('[test-report · e2e]'))
+      report('G9C_report_step_upserts', (PROMPTS['test-suite:FM-12:e2e'] || '').includes('upsert-ticket-comment.sh') && (PROMPTS['test-suite:FM-12:e2e'] || '').includes('never `add-ticket-comment.sh`'))
+    } else if (SCENARIO === 'G9D') {
+      // TICKET-WIDE HOLD. svc never reaches 'ready', so NOTHING is ticked — not even on db,
+      // which came back clean. The repos are ship-order-coupled; approving the clean one reads
+      // as "mergeable on its own", and the absence of a tick IS the changes-requested signal.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'partial', status: 'partial', remaining: 'not done' },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      report('G9D_no_tick_anywhere', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
+      report('G9D_clean_repo_not_ticked_alone', !SPAWNED.includes('approve:FM-12:db'))
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
@@ -566,6 +659,18 @@ out="$(run_scenario G8B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 
 
 echo "── G8c — no ledger: genuine first pass, brief carries tag + resolve + checkpoint contracts"
 out="$(run_scenario G8C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G9a — forge approval freezes the whole review (already-approved ⇒ no re-entry)"
+out="$(run_scenario G9A)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G9b — approval 'unknown' is NOT 'no': the gates still run"
+out="$(run_scenario G9B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G9c — the tick is orchestrator-owned: code repos at Review, suite repos at their own gate"
+out="$(run_scenario G9C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G9d — ticket-wide hold: one unready repo ⇒ no tick anywhere, not even on the clean one"
+out="$(run_scenario G9D)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

@@ -51,10 +51,27 @@ happened, and whether it passed). → [ADR 0021](docs/adr/0021-a-passed-gate-is-
 [docs/agents/review-ledger.md](docs/agents/review-ledger.md)
 
 **Frozen gate**:
-A gate whose ledger row says it passed. It is not re-reviewed and not re-visited, on any later
-round or invocation — deliberately, and deliberately not invalidated by commits landing afterwards.
-The code reviewer's test-green receipt is the one exempt part: findings stay closed, the suite
-re-runs. *Avoid*: cached gate, skipped gate.
+A gate whose ledger row says it passed, or whose PR/MR carries an **approval tick**. It is not
+re-reviewed and not re-visited, on any later round or invocation — deliberately, and deliberately
+not invalidated by commits landing afterwards. The code reviewer's test-green receipt is the one
+exempt part: findings stay closed, the suite re-runs. *Avoid*: cached gate, skipped gate.
+
+**Approval tick**:
+The forge's own approve marker on a PR/MR — GitLab MR approve, GitHub `APPROVE` review — posted
+by the **orchestrator**, never by a gate, once the ticket-wide bar is met, with a verdict line
+naming the suite that proved it. It says "cleared the bar" and nothing more: it is not a merge,
+and with `auto_merge` off the PR/MR is left open for a human. Readable back as
+`yes`/`no`/`unknown`, where `unknown` means the forge would not answer and counts as unapproved.
+→ [ADR 0022](docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md).
+*Avoid*: approval (unqualified — conflates the marker with a person's opinion), sign-off, LGTM.
+
+**Test-report comment**:
+The one durable comment a suite repo owns on a ticket, identified by a visible
+`[test-report · <repo>]` marker line and **rewritten** by each later run rather than re-posted.
+Its context is the repo, so a ticket run through four suite repos carries four of them. Each
+carries a run stamp (run number, UTC, candidate shas) — the only thing that says which run the
+body describes, once the body is overwritten. *Avoid*: test result comment (reads as one per
+run, the thing it replaces), report thread.
 
 **Thread resolution**:
 The forge's own record that a finding is settled — GitLab "Resolve thread", GitHub "Resolve

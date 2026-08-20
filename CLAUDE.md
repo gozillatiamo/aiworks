@@ -24,9 +24,9 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 - `docs/agents/issue-tracker.md` — reading and writing tickets: the adapter, status names, id format.
 - `docs/agents/human-review.md` — a `Human:` review comment is a blocking directive the agents auto-route and
   resolve; a `Human:` **reply on an agent's own must-fix CLEARS it** — approve and advance, never re-open it.
-- `docs/agents/review-ledger.md` — a finding is raised ONCE. A gate's first pass is its complete pass,
-  its `[gate:*]`-tagged threads are that closed set, a passed gate is FROZEN, and no gate passes above
-  an unresolved thread it owns. A re-run is a re-visit, never a second first review.
+- `docs/agents/review-ledger.md` — a finding is raised ONCE: first pass IS the complete pass, `[gate:*]`
+  threads are that closed set, no gate passes above an unresolved thread it owns, a re-run re-visits. A pass
+  ENDS in the forge's approve tick — orchestrator-posted, ticket-wide or not at all; ticked ⇒ FROZEN whole.
 - `docs/agents/loadtest-gate.md` — a green load suite is only **half** a verdict: a `suite_kind: load` repo must
   also beat its base branch against a measured noise floor. Home of the rule binding EVERY test-suite gate — it
   **never fails open**: no receipt (command + exit code + summary) and no result comment ⇒ recorded as *not run*.

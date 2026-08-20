@@ -4,7 +4,8 @@ A review gate gets **one** complete pass over a change. Everything after it is a
 same gate confirming its **own** findings are addressed, raising nothing new. This holds per
 round **and across runs** — a workflow re-run is not a second first review.
 
-Two mechanisms carry that across a process boundary, because prompt text alone cannot.
+Three mechanisms carry that across a process boundary, because prompt text alone cannot — and
+the third, the approval tick (§5), is the only one a human can write.
 
 ## 1. The threads are the finding set
 
@@ -45,8 +46,9 @@ The `guard-backstop` — the neutral checklist that stands in for a gate that di
 row. Freezing the real gate for every future invocation on the strength of a substitute pass
 would claim more than it earned.
 
-`/ultra-review` reads the same two sources and derives each gate's mode **per repo** from them,
-not from how the request was phrased. `--fresh` is the explicit override.
+`/ultra-review` reads the same sources and derives each gate's mode **per repo** from them, not
+from how the request was phrased — and it checks §5's approval first, because an approved MR/PR
+means there is no mode to derive at all. `--fresh` is the explicit override.
 
 ## 3. Resolving is part of the fix
 
@@ -74,3 +76,51 @@ change set and reports every must-fix in one batch — not the obvious ones firs
 deferred to a later round that will never accept them. Something noticed later, outside the
 closed set, is named in the verdict as **out-of-scope for this PR** so a human can decide; under
 `review.level: strict` that is the only place it belongs.
+
+## 5. The approval tick is the review's last act — and its third record
+
+A review that passes ends with the forge's own **approve** ticked. Not a comment saying it
+passed: the host-level marker (GitLab MR approve / GitHub review `APPROVE`), posted through
+`scripts/vcs/pr-approve.sh <num> --body "<the verdict>"`, with the verdict line naming the suite
+that proved it. An approval that cannot point at a test result is the failure the green gate
+exists to prevent.
+
+**The gate never ticks it; the orchestrator does.** A gate that reports is an instrument, a gate
+that approves is an authority — and in `dev-cycle` the gate reviewing a branch belongs to the
+same run that wrote it (`NO_SELF_APPROVE`). So the tick is posted by the workflow, at a bar the
+workflow computed, which is also the only way it is deterministic: a gate that ran out of turns
+or lost its shell would leave the MR unapproved while reporting a pass. `/ultra-review` §3.5 and
+`dev-cycle`'s Review phase do the same thing from the two different sides.
+
+**The bar is TICKET-WIDE.** Zero unresolved must-fix at every gate on every repo, plus a green
+receipt per repo. Anything less ticks **nothing anywhere** — not even a repo that came back
+clean, because a ticket's repos are usually ship-order-coupled and approving one alone reads as
+"mergeable on its own". The absence of a tick *is* the changes-requested signal.
+
+Which gate's bar a repo cleared decides *when* it is ticked. A code repo is ticked at the end of
+Review. A **test-suite repo has no reviewer at all** (`review: null` by kind), so its verdict is
+the cross-repo test-suite gate, and it is ticked when that gate passes — leaving it permanently
+unapproved beside its ticked siblings would read as "this one was rejected".
+
+**An approved PR/MR is a frozen gate.** `scripts/vcs/pr-view.sh <num> --approved` prints
+`yes` / `no` / `unknown`, and a `yes` freezes every gate on that repo: not re-reviewed, not
+re-visited. This is the third record of the same fact the threads (§1) and the ledger rows (§2)
+carry — and the only one a **human** can write, which is the point: a person who ticks approve
+has ended the review, and the next invocation must agree instead of re-deriving one. A row
+written from that inheritance carries `"source":"forge-approval"`, so no later reader is told a
+gate ran that did not.
+
+Two rules that keep this from lying:
+
+- **`unknown` is not `no`, and certainly not `yes`.** It means the forge would not answer
+  (approvals disabled on the instance, an API refusal). A review that ran needlessly costs
+  tokens; a review skipped on a fiction ships the bug it would have caught — so `unknown`
+  reviews.
+- **The tick is idempotent, deliberately.** `pr-approve.sh` reads the state first and returns
+  early on `yes`, posting nothing. Re-approving is harmless; a second identical `✅ APPROVED`
+  verdict on the same MR is not, and a frozen gate must be safe to re-enter without consequence.
+
+**Approve is still not merge.** It says "cleared the bar". With `vcs.auto_merge` off the PR/MR is
+left open, approved, and the merge is a human's separate, later decision — which is also what
+makes the run ticking its own work acceptable rather than a rubber stamp
+([ADR 0022](../adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md)).

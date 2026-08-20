@@ -518,10 +518,37 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$key" "${cid:-?}"
 }
 
+# tracker_find_comment TICKET MARKER -> the ONE comment this marker identifies:
+#   line 1     its comment id
+#   line 2..n  its body, rendered back to text
+# Nothing at all when no comment carries the marker. When several do (a duplicate from before
+# the marker existed, a partial earlier run), the NEWEST wins — that is the one a re-run should
+# update, and the older ones are history nobody is editing any more.
+#
+# The marker is matched against the RENDERED text, not the ADF, because that is the only form
+# stable across a round trip: a comment is posted as Markdown, stored as ADF, and read back as
+# text, and an HTML comment (`<!-- … -->`) does not survive that trip at all. So a marker has
+# to be a line a human can see — which is also why it reads like a label rather than a uuid.
+tracker_find_comment() {
+  local ticket="$1" marker="$2" key resp hit
+  key="$(jira_key "$ticket")"
+  resp="$(jira_api GET "/rest/api/3/issue/$key/comment")"
+  hit="$(printf '%s' "$resp" | jq -r -L "$JIRA_IMPL_DIR" --arg m "$marker" '
+    include "jira";
+    [ (.comments // [])[]
+      | { id: .id, created: (.created // ""), text: (.body | adf_to_text) }
+      | select(.text | contains($m)) ]
+    | sort_by(.created) | last
+    | if . == null then empty else "\(.id)\n\(.text)" end')"
+  [[ -n "$hit" ]] || return 0
+  printf '%s\n' "$hit"
+}
+
 # Replace an existing comment's body in place (e.g. re-language a comment posted
 # before the workspace's language policy was applied). comment_id comes from
 # tracker_get_comments' raw API response (get-ticket-comments.sh doesn't print it,
-# so callers fetch it via GET /rest/api/3/issue/$key/comment first).
+# so callers fetch it via GET /rest/api/3/issue/$key/comment first), or from
+# tracker_find_comment when the comment carries an identifying marker.
 tracker_edit_comment() {
   local ticket="$1" comment_id="$2" dry="$3" text="$4" key body
   key="$(jira_key "$ticket")"
