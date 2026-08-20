@@ -97,5 +97,4 @@ which otherwise walks up and answers from the WRONG repo with exit 0 (`pretool-c
 
 **OFB** — a multi-tenant betting platform: agencies and player sites over a sharded Postgres estate, a Rust backend with
 batch jobs and stream consumers, Next.js themes and backoffice, Cypress/Newman/k6 suites. Every repo's role, stack and
-green criterion is declared under `products:` in @workspace.config.yaml (and cloned via the generated
-`mani.d/<product>.yaml` files).
+green criterion is declared under `products:` in @workspace.config.yaml, cloned via generated `mani.d/<product>.yaml`.
