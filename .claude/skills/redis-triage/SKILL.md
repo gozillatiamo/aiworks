@@ -1,19 +1,14 @@
 ---
 name: redis-triage
 description: >-
-  Use this to get ground truth from the real OFB PRODUCTION (or staging) Redis — read-only —
-  instead of guessing from code, memory, or a local copy. Trigger for: a cache/session symptom
-  only the live keyspace can confirm (stale or wrong `user_balance`, stale `game:*` /
-  `ranked_games:*` cache, a session or agent token that should exist and doesn't, a key with
-  the wrong TTL, a `rate_limit:*` or `idemp:hash` that blocks a request); a Redis **Stream**
-  question — `bet_stream` / `daily_checkin_stream` / `lotto_transaction_stream` /
-  `refund_raindrop` entries, or a consumer group (campaign-sub, live-sub, bet-aggregator)
-  lagging, stalled, or holding pending entries; a direct ask to look up, verify, or compare a
-  specific key, TTL, stream entry, or leaderboard score in prod or staging; or grounding
-  another skill's plan/fix with a real Redis fact. One on-demand MCP owns its own SSH tunnel
-  and always disconnects when done — it never writes, expires, or trims. Do NOT use for the
-  local dev Redis (`mcp__redis`), for Postgres rows (pg-triage), or for logs/traces
-  (telemetry-triage).
+  Read-only ground truth from the DEPLOYED Redis, PRODUCTION or staging - not code, memory or a
+  local copy. Triggers: stale `user_balance`, stale `game:*` / `ranked_games:*`, a session or
+  agent token that should exist and doesn't, a wrong TTL, a `rate_limit:*` or `idemp:hash`
+  blocking a request; STREAMS - `bet_stream`, `daily_checkin_stream`, `lotto_transaction_stream`,
+  `refund_raindrop`, or a consumer group (campaign-sub, live-sub, bet-aggregator) lagging,
+  stalled, or holding pending entries; comparing a key, TTL, stream entry or leaderboard score.
+  Owns its SSH tunnel; never writes, expires or trims. NOT for the local dev Redis (`mcp__redis`),
+  Postgres rows (pg-triage), logs (telemetry-triage).
 argument-hint: "[symptom / key or pattern / stream name / ticket-key]"
 ---
 

@@ -1,6 +1,13 @@
 ---
 name: ultra-review
-description: Run a ticket's open MR/PR through two specialist review gates at once — code-reviewer (clean-code + spec), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. On a clean ticket-wide pass it posts the PASS approval on every MR/PR and advances the ticket to the configured ready-to-merge status (config-gated, skipped when that status is not configured). A ticket whose MR/PRs are ALREADY approved on the forge is not re-reviewed at all — the run stops before spawning a gate, unless --fresh. Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
+description: >-
+  Run a ticket's open MR/PR through two specialist gates in parallel - code-reviewer (clean-code +
+  spec) and performance-engineer (profiling) - aggregated into one verdict where a blocking
+  finding at any gate caps the result. On a clean ticket-wide pass the orchestrator posts the PASS
+  approval on every MR/PR and advances the ticket to ready-to-merge (config-gated). MR/PRs ALREADY
+  approved on the forge are not re-reviewed at all unless --fresh. Use for a deep, full, ultra,
+  multi-gate, or combined code + performance review of a <KEY> ticket. Distinct from /review, the
+  single spec+standards pass.
 disable-model-invocation: true
 ---
 

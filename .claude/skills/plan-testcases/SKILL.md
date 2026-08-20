@@ -1,6 +1,10 @@
 ---
 name: plan-testcases
-description: Read a ticket and author a user-perspective manual/E2E test plan — 3–6 BDD (Given/When/Then) cases plus any required regression checks — written to agent_logs/ by filling the shared `test-plan-template.md`. Use when designing test cases for a <KEY> ticket, or as the test-design step of QA. Plan only; never runs the app.
+description: >-
+  Read a ticket and author a user-perspective manual/E2E test plan - 3-6 BDD (Given/When/Then)
+  cases plus any required regression checks - written to agent_logs/ from the shared test-plan-
+  template.md. Use when designing test cases for a <KEY> ticket, or as the test-design step of QA.
+  Plan only; never runs the app.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---

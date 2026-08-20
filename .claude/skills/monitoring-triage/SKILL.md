@@ -1,7 +1,14 @@
 ---
 name: monitoring-triage
-description: Ground truth from GCP Cloud Monitoring — read-only, STAGING or PRODUCTION — for the managed resource UNDERNEATH our services, which we cannot instrument. Use when a trace proves the time is not being spent in our own code and the question becomes what the infrastructure was doing: a Memorystore/Valkey or Cloud SQL instance that is CPU-starved, out of memory or out of connections; a GKE node under pressure or a container throttled against its own CPU limit; a load balancer whose edge latency exceeds the backend's; "is this node at its ceiling during the peak window"; or any capacity/saturation question about a resource GCP runs for us. Also use to check whether a burstable or shared-core tier is exhausting its allowance. Do NOT use for our own spans and logs (telemetry-triage), application rows (pg-triage), cache or stream contents (redis-triage), or cluster objects and pod logs (k8s-triage) — this is the infrastructure's own view of itself.
----
+description: >-
+  Read-only GCP Cloud Monitoring, STAGING or PRODUCTION - the managed resource UNDERNEATH our
+  services, which we cannot instrument. Use when a trace proves the time is not in our own code
+  and the question is what the infrastructure was doing: Memorystore/Valkey or Cloud SQL CPU-
+  starved, out of memory, out of connections; a GKE node under pressure or a container throttled
+  against its CPU limit; a load balancer whose edge latency exceeds the backend's; capacity,
+  saturation, "at its ceiling in the peak window"; a burstable or shared-core tier exhausting its
+  allowance. NOT for our own spans and logs (telemetry-triage), app rows (pg-triage), cache or
+  streams (redis-triage), cluster objects and pod logs (k8s-triage).---
 
 Cloud Monitoring answers one question the other triage servers cannot: **what was the managed
 resource underneath us doing?** Reach for it when a span shows time leaving our process and not

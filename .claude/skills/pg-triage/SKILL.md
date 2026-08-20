@@ -1,19 +1,14 @@
 ---
 name: pg-triage
 description: >-
-  Use this to get ground truth from the real OFB DEPLOYED Postgres — PRODUCTION or STAGING,
-  read-only — instead of guessing from code, memory, or a local copy. Trigger for: a reported
-  player or agency symptom that only deployed data can confirm (wrong balance, bad payout,
-  missing/duplicate transaction, wrong status, misconfigured site/theme, out-of-sync
-  aggregator mapping); any which-shard-is-this-agency/player-on or MAD-vs-shard question —
-  the fleet is one master (MAD) plus 16 hex shards (0-f), a topology no local DB has; a
-  direct ask to look up, grab, verify, or compare a specific row, count, or config value in
-  prod or staging, a named shard, or across the fleet; checking what a migration or a deploy
-  actually did to the STAGING data; or grounding another skill plan/fix with a real deployed
-  DB fact. One on-demand, read-only MCP covers both environments and always disconnects when
-  done — it never writes or migrates. Do NOT use for the local/dev DB
-  (postgres_ass/postgres_mad), schema migrations (agent-db), logs/traces (telemetry-triage),
-  or cache / session / Redis-Stream state (redis-triage).
+  Read-only ground truth from the DEPLOYED Postgres, PRODUCTION or STAGING - not code, memory or a
+  local copy. Triggers: wrong balance, bad payout, missing or duplicate transaction, wrong status,
+  misconfigured site/theme, out-of-sync aggregator mapping; any which-shard or MAD-vs-shard
+  question - one master (MAD) plus 16 hex shards (0-f), a topology no local DB has; verifying or
+  comparing a row, count or config value in prod, staging, a named shard, or across the fleet;
+  what a migration or deploy did to STAGING data. Never writes or migrates. NOT for the local/dev
+  DB (postgres_ass/postgres_mad), migrations (agent-db), logs (telemetry-triage), cache or streams
+  (redis-triage).
 argument-hint: "[symptom / agency_id / shard hex / table / ticket-key] [staging|prod]"
 ---
 

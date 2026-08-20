@@ -1,6 +1,11 @@
 ---
 name: loadtest-baseline-gate
-description: Judge a load-test run against the SAME run on the ticket's base branch, so a change cannot ship a slower system while the suite still reports green. Use when running the cross-repo test-suite gate for a repo declared `suite_kind: load`, when a ticket's acceptance criteria name latency/throughput numbers, or when asked whether a change degraded performance against develop/main. Measures the environment's noise floor first and returns pass, fail, or unavailable — never a verdict the environment cannot support.
+description: >-
+  Judge a load-test run against the SAME run on the ticket's base branch, so a change cannot ship
+  a slower system while the suite still reports green. Use for a `suite_kind: load` repo, when
+  acceptance criteria name latency or throughput, or when asked whether a change degraded
+  performance against develop/main. Measures the environment's noise floor first and returns pass,
+  fail or unavailable - never a verdict the environment cannot support.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---

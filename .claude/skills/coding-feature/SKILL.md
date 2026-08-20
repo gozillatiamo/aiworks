@@ -1,7 +1,10 @@
 ---
 name: coding-feature
-description: Implement a feature or fix in the current repo, test-first, conforming to that repo's own architecture, standards, and existing patterns. Use when coding a ticket/feature, modifying existing behavior, or fixing a bug in any repo of this multi-repo workspace (Next.js web apps, the Rust backend, Postgres migrations, …), and when the developer needs the repo's coding standards loaded before writing code.
-when_to_use: Adding a feature, modifying existing behavior, or fixing a bug in any repo of the workspace.
+description: >-
+  Implement a feature or fix in the current repo, test-first, conforming to that repo's own
+  architecture, standards and existing patterns. Use when coding a ticket, modifying existing
+  behaviour, or fixing a bug in any repo of this multi-repo workspace, and when the repo's coding
+  standards must be loaded before writing code.
 argument-hint: [feature-name, figma-url]
 arguments: [feature-name, figma-url]
 disable-model-invocation: false

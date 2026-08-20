@@ -1,14 +1,11 @@
 ---
 name: case-report
 description: >-
-  Turn a finished deployed-environment investigation into a case file a human can act on —
-  background, the entities involved, an evidence-backed verdict, and a runbook of verify +
-  execute steps. Use when an admin, support agent or operator reported something wrong in a
-  running environment and wants a written answer; when a root-cause investigation has reached a
-  verdict and needs writing up for someone who will act on it; or when another agent must hand a
-  live-incident finding to a human. For a bug reproducible on a laptop the write-up belongs on
-  the ticket, not here.
----
+  Turn a finished deployed-environment investigation into a case file a human can act on -
+  background, entities, an evidence-backed verdict, and a runbook of verify + execute steps. Use
+  when an operator, admin or support agent reported something wrong in a running environment and
+  wants a written answer, or when a root-cause verdict must be handed to whoever acts on it. For a
+  bug reproducible on a laptop the write-up belongs on the ticket.---
 
 # Case file
 

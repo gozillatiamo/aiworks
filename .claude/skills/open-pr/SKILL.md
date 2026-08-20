@@ -1,6 +1,11 @@
 ---
 name: open-pr
-description: Open a pull/merge request for the current ticket branch to its parent branch (feature/* → develop, fix/* → main, per workspace.config.yaml), titled per Conventional Commits — feat(<KEY>): <title> for a feature branch, fix(<KEY>): <title> for a fix branch. Attaches the implementor's visual results (screenshots, screen recordings, before/after images, demo videos) to the PR/MR body when any exist — so reviewers see the change, not just read about it. Uses the VCS adapter (github/gitlab). Use after QA has approved a ticket, and whenever opening a PR/MR for UI work or any change with images or video to show.
+description: >-
+  Open a pull/merge request for the current ticket branch to its parent (feature/* -> develop,
+  fix/* -> main, per branch_model), titled per Conventional Commits - feat(<KEY>): or fix(<KEY>):
+  to match the branch kind. Attaches the implementor's screenshots, recordings and demo videos
+  when any exist, so reviewers see the change instead of reading about it. Use once QA approves,
+  and whenever the change is UI work or has visuals to show.
 argument-hint: [ticket-number]
 allowed-tools:
   - Bash(git *)

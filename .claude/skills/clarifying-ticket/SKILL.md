@@ -1,6 +1,10 @@
 ---
 name: clarifying-ticket
-description: Turn a rough request OR a non-blocking gate finding into a well-formed ticket in the issue tracker — clarified title, type, priority, effort, and a templated spec. Dedups against the existing board first (find-tickets.sh) so the same finding is never filed twice. Goes through the tracker adapter (scripts/tracker/), provider-agnostic. Use when a guardian/perf gate files an Improvement ticket (dev-cycle), or when a product-owner/user wants a raw idea groomed into a proper ticket. Returns the <KEY> (new, or the existing one a duplicate matched) + URL for improvements_filed.
+description: >-
+  Turn a rough request OR a non-blocking gate finding into a well-formed ticket - clarified title,
+  type, priority, effort, templated spec. Dedups against the board first, so the same finding is
+  never filed twice. Use when a guardian or perf gate files an Improvement ticket, or when a raw
+  idea needs grooming. Returns the <KEY> (new, or the duplicate it matched) plus URL.
 argument-hint: "[request-or-finding] [source <KEY>]"
 allowed-tools:
   - Bash(scripts/tracker/*)

@@ -1,16 +1,13 @@
 ---
 name: root-cause-deployed
 description: >-
-  Find the root cause of a failure that only exists in a DEPLOYED environment and cannot be
-  reproduced locally — you have telemetry and a running system, not a repro. Use when a symptom
-  is reported from staging or production with a trace id, a log line, an error rate, or a
-  screenshot and no way to trigger it on a laptop; when a request reached the gateway but left no
-  trace in the service; when something fails intermittently, under load, or only for some users
-  or some replicas; when a deploy, migration or infrastructure change is suspected; or when
-  another skill or agent needs a deployed symptom explained before it can plan or fix. For a bug
-  you can trigger locally use `diagnosing-bugs` instead — its loop starts by reproducing, which
-  is exactly what this situation does not allow.
----
+  Root-cause a failure that exists ONLY in a DEPLOYED environment and cannot be reproduced locally
+  - you have telemetry and a running system, not a repro. Triggers: a staging or production
+  symptom with a trace id, log line, error rate or screenshot and no way to trigger it on a
+  laptop; a request that reached the gateway but left no trace in the service; failures that are
+  intermittent, load-dependent, or hit only some users or replicas; a suspected deploy, migration
+  or infrastructure change. For a bug you CAN trigger locally use `diagnosing-bugs` - its loop
+  starts by reproducing, which this situation forbids.---
 
 # Root cause in a deployed environment
 

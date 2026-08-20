@@ -1,6 +1,9 @@
 ---
 name: ticket-kickoff
-description: Resolve a <PREFIX>-<n> ticket from the issue tracker, classify it (Bug vs Feature/Polish), move it to the "in progress" status, and create + check out the correct development branch. Use at the very start of working any ticket. Pass the ticket number as an arg (e.g. FM-12 / APP-123).
+description: >-
+  Resolve a <PREFIX>-<n> ticket, classify it (Bug vs Feature/Polish), move it to the in-progress
+  status, and create + check out the correct development branch. Use at the very start of working
+  any ticket; pass the ticket number.
 argument-hint: [ticket-number]
 allowed-tools:
   - Bash(git *)

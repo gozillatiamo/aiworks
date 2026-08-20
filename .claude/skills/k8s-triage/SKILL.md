@@ -1,23 +1,15 @@
 ---
 name: k8s-triage
 description: >-
-  Use this to get ground truth from the real DEPLOYED Kubernetes clusters — PRODUCTION or
-  STAGING, read-only — instead of guessing from manifests, code, or memory. Trigger for: a
-  request that reached the gateway but left no trace in the service (a 502/504/503 with
-  nothing downstream, "upstream response status", an APISIX or ingress error); a pod that
-  is crashing, restarting, OOMKilled, stuck in ImagePullBackOff/CrashLoopBackOff/Pending,
-  or failing its probes; "is the service even running / how many replicas are up / when did
-  it last restart / which node is it on"; reading a container's LOGS from the cluster,
-  including the previous instance of a pod that already died; routing and gateway
-  configuration that lives in the cluster rather than in a repo (ApisixRoute,
-  ApisixUpstream, ApisixConsumer, Ingress, Service, Endpoints — timeouts, retries,
-  upstreams, whether a pod is actually in the endpoint list); resource pressure (node or
-  pod CPU/memory, HPA behaviour, evictions); what a deploy or rollout actually did to the
-  running workloads; or grounding another skill's plan, diagnosis, or fix with a real
-  cluster fact. Covers any custom resource too, not only built-in kinds. Do NOT use for
-  application data (pg-triage), cache/stream state (redis-triage), or traces and log
-  aggregation (telemetry-triage) — this is the cluster's own view of its workloads.
----
+  Read-only ground truth from the DEPLOYED Kubernetes clusters, PRODUCTION or STAGING - not
+  manifests or memory. Triggers: a request that reached the gateway but left no trace in the
+  service (502/504/503, "upstream response status", APISIX/ingress errors); pods crashing,
+  restarting, OOMKilled, CrashLoopBackOff, ImagePullBackOff, Pending, failing probes; container
+  LOGS, including a dead pod's previous instance; replicas, last restart, which node; in-cluster
+  routing and gateway config - ApisixRoute, ApisixUpstream, ApisixConsumer, Ingress, Service,
+  Endpoints, timeouts, retries, is the pod really in the endpoint list; node/pod CPU and memory
+  pressure, HPA, evictions; what a rollout did to running workloads; any custom resource. NOT for
+  app data (pg-triage), cache or streams (redis-triage), traces and logs (telemetry-triage).---
 
 # Kubernetes triage (read-only)
 
