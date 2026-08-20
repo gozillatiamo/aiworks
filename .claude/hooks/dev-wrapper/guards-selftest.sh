@@ -295,6 +295,10 @@ t "hcat of a small file allowed"    0 pretool-hcat-size-guard.sh "$(jc "hcat $TM
 # Scope is the verb this workspace introduced. A bare `cat` of a huge file is pre-existing
 # behaviour that posttool-output-warden.sh already reports on.
 t "plain cat of huge allowed"       0 pretool-hcat-size-guard.sh "$(jc "cat $TMP/big/huge.log")"
+# The escape hatch this guard's own message documents. It has to be parsed out of the COMMAND:
+# a hook runs in its own process, so an inline `VAR=x <cmd>` assignment never reaches its
+# environment, and reading it from there made the promise a no-op.
+t "inline HCAT_MAX_BYTES honoured"  0 pretool-hcat-size-guard.sh "$(jc "HCAT_MAX_BYTES=99999999 hcat $TMP/big/huge.log")"
 t "missing file fails open"         0 pretool-hcat-size-guard.sh "$(jc 'hcat /nonexistent/x.json')"
 t "the word hcat alone allowed"     0 pretool-hcat-size-guard.sh "$(jc 'echo hcat')"
 t "non-Bash tool ignored"           0 pretool-hcat-size-guard.sh "$(jr "$TMP/big/huge.log")"
@@ -695,6 +699,91 @@ else fail=$((fail+1)); printf 'FAIL %s (want exit 0, got %s)\n' "marker unparsea
 tog "discriminator: payload with agent_id -> allow"                       0 true "" "$MAIN_TS" "$(jq -cn --arg p "$TMP/og/svc/src/main.rs" --arg a x '{tool_name:"Edit",tool_input:{file_path:$p},agent_id:$a}')"
 tog "discriminator: transcript_path under subagents/workflows/.. -> allow" 0 true "" "$WF_SUB_TS" "$(jw "$TMP/og/svc/src/main.rs")"
 tog "discriminator: armed marker + main-shaped payload -> deny"           2 true "" "$MAIN_TS" "$(jw "$TMP/og/svc/src/main.rs")"
+
+echo "--- pretool-bash-context-guard ---"
+# Fixtures sized either side of the 8 KiB default. The guard STATS the real path, so the
+# assertions are about file size, not about the wording of the command.
+mkdir -p "$TMP/ctx"
+BIG="$TMP/ctx/big.md";   awk 'BEGIN{for(i=0;i<400;i++) printf "%040d line of filler text here\n", i}' > "$BIG"
+SMALL="$TMP/ctx/small.md"; printf 'two lines\nonly\n' > "$SMALL"
+# cwd matters: the guard resolves a relative operand against it, exactly as the real payload does.
+jctx() { jq -cn --arg c "$1" --arg d "$TMP/ctx" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+# A read-modify-write heredoc padded past the 2000-byte floor, since the floor is the point:
+# a small patch is cheaper than the round trip and is deliberately allowed.
+PAD=$(awk 'BEGIN{for(i=0;i<70;i++) printf "# padding so the payload clears the guard floor %02d\n", i}')
+RMW="python3 - <<'PY'
+$PAD
+p = 'target.md'
+s = open(p).read()
+open(p, 'w').write(s.replace('a', 'b'))
+PY"
+GENONLY="python3 - <<'PY'
+$PAD
+rows = [str(i) for i in range(50)]
+open('/tmp/generated.txt', 'w').write('\n'.join(rows))
+PY"
+
+t "cat of an 8KB+ file blocked"          2 pretool-bash-context-guard.sh "$(jctx "cat $BIG")"
+t "cat relative to cwd blocked"          2 pretool-bash-context-guard.sh "$(jctx 'cat big.md')"
+t "nl of a big file blocked"             2 pretool-bash-context-guard.sh "$(jctx "nl $BIG")"
+t "big file after && blocked"            2 pretool-bash-context-guard.sh "$(jctx "cd /tmp && cat $BIG")"
+t "cat of a small file allowed"          0 pretool-bash-context-guard.sh "$(jctx "cat $SMALL")"
+# The bounded forms are the ones the guard's own message recommends — blocking them would push
+# the agent straight back to the unbounded read.
+t "big | head allowed"                   0 pretool-bash-context-guard.sh "$(jctx "cat $BIG | head -20")"
+t "big | grep allowed"                   0 pretool-bash-context-guard.sh "$(jctx "cat $BIG | grep -n line")"
+t "big redirected to a file allowed"     0 pretool-bash-context-guard.sh "$(jctx "cat $BIG > /tmp/out.txt")"
+t "sed region of a big file allowed"     0 pretool-bash-context-guard.sh "$(jctx "sed -n '10,40p' $BIG")"
+t "grep on a big file allowed"           0 pretool-bash-context-guard.sh "$(jctx "grep -n line $BIG")"
+t "hcat left to its own guard"           0 pretool-bash-context-guard.sh "$(jctx "hcat $BIG")"
+t "missing file allowed"                 0 pretool-bash-context-guard.sh "$(jctx 'cat /nope/missing.md')"
+# Prose-not-code, the lesson the pipe guard learned the hard way: naming a reader is not calling
+# one. Both of these used to be the guard's own false positives.
+t "reader in OPERAND position allowed"   0 pretool-bash-context-guard.sh "$(jctx "grep -n cat $BIG")"
+t "reader named inside a heredoc allowed" 0 pretool-bash-context-guard.sh "$(jctx "git commit -F - <<EOF
+stop running cat $BIG so often
+EOF")"
+# The override has to be parsed OUT OF THE COMMAND: a hook cannot see `VAR=x <cmd>` in its own
+# env, so reading it from the environment made the documented escape hatch a no-op.
+t "inline BASH_READ_MAX_BYTES honoured"  0 pretool-bash-context-guard.sh "$(jctx "BASH_READ_MAX_BYTES=9999999 cat $BIG")"
+
+t "read-modify-write heredoc blocked"    2 pretool-bash-context-guard.sh "$(jctx "$RMW")"
+t "write-only heredoc allowed"           0 pretool-bash-context-guard.sh "$(jctx "$GENONLY")"
+t "small patch under the floor allowed"  0 pretool-bash-context-guard.sh "$(jctx "python3 - <<'PY'
+s=open('f').read(); open('f','w').write(s+'x')
+PY")"
+t "inline BASH_PATCH_GUARD=0 honoured"   0 pretool-bash-context-guard.sh "$(jctx "BASH_PATCH_GUARD=0 $RMW")"
+t "plain git commit heredoc allowed"     0 pretool-bash-context-guard.sh "$(jctx "git commit -F - <<'EOF'
+$PAD
+feat: a long commit message is not a patch
+EOF")"
+
+echo "--- repo-health-check: say it once, then stop repeating it ---"
+# Asserted as a PROPERTY, not against a fixed message, so the case is meaningful whether this
+# worktree happens to be fully cloned or not: a second identical prompt must never cost MORE
+# context than the first, and SessionStart must always carry the full guidance.
+RH="$(cd "$H/.." && pwd)/repo-health-check.sh"
+if [ -x "$RH" ]; then
+  rhp() { jq -cn --arg e "$1" --arg s "$2" '{hook_event_name:$e,session_id:$s}'; }
+  # Measure the MESSAGE, not the JSON envelope: "SessionStart" and "UserPromptSubmit" differ in
+  # length, so comparing whole-payload bytes made SessionStart look abbreviated by 4 characters.
+  rhlen() { printf '%s' "$(rhp "$1" "$2")" | "$RH" 2>/dev/null \
+              | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null | wc -c | tr -d ' '; }
+  SID="selftest-$$"
+  first=$(rhlen UserPromptSubmit "$SID")
+  second=$(rhlen UserPromptSubmit "$SID")
+  ss=$(rhlen SessionStart "$SID")
+  other=$(rhlen UserPromptSubmit "${SID}-b")
+  if [ "${second:-0}" -le "${first:-0}" ]; then pass=$((pass+1)); printf 'ok   repeat prompt costs no more than the first\n'
+  else fail=$((fail+1)); printf 'FAIL repeat prompt grew (%s -> %s bytes)\n' "$first" "$second"; fi
+  if [ "${ss:-0}" -ge "${first:-0}" ]; then pass=$((pass+1)); printf 'ok   SessionStart always carries the full message\n'
+  else fail=$((fail+1)); printf 'FAIL SessionStart was abbreviated (%s < %s)\n' "$ss" "$first"; fi
+  if [ "${other:-0}" -ge "${second:-0}" ]; then pass=$((pass+1)); printf 'ok   a different session is not de-duplicated\n'
+  else fail=$((fail+1)); printf 'FAIL cross-session leak (%s < %s)\n' "$other" "$second"; fi
+  rm -f "${TMPDIR:-/tmp}"/aiworks-repo-health."$SID"* "${TMPDIR:-/tmp}"/aiworks-repo-health."$SID"-b* 2>/dev/null
+else
+  printf 'skip repo-health-check.sh not executable\n'
+fi
 
 echo
 echo "pass=$pass fail=$fail"

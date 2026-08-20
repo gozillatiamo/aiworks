@@ -35,10 +35,10 @@ by `pretool-env-guard.sh` at the root **and in every repo**: a leaked adapter se
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace
   root · `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
   `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit
-  a persisted run script · `doctor.md` — `aiworks doctor` reports what is missing/broken + the owner command per
-  finding; `--fix` runs those.
+  a persisted run script · `doctor.md` — `aiworks doctor` names what is broken + the owner command; `--fix` runs it.
 - `docs/agents/figma.md` · `image-generation.md` · `diagram-generation.md` — design, asset and diagram surfaces,
-  each behind its own `enabled` flag (default OFF) · `headroom.md` — `hcat`, not `Read`/`cat`, for a big data file.
+  each behind its own `enabled` flag (default OFF) · `headroom.md` — `hcat` for a big file, never a bare `cat`: an
+  unbounded read ≥8 KiB is hook-BLOCKED, as is a read-modify-write heredoc patch (`Edit` ships only the delta).
 - `scripts/k8s/README.md` — READ-ONLY Kubernetes triage (`k8s_triage` MCP) through a `view`-only impersonated
   identity, so the **API server** rejects writes. ⚠️ `Bash(kubectl *)`/`Bash(gcloud *)` denied — ask for `!kubectl`.
 - **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in
