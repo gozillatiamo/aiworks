@@ -1,6 +1,6 @@
 export const meta = {
   name: 'dev-cycle',
-  description: 'Full development cycle for one ticket — MULTI-REPO. Scopes which repos a ticket touches, runs each through plan→build→PR/MR→review in dependency WAVES, validates the candidate with the cross-repo test-suite (QA) gate, MERGES upstream→downstream, then distributes the merged build, and summarizes. Provider-agnostic: VCS via scripts/vcs/ (github/gitlab), tracker via scripts/tracker/ (notion/jira). The WORKFLOW owns the ticket status (monotonic, decoupled from the per-repo agents). Pass the ticket number as args, e.g. "FM-12". A single-repo ticket collapses to a one-repo flow.',
+  description: 'Full development cycle for one ticket — MULTI-REPO. Scopes which repos a ticket touches, runs each through plan→build→PR/MR→review in dependency WAVES, validates the candidate with the cross-repo test-suite (QA) gate, MERGES upstream→downstream, then distributes the merged build, and summarizes. Provider-agnostic (github/gitlab, notion/jira). Pass the ticket number as args, e.g. "FM-12". A single-repo ticket collapses to a one-repo flow.',
   whenToUse: 'Run one <KEY> ticket end to end across every repo it touches — through review, the cross-repo test-suite gate, the merge, and distribution — with a single command.',
   phases: [
     { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether the cross-repo test-suite (QA) gate applies', model: 'opus' },
