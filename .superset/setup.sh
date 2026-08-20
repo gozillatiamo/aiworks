@@ -2,11 +2,16 @@
 #
 # Workspace setup — mani multi-repo workspace.
 #
-#   .superset/setup.sh [-v|--verbose]
+#   .superset/setup.sh [-v|--verbose] [--harnesses claude,cursor,codex]
+#                       [--reconfigure-harnesses]
 #
 # Output is QUIET by default (only warnings, errors, and the closing summary). Pass
-# -v/--verbose for the full step-by-step log when debugging.
+# -v/--verbose for the full step-by-step log when debugging. The first main-workspace run opens a
+# Harness multi-select when `harnesses` is absent/empty; worktrees never prompt.
 #
+# 0. Selects the organization-wide Agent harnesses in the main workspace; installs and
+#    authenticates selected CLIs, reconciles plugins and best-native status lines. A linked
+#    worktree reuses the main workspace and machine login state.
 # 1. Symlinks your PERSONAL, git-ignored local config from the root workspace FIRST — before
 #    host tooling / aiworks sync / anything else, so it's already linked if a later step aborts
 #    AND so aiworks + every step after read it: workspace.config.local.yaml (runtime override
@@ -27,7 +32,8 @@
 # 3. `aiworks sync -y` clones + FULLY onboards every product repo declared under
 #    products[] in workspace.config.yaml (via the generated mani.d/<product>.yaml)
 #    — repos are gitignored and don't travel with a new git worktree. Full onboard
-#    toolchain (codegraph index, skill packs, adapter symlinks, Cursor/VS Code
+#    toolchain (codegraph index, skill packs, adapter symlinks, selected Harness projections,
+#    Cursor/VS Code
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
 # 4. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
@@ -50,11 +56,16 @@ source .superset/lib.sh
 # Quiet by default; -v/--verbose flips on the full step log. Exported so lib.sh's log() (reads
 # $VERBOSE at call-time) and the child `aiworks sync` both honour it.
 export VERBOSE="${VERBOSE:-0}"
-for arg in "$@"; do
-  case "$arg" in
-    -v|--verbose) export VERBOSE=1 ;;
+HARNESS_SELECTION=""
+RECONFIGURE_HARNESSES=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -v|--verbose) export VERBOSE=1; shift ;;
+    --reconfigure-harnesses) RECONFIGURE_HARNESSES=1; shift ;;
+    --harnesses) HARNESS_SELECTION="${2:-}"; [[ -n "$HARNESS_SELECTION" ]] || { err "--harnesses needs a value"; exit 2; }; shift 2 ;;
+    --harnesses=*) HARNESS_SELECTION="${1#--harnesses=}"; shift ;;
     -h|--help)    sed -n '3,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *)            err "unknown option: $arg"; exit 2 ;;
+    *)            err "unknown option: $1"; exit 2 ;;
   esac
 done
 
@@ -80,6 +91,23 @@ if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; 
   has_root=1
 else
   log "No separate root workspace — skipping the root state copy (this is the root/main worktree, or a standalone checkout). Set SUPERSET_ROOT_PATH=<path> to copy from a specific checkout."
+fi
+
+# ── 0. Organization-wide Agent harness selection ─────────────────────────────
+# Only the main workspace owns the first-run picker. Linked worktrees inherit the shared config
+# and must never open installers/login prompts during automated setup.
+if [[ "$has_root" == 0 ]]; then
+  if [[ -n "$HARNESS_SELECTION" && "$RECONFIGURE_HARNESSES" == 1 ]]; then
+    scripts/aiworks harnesses configure --harnesses "$HARNESS_SELECTION" --reconfigure
+  elif [[ -n "$HARNESS_SELECTION" ]]; then
+    scripts/aiworks harnesses configure --harnesses "$HARNESS_SELECTION"
+  elif [[ "$RECONFIGURE_HARNESSES" == 1 ]]; then
+    scripts/aiworks harnesses configure --reconfigure
+  else
+    scripts/aiworks harnesses configure
+  fi
+else
+  log "Agent harnesses: reusing the root workspace's organization-wide selection."
 fi
 
 # ── 1. Personal, git-ignored LOCAL config FIRST — before host tooling / aiworks sync / anything
@@ -117,6 +145,11 @@ ensure_ngrok || true
 ensure_glab || true
 ensure_pnpm || true
 ensure_dap || true
+# Selected Harness CLIs are a hard prerequisite, unlike optional convenience tooling. The main
+# workspace may install/login interactively; worktrees reuse that machine state.
+if [[ "$has_root" == 0 ]]; then
+  ensure_agent_harnesses || { err "one or more selected Agent harnesses are not usable"; exit 1; }
+fi
 # The headroom compression engine, BEFORE the plugin below: the plugin's hooks and MCP launcher
 # shell out to this binary, and a plugin installed without it fails open (no compression, no
 # badge, no error). Gated by headroom.enabled in workspace.config.yaml.
@@ -125,7 +158,8 @@ ensure_headroom || true
 # repo-only session too. Declaring is not installing — measured: a repo whose settings.json
 # carried enabledPlugins still answered NOT-FOUND for caveman:caveman until the install ran.
 # After ensure_jq, since it reads the settings with jq.
-ensure_claude_plugins || true
+ensure_harness_plugins || true
+ensure_harness_statuslines || true
 
 # ── 3. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
 # full `aiworks add` toolchain per repo (codegraph index, skill packs, adapter symlinks into

@@ -15,8 +15,9 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so already in context. Keys documented in
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
-  `docs/adr/` — why the workspace is shaped this way (`0001`–`0022`).
-- `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`): author on
+  `docs/adr/` — why the workspace is shaped this way (`0001`–`0023`).
+- `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
+  (Hermes is next) · `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`): author on
   the Claude side, never hand-edit `.cursor/`, open the `.code-workspace` **file**, not the folder · `language.md` ·
   `register.md` · `caveman.md` · `ponytail.md` · `voice.md` · `stagehand.md` — always-on conventions, own sections
   below · `issue-tracker.md` — tickets: the adapter, status names, id format · `human-review.md` — a `Human:` review

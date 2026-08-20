@@ -25,8 +25,8 @@
 # from inside a repo to the workspace root would dangle in such a clone. `--check`
 # hashes it back against the template so the copy can never silently drift.
 #
-# NOT covered — Cursor has no equivalent: .claude/workflows/ (dev-cycle, prd, brd).
-# Those stay Claude Code only. See docs/agents/cursor.md.
+# Workflows stay canonical under .claude/workflows and execute through `aiworks workflow
+# --harness cursor`; this projector owns only Cursor's persistent configuration face.
 #
 # IDEMPOTENT: a link or file that is already correct is left alone and reported as
 # ok. Existing Cursor artefacts that a human wrote (a repo's own .cursor/mcp.json,
@@ -41,6 +41,8 @@
 #                  under products[].repos[] in workspace.config.yaml.
 #   --check        Verify only: write nothing, report every drift/missing/broken
 #                  link, exit 1 if anything is off. Use it in CI.
+#   --remove       Remove only generator-owned Cursor artifacts. User-authored files stay.
+#   -n, --dry-run  Preview projection/removal without writing.
 #   --user         Deprecated no-op. The Claude plugin skills are now linked at PROJECT
 #                  scope (.claude/skills/<name>) on every root run, so Cursor sees them
 #                  through the .cursor/skills link with no per-machine setup step.
@@ -52,7 +54,7 @@ set -uo pipefail
 # ── pretty logging (same surface as aiworks-add.sh / aiworks-remove.sh) ────────
 c_step=$'\033[1;36m'; c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
 [[ -t 1 ]] || { c_step=; c_ok=; c_warn=; c_err=; c_dim=; c_off=; }
-VERBOSE=0; CHECK=0; USER_SCOPE=0
+VERBOSE=0; CHECK=0; DRY=0; REMOVE=0; USER_SCOPE=0
 step() { printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; }
 ok()   { [[ "$VERBOSE" -eq 1 ]] && printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; return 0; }
 dim()  { [[ "$VERBOSE" -eq 1 ]] && printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; return 0; }
@@ -73,6 +75,8 @@ TARGETS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)        CHECK=1 ;;
+    --remove)       REMOVE=1 ;;
+    -n|--dry-run)   DRY=1 ;;
     # Kept accepted, deliberately inert: plugin skills moved to project scope and now
     # happen on every root run. Erroring on a flag that used to be the documented way to
     # get them would punish the muscle memory of the person who did the right thing.
@@ -85,6 +89,8 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+[[ "$DRY" -eq 1 ]] && CHECK=1
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ -f "$ROOT/mani.yaml" ]] || die "no mani.yaml in $ROOT — run this from a workspace"
@@ -781,9 +787,95 @@ do_plugin_skills() {
   ensure_plugin_gitignore $names
 }
 
+# ── safe deselection cleanup ──────────────────────────────────────────────────
+# Remove only links/copies this generator can prove it owns. AGENTS.md is shared
+# with Codex and is deliberately left to the Harness reconciler.
+remove_cursor_target() { # <base> <label> <is-root>
+  local base="$1" label="$2" is_root="$3" p tgt expected tmp
+  [[ -d "$base" ]] || return 0
+  step "remove Cursor projection: $label"
+
+  for p in "$base/.cursor/skills" "$base/.cursor/agents" "$base/.cursor/mcp.json"; do
+    [[ -L "$p" ]] || continue
+    tgt="$(readlink "$p")"
+    case "$p:$tgt" in
+      */.cursor/skills:../.claude/skills|*/.cursor/agents:../.claude/agents|*/.cursor/mcp.json:../.mcp.json) ;;
+      *) continue ;;
+    esac
+    if [[ "$DRY" -eq 1 ]]; then warn "would remove ${p#"$base"/}"
+    elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned ${p#"$base"/} remains"
+    else rm -f "$p"; CHANGED=$((CHANGED+1)); ok "removed ${p#"$base"/}"; fi
+  done
+
+  if [[ -d "$base/.cursor/rules" ]]; then
+    while IFS= read -r p; do
+      [[ -L "$p" ]] || continue
+      case "$(readlink "$p")" in *'.claude/rules/'*) ;; *) continue ;; esac
+      if [[ "$DRY" -eq 1 ]]; then warn "would remove ${p#"$base"/}"
+      elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned ${p#"$base"/} remains"
+      else rm -f "$p"; CHANGED=$((CHANGED+1)); fi
+    done < <(find "$base/.cursor/rules" -type l 2>/dev/null)
+  fi
+
+  p="$base/.cursor/hooks/hook-shim.sh"
+  if [[ -f "$p" ]] && cmp -s "$p" "$TEMPLATE"; then
+    if [[ "$DRY" -eq 1 ]]; then warn "would remove .cursor/hooks/hook-shim.sh"
+    elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned .cursor/hooks/hook-shim.sh remains"
+    else rm -f "$p"; CHANGED=$((CHANGED+1)); fi
+  fi
+
+  if [[ -f "$base/.claude/settings.json" ]]; then
+    tmp="$(mktemp)"; gen_hooks_json "$base/.claude/settings.json" > "$tmp"
+    p="$base/.cursor/hooks.json"
+    if [[ -f "$p" ]] && cmp -s "$p" "$tmp"; then
+      if [[ "$DRY" -eq 1 ]]; then warn "would remove .cursor/hooks.json"
+      elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned .cursor/hooks.json remains"
+      else rm -f "$p"; CHANGED=$((CHANGED+1)); fi
+    fi
+    gen_cli_json "$base/.claude/settings.json" > "$tmp"
+    p="$base/.cursor/cli.json"
+    if [[ -f "$p" ]] && cmp -s "$p" "$tmp"; then
+      if [[ "$DRY" -eq 1 ]]; then warn "would remove .cursor/cli.json"
+      elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned .cursor/cli.json remains"
+      else rm -f "$p"; CHANGED=$((CHANGED+1)); fi
+    fi
+    rm -f "$tmp"
+  fi
+
+  if [[ "$is_root" -eq 1 && -d "$base/.cursor/rules/repos" ]]; then
+    while IFS= read -r p; do
+      [[ -f "$p" ]] || continue
+      if [[ "$DRY" -eq 1 ]]; then warn "would remove ${p#"$base"/}"
+      elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned ${p#"$base"/} remains"
+      else rm -f "$p"; CHANGED=$((CHANGED+1)); fi
+    done < <(find "$base/.cursor/rules/repos" -type f -name '*.mdc' 2>/dev/null)
+  fi
+
+  if [[ "$CHECK" -eq 0 ]]; then
+    find "$base/.cursor" -depth -type d -empty -delete 2>/dev/null || true
+  fi
+}
+
 # ── run ───────────────────────────────────────────────────────────────────────
 ALL_REPOS=""
 while IFS= read -r r; do [[ -n "$r" ]] && ALL_REPOS="${ALL_REPOS:+$ALL_REPOS }$r"; done < <(parse_repo_dirs)
+
+if [[ "$REMOVE" -eq 1 ]]; then
+  if [[ -n "$TARGETS" ]]; then
+    for t in $TARGETS; do
+      if [[ "$t" == root || "$t" == . ]]; then remove_cursor_target "$ROOT" root 1
+      else remove_cursor_target "$ROOT/$t" "$t" 0; fi
+    done
+  else
+    remove_cursor_target "$ROOT" root 1
+    for r in $ALL_REPOS; do remove_cursor_target "$ROOT/$r" "$r" 0; done
+  fi
+  echo
+  if [[ "$DRY" -eq 1 ]]; then printf '%sCursor removal preview complete%s\n' "$c_warn" "$c_off"; exit 0; fi
+  if [[ "$CHECK" -eq 1 && "$DRIFT" -gt 0 ]]; then exit 1; fi
+  printf '%sCursor projection removed (%d change(s))%s\n' "$c_ok" "$CHANGED" "$c_off"
+  exit 0
+fi
 
 SLICES=""   # repos whose root slice this run is responsible for
 FULL=0      # a run that saw every declared repo, so it may prune
@@ -821,6 +913,7 @@ echo
 if [[ "$CHECK" -eq 1 ]]; then
   if [[ "$DRIFT" -gt 0 ]]; then
     printf '%s%d drift(s) found — run `aiworks cursor` to fix%s\n' "$c_err" "$DRIFT" "$c_off"
+    [[ "$DRY" -eq 1 ]] && exit 0
     exit 1
   fi
   printf '%sCursor layer is in sync%s\n' "$c_ok" "$c_off"

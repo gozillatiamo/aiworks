@@ -522,6 +522,111 @@ ensure_headroom() {
   return 0
 }
 
+# ── selected Agent harness CLIs + authentication ─────────────────────────────
+# Called only by the MAIN workspace setup. Superset worktrees reuse machine-global binaries and
+# login state and never open installers or browser auth flows.
+_selected_harnesses() {
+  local root="${1:-$PWD}"
+  python3 "$root/scripts/harnesses/config.py" list \
+    --config "$root/workspace.config.yaml" \
+    --registry "$root/scripts/harnesses/registry.json" \
+    --fallback
+}
+
+_cursor_cli() {
+  if command -v cursor-agent >/dev/null 2>&1; then command -v cursor-agent
+  elif command -v agent >/dev/null 2>&1; then command -v agent
+  else return 1
+  fi
+}
+
+_harness_present() {
+  case "$1" in
+    claude) command -v claude >/dev/null 2>&1 ;;
+    cursor) _cursor_cli >/dev/null 2>&1 ;;
+    codex)  command -v codex >/dev/null 2>&1 ;;
+    *)      return 1 ;;
+  esac
+}
+
+_install_harness() {
+  local id="$1"
+  case "$id" in
+    claude)
+      command -v curl >/dev/null 2>&1 || return 1
+      run_glance "Harness: install Claude Code" sh -c 'curl -fsSL https://claude.ai/install.sh | bash'
+      ;;
+    cursor)
+      command -v curl >/dev/null 2>&1 || return 1
+      run_glance "Harness: install Cursor CLI" sh -c 'curl https://cursor.com/install -fsS | bash'
+      ;;
+    codex)
+      if command -v npm >/dev/null 2>&1; then
+        run_glance "Harness: install Codex CLI" npm install -g @openai/codex
+      elif command -v brew >/dev/null 2>&1; then
+        run_glance "Harness: install Codex CLI" brew install --cask codex
+      else
+        return 1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+_harness_authenticated() {
+  case "$1" in
+    claude) claude auth status >/dev/null 2>&1 ;;
+    cursor) "$(_cursor_cli)" status >/dev/null 2>&1 ;;
+    codex)  codex login status >/dev/null 2>&1 ;;
+    *)      return 1 ;;
+  esac
+}
+
+_login_harness() {
+  case "$1" in
+    claude) claude auth login ;;
+    cursor) "$(_cursor_cli)" login ;;
+    codex)  codex login ;;
+    *)      return 1 ;;
+  esac
+}
+
+ensure_agent_harnesses() {
+  local root="$PWD" id failed=0
+  command -v python3 >/dev/null 2>&1 || { warn "python3 unavailable — cannot resolve the Harness set."; return 1; }
+  export PATH="$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    if ! _harness_present "$id"; then
+      if [[ ! -t 0 ]]; then
+        warn "$id Harness CLI is missing; run interactive 'aiworks setup' on the main workspace."
+        failed=1
+        continue
+      fi
+      log "Installing selected Harness: $id…"
+      _install_harness "$id" || { warn "could not install selected Harness: $id"; failed=1; continue; }
+      export PATH="$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
+    fi
+    if ! _harness_present "$id"; then
+      warn "$id installer completed but its CLI is not on PATH; reopen the shell and rerun setup."
+      failed=1
+      continue
+    fi
+    if ! _harness_authenticated "$id"; then
+      if [[ ! -t 0 ]]; then
+        warn "$id is not authenticated; run its login command before non-interactive setup."
+        failed=1
+        continue
+      fi
+      log "Authenticating selected Harness: $id…"
+      _login_harness "$id" || true
+    fi
+    if _harness_authenticated "$id"; then log "$id Harness: installed and authenticated."
+    else warn "$id Harness authentication is still incomplete."; failed=1; fi
+  done < <(_selected_harnesses "$root")
+  return "$failed"
+}
+
 # Ensure every plugin this workspace declares in .claude/settings.json `enabledPlugins` is
 # actually INSTALLED, at USER scope. Best-effort + idempotent. macOS bash 3.2 safe.
 #
@@ -573,6 +678,65 @@ ensure_claude_plugins() {
     run_glance "plugin: install $key" claude plugin install "$key" -s user \
       || warn "claude plugin install $key -s user failed — install it by hand, or agents that preload it get nothing."
   done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' "$settings" 2>/dev/null)
+  return 0
+}
+
+ensure_codex_plugins() {
+  command -v codex >/dev/null 2>&1 || { log "Codex CLI not selected/present — skipping native Codex plugins."; return 0; }
+  command -v jq >/dev/null 2>&1 || { warn "jq unavailable — cannot reconcile Codex plugins."; return 0; }
+  local settings="$PWD/.claude/settings.json" src key
+  [[ -f "$settings" ]] || return 0
+  # Register every explicitly sourced marketplace first. Codex derives its marketplace id from
+  # the snapshot manifest; adding an existing source is idempotent or a harmless warning.
+  while IFS= read -r src; do
+    [[ -n "$src" ]] || continue
+    codex plugin marketplace list 2>/dev/null | grep -qF "$src" && continue
+    run_glance "Codex plugin marketplace: $src" codex plugin marketplace add "$src" \
+      || warn "Codex could not add marketplace $src — projected components remain the fallback."
+  done < <(jq -r '.extraKnownMarketplaces // {} | to_entries[] | .value.source.repo // empty' "$settings" 2>/dev/null)
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    run_glance "Codex plugin: $key" codex plugin add "$key" \
+      || warn "Codex native plugin $key unavailable — projected/vendored components will be checked instead."
+  done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' "$settings" 2>/dev/null)
+  return 0
+}
+
+ensure_harness_plugins() {
+  local selected=" $(_selected_harnesses "$PWD" | tr '\n' ' ') "
+  case "$selected" in *" claude "*) ensure_claude_plugins || true ;; esac
+  case "$selected" in *" codex "*) ensure_codex_plugins || true ;; esac
+  # Cursor reads canonical/projected components directly. Its CLI currently manages marketplace
+  # sources but exposes no non-interactive native plugin install command, so there is no fake
+  # install step here.
+  return 0
+}
+
+ensure_harness_statuslines() {
+  local selected=" $(_selected_harnesses "$PWD" | tr '\n' ' ') "
+  command -v jq >/dev/null 2>&1 || { warn "jq unavailable — cannot configure Harness status lines."; return 0; }
+  case "$selected" in
+    *" cursor "*)
+      local cfg="${AIWORKS_CURSOR_CONFIG:-$HOME/.cursor/cli-config.json}" tmp command
+      mkdir -p "$(dirname "$cfg")" 2>/dev/null || return 0
+      [[ -f "$cfg" ]] || printf '{}\n' > "$cfg"
+      if jq -e '.statusLine? // empty' "$cfg" >/dev/null 2>&1; then
+        log "Cursor status line already configured — preserving the user's command."
+      else
+        command='bash -c '\''root=$(git rev-parse --show-toplevel 2>/dev/null || pwd); script="$root/.claude/hooks/caveman-statusline/statusline.sh"; [ -f "$script" ] && exec bash "$script"'\'''
+        tmp="$(mktemp -t aiworks-cursor-statusline)" || return 0
+        if jq --arg command "$command" '.statusLine = {type:"command", command:$command}' "$cfg" > "$tmp" \
+          && mv "$tmp" "$cfg"; then
+          log "Cursor status line configured from the canonical Claude statusline when inside an aiworks workspace."
+        else
+          rm -f "$tmp"
+          warn "could not update $cfg; run /statusline in Cursor."
+        fi
+      fi
+      ;;
+  esac
+  # Codex's richest supported footer is project-scoped and generated in .codex/config.toml.
+  # Claude's user statusLine may already be chained by another tool, so setup never overwrites it.
   return 0
 }
 

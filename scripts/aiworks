@@ -9,6 +9,8 @@
 #   aiworks sync   [<product>|<repo>] [options]   # onboard repos from config   (→ aiworks-sync.sh)
 #   aiworks remove <repo>|--all    [options]   # offboard a repo (or all)    (→ aiworks-remove.sh)
 #   aiworks config                 [options]   # regen the workflow CONFIG   (→ aiworks-config.sh)
+#   aiworks harnesses              [args…]     # select/reconcile Harnesses  (→ aiworks-harnesses.sh)
+#   aiworks workflow               [args…]     # run canonical Workflow      (→ aiworks-workflow.sh)
 #   aiworks update                 [options]   # upgrade the prerequisites   (→ aiworks-update.sh)
 #   aiworks gc                     [options]   # reclaim worktree disk       (→ aiworks-gc.sh)
 #   aiworks setup                  [args…]     # workspace setup             (→ .superset/setup.sh)
@@ -109,6 +111,17 @@ Commands:
              .cursor/{hooks.json,cli.json,hooks/hook-shim.sh}, and the enabled plugins'
              skills linked into .claude/skills (git-ignored) so Cursor can see them too.
              add / sync run this automatically. Use --check in CI.
+  codex      Project the canonical Claude-side agent config onto Codex for the root and every
+             repo: AGENTS.md + .agents/skills symlinks, generated .codex agents/hooks/rule index,
+             MCP config and native status line. Use --check in CI; --remove deletes only files
+             marked as generator-owned.
+  harnesses  List, configure, reconcile, or check the organization-wide Harness set declared in
+             workspace.config.yaml. `aiworks setup` owns the first-run picker; this command is the
+             explicit reconfiguration/CI surface. The registry is data-driven so a future Harness
+             adds an adapter entry rather than another setup branch.
+  workflow   Execute one canonical .claude/workflows script through a selected Harness adapter.
+             Normal chat entry points are `$dev-cycle`/`$prd`/`$brd` in Codex and
+             `/dev-cycle`/`/prd`/`/brd` in Cursor; this command is their deterministic runtime.
   update     Upgrade the workspace's PREREQUISITE tooling — the half `setup` does not do
              (its ensure_* helpers only install what is MISSING, never move a tool forward).
              Upgrades each tool through the installer that owns it on THIS machine — brew
@@ -127,9 +140,9 @@ Commands:
              deletes from worktrees it has proven are idle. Run with no arguments to REPORT.
              `--install-schedule` adds a weekly launchd job for the UI-Delete leftovers, which
              nothing else collects (slack-dispatch sweeps only its OWN worktrees).
-  setup      Run the workspace setup hook: exec .superset/setup.sh verbatim (mani sync, seed
-             adapter .env, link adapters into each repo + git-exclude the links so they never
-             dirty the product repo). Pass-through — forwards any extra args.
+  setup      Run the workspace setup hook: first-run Harness picker + selected CLI install/login,
+             then mani sync, adapter seeding/linking, Harness projection, dependencies and MCP.
+             Pass-through — forwards options such as --harnesses and --reconfigure-harnesses.
   run        Run the workspace run hook: exec .superset/run.sh verbatim. Pass-through —
              forwards any extra args. (Errors clearly if .superset/run.sh does not exist.)
   teardown   Run the workspace teardown hook: exec .superset/teardown.sh verbatim (remove the
@@ -218,6 +231,9 @@ case "$cmd" in
   remove|rm)      exec "$AIWORKS_BASH" "$DIR/aiworks-remove.sh" "$@" ;;
   config)         exec "$AIWORKS_BASH" "$DIR/aiworks-config.sh" "$@" ;;
   cursor)         exec "$AIWORKS_BASH" "$DIR/aiworks-cursor.sh" "$@" ;;
+  codex)          exec "$AIWORKS_BASH" "$DIR/aiworks-codex.sh" "$@" ;;
+  harnesses)      exec "$AIWORKS_BASH" "$DIR/aiworks-harnesses.sh" "$@" ;;
+  workflow)       exec "$AIWORKS_BASH" "$DIR/aiworks-workflow.sh" "$@" ;;
   update)         exec "$AIWORKS_BASH" "$DIR/aiworks-update.sh" "$@" ;;
   voice)          exec "$AIWORKS_BASH" "$DIR/aiworks-voice.sh" "$@" ;;
   gc)             exec "$AIWORKS_BASH" "$DIR/aiworks-gc.sh" "$@" ;;

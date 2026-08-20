@@ -41,6 +41,17 @@
 # README) — never in the file the workspace actually runs on. See docs/adr/0006-config-carries-no-comments.md.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Agent harnesses ──────────────────────────────────────────────────────────
+# Organization-wide, never personal: `aiworks setup` opens a first-run multi-select when this
+# list is empty, then `aiworks sync` reconciles the selected projections at the workspace root and
+# in every repo. Existing workspaces without this key preserve the legacy `claude,cursor` set in
+# non-interactive runs. Deselecting a Harness removes only generator-owned files.
+#
+# Add a future Harness through scripts/harnesses/registry.json and docs/agents/harnesses.md; do
+# not add another hard-coded setup branch. `hermes` is the planned next adapter.
+harnesses: []                     # claude | cursor | codex; multiple values supported
+                                  # Example after setup: [claude, cursor, codex]
+
 org:
   name: Acme                       # shown in agent copy / summaries
   product: "<one-line product description>"   # the domain agents ground research/copy in
