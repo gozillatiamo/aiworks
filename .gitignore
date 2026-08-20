@@ -115,25 +115,6 @@ workspace.config.local.yaml
 
 
 
-# >>> aiworks cursor: plugin-skill links (generated — do not edit by hand)
-# Symlinks into ~/.claude/plugins — absolute, per-machine paths, so committing one
-# gives every teammate a dangling skill dir. Cursor still READS an ignored skill
-# directory (measured), so ignoring these costs nothing but the git noise.
-/.claude/skills/cavecrew
-/.claude/skills/caveman-compress
-/.claude/skills/caveman-stats
-/.claude/skills/caveman-commit
-/.claude/skills/caveman-help
-/.claude/skills/caveman-review
-/.claude/skills/frontend-design
-/.claude/skills/doctor
-/.claude/skills/headroom-usage-indicator
-/.claude/skills/ponytail-audit
-/.claude/skills/ponytail-debt
-/.claude/skills/ponytail-gain
-/.claude/skills/ponytail-help
-/.claude/skills/ponytail-review
-# <<< aiworks cursor: plugin-skill links
 
 # >>> aiworks sync: obsidian (generated — do not edit by hand)
 # Obsidian vault — commit shared settings; keep personal UI layout local.
@@ -143,3 +124,36 @@ workspace.config.local.yaml
 .obsidian/graph.json
 # <<< aiworks sync: obsidian
 /agent-ofb-cypress/
+
+# >>> aiworks cursor: plugin-skill links (generated — do not edit by hand)
+# Symlinks into ~/.claude/plugins — absolute, per-machine paths, so committing one
+# gives every teammate a dangling skill dir. Cursor still READS an ignored skill
+# directory (measured), so ignoring these costs nothing but the git noise.
+/.claude/skills/cavecrew
+/.claude/skills/caveman-compress
+/.claude/skills/caveman-stats
+/.claude/skills/caveman-commit
+/.claude/skills/caveman-discover
+/.claude/skills/caveman-evidence-review
+/.claude/skills/caveman-explore
+/.claude/skills/caveman-help
+/.claude/skills/caveman-learn
+/.claude/skills/caveman-manage
+/.claude/skills/caveman-optimize
+/.claude/skills/caveman-review
+/.claude/skills/caveman-setup
+/.claude/skills/investigate-first
+/.claude/skills/lean-build
+/.claude/skills/migration
+/.claude/skills/safe-refactor
+/.claude/skills/surgical-patch
+/.claude/skills/verify-and-stop
+/.claude/skills/frontend-design
+/.claude/skills/doctor
+/.claude/skills/headroom-usage-indicator
+/.claude/skills/ponytail-audit
+/.claude/skills/ponytail-debt
+/.claude/skills/ponytail-gain
+/.claude/skills/ponytail-help
+/.claude/skills/ponytail-review
+# <<< aiworks cursor: plugin-skill links
