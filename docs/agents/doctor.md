@@ -1,7 +1,7 @@
 # `aiworks doctor` — what is missing, and the command that fixes it
 
 Every repair in this workspace already has an owner. `aiworks sync` clones and onboards,
-`aiworks setup` links the adapters, `aiworks cursor` regenerates the Cursor mirror,
+`aiworks setup` links the adapters, `aiworks harnesses sync` regenerates selected projections,
 `aiworks update` moves the tooling forward. What was missing was the surface that tells you
 **which of them you need to run** — before a half-finished workspace announces itself three
 steps later as an adapter dying on a missing token, an agent grepping a repo that was never
@@ -74,7 +74,7 @@ Groups 1–8 run offline by default. 9–12 need `--deep`.
 | 2 | `repos` | every declared repo is cloned with a valid HEAD · `mani.d` and `products[]` still agree · each clone is git-ignored |
 | 3 | `adapters` | per provider: the `.env` exists and every **required** var is set · the provider CLI is installed · writer scripts are executable · the `.git/info/exclude` trap · `notify` / `observability` skipped when their `enabled` flag is false |
 | 4 | `per-repo` | `scripts/dev.sh` present and executable · `CLAUDE.md` within 100 lines · adapter symlinks (`tracker` + `vcs`) · `.codegraph/` · `skills-lock.json` · no rules file scoped with `globs:` and no `paths:` |
-| 5 | `agent-cfg` | every hook named in `.claude/settings.json` exists and is executable · `.claude/skills` installed · the Cursor mirror is projected · every plugin `enabledPlugins` declares is actually INSTALLED at user scope (`aiworks sync` only declares it) |
+| 5 | `agent-cfg` | every canonical hook exists and is executable · `.claude/skills` installed · selected Cursor/Codex projections present and, under `--deep`, drift-free · declared plugin components installed or projected |
 | 6 | `tooling` | the prerequisite binaries are on PATH, each missing one named with the installer that actually owns it |
 | 7 | `voice` | delegates `aiworks voice status` — skipped unless `voice.enabled` |
 | 8 | `triage` | the three read-only triage MCPs are registered (offline) · `--deep` · the Kubernetes triage identity reads and cannot write — skipped unless `triage.enabled` |
@@ -91,10 +91,10 @@ one repo — the groups that are not repo-scoped then report as skipped.
 A green tick that means nothing is worse than an honest gap, so three things are left unproven
 on purpose:
 
-- **Cursor drift** and **version currency** are `--deep`, not because they need the network but
+- **Harness projection drift** and **version currency** are `--deep`, not because they need the network but
   because they are slow: `aiworks cursor --check` walks every repo (~8s) and `brew outdated`
   costs ~13s. Both are four times the whole command's budget. The default run answers the cheap
-  half of each — is the Cursor projection even *there*, is the binary even on PATH.
+  half of each — is the selected projection even *there*, is the binary even on PATH.
 - **Version currency covers the brew-owned half only.** `aiworks update -n` cannot answer it:
   dry-run prints the commands it *would* run and closes with "0 version(s) moved" whether or not
   anything is behind. rustup, gcloud, claude and codegraph carry their own updaters and are not

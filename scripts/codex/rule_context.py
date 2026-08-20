@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Inject matching canonical Claude rules into Codex exactly once per session."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import tempfile
+from pathlib import Path
+from typing import Any
+
+
+def project_root(payload: dict[str, Any]) -> Path:
+    current = Path(payload.get("cwd") or ".").resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".codex" / "generated" / "rules.json").is_file():
+            return candidate
+        if (candidate / ".git").exists():
+            break
+    return current
+
+
+def glob_regex(pattern: str) -> re.Pattern[str]:
+    out = ""
+    i = 0
+    while i < len(pattern):
+        char = pattern[i]
+        if char == "*" and i + 1 < len(pattern) and pattern[i + 1] == "*":
+            i += 2
+            if i < len(pattern) and pattern[i] == "/":
+                i += 1
+                out += "(?:.*/)?"
+            else:
+                out += ".*"
+            continue
+        if char == "*":
+            out += "[^/]*"
+        elif char == "?":
+            out += "[^/]"
+        else:
+            out += re.escape(char)
+        i += 1
+    return re.compile(f"^{out}$")
+
+
+def strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        result: list[str] = []
+        for item in value:
+            result.extend(strings(item))
+        return result
+    if isinstance(value, dict):
+        result = []
+        for item in value.values():
+            result.extend(strings(item))
+        return result
+    return []
+
+
+def normalize_candidate(root: Path, value: str) -> str | None:
+    value = value.strip().strip("'\"")
+    value = re.sub(r":\d+(?::\d+)?$", "", value)
+    if not value or value.startswith("-") or "://" in value:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        try:
+            return path.resolve().relative_to(root).as_posix()
+        except (OSError, ValueError):
+            return None
+    value = value.removeprefix("./")
+    if "/" in value or "." in Path(value).name or (root / value).exists():
+        return Path(value).as_posix()
+    return None
+
+
+def touched_paths(root: Path, payload: dict[str, Any]) -> list[str]:
+    tool_name = str(payload.get("tool_name") or "")
+    tool_input = payload.get("tool_input") or {}
+    values = strings(tool_input)
+    if tool_name == "apply_patch":
+        command = str(tool_input.get("command") or "")
+        values.extend(re.findall(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", command, re.MULTILINE))
+    elif tool_name == "Bash":
+        command = str(tool_input.get("command") or "")
+        try:
+            values.extend(shlex.split(command))
+        except ValueError:
+            values.extend(command.split())
+    result: list[str] = []
+    for value in values:
+        candidate = normalize_candidate(root, value)
+        if candidate and candidate not in result:
+            result.append(candidate)
+    return result
+
+
+def state_file(session: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session or "nosession")
+    directory = Path(tempfile.gettempdir()) / "aiworks-codex-rule-context"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / f"{safe}.json"
+
+
+def load_seen(path: Path) -> set[str]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return {str(item) for item in value}
+    except (OSError, json.JSONDecodeError, TypeError):
+        return set()
+
+
+def save_seen(path: Path, seen: set[str]) -> None:
+    temp = path.with_suffix(f".{os.getpid()}.tmp")
+    temp.write_text(json.dumps(sorted(seen)), encoding="utf-8")
+    temp.replace(path)
+
+
+def main() -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except (NameError, json.JSONDecodeError):
+        return 0
+    root = project_root(payload)
+    index_path = root / ".codex" / "generated" / "rules.json"
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+
+    event = str(payload.get("hook_event_name") or "")
+    paths = touched_paths(root, payload) if event == "PreToolUse" else []
+    session = str(payload.get("session_id") or "nosession")
+    state = state_file(session)
+    seen = load_seen(state)
+    selected: list[dict[str, Any]] = []
+    for rule in index.get("rules", []):
+        source = str(rule.get("source") or "")
+        scopes = [str(scope) for scope in rule.get("scopes", [])]
+        if not source or source in seen:
+            continue
+        if event == "SessionStart" and not scopes:
+            selected.append(rule)
+        elif event == "PreToolUse" and scopes and any(
+            glob_regex(scope).match(path) for scope in scopes for path in paths
+        ):
+            selected.append(rule)
+
+    if not selected:
+        return 0
+    chunks: list[str] = []
+    for rule in selected:
+        source = str(rule["source"])
+        path = root / source
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        chunks.append(f"===== {source} =====\n{content}")
+        seen.add(source)
+    if not chunks:
+        return 0
+    save_seen(state, seen)
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": event,
+                    "additionalContext": "\n\n".join(chunks),
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    raise SystemExit(main())

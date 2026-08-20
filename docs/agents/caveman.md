@@ -52,3 +52,9 @@ Cursor cannot resolve the `plugin:skill` form at all. `aiworks cursor` links eac
 plugin's skills to `.claude/skills/<name>` (git-ignored), which Cursor reads through
 `.cursor/skills`, so both names resolve to the same file. Every agent file names both
 forms. See [`cursor.md`](cursor.md).
+
+## In Codex the skill is `$caveman`
+
+`aiworks codex` makes `.agents/skills` a directory symlink to canonical `.claude/skills`, so
+Codex discovers the same `caveman/SKILL.md` without a copy. Native plugin installation is attempted
+when supported, but the project skill is the component-parity fallback.

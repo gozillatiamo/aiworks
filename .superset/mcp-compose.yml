@@ -57,8 +57,8 @@ services:
       - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
     restart: unless-stopped
     healthcheck:
-      # SSE endpoint streams (never closes) so we can't GET it cleanly — just check the
-      # port is accepting connections. python ships in the image; curl/wget/nc do not.
+      # SSE endpoint streams (never closes), so just check the port is accepting connections.
+      # python ships in the image; curl/wget/nc do not.
       test: ["CMD", "python", "-c", "import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(s.connect_ex(('127.0.0.1',8000)))"]
       interval: 30s
       timeout: 5s
@@ -103,8 +103,8 @@ services:
       - "host.docker.internal:host-gateway"   # Linux: make host.docker.internal resolve
     restart: unless-stopped
     healthcheck:
-      # SSE endpoint streams (never closes) so we can't GET it cleanly — just check the
-      # port is accepting connections. python ships in the image; curl/wget/nc do not.
+      # SSE endpoint streams (never closes), so just check the port is accepting connections.
+      # python ships in the image; curl/wget/nc do not.
       test: ["CMD", "python", "-c", "import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(s.connect_ex(('127.0.0.1',8000)))"]
       interval: 30s
       timeout: 5s

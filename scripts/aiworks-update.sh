@@ -20,6 +20,8 @@
 #              group already handled it). Stays inside the CURRENT node; never switches node.
 #   gcloud     gcloud components update.
 #   claude     claude update — the Claude Code CLI.
+#   cursor     cursor-agent update — the Cursor CLI.
+#   codex      upgrade @openai/codex through the installer that owns it (brew or npm).
 #   codegraph  codegraph upgrade — the per-repo code index CLI.
 #   graphify   uv tool upgrade graphifyy — this repo's doc-graph CLI (prose only).
 #   plugins    claude plugin marketplace update, then `claude plugin update` for every plugin in
@@ -28,11 +30,11 @@
 #              at the workspace ROOT (project scope only; see the note below on the other scopes).
 #              There is no binary to version-probe, so "updated" is derived from each skill's
 #              computedHash in the lock; -v lists the per-skill hash change. This is the ONE group
-#              that rewrites TRACKED files (skills-lock.json + .agents/skills/**) — it never
+#              that rewrites TRACKED files (skills-lock.json + .claude/skills/**) — it never
 #              commits: the changed paths are printed for you to review.
 #              A LOCALLY PATCHED skill is protected. The CLI rewrites every skill file on every run,
 #              so this group 3-way merges each rewritten file — ours (HEAD) + the upstream baseline
-#              committed under .agents/.skills-upstream/ + the new upstream copy — keeping BOTH the
+#              committed under .claude/.skills-upstream/ + the new upstream copy — keeping BOTH the
 #              upstream change and the local patch. With no baseline yet the local version wins and
 #              the baseline is seeded (re-run to take upstream on top); on overlapping edits the
 #              local version is kept and the new upstream copy is parked at <path>.upstream.new —
@@ -76,7 +78,7 @@ cd "$ROOT"
 # shellcheck source=/dev/null
 . "$ROOT/.superset/lib.sh"
 
-ALL_GROUPS="brew rust pnpm gcloud claude codegraph graphify plugins skills mcp"
+ALL_GROUPS="brew rust pnpm gcloud claude cursor codex codegraph graphify plugins skills mcp"
 
 # ── args ─────────────────────────────────────────────────────────────────────────
 DRY=0 CHECK_DEPS=0 ONLY="" SKIP=""
@@ -237,6 +239,32 @@ if want claude; then
   fi
 fi
 
+# ── cursor ──────────────────────────────────────────────────────────────────────
+if want cursor; then
+  cursor_bin=""
+  if command -v cursor-agent >/dev/null 2>&1; then cursor_bin="cursor-agent"
+  elif command -v agent >/dev/null 2>&1; then cursor_bin="agent"; fi
+  if [[ -n "$cursor_bin" ]]; then
+    upgrade "$cursor_bin update" "$cursor_bin" "$cursor_bin" update
+  else
+    record "cursor" "skipped" "absent" "-"
+  fi
+fi
+
+# ── codex ───────────────────────────────────────────────────────────────────────
+if want codex; then
+  if ! command -v codex >/dev/null 2>&1; then
+    record "codex" "skipped" "absent" "-"
+  elif brew_owns codex --cask; then
+    upgrade "brew upgrade --cask codex" "codex" brew upgrade --cask codex
+  elif command -v npm >/dev/null 2>&1 && npm list -g @openai/codex >/dev/null 2>&1; then
+    upgrade "npm install -g @openai/codex@latest" "codex" npm install -g @openai/codex@latest
+  else
+    warn "codex is not brew/npm-owned here — leaving it alone rather than shadowing it."
+    record "codex" "skipped" "$(tool_version codex)" "unknown owner"
+  fi
+fi
+
 # ── codegraph ────────────────────────────────────────────────────────────────────
 if want codegraph; then
   if command -v codegraph >/dev/null 2>&1; then
@@ -266,19 +294,23 @@ fi
 # The plugins the workspace DECLARES (.claude/settings.json enabledPlugins) — the same list
 # ensure_claude_plugins installs at user scope during setup, so update reads the same source.
 if want plugins; then
-  if ! command -v claude >/dev/null 2>&1; then
-    record "plugins" "skipped" "no claude CLI" "-"
-  elif ! command -v jq >/dev/null 2>&1; then
+  if ! command -v jq >/dev/null 2>&1; then
     warn "jq unavailable — cannot read enabledPlugins; update plugins by hand (claude plugin update <plugin>@<marketplace>)."
     record "plugins" "skipped" "no jq" "-"
   else
-    upgrade "claude plugin marketplace update" "" claude plugin marketplace update
     plugin_keys="$(jq -r '.enabledPlugins // {} | keys[]' .claude/settings.json 2>/dev/null)"
-    if [[ -z "$plugin_keys" ]]; then
-      log "no plugins declared in .claude/settings.json."
-    else
+    if command -v claude >/dev/null 2>&1; then
+      upgrade "claude plugin marketplace update" "" claude plugin marketplace update
       for key in $plugin_keys; do upgrade "claude plugin update $key" "" claude plugin update "$key"; done
       warn "plugins updated — RESTART Claude Code for the new versions to load."
+    else
+      record "claude plugins" "skipped" "no claude CLI" "-"
+    fi
+    if command -v codex >/dev/null 2>&1; then
+      upgrade "codex plugin marketplace upgrade" "" codex plugin marketplace upgrade
+      warn "Codex marketplaces refreshed — restart Codex for changed native plugin components."
+    else
+      record "codex plugins" "skipped" "no codex CLI" "-"
     fi
   fi
 fi
@@ -306,14 +338,14 @@ skills_hashes() {  # → "<name>\t<hash>" per skill, sorted by name
 # on the first live run here: 35 local lines vanished under a "current" verdict.
 #
 # So keep a baseline mirror — the upstream copy as of the LAST update, committed under
-# .agents/.skills-upstream/. With it every rewritten file is a real 3-way merge: ours (HEAD,
+# .claude/.skills-upstream/. With it every rewritten file is a real 3-way merge: ours (HEAD,
 # patched) + base (old upstream) + theirs (new upstream), so an upstream change AND a local patch
 # both survive. Without it (first run, or a skill installed since) the LOCAL version wins — the
 # only choice that cannot destroy work — and the baseline is seeded for the next run.
-SK_BASE_DIR=".agents/.skills-upstream"
+SK_BASE_DIR=".claude/.skills-upstream"
 
-sk_modified() {  # tracked files under .agents/skills that this run rewrote
-  git status --porcelain -- .agents/skills 2>/dev/null | awk '/^[ MARC]M/ { print substr($0, 4) }'
+sk_modified() {  # tracked files under .claude/skills that this run rewrote
+  git status --porcelain -- .claude/skills 2>/dev/null | awk '/^[ MARC]M/ { print substr($0, 4) }'
 }
 
 sk_reconcile() {  # → SK_MERGED / SK_KEPT / SK_CONFLICT, each a space-separated path list
@@ -322,7 +354,7 @@ sk_reconcile() {  # → SK_MERGED / SK_KEPT / SK_CONFLICT, each a space-separate
   ours="$(mktemp -t aiworks-sk)"; theirs="$(mktemp -t aiworks-sk)"; merged="$(mktemp -t aiworks-sk)"
   while IFS= read -r p; do
     [[ -n "$p" && -f "$p" ]] || continue
-    base="$SK_BASE_DIR/${p#.agents/skills/}"
+    base="$SK_BASE_DIR/${p#.claude/skills/}"
     cp "$p" "$theirs"
     git show "HEAD:$p" >"$ours" 2>/dev/null || continue   # not in HEAD → no local version to protect
     if [[ ! -f "$base" ]]; then
@@ -346,10 +378,10 @@ sk_seed_baseline() {  # <mark-file> — baseline the files the CLI actually WROT
   # would then merge cleanly over it and delete the patch for good.
   local mark="$1" p base n=0
   while IFS= read -r p; do
-    base="$SK_BASE_DIR/${p#.agents/skills/}"
+    base="$SK_BASE_DIR/${p#.claude/skills/}"
     [[ -f "$base" ]] && continue
     mkdir -p "$(dirname "$base")" && cp "$p" "$base" && n=$((n + 1))
-  done < <(find .agents/skills -type f -newer "$mark" ! -name '*.upstream.new' 2>/dev/null)
+  done < <(find .claude/skills -type f -newer "$mark" ! -name '*.upstream.new' 2>/dev/null)
   [[ "$n" -gt 0 ]] && log "seeded $n upstream baseline file(s) under $SK_BASE_DIR/"
   return 0
 }
@@ -423,8 +455,8 @@ if want skills; then
       fi
       if [[ "$sk_rc" -lt 128 ]]; then
         # Integrity: every skill in the lock must still be REACHABLE at .claude/skills/<name> — the
-        # CLI owns that entry (a symlink into .agents/skills/ here). A rewrite that drops or dangles
-        # it takes the skill out of every session with no error anywhere, so check rather than trust.
+        # .claude/skills is canonical and .agents/skills is its Codex-facing directory symlink.
+        # A rewrite that drops a canonical entry takes the skill out of every selected Harness.
         sk_broken=""
         while IFS=$'\t' read -r sk_name _; do
           [[ -z "$sk_name" || "$sk_name" == "(whole lock)" ]] && continue
@@ -438,7 +470,7 @@ if want skills; then
         # The lock, the skill files AND the baseline mirror are tracked here, so an update dirties the
         # tree. It is never committed for you — a merged skill file is new content whose diff the
         # author has to read, and the baseline bump belongs in the same commit as the merge it explains.
-        sk_dirty="$(git status --short -- skills-lock.json .agents/skills "$SK_BASE_DIR" 2>/dev/null)"
+        sk_dirty="$(git status --short -- skills-lock.json .claude/skills "$SK_BASE_DIR" 2>/dev/null)"
         if [[ -n "$sk_dirty" ]]; then
           warn "the skills update touched TRACKED files — review and commit them yourself:"
           printf '%s\n' "$sk_dirty" | sed 's/^/        /'

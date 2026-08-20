@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Shared parsers for the Codex Harness projection.
+
+No third-party YAML/TOML dependency: the canonical Claude frontmatter used by this
+workspace is deliberately a small scalar/list subset.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+
+MODEL_MAP = {
+    "opus": "gpt-5.6-sol",
+    "sonnet": "gpt-5.6-terra",
+    "haiku": "gpt-5.6-luna",
+}
+SUPPORTED_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
+
+
+def unquote(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def parse_frontmatter(path: Path) -> tuple[dict[str, Any], str]:
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ValueError(f"{path}: missing YAML frontmatter")
+
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration as exc:
+        raise ValueError(f"{path}: unterminated YAML frontmatter") from exc
+
+    data: dict[str, Any] = {}
+    current_list: str | None = None
+    for raw in lines[1:end]:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if current_list and re.match(r"^\s+-\s+", raw):
+            value = re.sub(r"^\s+-\s+", "", raw)
+            value = re.sub(r"\s+#.*$", "", value).strip()
+            if value:
+                data[current_list].append(unquote(value))
+            continue
+        match = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):(?:\s*(.*))?$", raw)
+        if not match:
+            current_list = None
+            continue
+        key, value = match.group(1), (match.group(2) or "").strip()
+        if not value:
+            data[key] = []
+            current_list = key
+            continue
+        current_list = None
+        value = unquote(re.sub(r"\s+#.*$", "", value).strip())
+        if value in {"true", "false"}:
+            data[key] = value == "true"
+        elif re.fullmatch(r"\d+", value):
+            data[key] = int(value)
+        else:
+            data[key] = value
+
+    body = "\n".join(lines[end + 1 :]).strip() + "\n"
+    return data, body
+
+
+def rule_scopes(path: Path) -> list[str]:
+    data, _ = parse_frontmatter(path)
+    scopes: list[str] = []
+    for key in ("paths", "globs"):
+        value = data.get(key, [])
+        if isinstance(value, list):
+            scopes.extend(str(item) for item in value)
+        elif value:
+            scopes.append(str(value))
+    return list(dict.fromkeys(scopes))
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def json_dump(value: Any) -> str:
+    return json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+
+
+def toml_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def toml_array(values: list[str]) -> str:
+    return "[" + ", ".join(toml_string(value) for value in values) + "]"
+
+
+def mapped_model(model: str | None) -> str | None:
+    if not model or model == "inherit":
+        return None
+    return MODEL_MAP.get(model, model)

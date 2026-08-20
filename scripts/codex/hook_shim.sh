@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Translate a Codex hook payload, then execute one canonical Claude hook command.
+set -uo pipefail
+
+source_event="${1:-}"
+source_tool="${2:-}"
+encoded="${3:-}"
+[[ -n "$source_event" && -n "$encoded" ]] || exit 0
+
+command -v jq >/dev/null 2>&1 || exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+
+input="$(cat 2>/dev/null || true)"
+[[ -n "$input" ]] || exit 0
+target_event="$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)"
+target_tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
+root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+source_command="$(printf '%s' "$encoded" | python3 -c 'import base64,sys; print(base64.b64decode(sys.stdin.read()).decode())' 2>/dev/null || true)"
+[[ -n "$source_command" ]] || exit 0
+
+case "$source_tool" in
+  preserve|'')
+    case "$target_tool" in
+      apply_patch) source_tool='Edit' ;;
+      Agent|spawn_agent) source_tool='Agent' ;;
+      *) source_tool="$target_tool" ;;
+    esac
+    ;;
+esac
+
+paths=""
+if [[ "$target_tool" == apply_patch ]]; then
+  paths="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null \
+    | sed -n 's/^\*\*\* \(Add\|Update\|Delete\) File: //p')"
+fi
+[[ -n "$paths" ]] || paths='-'
+
+json_out="$(mktemp -t aiworks-codex-hook-json.XXXXXX)" || exit 0
+err_out="$(mktemp -t aiworks-codex-hook-err.XXXXXX)" || { rm -f "$json_out"; exit 0; }
+trap 'rm -f "$json_out" "$err_out"' EXIT
+
+while IFS= read -r path; do
+  payload="$(printf '%s' "$input" | jq \
+    --arg ev "$source_event" \
+    --arg tool "$source_tool" \
+    --arg path "$path" '
+      .hook_event_name = $ev
+      | .tool_name = $tool
+      | if $path != "-" then .tool_input.file_path = $path else . end
+    ' 2>/dev/null)"
+  [[ -n "$payload" ]] || continue
+  one_out="$(mktemp -t aiworks-codex-hook-one.XXXXXX)" || continue
+  one_err="$(mktemp -t aiworks-codex-hook-one-err.XXXXXX)" || { rm -f "$one_out"; continue; }
+  printf '%s' "$payload" | env CLAUDE_PROJECT_DIR="$root" bash -c "$source_command" >"$one_out" 2>"$one_err"
+  rc=$?
+  if [[ "$rc" -eq 2 ]]; then
+    cat "$one_err" >&2
+    rm -f "$one_out" "$one_err"
+    exit 2
+  fi
+  cat "$one_err" >>"$err_out"
+  if jq -e . "$one_out" >/dev/null 2>&1; then
+    jq -c . "$one_out" >>"$json_out"
+  fi
+  rm -f "$one_out" "$one_err"
+done <<< "$paths"
+
+[[ -s "$err_out" ]] && cat "$err_out" >&2
+[[ -s "$json_out" ]] || exit 0
+
+jq -s --arg ev "$target_event" '
+  . as $all
+  | ($all | map(.hookSpecificOutput.additionalContext? // empty) | join("\n\n")) as $ctx
+  | ($all[0] // {})
+  | if (.hookSpecificOutput? | type) == "object" then
+      .hookSpecificOutput.hookEventName = $ev
+      | if $ctx != "" then .hookSpecificOutput.additionalContext = $ctx else . end
+    else . end
+' "$json_out"
