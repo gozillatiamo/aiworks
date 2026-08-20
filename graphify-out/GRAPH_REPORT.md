@@ -1,16 +1,16 @@
-# Graph Report - ai-workspace  (2026-08-17)
+# Graph Report - ai-workspace  (2026-08-20)
 
 ## Corpus Check
-- 213 files · ~237,560 words
+- 219 files · ~248,807 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 910 nodes · 1270 edges · 67 communities (56 shown, 11 thin omitted)
+- 977 nodes · 1335 edges · 70 communities (59 shown, 11 thin omitted)
 - Extraction: 93% EXTRACTED · 7% INFERRED · 1% AMBIGUOUS · INFERRED: 88 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `380cb405`
+- Built from commit: `98c7b711`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -82,6 +82,9 @@
 - hrun
 - Decision
 - Semantic Extraction
+- dev-cycle keeps its own run state
+- OFB-2141 BRD: Paotung Customizable Category Preview Widget
+- A cross-repo finding escalates instead of looping
 
 ## God Nodes (most connected - your core abstractions)
 1. `qa-runner agent (Peter)` - 29 edges
@@ -104,8 +107,8 @@
   docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md → .claude/skills/graphify/references/extraction-spec.md
 - `Native CLAUDE.md Integration` --references--> `bluePi Workspace CLAUDE.md`  [AMBIGUOUS]
   .claude/skills/graphify/references/hooks.md → CLAUDE.md
-- `Multi-Repo Workspace (AGENTS.md)` --semantically_similar_to--> `Multi-Repo Workspace`  [INFERRED] [semantically similar]
-  AGENTS.md → CLAUDE.md
+- `Gate Threshold Tuning` --semantically_similar_to--> `Query Token Budget`  [INFERRED] [semantically similar]
+  docs/agents/headroom.md → .claude/skills/graphify/references/query.md
 
 ## Import Cycles
 - None detected.
@@ -133,7 +136,7 @@
 - **Provider-dispatch adapter pattern (lib.sh + swappable impls)** — scripts_tracker_readme_lib_sh, scripts_vcs_readme_lib_sh, scripts_tracker_readme_tracker_provider_interface, scripts_vcs_readme_vcs_provider_interface, scripts_voice_readme [INFERRED 0.85]
 - **Tracker-adapter ticket lifecycle (estimate → plan → automate → gate → PR → notify)** — _claude_skills_estimate_ticket_skill_estimate_ticket, _claude_skills_plan_testcases_skill_plan_testcases, _claude_skills_plan_automate_skill_plan_automate, _claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate, _claude_skills_open_pr_skill_open_pr, _claude_skills_notify_skill_notify, _claude_skills_diagram_ticket_skill_diagram_ticket [INFERRED 0.85]
 
-## Communities (67 total, 11 thin omitted)
+## Communities (70 total, 11 thin omitted)
 
 ### Community 0 - "Agent Roster and Dev Harness"
 Cohesion: 0.07
@@ -296,8 +299,8 @@ Cohesion: 0.33
 Nodes (6): capture_shape → replay_shape.py local repro, OFB Redis keyspace map, PII egress line (prod value masking), docs/agents/pii-provenance.md, Read-only tool surface guarantee, redis-triage skill
 
 ### Community 40 - "Code minimalism is a plugin, scoped by agent, not a prompt"
-Cohesion: 0.12
-Nodes (14): Code minimalism is a plugin, scoped by agent, not a prompt, What ponytail offers, What was rejected, Why not on every agent, Why the level is pinned, Why the plugin rather than our own prose, Why three carve-outs, and only three, Code minimalism (ponytail) (+6 more)
+Cohesion: 0.09
+Nodes (19): Code minimalism is a plugin, scoped by agent, not a prompt, What ponytail offers, What was rejected, Why not on every agent, Why the level is pinned, Why the plugin rather than our own prose, Why three carve-outs, and only three, Consequences (+11 more)
 
 ### Community 41 - "debugging-code skill"
 Cohesion: 0.47
@@ -359,6 +362,18 @@ Nodes (9): ADR 0017 — Triage tunnels are declared beside the DSN, Consequences
 Cohesion: 0.50
 Nodes (4): DEEP_MODE Aggressive Inference, Gemini Semantic Backend, Semantic Extraction, Semantic Extraction Cache
 
+### Community 67 - "dev-cycle keeps its own run state"
+Cohesion: 0.09
+Nodes (19): Addendum — the `planned` row now skips, guarded by a ticket fingerprint, Addendum — upstream degrade, per-suite gate rows, and a fingerprint without the comment count, Consequences, dev-cycle keeps its own run state, What it is not, What that cost, Why it qualifies on all three counts, A passed gate is recorded, not re-derived (+11 more)
+
+### Community 68 - "OFB-2141 BRD: Paotung Customizable Category Preview Widget"
+Cohesion: 0.06
+Nodes (32): 1. Executive Summary, 2.1 Market Insight, 2.2 Strategic Intent, 2.3 Goals & Success Metrics, 2. Business Context & Goals, 3.1 In Scope, 3.2 Out of Scope, 3. Scope (+24 more)
+
+### Community 69 - "A cross-repo finding escalates instead of looping"
+Cohesion: 0.40
+Nodes (4): A cross-repo finding escalates instead of looping, Consequences, Context, Decision
+
 ## Ambiguous Edges - Review These
 - `design (skill)` → `diagram-ticket (skill)`  [AMBIGUOUS]
   .claude/skills/diagram-ticket/SKILL.md · relation: conceptually_related_to
@@ -376,7 +391,7 @@ Nodes (4): DEEP_MODE Aggressive Inference, Gemini Semantic Backend, Semantic Ext
   .claude/skills/karpathy-guidelines/SKILL.md · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **274 isolated node(s):** `Rejected alternatives`, `Context`, `Why the framework only port-forwards`, `Why the helper is shared but the Redis migration is deferred`, `The prod gate ordering` (+269 more)
+- **320 isolated node(s):** `Persistence`, `The ladder`, `Rules`, `Output`, `Intensity` (+315 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 

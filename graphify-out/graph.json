@@ -517,10 +517,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_graphify",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "graphify.md",
-      "id": "docs_agents_graphify"
+      "norm_label": "graphify.md"
     },
     {
       "label": "Adding docs to the graph",
@@ -528,10 +528,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L93",
       "_origin": "ast",
+      "id": "docs_agents_graphify_adding_docs_to_the_graph",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "adding docs to the graph",
-      "id": "docs_agents_graphify_adding_docs_to_the_graph"
+      "norm_label": "adding docs to the graph"
     },
     {
       "label": "`graphify install` overreaches \u2014 review before committing",
@@ -539,10 +539,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L84",
       "_origin": "ast",
+      "id": "docs_agents_graphify_graphify_install_overreaches_review_before_committing",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "`graphify install` overreaches \u2014 review before committing",
-      "id": "docs_agents_graphify_graphify_install_overreaches_review_before_committing"
+      "norm_label": "`graphify install` overreaches \u2014 review before committing"
     },
     {
       "label": "\u26a0\ufe0f graphify needs no API key. The skill IS the LLM.",
@@ -550,10 +550,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L16",
       "_origin": "ast",
+      "id": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "\u26a0\ufe0f graphify needs no api key. the skill is the llm.",
-      "id": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm"
+      "norm_label": "\u26a0\ufe0f graphify needs no api key. the skill is the llm."
     },
     {
       "label": "graphify \u2014 operating the doc graph",
@@ -561,10 +561,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_graphify_graphify_operating_the_doc_graph",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "graphify \u2014 operating the doc graph",
-      "id": "docs_agents_graphify_graphify_operating_the_doc_graph"
+      "norm_label": "graphify \u2014 operating the doc graph"
     },
     {
       "label": "It is TWO installs, and the second is the one people miss",
@@ -572,10 +572,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L6",
       "_origin": "ast",
+      "id": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "it is two installs, and the second is the one people miss",
-      "id": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss"
+      "norm_label": "it is two installs, and the second is the one people miss"
     },
     {
       "label": "\u26a0\ufe0f Labels are positional \u2014 regenerate the `.sig`",
@@ -583,10 +583,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L53",
       "_origin": "ast",
+      "id": "docs_agents_graphify_labels_are_positional_regenerate_the_sig",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "\u26a0\ufe0f labels are positional \u2014 regenerate the `.sig`",
-      "id": "docs_agents_graphify_labels_are_positional_regenerate_the_sig"
+      "norm_label": "\u26a0\ufe0f labels are positional \u2014 regenerate the `.sig`"
     },
     {
       "label": "\u26a0\ufe0f Remove the post-checkout hook",
@@ -594,10 +594,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L36",
       "_origin": "ast",
+      "id": "docs_agents_graphify_remove_the_post_checkout_hook",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "\u26a0\ufe0f remove the post-checkout hook",
-      "id": "docs_agents_graphify_remove_the_post_checkout_hook"
+      "norm_label": "\u26a0\ufe0f remove the post-checkout hook"
     },
     {
       "label": "What is committed, and what is not",
@@ -605,10 +605,10 @@
       "source_file": "docs/agents/graphify.md",
       "source_location": "L70",
       "_origin": "ast",
+      "id": "docs_agents_graphify_what_is_committed_and_what_is_not",
       "community": 30,
       "community_name": "graphify \u2014 operating the doc graph",
-      "norm_label": "what is committed, and what is not",
-      "id": "docs_agents_graphify_what_is_committed_and_what_is_not"
+      "norm_label": "what is committed, and what is not"
     },
     {
       "label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md",
@@ -616,10 +616,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt"
+      "norm_label": "0015-code-minimalism-is-a-plugin-not-a-prompt.md"
     },
     {
       "label": "Code minimalism is a plugin, scoped by agent, not a prompt",
@@ -627,10 +627,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
+      "norm_label": "code minimalism is a plugin, scoped by agent, not a prompt"
     },
     {
       "label": "What ponytail offers",
@@ -638,10 +638,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L12",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what ponytail offers",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
+      "norm_label": "what ponytail offers"
     },
     {
       "label": "What was rejected",
@@ -649,10 +649,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L95",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "what was rejected",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
+      "norm_label": "what was rejected"
     },
     {
       "label": "Why not on every agent",
@@ -660,10 +660,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L52",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why not on every agent",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
+      "norm_label": "why not on every agent"
     },
     {
       "label": "Why the level is pinned",
@@ -671,10 +671,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L68",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the level is pinned",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
+      "norm_label": "why the level is pinned"
     },
     {
       "label": "Why the plugin rather than our own prose",
@@ -682,10 +682,10 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L34",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why the plugin rather than our own prose",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
+      "norm_label": "why the plugin rather than our own prose"
     },
     {
       "label": "Why three carve-outs, and only three",
@@ -693,10 +693,76 @@
       "source_file": "docs/adr/0015-code-minimalism-is-a-plugin-not-a-prompt.md",
       "source_location": "L78",
       "_origin": "ast",
+      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "why three carve-outs, and only three",
-      "id": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
+      "norm_label": "why three carve-outs, and only three"
+    },
+    {
+      "label": "0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "file_type": "document",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements",
+      "community": 40,
+      "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
+      "norm_label": "0019-the-dev-cycle-session-orchestrates-never-implements.md"
+    },
+    {
+      "label": "Consequences",
+      "file_type": "document",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L82",
+      "_origin": "ast",
+      "id": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_consequences",
+      "community": 40,
+      "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
+      "norm_label": "consequences"
+    },
+    {
+      "label": "Context",
+      "file_type": "document",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_context",
+      "community": 40,
+      "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
+      "norm_label": "context"
+    },
+    {
+      "label": "Decision",
+      "file_type": "document",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L25",
+      "_origin": "ast",
+      "id": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_decision",
+      "community": 40,
+      "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
+      "norm_label": "decision"
+    },
+    {
+      "label": "The dev-cycle session orchestrates, never implements",
+      "file_type": "document",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_the_dev_cycle_session_orchestrates_never_implements",
+      "community": 40,
+      "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
+      "norm_label": "the dev-cycle session orchestrates, never implements"
+    },
+    {
+      "label": "The discriminator (why arming happens at the END, not the start)",
+      "file_type": "document",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L51",
+      "_origin": "ast",
+      "id": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_the_discriminator_why_arming_happens_at_the_end_not_the_start",
+      "community": 40,
+      "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
+      "norm_label": "the discriminator (why arming happens at the end, not the start)"
     },
     {
       "label": "ponytail.md",
@@ -704,10 +770,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "ponytail.md",
-      "id": "docs_agents_ponytail"
+      "norm_label": "ponytail.md"
     },
     {
       "label": "Code minimalism (ponytail)",
@@ -715,10 +781,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_code_minimalism_ponytail",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "code minimalism (ponytail)",
-      "id": "docs_agents_ponytail_code_minimalism_ponytail"
+      "norm_label": "code minimalism (ponytail)"
     },
     {
       "label": "Commands",
@@ -726,10 +792,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L101",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_commands",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "commands",
-      "id": "docs_agents_ponytail_commands"
+      "norm_label": "commands"
     },
     {
       "label": "How it reaches each spawn path",
@@ -737,10 +803,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L30",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "how it reaches each spawn path",
-      "id": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
+      "norm_label": "how it reaches each spawn path"
     },
     {
       "label": "Installing it",
@@ -748,10 +814,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L112",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_installing_it",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "installing it",
-      "id": "docs_agents_ponytail_installing_it"
+      "norm_label": "installing it"
     },
     {
       "label": "The ladder",
@@ -759,10 +825,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L14",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_the_ladder",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "the ladder",
-      "id": "docs_agents_ponytail_the_ladder"
+      "norm_label": "the ladder"
     },
     {
       "label": "Where it stops",
@@ -770,10 +836,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L75",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_where_it_stops",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "where it stops",
-      "id": "docs_agents_ponytail_where_it_stops"
+      "norm_label": "where it stops"
     },
     {
       "label": "Who gets it, and why not everyone",
@@ -781,10 +847,10 @@
       "source_file": "docs/agents/ponytail.md",
       "source_location": "L51",
       "_origin": "ast",
+      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
       "community": 40,
       "community_name": "Code minimalism is a plugin, scoped by agent, not a prompt",
-      "norm_label": "who gets it, and why not everyone",
-      "id": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
+      "norm_label": "who gets it, and why not everyone"
     },
     {
       "label": "SKILL.md",
@@ -792,10 +858,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "skill.md",
-      "id": "claude_skills_ponytail_skill"
+      "norm_label": "skill.md"
     },
     {
       "label": "Boundaries",
@@ -803,10 +869,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L114",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_boundaries",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "boundaries",
-      "id": "claude_skills_ponytail_skill_boundaries"
+      "norm_label": "boundaries"
     },
     {
       "label": "Intensity",
@@ -814,10 +880,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L77",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_intensity",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "intensity",
-      "id": "claude_skills_ponytail_skill_intensity"
+      "norm_label": "intensity"
     },
     {
       "label": "Output",
@@ -825,10 +891,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L66",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_output",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "output",
-      "id": "claude_skills_ponytail_skill_output"
+      "norm_label": "output"
     },
     {
       "label": "Persistence",
@@ -836,10 +902,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L26",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_persistence",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "persistence",
-      "id": "claude_skills_ponytail_skill_persistence"
+      "norm_label": "persistence"
     },
     {
       "label": "Ponytail",
@@ -847,10 +913,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L20",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_ponytail",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "ponytail",
-      "id": "claude_skills_ponytail_skill_ponytail"
+      "norm_label": "ponytail"
     },
     {
       "label": "Rules",
@@ -858,10 +924,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L56",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_rules",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "rules",
-      "id": "claude_skills_ponytail_skill_rules"
+      "norm_label": "rules"
     },
     {
       "label": "The ladder",
@@ -869,10 +935,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L32",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_the_ladder",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "the ladder",
-      "id": "claude_skills_ponytail_skill_the_ladder"
+      "norm_label": "the ladder"
     },
     {
       "label": "When NOT to be lazy",
@@ -880,10 +946,10 @@
       "source_file": ".claude/skills/ponytail/SKILL.md",
       "source_location": "L90",
       "_origin": "ast",
+      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy",
       "community": 46,
       "community_name": "Ponytail",
-      "norm_label": "when not to be lazy",
-      "id": "claude_skills_ponytail_skill_when_not_to_be_lazy"
+      "norm_label": "when not to be lazy"
     },
     {
       "label": "obsidian.md",
@@ -891,10 +957,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_obsidian",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "obsidian.md",
-      "id": "docs_agents_obsidian"
+      "norm_label": "obsidian.md"
     },
     {
       "label": "Commit vs keep local",
@@ -902,10 +968,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L28",
       "_origin": "ast",
+      "id": "docs_agents_obsidian_commit_vs_keep_local",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "commit vs keep local",
-      "id": "docs_agents_obsidian_commit_vs_keep_local"
+      "norm_label": "commit vs keep local"
     },
     {
       "label": "Gotchas",
@@ -913,10 +979,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L41",
       "_origin": "ast",
+      "id": "docs_agents_obsidian_gotchas",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "gotchas",
-      "id": "docs_agents_obsidian_gotchas"
+      "norm_label": "gotchas"
     },
     {
       "label": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
@@ -924,10 +990,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L1",
       "_origin": "ast",
+      "id": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "id": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo"
+      "norm_label": "obsidian \u2014 shared vault settings for the workspace meta-repo"
     },
     {
       "label": "What `aiworks sync` does",
@@ -935,10 +1001,10 @@
       "source_file": "docs/agents/obsidian.md",
       "source_location": "L7",
       "_origin": "ast",
+      "id": "docs_agents_obsidian_what_aiworks_sync_does",
       "community": 63,
       "community_name": "Obsidian \u2014 shared vault settings for the workspace meta-repo",
-      "norm_label": "what `aiworks sync` does",
-      "id": "docs_agents_obsidian_what_aiworks_sync_does"
+      "norm_label": "what `aiworks sync` does"
     },
     {
       "label": "hrun",
@@ -950,10 +1016,10 @@
         "kind": "file"
       },
       "_origin": "ast",
+      "id": "scripts_hrun",
       "community": 64,
       "community_name": "hrun",
-      "norm_label": "hrun",
-      "id": "scripts_hrun"
+      "norm_label": "hrun"
     },
     {
       "label": "hrun script",
@@ -965,10 +1031,10 @@
         "kind": "bash_entrypoint"
       },
       "_origin": "ast",
+      "id": "scripts_hrun__entry",
       "community": 64,
       "community_name": "hrun",
-      "norm_label": "hrun script",
-      "id": "scripts_hrun__entry"
+      "norm_label": "hrun script"
     },
     {
       "label": "0017-triage-tunnels-are-declared-beside-the-dsn.md",
@@ -1079,6 +1145,677 @@
       "community": 65,
       "community_name": "Decision",
       "norm_label": "why the helper is shared but the redis migration is deferred"
+    },
+    {
+      "label": "0018-dev-cycle-keeps-its-own-run-state.md",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "0018-dev-cycle-keeps-its-own-run-state.md"
+    },
+    {
+      "label": "Addendum \u2014 the `planned` row now skips, guarded by a ticket fingerprint",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L87",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_addendum_the_planned_row_now_skips_guarded_by_a_ticket_fingerprint",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "addendum \u2014 the `planned` row now skips, guarded by a ticket fingerprint"
+    },
+    {
+      "label": "Addendum \u2014 upstream degrade, per-suite gate rows, and a fingerprint without the comment count",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L117",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_addendum_upstream_degrade_per_suite_gate_rows_and_a_fingerprint_without_the_comment_count",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "addendum \u2014 upstream degrade, per-suite gate rows, and a fingerprint without the comment count"
+    },
+    {
+      "label": "Consequences",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L70",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_consequences",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "consequences"
+    },
+    {
+      "label": "dev-cycle keeps its own run state",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "dev-cycle keeps its own run state"
+    },
+    {
+      "label": "What it is not",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L59",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_what_it_is_not",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "what it is not"
+    },
+    {
+      "label": "What that cost",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L39",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_what_that_cost",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "what that cost"
+    },
+    {
+      "label": "Why it qualifies on all three counts",
+      "file_type": "document",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L17",
+      "_origin": "ast",
+      "id": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_why_it_qualifies_on_all_three_counts",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "why it qualifies on all three counts"
+    },
+    {
+      "label": "0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "file_type": "document",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "0021-a-passed-gate-is-recorded-not-re-derived.md"
+    },
+    {
+      "label": "A passed gate is recorded, not re-derived",
+      "file_type": "document",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_a_passed_gate_is_recorded_not_re_derived",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "a passed gate is recorded, not re-derived"
+    },
+    {
+      "label": "What we accept in exchange",
+      "file_type": "document",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L56",
+      "_origin": "ast",
+      "id": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_what_we_accept_in_exchange",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "what we accept in exchange"
+    },
+    {
+      "label": "Why it qualifies on all three counts",
+      "file_type": "document",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L42",
+      "_origin": "ast",
+      "id": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_why_it_qualifies_on_all_three_counts",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "why it qualifies on all three counts"
+    },
+    {
+      "label": "0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "file_type": "document",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "0022-the-run-ticks-its-own-approval-the-merge-stays-human.md"
+    },
+    {
+      "label": "The run ticks its own approval; the merge stays human",
+      "file_type": "document",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "the run ticks its own approval; the merge stays human"
+    },
+    {
+      "label": "What it buys",
+      "file_type": "document",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L62",
+      "_origin": "ast",
+      "id": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_what_it_buys",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "what it buys"
+    },
+    {
+      "label": "What this costs",
+      "file_type": "document",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L43",
+      "_origin": "ast",
+      "id": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_what_this_costs",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "what this costs"
+    },
+    {
+      "label": "review-ledger.md",
+      "file_type": "document",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_review_ledger",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "review-ledger.md"
+    },
+    {
+      "label": "1. The threads are the finding set",
+      "file_type": "document",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "docs_agents_review_ledger_1_the_threads_are_the_finding_set",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "1. the threads are the finding set"
+    },
+    {
+      "label": "2. The ledger rows record what a thread cannot",
+      "file_type": "document",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L23",
+      "_origin": "ast",
+      "id": "docs_agents_review_ledger_2_the_ledger_rows_record_what_a_thread_cannot",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "2. the ledger rows record what a thread cannot"
+    },
+    {
+      "label": "3. Resolving is part of the fix",
+      "file_type": "document",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L53",
+      "_origin": "ast",
+      "id": "docs_agents_review_ledger_3_resolving_is_part_of_the_fix",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "3. resolving is part of the fix"
+    },
+    {
+      "label": "4. Consequences for the first pass",
+      "file_type": "document",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L72",
+      "_origin": "ast",
+      "id": "docs_agents_review_ledger_4_consequences_for_the_first_pass",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "4. consequences for the first pass"
+    },
+    {
+      "label": "5. The approval tick is the review's last act \u2014 and its third record",
+      "file_type": "document",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L80",
+      "_origin": "ast",
+      "id": "docs_agents_review_ledger_5_the_approval_tick_is_the_review_s_last_act_and_its_third_record",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "5. the approval tick is the review's last act \u2014 and its third record"
+    },
+    {
+      "label": "The review ledger \u2014 a finding is raised once, and resolved visibly",
+      "file_type": "document",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_agents_review_ledger_the_review_ledger_a_finding_is_raised_once_and_resolved_visibly",
+      "community": 67,
+      "community_name": "dev-cycle keeps its own run state",
+      "norm_label": "the review ledger \u2014 a finding is raised once, and resolved visibly"
+    },
+    {
+      "label": "ofb-2141.md",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "ofb-2141.md"
+    },
+    {
+      "label": "1. Executive Summary",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L11",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_1_executive_summary",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "1. executive summary"
+    },
+    {
+      "label": "2.1 Market Insight",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L21",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_2_1_market_insight",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "2.1 market insight"
+    },
+    {
+      "label": "2.2 Strategic Intent",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L28",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_2_2_strategic_intent",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "2.2 strategic intent"
+    },
+    {
+      "label": "2.3 Goals & Success Metrics",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L35",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_2_3_goals_success_metrics",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "2.3 goals & success metrics"
+    },
+    {
+      "label": "2. Business Context & Goals",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L19",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_2_business_context_goals",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "2. business context & goals"
+    },
+    {
+      "label": "3.1 In Scope",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L49",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_3_1_in_scope",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "3.1 in scope"
+    },
+    {
+      "label": "3.2 Out of Scope",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L74",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_3_2_out_of_scope",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "3.2 out of scope"
+    },
+    {
+      "label": "3. Scope",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L47",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_3_scope",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "3. scope"
+    },
+    {
+      "label": "4. Feature Set & User Value",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L84",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_4_feature_set_user_value",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "4. feature set & user value"
+    },
+    {
+      "label": "5.1 Verdict",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L169",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_5_1_verdict",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "5.1 verdict"
+    },
+    {
+      "label": "5.2 Existing Infra to Extend (Do Not Rebuild)",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L173",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_5_2_existing_infra_to_extend_do_not_rebuild",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "5.2 existing infra to extend (do not rebuild)"
+    },
+    {
+      "label": "5.3 Build Plan (Dependency Waves)",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L182",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_5_3_build_plan_dependency_waves",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "5.3 build plan (dependency waves)"
+    },
+    {
+      "label": "5.4 Risks & Mitigations",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L217",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_5_4_risks_mitigations",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "5.4 risks & mitigations"
+    },
+    {
+      "label": "5.5 Cross-Repo Dependencies",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L227",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_5_5_cross_repo_dependencies",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "5.5 cross-repo dependencies"
+    },
+    {
+      "label": "5. Technical Feasibility & Approach",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L167",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_5_technical_feasibility_approach",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "5. technical feasibility & approach"
+    },
+    {
+      "label": "6.1 Competitive Landscape",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L252",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_6_1_competitive_landscape",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "6.1 competitive landscape"
+    },
+    {
+      "label": "6.2 OFB Competitive Advantage",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L261",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_6_2_ofb_competitive_advantage",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "6.2 ofb competitive advantage"
+    },
+    {
+      "label": "6. Competitive Positioning & Market Fit",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L250",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_6_competitive_positioning_market_fit",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "6. competitive positioning & market fit"
+    },
+    {
+      "label": "7. Open Questions & Decisions",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L269",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_7_open_questions_decisions",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "7. open questions & decisions"
+    },
+    {
+      "label": "8. Roadmap & Rollout",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L288",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_8_roadmap_rollout",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "8. roadmap & rollout"
+    },
+    {
+      "label": "9. Acceptance & Sign-Off",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L317",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_9_acceptance_sign_off",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "9. acceptance & sign-off"
+    },
+    {
+      "label": "Appendix: Glossary & References",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L327",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_appendix_glossary_references",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "appendix: glossary & references"
+    },
+    {
+      "label": "Feature 1: Default-On Category Preview Widget",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L86",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_feature_1_default_on_category_preview_widget",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "feature 1: default-on category preview widget"
+    },
+    {
+      "label": "Feature 2: DB-Backed Per-Site Widget Config + API",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L106",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_feature_2_db_backed_per_site_widget_config_api",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "feature 2: db-backed per-site widget config + api"
+    },
+    {
+      "label": "Feature 3: Backoffice Widget Editor (Title + Rich-Text Description)",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L126",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_feature_3_backoffice_widget_editor_title_rich_text_description",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "feature 3: backoffice widget editor (title + rich-text description)"
+    },
+    {
+      "label": "Feature 4: SEO Hyperlink Support + Sanitization",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L146",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_feature_4_seo_hyperlink_support_sanitization",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "feature 4: seo hyperlink support + sanitization"
+    },
+    {
+      "label": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "ofb-2141 brd: paotung customizable category preview widget"
+    },
+    {
+      "label": "Phase 1: Schema + Config (Weeks 1-2)",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L290",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_phase_1_schema_config_weeks_1_2",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "phase 1: schema + config (weeks 1-2)"
+    },
+    {
+      "label": "Phase 2: Render + Fallback (Weeks 2-3)",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L295",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_phase_2_render_fallback_weeks_2_3",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "phase 2: render + fallback (weeks 2-3)"
+    },
+    {
+      "label": "Phase 3: Backoffice Editor (Weeks 3-4)",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L300",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_phase_3_backoffice_editor_weeks_3_4",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "phase 3: backoffice editor (weeks 3-4)"
+    },
+    {
+      "label": "Phase 4: QA + Hardening (Week 4)",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L306",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_phase_4_qa_hardening_week_4",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "phase 4: qa + hardening (week 4)"
+    },
+    {
+      "label": "Phase 5 (Future): Deprecation",
+      "file_type": "document",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L311",
+      "_origin": "ast",
+      "id": "docs_brd_ofb_2141_phase_5_future_deprecation",
+      "community": 68,
+      "community_name": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+      "norm_label": "phase 5 (future): deprecation"
+    },
+    {
+      "label": "0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "file_type": "document",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping",
+      "community": 69,
+      "community_name": "A cross-repo finding escalates instead of looping",
+      "norm_label": "0020-a-cross-repo-finding-escalates-instead-of-looping.md"
+    },
+    {
+      "label": "A cross-repo finding escalates instead of looping",
+      "file_type": "document",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_a_cross_repo_finding_escalates_instead_of_looping",
+      "community": 69,
+      "community_name": "A cross-repo finding escalates instead of looping",
+      "norm_label": "a cross-repo finding escalates instead of looping"
+    },
+    {
+      "label": "Consequences",
+      "file_type": "document",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L58",
+      "_origin": "ast",
+      "id": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_consequences",
+      "community": 69,
+      "community_name": "A cross-repo finding escalates instead of looping",
+      "norm_label": "consequences"
+    },
+    {
+      "label": "Context",
+      "file_type": "document",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_context",
+      "community": 69,
+      "community_name": "A cross-repo finding escalates instead of looping",
+      "norm_label": "context"
+    },
+    {
+      "label": "Decision",
+      "file_type": "document",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L28",
+      "_origin": "ast",
+      "id": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_decision",
+      "community": 69,
+      "community_name": "A cross-repo finding escalates instead of looping",
+      "norm_label": "decision"
     },
     {
       "label": "design (skill)",
@@ -13749,9 +14486,9 @@
       "source_location": "L20",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill",
-      "target": "claude_skills_ponytail_skill_ponytail"
+      "target": "claude_skills_ponytail_skill_ponytail",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13760,9 +14497,9 @@
       "source_location": "L114",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_boundaries"
+      "target": "claude_skills_ponytail_skill_boundaries",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13771,9 +14508,9 @@
       "source_location": "L26",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_persistence"
+      "target": "claude_skills_ponytail_skill_persistence",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13782,9 +14519,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_the_ladder"
+      "target": "claude_skills_ponytail_skill_the_ladder",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13793,9 +14530,9 @@
       "source_location": "L56",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_rules"
+      "target": "claude_skills_ponytail_skill_rules",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13804,9 +14541,9 @@
       "source_location": "L66",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_output"
+      "target": "claude_skills_ponytail_skill_output",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13815,9 +14552,9 @@
       "source_location": "L77",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_intensity"
+      "target": "claude_skills_ponytail_skill_intensity",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13826,9 +14563,9 @@
       "source_location": "L90",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "claude_skills_ponytail_skill_ponytail",
-      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy"
+      "target": "claude_skills_ponytail_skill_when_not_to_be_lazy",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13837,9 +14574,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13848,9 +14585,9 @@
       "source_location": "L12",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_ponytail_offers",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13859,9 +14596,9 @@
       "source_location": "L34",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_plugin_rather_than_our_own_prose",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13870,9 +14607,9 @@
       "source_location": "L52",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_not_on_every_agent",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13881,9 +14618,9 @@
       "source_location": "L68",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_the_level_is_pinned",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13892,9 +14629,9 @@
       "source_location": "L78",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_why_three_carve_outs_and_only_three",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13903,9 +14640,9 @@
       "source_location": "L95",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_code_minimalism_is_a_plugin_scoped_by_agent_not_a_prompt",
-      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected"
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt_what_was_rejected",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14031,13 +14768,255 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0018_dev_cycle_keeps_its_own_run_state",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L117",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_addendum_upstream_degrade_per_suite_gate_rows_and_a_fingerprint_without_the_comment_count",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L17",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_why_it_qualifies_on_all_three_counts",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L39",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_what_that_cost",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L59",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_what_it_is_not",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L70",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_consequences",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0018-dev-cycle-keeps-its-own-run-state.md",
+      "source_location": "L87",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_dev_cycle_keeps_its_own_run_state",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state_addendum_the_planned_row_now_skips_guarded_by_a_ticket_fingerprint",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements",
+      "target": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_the_dev_cycle_session_orchestrates_never_implements",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L51",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_decision",
+      "target": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_the_discriminator_why_arming_happens_at_the_end_not_the_start",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_the_dev_cycle_session_orchestrates_never_implements",
+      "target": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_decision",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_the_dev_cycle_session_orchestrates_never_implements",
+      "target": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_context",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L82",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_the_dev_cycle_session_orchestrates_never_implements",
+      "target": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements_consequences",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping",
+      "target": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_a_cross_repo_finding_escalates_instead_of_looping",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L28",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_a_cross_repo_finding_escalates_instead_of_looping",
+      "target": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_decision",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_a_cross_repo_finding_escalates_instead_of_looping",
+      "target": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_context",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md",
+      "source_location": "L58",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_a_cross_repo_finding_escalates_instead_of_looping",
+      "target": "docs_adr_0020_a_cross_repo_finding_escalates_instead_of_looping_consequences",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived",
+      "target": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_a_passed_gate_is_recorded_not_re_derived",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L42",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_a_passed_gate_is_recorded_not_re_derived",
+      "target": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_why_it_qualifies_on_all_three_counts",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L56",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_a_passed_gate_is_recorded_not_re_derived",
+      "target": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived_what_we_accept_in_exchange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "target": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L43",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "target": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_what_this_costs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L62",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "target": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human_what_it_buys",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/agents/graphify.md",
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify",
-      "target": "docs_agents_graphify_graphify_operating_the_doc_graph"
+      "target": "docs_agents_graphify_graphify_operating_the_doc_graph",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14046,9 +15025,9 @@
       "source_location": "L16",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm"
+      "target": "docs_agents_graphify_graphify_needs_no_api_key_the_skill_is_the_llm",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14057,9 +15036,9 @@
       "source_location": "L36",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_remove_the_post_checkout_hook"
+      "target": "docs_agents_graphify_remove_the_post_checkout_hook",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14068,9 +15047,9 @@
       "source_location": "L53",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_labels_are_positional_regenerate_the_sig"
+      "target": "docs_agents_graphify_labels_are_positional_regenerate_the_sig",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14079,9 +15058,9 @@
       "source_location": "L6",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss"
+      "target": "docs_agents_graphify_it_is_two_installs_and_the_second_is_the_one_people_miss",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14090,9 +15069,9 @@
       "source_location": "L70",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_what_is_committed_and_what_is_not"
+      "target": "docs_agents_graphify_what_is_committed_and_what_is_not",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14101,9 +15080,9 @@
       "source_location": "L84",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_graphify_install_overreaches_review_before_committing"
+      "target": "docs_agents_graphify_graphify_install_overreaches_review_before_committing",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14112,9 +15091,9 @@
       "source_location": "L93",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_graphify_graphify_operating_the_doc_graph",
-      "target": "docs_agents_graphify_adding_docs_to_the_graph"
+      "target": "docs_agents_graphify_adding_docs_to_the_graph",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14123,9 +15102,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_obsidian",
-      "target": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo"
+      "target": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14134,9 +15113,9 @@
       "source_location": "L28",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
-      "target": "docs_agents_obsidian_commit_vs_keep_local"
+      "target": "docs_agents_obsidian_commit_vs_keep_local",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14145,9 +15124,9 @@
       "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
-      "target": "docs_agents_obsidian_gotchas"
+      "target": "docs_agents_obsidian_gotchas",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14156,9 +15135,9 @@
       "source_location": "L7",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_obsidian_obsidian_shared_vault_settings_for_the_workspace_meta_repo",
-      "target": "docs_agents_obsidian_what_aiworks_sync_does"
+      "target": "docs_agents_obsidian_what_aiworks_sync_does",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14167,9 +15146,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail",
-      "target": "docs_agents_ponytail_code_minimalism_ponytail"
+      "target": "docs_agents_ponytail_code_minimalism_ponytail",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14178,9 +15157,9 @@
       "source_location": "L101",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_commands"
+      "target": "docs_agents_ponytail_commands",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14189,9 +15168,9 @@
       "source_location": "L112",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_installing_it"
+      "target": "docs_agents_ponytail_installing_it",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14200,9 +15179,9 @@
       "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_the_ladder"
+      "target": "docs_agents_ponytail_the_ladder",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14211,9 +15190,9 @@
       "source_location": "L30",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path"
+      "target": "docs_agents_ponytail_how_it_reaches_each_spawn_path",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14222,9 +15201,9 @@
       "source_location": "L51",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone"
+      "target": "docs_agents_ponytail_who_gets_it_and_why_not_everyone",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14233,9 +15212,9 @@
       "source_location": "L75",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_agents_ponytail_code_minimalism_ponytail",
-      "target": "docs_agents_ponytail_where_it_stops"
+      "target": "docs_agents_ponytail_where_it_stops",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -14361,13 +15340,431 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger",
+      "target": "docs_agents_review_ledger_the_review_ledger_a_finding_is_raised_once_and_resolved_visibly",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger_the_review_ledger_a_finding_is_raised_once_and_resolved_visibly",
+      "target": "docs_agents_review_ledger_1_the_threads_are_the_finding_set",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L23",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger_the_review_ledger_a_finding_is_raised_once_and_resolved_visibly",
+      "target": "docs_agents_review_ledger_2_the_ledger_rows_record_what_a_thread_cannot",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger_the_review_ledger_a_finding_is_raised_once_and_resolved_visibly",
+      "target": "docs_agents_review_ledger_3_resolving_is_part_of_the_fix",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L72",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger_the_review_ledger_a_finding_is_raised_once_and_resolved_visibly",
+      "target": "docs_agents_review_ledger_4_consequences_for_the_first_pass",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L80",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger_the_review_ledger_a_finding_is_raised_once_and_resolved_visibly",
+      "target": "docs_agents_review_ledger_5_the_approval_tick_is_the_review_s_last_act_and_its_third_record",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141",
+      "target": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_2_business_context_goals",
+      "target": "docs_brd_ofb_2141_2_1_market_insight",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L28",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_2_business_context_goals",
+      "target": "docs_brd_ofb_2141_2_2_strategic_intent",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L35",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_2_business_context_goals",
+      "target": "docs_brd_ofb_2141_2_3_goals_success_metrics",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L49",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_3_scope",
+      "target": "docs_brd_ofb_2141_3_1_in_scope",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L74",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_3_scope",
+      "target": "docs_brd_ofb_2141_3_2_out_of_scope",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L106",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_4_feature_set_user_value",
+      "target": "docs_brd_ofb_2141_feature_2_db_backed_per_site_widget_config_api",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L126",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_4_feature_set_user_value",
+      "target": "docs_brd_ofb_2141_feature_3_backoffice_widget_editor_title_rich_text_description",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L146",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_4_feature_set_user_value",
+      "target": "docs_brd_ofb_2141_feature_4_seo_hyperlink_support_sanitization",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L86",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_4_feature_set_user_value",
+      "target": "docs_brd_ofb_2141_feature_1_default_on_category_preview_widget",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L169",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_5_technical_feasibility_approach",
+      "target": "docs_brd_ofb_2141_5_1_verdict",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L173",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_5_technical_feasibility_approach",
+      "target": "docs_brd_ofb_2141_5_2_existing_infra_to_extend_do_not_rebuild",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L182",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_5_technical_feasibility_approach",
+      "target": "docs_brd_ofb_2141_5_3_build_plan_dependency_waves",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L217",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_5_technical_feasibility_approach",
+      "target": "docs_brd_ofb_2141_5_4_risks_mitigations",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L227",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_5_technical_feasibility_approach",
+      "target": "docs_brd_ofb_2141_5_5_cross_repo_dependencies",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L252",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_6_competitive_positioning_market_fit",
+      "target": "docs_brd_ofb_2141_6_1_competitive_landscape",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L261",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_6_competitive_positioning_market_fit",
+      "target": "docs_brd_ofb_2141_6_2_ofb_competitive_advantage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L290",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_8_roadmap_rollout",
+      "target": "docs_brd_ofb_2141_phase_1_schema_config_weeks_1_2",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L295",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_8_roadmap_rollout",
+      "target": "docs_brd_ofb_2141_phase_2_render_fallback_weeks_2_3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L300",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_8_roadmap_rollout",
+      "target": "docs_brd_ofb_2141_phase_3_backoffice_editor_weeks_3_4",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L306",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_8_roadmap_rollout",
+      "target": "docs_brd_ofb_2141_phase_4_qa_hardening_week_4",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L311",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_8_roadmap_rollout",
+      "target": "docs_brd_ofb_2141_phase_5_future_deprecation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_1_executive_summary",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L167",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_5_technical_feasibility_approach",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L19",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_2_business_context_goals",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L250",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_6_competitive_positioning_market_fit",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L269",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_7_open_questions_decisions",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L288",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_8_roadmap_rollout",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L317",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_9_acceptance_sign_off",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L327",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_appendix_glossary_references",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L47",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_3_scope",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/brd/ofb-2141.md",
+      "source_location": "L84",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_brd_ofb_2141_ofb_2141_brd_paotung_customizable_category_preview_widget",
+      "target": "docs_brd_ofb_2141_4_feature_set_user_value",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scripts/hrun",
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "scripts_hrun",
-      "target": "scripts_hrun__entry"
+      "target": "scripts_hrun__entry",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -14376,9 +15773,9 @@
       "source_location": "L82",
       "weight": 1.0,
       "_origin": "ast",
-      "confidence_score": 1.0,
       "source": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
-      "target": "docs_agents_ponytail"
+      "target": "docs_agents_ponytail",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -14389,6 +15786,61 @@
       "_origin": "ast",
       "source": "docs_adr_0016_thai_register_is_address_mode_not_exposition_mode",
       "target": "docs_agents_register",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0019-the-dev-cycle-session-orchestrates-never-implements.md",
+      "source_location": "L16",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0019_the_dev_cycle_session_orchestrates_never_implements",
+      "target": "docs_adr_0015_code_minimalism_is_a_plugin_not_a_prompt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0021-a-passed-gate-is-recorded-not-re-derived.md",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived",
+      "target": "docs_adr_0018_dev_cycle_keeps_its_own_run_state",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md",
+      "source_location": "L22",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "target": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L126",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger",
+      "target": "docs_adr_0022_the_run_ticks_its_own_approval_the_merge_stays_human",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/agents/review-ledger.md",
+      "source_location": "L42",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_agents_review_ledger",
+      "target": "docs_adr_0021_a_passed_gate_is_recorded_not_re_derived",
       "confidence_score": 1.0
     },
     {
@@ -28055,5 +29507,5 @@
       "source_file": ".claude/skills/estimate-ticket/SKILL.md"
     }
   ],
-  "built_at_commit": "380cb405a99c310881abaaac12095091d98a9c9e"
+  "built_at_commit": "98c7b7117186c935934d9a8aa59c87977a6f4ce3"
 }

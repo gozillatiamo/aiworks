@@ -65,5 +65,8 @@
   "63": "Obsidian — shared vault settings for the workspace meta-repo",
   "64": "hrun",
   "65": "Decision",
-  "66": "Semantic Extraction"
+  "66": "Semantic Extraction",
+  "67": "dev-cycle keeps its own run state",
+  "68": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
+  "69": "A cross-repo finding escalates instead of looping"
 }
