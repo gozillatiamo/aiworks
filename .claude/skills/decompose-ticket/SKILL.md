@@ -1,12 +1,14 @@
 ---
 name: decompose-ticket
 description: >-
-  Split one oversized ticket into independently shippable children - each with its own spec,
-  acceptance criteria, points and Implements link to the parent - carrying the parent's
-  attachments onto the pieces that need them, and closing the parent once its children cover it.
-  Use when a ticket is too big for one dev-cycle, when asked to split, break down, decompose or
-  carve up a ticket, or when an estimate exceeds the board's practical ceiling. Human-invoked
-  only: a run never proposes a split.
+  Split an oversized ticket (Dev+QA points over 24) into pieces that can each be built and shipped
+  in PARALLEL - no hard cross-piece dependency - then re-estimate every piece. Parallel
+  independence is first-class; only a truly huge ticket (over 36) may instead split along hard 'is
+  blocked by' dependencies, and a ticket with no valid parallel cut is left whole. Two caller
+  branches: the CTO ADVISES (proposes the seams, writes no tickets) and the Product Owner EXECUTES
+  (creates the pieces through the tracker adapter, re-estimates each, wires the split structure).
+  Human-invoked only - no pipeline auto-runs it, and /prd deliberately has no points ceiling. Use
+  when a ticket is too big to size, or on "break down / split / decompose <KEY>".
 argument-hint: "<KEY> (e.g. OFB-1952) [advise|execute]"
 disable-model-invocation: true
 model: opus
