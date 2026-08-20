@@ -61,8 +61,18 @@ Every run ends on exactly one, and **`unavailable` is a real answer, not a failu
    exceeds `tolerance_pct × noise_ceiling_multiple`. Its exit code is the verdict (0/1/2).
 6. **Report, whatever the verdict.** Post the comparator's markdown table — both SHAs, both
    report paths, every tracked metric with its delta, noise floor, and threshold — to the
-   ticket (`scripts/tracker/add-ticket-comment.sh`) **and** the PR/MR
-   (`scripts/vcs/pr-comment.sh`). A verdict nobody can read did not happen.
+   ticket **and** the PR/MR (`scripts/vcs/pr-comment.sh`). A verdict nobody can read did not
+   happen.
+
+   On the ticket this is **one durable comment per suite repo, updated in place** — a load gate
+   re-runs on every fix round, and a fresh comment per round buries which numbers are current:
+   ```sh
+   scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[test-report · <this repo>]" < <the report>
+   ```
+   Same marker, stamp and **Run history** rules as `/report-test-results` (§4-5 there) — the
+   body must contain its own marker line or the call refuses, and each round's line is appended
+   to the history rather than replacing the last. Run it **bare**: it is a writer, and a
+   compound call is denied silently.
 
    **Attach the candidate run's own report as a picture**, so the numbers arrive with the
    thing that produced them. Ask the harness what the run wrote — never guess a path:

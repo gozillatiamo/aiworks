@@ -1,6 +1,6 @@
 ---
 name: ultra-review
-description: Run a ticket's open MR/PR through two specialist review gates at once — code-reviewer (clean-code + spec), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. On a clean ticket-wide pass it posts the PASS approval on every MR/PR and advances the ticket to the configured ready-to-merge status (config-gated, skipped when that status is not configured). Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
+description: Run a ticket's open MR/PR through two specialist review gates at once — code-reviewer (clean-code + spec), performance-engineer (profiling) — spawned in parallel, then aggregated into one combined verdict where a blocking finding at any gate caps the result. Honors the workspace output language and review.level. On a clean ticket-wide pass it posts the PASS approval on every MR/PR and advances the ticket to the configured ready-to-merge status (config-gated, skipped when that status is not configured). A ticket whose MR/PRs are ALREADY approved on the forge is not re-reviewed at all — the run stops before spawning a gate, unless --fresh. Use when the user wants a deep / full / ultra review, a multi-gate review, or a combined code + performance review of a <KEY> ticket — distinct from /review, the single spec+standards pass.
 disable-model-invocation: true
 ---
 
@@ -46,6 +46,36 @@ English (Arabic numerals always); under en write English.
 Review level = <strict|thorough> (passed in — do NOT re-read the config). At strict report
 blocking must-fixes only; at thorough also triage the nice-to-have tier.
 ```
+
+## 0.4 ALREADY APPROVED? Then there is nothing to review — stop here
+
+Before §0.5, before any gate is spawned, ask the forge whether this ticket's MR/PR(s) already
+carry an approval. (You need §1's MR/PR numbers to ask — resolve those first. §0.4 and §0.5 are
+written above §1 because they decide *whether* to spawn a gate at all, not because they run
+before the ticket is pinned.) For each repo in scope, from inside it:
+
+```
+scripts/vcs/pr-view.sh <num> --approved      # prints yes | no | unknown
+```
+
+**Every** repo's MR/PR answering `yes` ⇒ **STOP**. Report in one line, in-session, that the
+ticket is already approved and no gate was run, name the MR/PR(s), and **post nothing** — no
+approval (it is already there), no ticket move (§3.6 already happened), and **no §4 notify**:
+nothing happened, and a Slack message about work not done is noise on a channel that carries
+verdicts. `--fresh` is the override, and the only one.
+
+Why this sits above everything else: the approval is the *conclusion* of a gate that already
+ran. Re-deriving a review above it re-opens a closed finding set — the exact failure §0.5
+exists to prevent — and burns two specialist agents to arrive back where the forge already is.
+
+Three answers, and the third is where it goes wrong if you round it off:
+
+- `yes` on every repo ⇒ stop, as above.
+- `yes` on *some* repos ⇒ run the gates only on the repos that answered otherwise, and say so.
+  An approved repo's gates are frozen (`review-ledger.md` §5), and its threads are not re-read.
+- `unknown` ⇒ **treat as unapproved and review.** It means the forge would not answer
+  (approvals disabled on the instance, an API refusal), not that the answer is no. A review that
+  ran needlessly costs tokens; a review skipped on a fiction ships the bug it would have caught.
 
 ## 0.5 Detect the run: fresh vs re-visit
 
@@ -251,6 +281,13 @@ loud verdict line, via
 ```
 scripts/vcs/pr-approve.sh <num> --body "✅ APPROVED — <KEY>: requirements met, standards clean, 0 must-fix, tests green (<the code gate's invocation + result>)."
 ```
+
+The call is **idempotent**: on an MR/PR the forge already records as approved it prints
+`already approved — nothing to do` and posts nothing. That is a success — it is what keeps a
+second pass from stacking a duplicate verdict — and it is also the signal §0.4 reads, so a later
+invocation short-circuits instead of re-reviewing. Where a forge has approvals disabled the
+adapter records the verdict as a note beginning `✅ APPROVED`, which is the same readable record;
+keep that marker at the head of the body and do not reword it.
 
 body in the resolved OUTPUT LANGUAGE, and name the green run in it — an approval that cannot
 point at a suite result is the failure this gate exists to prevent.

@@ -1,4 +1,21 @@
+**[test-report · {{ suite repo name, e.g. e2e-suite }}]**
+
+<!-- THE LINE ABOVE IS THE COMMENT'S IDENTITY — do not reword it, do not translate it, do not
+     drop the brackets. `upsert-ticket-comment.sh --marker '[test-report · <repo>]'` finds this
+     comment by that exact text and rewrites it, which is what stops a re-run from posting a
+     second report. It has to be VISIBLE text: an HTML comment does not survive the
+     Markdown → tracker → text round trip, so it could never be found again. One such comment
+     per suite repo per ticket — four suite repos on a ticket means four comments, each with
+     its own repo in the marker. -->
+
 Test results — {{ Ticket Number }} · {{ PASS | FAIL }} · {{ per-tool marks from the harness SUMMARY, e.g. cypress ✓ · newman ✗ }}
+
+`run {{ r<n> }} · {{ UTC timestamp, e.g. 2026-08-20T09:14Z }} · candidate {{ repo@sha, comma-separated for a multi-repo candidate }}`
+
+<!-- THE RUN STAMP, and it is not decoration. dev-cycle proves its test-suite gate actually ran
+     by having a second agent find THIS run's result on the ticket; with the report updated in
+     place, the stamp is the only thing that distinguishes this run's report from last run's.
+     A missing or stale stamp makes the gate read as NOT RUN. -->
 
 {{ One-line verdict: X of Y planned scenarios automated; the outcome; bug count if any. }}
 
@@ -44,3 +61,14 @@ Legend: ✅ pass · ❌ fail · — not automated (manual-only / partial)
 - **Run report:** {{ the rendered report image, or the report path, or "none produced" }}.
 
 ![run report](attachment:{{ id }})
+
+## Run history
+
+<!-- One line per EARLIER run of this suite on this ticket, oldest first, carried forward
+     verbatim from the comment being replaced — then this run's line appended. This is the
+     whole audit trail that survives an in-place update: the body above is only ever the
+     latest run. Never rewrite an older line, and never drop one to keep the comment short.
+     On the FIRST run this section holds only that run's own line. -->
+
+- `r1` · {{ UTC }} · {{ PASS | FAIL }} {{ n/total }} · candidate {{ repo@sha }}
+- `r2` · {{ UTC }} · {{ PASS | FAIL }} {{ n/total }} · candidate {{ repo@sha }}

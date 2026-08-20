@@ -1,6 +1,6 @@
 ---
 name: report-test-results
-description: Gather the automation run results for a ticket and report them on the ticket as a concise, human-readable summary WITH the run's own screenshots embedded in the comment. Reads the run summary (`scripts/dev.sh why test`), the run's artifacts (`scripts/dev.sh artifacts`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-TC results table to agent_logs/<KEY>-report.md and posts it with the evidence attached. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
+description: Gather the automation run results for a ticket and report them on the ticket as a concise, human-readable summary WITH the run's own screenshots embedded in the comment. One durable comment per suite repo, identified by a `[test-report · <repo>]` marker and UPDATED in place on every re-run rather than posted again. Reads the run summary (`scripts/dev.sh why test`), the run's artifacts (`scripts/dev.sh artifacts`), the logged bugs (agent_logs/<KEY>-bugs.md), and the test plan (agent_logs/<KEY>-testcases.md), then writes a per-TC results table to agent_logs/<KEY>-report.md and posts it with the evidence attached. Reports the same way whether the suite passed or failed. Reports only — does not run the suite or write test code.
 argument-hint: "[ticket]"
 arguments: [ticket]
 ---
@@ -23,6 +23,17 @@ Turn a finished automation run into a short, readable verdict on the ticket — 
 - **Test plan — the row source:** read **`agent_logs/<KEY>-testcases.md`**. Its `TC<nnn>` scenarios are the rows of the results table and define what each should do (its `Then`). If it says **"Nothing to test"**, there are no results to report — say so and stop. Keep any **Regressions** list for the coverage note.
 - **Coverage context:** read **`agent_logs/<KEY>-automation-plan.md`** if present, to know which scenarios were **Automatable / Partial / Manual-only** — so an un-run scenario is reported as *not automated*, never silently dropped or counted as a pass.
 - **Bug details:** read **`agent_logs/<KEY>-bugs.md`** if present — the reproducible app bugs `coding-automate` logged. These populate the failure rows.
+- **The PREVIOUS report for this suite repo**, because this comment is updated in place, not re-posted:
+
+  ```sh
+  scripts/tracker/find-ticket-comment.sh <KEY> --marker "[test-report · <this repo>]"
+  ```
+
+  Nothing back (exit 0, no output) = first run of this suite on this ticket. Output = line 1 is
+  the comment id, the rest is last run's body: keep its **Run history** lines, and read the
+  highest `r<n>` there so this run is `r<n+1>`. That is where the round number comes from —
+  nothing passes one in, and counting the history is correct whether a workflow or a person
+  triggered the run.
 
 ## 2. Determine the results — `scripts/dev.sh why test`
 
@@ -57,6 +68,22 @@ Read **`report-template.md`** (next to this skill), fill every `{{ … }}` place
 - **Results table** — one row per test-plan `TC<nnn>`: `TC · Scenario · Result · Evidence · Notes`. Keep cells terse.
 - **Failures** — **only if any ❌.** One short block per failing `TC`: expected (the plan's `Then`) vs actual, the `why` signal, and the failure screenshot. No raw logs.
 - **Coverage** — automated count vs total planned, which scenarios were not automated (with a one-line reason), the regression checks' status if the plan listed any, and the run-wide artifacts (video, report).
+- **Run history** — every earlier run's line carried over verbatim, then this run's appended.
+
+Three things in that template are **identity, not content**, and a run that gets them wrong
+breaks something downstream rather than just reading oddly:
+
+- **The marker line** `**[test-report · <repo>]**` — the first line, the exact repo directory
+  name, brackets and all. It is what §5 finds the comment by. Do not translate it under `th`,
+  do not reword it, do not merge two repos into one marker: **one comment per suite repo**, and
+  a ticket run through four suite repos carries four, each rewritten by its own repo's next run.
+- **The run stamp** — `run r<n> · <UTC> · candidate <repo@sha,…>`. `dev-cycle` proves its
+  test-suite gate really ran by having a second agent find *this* run's result on the ticket. In
+  place of a new comment each time, that stamp is the only thing separating this run's report
+  from the last one's — get it wrong and a green gate is recorded as **not run**.
+- **The run-history lines** — the only audit trail that survives an in-place update, since the
+  body above is always just the latest run. Carry every old line forward untouched; never
+  rewrite or prune one.
 
 ## 5. Post it to the ticket — with the evidence in the comment
 
@@ -67,12 +94,23 @@ Attaching and embedding is **`/update-ticket`'s** job — read its §4 for the e
 - **The rendered run report** (§3) → one line under Coverage.
 - **Video** → attach only when a failure is a sequence a still cannot show. It is large and rarely opened.
 
-Rename every file before upload — `<KEY>-TC001-fail.png`, `<KEY>-report.png` — into `agent_logs/<KEY>-artifacts/`, suffixing the round (`-r2`) on a re-run. Then post the finished Markdown verbatim via stdin:
+Rename every file before upload — `<KEY>-TC001-fail.png`, `<KEY>-report.png` — into `agent_logs/<KEY>-artifacts/`, suffixing the round (`-r2`) on a re-run. Then **update this suite repo's own report comment**, rather than adding another one:
 
 ```sh
-scripts/tracker/add-ticket-comment.sh <KEY> < agent_logs/<KEY>-report.md
+scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[test-report · <this repo>]" < agent_logs/<KEY>-report.md
 ```
 
+- **`upsert`, never `add`.** A ticket is re-run — a red fix round, a resumed invocation, a
+  second `dev-cycle` — and each run used to leave another full report behind, so the ticket
+  became a stack of near-identical tables and nobody could tell which was current. One comment
+  per suite repo, rewritten. `add-ticket-comment.sh` here is the bug, not the fallback.
+- **It is a WRITER: run it bare.** No pipe, no `&&`, no `$( )`, no heredoc — a compound call
+  falls out of the allow rules and is denied *silently* (`../../../CLAUDE.md`). The reader half
+  (`find-ticket-comment.sh`, §1) may be piped freely.
+- The call **fails** if the body does not contain its own marker — that is deliberate, an
+  unmarked report is invisible to the next run. Fix the body, don't switch scripts.
+- Only **jira** updates in place. On notion/linear the adapter WARNs and posts a new comment;
+  say so in your report-back rather than presenting it as an update.
 - Preview with `--dry-run` if unsure of the resolved ticket.
 - **Only Jira embeds images.** On another provider the upload dies loud and the comment still posts — the words are the deliverable, the pictures are the proof. Say which you got.
 - Moving the ticket's **Status** is **not** this skill's job — that's `/update-ticket`. Mention it if the run warrants it; don't change it here.
@@ -80,4 +118,4 @@ scripts/tracker/add-ticket-comment.sh <KEY> < agent_logs/<KEY>-report.md
 ## 6. Requirements & report back
 
 - Needs `scripts/tracker/.env` configured for the active `TRACKER_PROVIDER` (plus `curl` + `jq`) — see `scripts/tracker/README.md`. If a tracker script errors (no creds, ticket not found, empty body), **surface the exact error and stop** — don't retry blindly.
-- Finish by reporting back: the overall verdict, the path to `agent_logs/<KEY>-report.md`, the posted comment id (or the dry-run preview), and **how many artifacts were attached** — including "none" when the run captured nothing.
+- Finish by reporting back: the overall verdict, the path to `agent_logs/<KEY>-report.md`, the comment id and **whether it was updated or newly created**, the run number you stamped (`r<n>`), and **how many artifacts were attached** — including "none" when the run captured nothing.

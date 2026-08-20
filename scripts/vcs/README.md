@@ -11,7 +11,7 @@ remote** when unset. All commands run against the repo in the current directory.
 | `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=`. `--media <ref>` (repeatable) attaches visual results to the body |
 | `find-prs.sh`       | Print the URL of every OPEN PR/MR in the current repo whose **title or source branch contains the ticket key** — one per line (read-only; never pushes/creates) |
 | `upload-media.sh`   | Host media (image/video files, a dir of them, or http(s) URLs) and print an embeddable **## Visual results** markdown section |
-| `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` |
+| `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` + `approved=<yes\|no\|unknown>` (`--approved` prints just the last) |
 | `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |
 | `pr-comments.sh`    | Print a PR/MR's comments / review notes as plain text |
 | `pr-threads.sh`     | List a PR/MR's resolvable **review threads** with their thread ids + resolved state (so a fix can be tied back to a thread) |
@@ -86,6 +86,16 @@ Handled by the provider CLI, not this adapter:
   Off ⇒ approve and leave the PR/MR open for a human; on ⇒ the reviewer approves, then merges.
   A host may forbid approving your **own** PR/MR — a non-issue in the pipeline, where the
   reviewer is never the author.
+- **The approval is READABLE, and approving twice is a no-op.** `pr-view.sh <n> --approved`
+  prints `yes` / `no` / `unknown`, which is how a review gate answers "has this already
+  passed?" without re-deriving a whole review (see `docs/agents/review-ledger.md` §5).
+  `unknown` is **not** `no` — it means the forge would not answer, and no caller may skip a
+  gate on an unanswered question. `pr-approve.sh` reads the same signal first and returns
+  early on `yes`, so a re-run of an already-passed gate cannot stack a second identical
+  verdict on the PR/MR. Where a forge has approvals disabled entirely, the fallback verdict
+  note carries `VCS_APPROVAL_MARKER` (`✅ APPROVED`) as its first characters and *is* the
+  readable record — which is why that marker is a constant in `lib.sh` and not a caller's
+  wording choice.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff

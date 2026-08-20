@@ -26,6 +26,7 @@ and id format are defined in `docs/agents/issue-tracker.md` / `workspace.config.
 |---|---|
 | Move Status / set a property / rename / create | `scripts/tracker/upsert-ticket-details.sh` |
 | Post a comment (note, plan, verdict) | `scripts/tracker/add-ticket-comment.sh` |
+| Post a comment a LATER run must **update, not repeat** (a per-repo test report) | `scripts/tracker/upsert-ticket-comment.sh … --marker '[<kind> · <context>]'` — one durable comment per marker; read the current one with `find-ticket-comment.sh` |
 | Show a file (screenshot, report) **in** a comment | `scripts/tracker/add-ticket-attachment.sh` → §4 |
 
 Do **both** when the task calls for it (e.g. comment the plan *and* move Status →
