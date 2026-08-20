@@ -979,7 +979,7 @@ mkdir -p "$REPO_DIR/.claude"
 # A COPY, not a symlink: each repo is an independent clone, so a link up to the
 # workspace root dangles for anyone who clones the repo on its own. Same call as
 # the Cursor hook-shim (see scripts/cursor/hook-shim.template.sh).
-WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh pretool-hrun-pipe-guard.sh)
+WIRED_HOOKS=(pretool-steer-build.sh posttool-output-warden.sh pretool-env-guard.sh pretool-hcat-size-guard.sh pretool-bash-context-guard.sh pretool-hrun-pipe-guard.sh)
 if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
   mkdir -p "$REPO_DIR/.claude/hooks/dev-wrapper"
   hooks_new=(); hooks_upd=()
@@ -1008,7 +1008,6 @@ read -r -d '' BASE_SETTINGS <<'JSON'
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "HCAT_GATE_BYTES": "65536",
     "HCAT_GATE_NO_SNIFF": "1",
-    "DANGI_NUDGE_BYTES": "32768",
     "DANGI_NO_NOTIFY": "1",
     "HEADROOM_UPDATE_CHECK": "off",
     "HF_HUB_OFFLINE": "1",
@@ -1049,6 +1048,7 @@ read -r -d '' BASE_SETTINGS <<'JSON'
       { "matcher": "Bash",  "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-env-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hcat-size-guard.sh", "timeout": 10 },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-bash-context-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh", "timeout": 10 },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-steer-build.sh", "timeout": 30 }
       ] },
@@ -1101,6 +1101,13 @@ if have jq; then
   # not something to switch on across 21 existing ones. `env` is an OBJECT, so `*` deep-merges it
   # and a repo's own variables survive.
   #
+  # DANGI_NUDGE_BYTES is DELETED explicitly (the `del` in the jq below) rather than merely dropped
+  # from the baseline: `*` can add and overwrite keys, never remove one, so a key this baseline
+  # stops sending stays in all 21 existing files forever. It has to go because it does not exist —
+  # the headroom plugin reads DANGI_NO_NOTIFY and DANGI_HUGE_BYTES, and grepping the installed
+  # plugin for DANGI_NUDGE_BYTES returns nothing at all. It never raised any threshold; it read as
+  # a tuned nudge while the nudge fired at the plugin's own default the whole time.
+  #
   # `PONYTAIL_` converges for the same reason. Those two knobs are not preferences: DEFAULT_MODE
   # pins the benchmarked `full` level so a stray ~/.config/ponytail/config.json on one machine
   # cannot quietly hand a money path the `ultra` persona, and SUBAGENT_MATCHER is the cost lever —
@@ -1134,6 +1141,7 @@ if have jq; then
             (.[0] * .[1])
             | .permissions.allow = ((.permissions.allow // []) as $a | $a + ($ha - $a))
             | .permissions.deny  = ((.permissions.deny  // []) as $d | $d + ($hd - $d))
+            | del(.env.DANGI_NUDGE_BYTES)
           ' 2>/dev/null)"; then
     if [[ -f "$SETTINGS_FILE" ]] && [[ "$merged" == "$(cat "$SETTINGS_FILE")" ]]; then
       skip "9. .claude/settings.json already matches the baseline"
