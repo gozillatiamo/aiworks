@@ -1,6 +1,11 @@
 ---
 name: review
-description: Review the changes since a fixed point (commit, branch, tag, or merge-base) and render one verdict — are the originating ticket's requirements genuinely met? Verifies the diff against the repo's own knowledge (structure, design patterns, docs, ADRs, standards) along two parallel axes — Spec (is the bar cleared?) and Standards (does the implementation hold up?) — reported side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to "review since X".
+description: >-
+  Review the changes since a fixed point (commit, branch, tag, merge-base) and render one verdict:
+  are the originating ticket's requirements genuinely met? Judges the diff against the repo's own
+  structure, patterns, docs, ADRs and standards along two parallel axes - Spec (is the bar
+  cleared?) and Standards (does the implementation hold up?) - reported side by side. Use for a
+  branch, a PR, work-in-progress changes, or "review since X".
 ---
 
 # Review

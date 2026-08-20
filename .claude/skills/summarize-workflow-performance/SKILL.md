@@ -1,6 +1,10 @@
 ---
 name: summarize-workflow-performance
-description: Summarize per-role token usage and processing time for one dev-cycle (or any tagged) Workflow run, from the workflow agents' JSONL transcripts. The Workflow-engine counterpart of summarize-team-performance. Use when the user wants a token/time breakdown per role and a total for a finished workflow run.
+description: >-
+  Summarize per-role token usage and processing time for one dev-cycle (or any tagged) Workflow
+  run, from the workflow agents' JSONL transcripts. The Workflow-engine counterpart of summarize-
+  team-performance. Use when the user wants a token/time breakdown per role plus a total for a
+  finished run.
 ---
 
 # Summarize Workflow Performance

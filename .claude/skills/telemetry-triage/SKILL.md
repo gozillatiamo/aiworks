@@ -1,6 +1,11 @@
 ---
 name: telemetry-triage
-description: Investigate what ACTUALLY happened in a running environment (local/dev/staging/prod) from SigNoz logs + traces — the ground truth for root-causing a live or reported issue instead of guessing from code. Use when something is failing / erroring / slow / misbehaving in a deployed env ("why is X erroring in prod", "what happened to request Y", "check the logs/traces for Z", "pull the trace", "root cause this incident"), BEFORE building a local repro when the bug only shows in a deployed env, and when another skill or agent needs runtime telemetry to ground a plan or a fix. Read-only investigation ending in a root-cause finding; the developer branch then drives the fix.
+description: >-
+  What ACTUALLY happened in a running environment (local/dev/staging/prod), from SigNoz logs and
+  traces. Triggers: something failing, erroring, slow or misbehaving in a deployed environment -
+  "why is X erroring in prod", "what happened to request Y", "check the logs/traces", "pull the
+  trace", "root cause this incident"; before building a local repro when the bug only shows
+  deployed. Read-only, ends in a root-cause finding - the fix is the developer's.
 argument-hint: [symptom / service / env / trace-id / ticket-key]
 ---
 

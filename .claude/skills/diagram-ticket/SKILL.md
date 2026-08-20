@@ -1,6 +1,12 @@
 ---
 name: diagram-ticket
-description: Render a Mermaid diagram (flowchart, sequence, ER, state, class, gantt, gitGraph, quadrant, mindmap, journey) and embed it INSIDE a ticket's description body as an image (plus a mermaid.live edit link) — not merely attached to the Attachments panel, where a reader of the ticket never sees it. Use when clarifying a ticket's flow/relationship/lifecycle would benefit from a picture instead of more prose, or when a user asks to diagram, visualize, draw, or virtualize a flow/sequence/ER/state diagram for a ticket. Gated by workspace.config.yaml diagrams.enabled (default OFF) — reports skipped, not an error, when off.
+description: >-
+  Render a Mermaid diagram (flowchart, sequence, ER, state, class, gantt, gitGraph, quadrant,
+  mindmap, journey) and embed it INSIDE a ticket's description as an image plus a mermaid.live
+  edit link - not merely in the Attachments panel, where a reader never sees it. Use when a flow,
+  relationship or lifecycle is clearer as a picture, or when asked to diagram, visualize, draw or
+  virtualize one for a ticket. Gated by diagrams.enabled (default OFF) - reports skipped, not an
+  error.
 argument-hint: "<KEY> [diagram-type] — or pass raw Mermaid source directly"
 allowed-tools:
   - Bash(scripts/diagram/*)

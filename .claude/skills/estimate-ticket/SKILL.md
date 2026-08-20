@@ -1,6 +1,11 @@
 ---
 name: estimate-ticket
-description: Estimate and set story points on a ticket based on its effort. Calibrates against the 10 most-recent estimated Done tickets from this board first (so a point means what it means HERE), then writes the estimate onto the target ticket — the Developer-points and QA-points are written into the tracker's dedicated point FIELDS (not just a comment); the overall total is DERIVED by the tracker from those two, never written by hand. Adds a comment carrying the comparables and reasoning that justify them. Goes through the tracker adapter (scripts/tracker/), provider-agnostic. Use whenever a ticket needs sizing, pointing, or estimation — the product-owner runs it right after /clarifying-ticket clarifies a ticket, and any user asking to "size", "point", or "estimate" a <KEY> ticket lands here too.
+description: >-
+  Estimate and set story points on a ticket. Calibrates against the 10 most-recent estimated Done
+  tickets on this board first, so a point means what it means HERE, then writes Developer- and QA-
+  points into the tracker's dedicated point FIELDS - the total is DERIVED by the tracker, never
+  written by hand - plus a comment carrying the comparables. Use whenever a ticket needs sizing,
+  pointing or estimation.
 argument-hint: "<KEY> (e.g. FM-12)"
 allowed-tools:
   - Bash(scripts/tracker/*)

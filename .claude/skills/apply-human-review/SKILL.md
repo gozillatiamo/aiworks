@@ -1,6 +1,11 @@
 ---
 name: apply-human-review
-description: Apply a human reviewer's required changes to an open PR/MR — the human left directives marked `Human:` on the MR review threads and wants them fixed. Use when the user says "take my review", "process/address/apply my review comments", "handle my feedback on the MR", "fix what my review flagged", or "apply my Human: comments" — the user need NOT type the `Human:` prefix to trigger this. Also reachable by the dev-cycle or code-reviewer after a human reviews an open MR.
+description: >-
+  Apply a human reviewer's required changes to an open PR/MR - the human left directives marked
+  `Human:` on the review threads. Use for "take my review", "process/address/apply my review
+  comments", "handle my feedback on the MR", "fix what my review flagged" - the user need NOT type
+  the `Human:` prefix to trigger this. Also reachable by dev-cycle or code-reviewer after a human
+  reviews an open MR.
 ---
 
 # Apply human review

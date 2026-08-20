@@ -1,16 +1,13 @@
 ---
 name: redis-triage
 description: >-
-  Use this to get ground truth from the real PRODUCTION (or staging) Redis — read-only — instead
-  of guessing from code, memory, or a local copy. Trigger for: a cache/session symptom only the
-  live keyspace can confirm (a cached value that disagrees with the database, a session or token
-  that should exist and doesn't, a key with the wrong TTL, a rate-limit or idempotency key that
-  blocks a request); a Redis **Stream** question — stream entries, or a consumer group lagging,
-  stalled, or holding pending entries; a direct ask to look up, verify, or compare a specific
-  key, TTL, stream entry, or sorted-set score in prod or staging; or grounding another skill's
-  plan/fix with a real Redis fact. One on-demand MCP owns its own SSH tunnel and always
-  disconnects when done — it never writes, expires, or trims. Do NOT use for a local dev Redis
-  (`mcp__redis`), for Postgres rows (pg-triage), or for logs/traces.
+  Read-only ground truth from the DEPLOYED Redis, PRODUCTION or staging - not code, memory or a
+  local copy. Triggers: a cache or session symptom only the live keyspace confirms (a cached value
+  that disagrees with the database, a session or token that should exist and doesn't, a wrong TTL,
+  a rate-limit or idempotency key blocking a request); STREAMS - stream entries, or a consumer
+  group lagging, stalled, or holding pending entries; comparing a key, TTL, stream entry or
+  sorted-set score. Owns its SSH tunnel; never writes, expires or trims. NOT for a local dev Redis
+  (`mcp__redis`), Postgres rows (pg-triage), or logs and traces.
 argument-hint: "[symptom / key or pattern / stream name / ticket-key]"
 ---
 
