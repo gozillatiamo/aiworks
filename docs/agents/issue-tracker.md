@@ -21,6 +21,7 @@ adapter in `scripts/tracker/`, which dispatches by `TRACKER_PROVIDER`
 | Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --estimate-reason-file <r.md>` |
 | Create a child / sub-task | `scripts/tracker/upsert-ticket-details.sh new --parent <KEY> --subtask --title … --component <name> --link Implements:<KEY> --body-file …` |
 | Add a comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
+| Update a repeated report | `scripts/tracker/upsert-ticket-comment.sh <KEY> --marker '[test-report · <repo>]' < report.md` — one durable comment per context, rewritten each run; read it back with `find-ticket-comment.sh` |
 
 Both write scripts accept `--dry-run`. The flags are **abstract**; the adapter maps them
 to the provider (Notion properties; Jira fields + a status transition; Linear GraphQL fields

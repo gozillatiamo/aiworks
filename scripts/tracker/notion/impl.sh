@@ -412,6 +412,16 @@ tracker_download_attachment() {
   printf 'Downloaded %s -> %s\n' "$ref" "$dest"
 }
 
+# tracker_find_comment TICKET MARKER -> nothing, always. Finding the comment would be easy
+# enough here; EDITING it is what this provider can't do (Notion's comment API has no update endpoint),
+# so reporting a hit would only send the caller to a tracker_edit_comment that dies. Printing
+# nothing makes an upsert degrade the way it should: WARN, and post a fresh comment. The words
+# are the deliverable; updating in place is the nicety.
+tracker_find_comment() {
+  echo "WARN: TRACKER_PROVIDER=notion cannot update a comment in place — posting a new one instead of updating the marked one" >&2
+  return 0
+}
+
 tracker_edit_comment() {
   die "edit-ticket-comment.sh is not implemented for TRACKER_PROVIDER=notion yet (Notion's comment API has no update endpoint) — edit the comment manually for now"
 }

@@ -7,8 +7,8 @@ export const meta = {
     { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
     { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo AUTHORS its specs and runs static checks only — suite execution belongs to the Test-suite phase, against the reviewed candidate (gate-only verification).', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
-    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec, AND runs the repo suite — approval is gated on a green receipt; a suite that cannot run halts the repo rather than failing open) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW moves the ticket to ready_to_merge (or ready_to_test).', model: 'sonnet' },
-    { title: 'Test suite', detail: 'The ONLY place a suite executes. qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `scripts/dev.sh test <specs>`, NOT the full suite, then reports the per-TC results to the ticket WITH the run\'s own screenshots embedded. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. NEVER fails open: the verdict needs a receipt (real command + exit code + summary line) AND a second agent must find the result comment on the ticket — otherwise the gate is recorded as NOT RUN, not as a pass, and nothing merges. A repo declared `suite_kind: load` must additionally be equal-or-better than the same scenario on the ticket\'s base branch, judged against the environment\'s own measured noise floor, so its verdict is pass / fail / unavailable; a regression the developer ATTRIBUTES to the change loops back for a fix (attribute first, fix second) up to loadtest.max_fix_rounds. The WORKFLOW moves the ticket to testing. Skipped when no test-suite gate applies.', model: 'sonnet' },
+    { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec, AND runs the repo suite — approval is gated on a green receipt; a suite that cannot run halts the repo rather than failing open) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. A PR/MR that ALREADY carries an approval on the forge is frozen whole — its gates are not re-derived (docs/agents/review-ledger.md §5). First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW itself ticks the APPROVAL on every code repo\'s PR/MR (never a gate — NO_SELF_APPROVE) and moves the ticket to ready_to_merge (or ready_to_test). Ticket-wide: anything short of fully met ticks nothing anywhere.', model: 'sonnet' },
+    { title: 'Test suite', detail: 'The ONLY place a suite executes. qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `scripts/dev.sh test <specs>`, NOT the full suite, then reports the per-TC results to the ticket WITH the run\'s own screenshots embedded — ONE durable comment per suite repo (marker `[test-report · <repo>]`), UPDATED in place on every re-run and stamped with the run + candidate shas, never a second comment. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. NEVER fails open: the verdict needs a receipt (real command + exit code + summary line) AND a second agent must find the result comment on the ticket — otherwise the gate is recorded as NOT RUN, not as a pass, and nothing merges. A repo declared `suite_kind: load` must additionally be equal-or-better than the same scenario on the ticket\'s base branch, judged against the environment\'s own measured noise floor, so its verdict is pass / fail / unavailable; a regression the developer ATTRIBUTES to the change loops back for a fix (attribute first, fix second) up to loadtest.max_fix_rounds. The WORKFLOW moves the ticket to testing, and ticks the APPROVAL on the suite repos\' own PR/MRs — they have no code reviewer, so this gate is their bar. Skipped when no test-suite gate applies.', model: 'sonnet' },
     { title: 'Merge', detail: 'the commit gate (after review + the test-suite gate validate the candidate). The squash-merge is outward + irreversible, so under auto-mode only a human clears it: with vcs.auto_merge ON the workflow does NOT merge — it emits the exact `! …/merge-pr.sh` command (upstream→downstream) for the main session to present, then stops (status awaiting-human-ship). With auto-merge OFF the validated PR/MR is left OPEN and the run stops. Either way the run itself merges/distributes nothing.', model: 'sonnet[1m]' },
     { title: 'Distribute', detail: 'outward + irreversible like Merge, so also a human `!` step: the workflow emits the `! … firebase appdistribution:distribute …` command (a template the main session resolves) to run AFTER the merge lands; the main session then moves the ticket to done.', model: 'sonnet' },
     { title: 'Summary', detail: 'documentor writes the run-summary + per-repo/role token table (summarize-workflow-performance)', model: 'haiku' },
@@ -379,7 +379,7 @@ let RESOLVED_ARTIFACTS = false
 // the change set landed plus a same-day counter — bump it in the SAME commit as any behaviour change.
 // DEVIATION from the plan's example log line: `ticket`/`dryRun`/`approvePlan` are declared further
 // below in the Inputs section, so referencing them THIS early throws (TDZ) — version-only here.
-const DEVCYCLE_VERSION = '2026-08-18.3'
+const DEVCYCLE_VERSION = '2026-08-20.1'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -864,6 +864,31 @@ const PR_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['pr_url'],
   properties: { pr_url: { type: 'string' }, pr_number: { type: ['number', 'string'] } },
+}
+// The forge's own record of whether a PR/MR already carries a review approval, read back from
+// `scripts/vcs/pr-view.sh <n> --approved`. THREE values, and the third is load-bearing:
+// "unknown" means the forge would not answer (approvals disabled on the instance, an API
+// refusal), which is NOT "no" and emphatically not "yes" — a gate is never skipped on an
+// unanswered question, and never re-run as if it had been answered no.
+const APPROVAL_PROBE_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['approved'],
+  properties: {
+    approved: { type: 'string', enum: ['yes', 'no', 'unknown'] },
+    command: { type: 'string' }, note: { type: 'string' },
+  },
+}
+// What the orchestrator's approval step did, per repo. Reported so the run summary can say the
+// tick landed rather than assuming it: pr-approve.sh degrades to a verdict NOTE on a forge with
+// approvals disabled, and a refused permission would otherwise pass silently.
+const APPROVAL_POST_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['posted'],
+  properties: {
+    posted: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    failed: { type: 'array', items: { type: 'string' } },
+    note: { type: 'string' },
+  },
 }
 const REVIEW_SCHEMA = {
   type: 'object', additionalProperties: false,
@@ -1460,6 +1485,31 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
     else if (stateRows.some((r) => r.repo === R && r.milestone === m && r.first_pass === true)) { didFirstReview[rv.key] = true; resumedFirstPass[rv.key] = true }
   })
   if (reviewers.some((rv) => resumedFirstPass[rv.key])) log(`[${R}] review ledger: ${reviewers.filter((rv) => resumedFirstPass[rv.key]).map((rv) => `${rv.key} ${done[rv.key] ? 'PASSED (frozen, never re-reviewed)' : 'first pass done → re-visit only'}`).join(', ')}.`)
+  // FORGE APPROVAL — the third record of the same "this review is settled" fact, and the only
+  // one a HUMAN can write. A tick on the PR/MR says the review passed; re-deriving a review
+  // above it is the wasted round this reads to prevent (docs/agents/review-ledger.md §5).
+  //
+  // Probed ONLY when the PR/MR predates this invocation. A PR this run just opened cannot
+  // already carry an approval, so probing it would spend an agent per repo per run to learn
+  // nothing — the price of that laziness is a human who approves in the seconds between Open PR
+  // and Review in the SAME invocation and still gets reviewed, which is a rounding error.
+  //
+  // "unknown" is NOT "yes". A forge that will not answer leaves the gates to run: a review that
+  // ran needlessly costs tokens, a review skipped on a fiction costs a shipped bug.
+  if (prRowUsable && pr.pr_number && !reviewers.every((rv) => done[rv.key] === true)) {
+    const probe = await safeAgent(
+      `${tag(R, 'tracker', 'approval-probe')} READ THE FORGE, WRITE THE LEDGER — no review, no code, no comments. ${inRepo} The ${ticket} PR/MR ${pr.pr_number} in ${R} predates this invocation, so it may already carry a review approval. Run \`scripts/vcs/pr-view.sh ${pr.pr_number} --approved\` (bare, no pipe) and return its single word as \`approved\`: "yes", "no" or "unknown". Return the exact command you ran in \`command\`. Do NOT infer the answer from comments, from the MR description, or from anything else you read — one word from one command, and \`unknown\` if the command itself would not answer. ONLY IF the answer is exactly "yes", write ONE ledger row per gate for this repo — ${reviewers.map((rv) => `\`agent_logs/${ticket}-dev-cycle-state/${R}-gate_${rv.key}.json\``).join(', ')} — at the WORKSPACE ROOT (the dir holding .claude/), each containing exactly: {"repo":"${R}","milestone":"gate_<key>","status":"done","first_pass":true,"source":"forge-approval","head_sha":"<git rev-parse HEAD, full sha>","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. The \`source\` field is not decoration: it says this freeze was INHERITED from an approval on the forge rather than earned by a gate that ran here, so a later reader is never told a review happened that did not (docs/adr/0021). On "no" or "unknown", write NOTHING.` +
+        ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+      { agentType: 'developer', model: 'haiku', phase: 'Review', label: `approval-probe:${ticket}:${R}`, schema: APPROVAL_PROBE_SCHEMA },
+    )
+    if (probe?.approved === 'yes') {
+      reviewers.forEach((rv) => { done[rv.key] = true; didFirstReview[rv.key] = true; resumedFirstPass[rv.key] = true })
+      log(`[${R}] review SKIPPED — PR/MR ${pr.pr_number} is ALREADY APPROVED on the forge; every gate frozen (source: forge-approval, not a gate that ran here).`)
+    } else if (probe?.approved === 'unknown') {
+      log(`[${R}] approval state UNKNOWN on PR/MR ${pr.pr_number} (${probe?.note || 'the forge would not answer'}) — treating as unapproved and reviewing, never skipping on an unanswered question.`)
+    }
+  }
+
   // RESUME: skip the whole review↔fix loop rather than re-paying for it (docs/adr/0018) — either
   // because this repo already reached 'reviewed', or because every individual gate is ledgered
   // green and only the merge phase never got far enough to write that row. Deliberately
@@ -2309,6 +2359,47 @@ if (runDeferred.length && !runMet.length) {
   const summary = await writeSummary('nothing-delivered', { ticket, deferred: runDeferred, repos: mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
   return { ticket, status: 'nothing-delivered', deferred: runDeferred, decision_needed: `${ticket}'s change set meets none of its acceptance criteria — every one is owned elsewhere (${[...new Set(runDeferred.map((d) => d.owner))].join(', ')}). The branches and their PR/MR are open and reviewed; decide whether to re-scope the ticket, route it to those owners, or merge the groundwork deliberately.`, repoResults, summary, spend }
 }
+// THE APPROVAL TICK — orchestrator-owned, and the review phase's last act.
+//
+// The gates never do this (NO_SELF_APPROVE): a gate that reports is an instrument, a gate that
+// approves is an authority, and the gate reviewing this branch belongs to the same run that
+// wrote it. So the workflow ticks, at a bar the workflow computed — which is also the only way
+// the tick is DETERMINISTIC: a gate that ran out of turns or lost its shell would silently
+// leave the PR/MR unapproved while reporting a pass.
+//
+// THE BAR IS TICKET-WIDE, and it is already enforced above: any repo short of 'ready' returns
+// early, so control only reaches here when every gate on every repo passed with a green
+// receipt. That is deliberate — a ticket's repos are ship-order-coupled, and approving the
+// clean repo of a partially-met ticket reads as "this MR is mergeable on its own", which the
+// coupling makes false. Anything less than fully met posts NO tick anywhere; the absence of a
+// tick IS the changes-requested signal.
+//
+// STILL NOT A MERGE. `pr-approve.sh` registers the host approval plus one verdict line and
+// stops there — `vcs.auto_merge` and the Merge phase are untouched, and with auto_merge off the
+// PR/MR is simply left open, approved, for a human. A dry run DOES tick, for the same reason it
+// still moves the ticket: an approval is revocable and inward-facing, not one of the outward
+// irreversible steps a dry run exists to withhold.
+const approvalTick = async (ids, phaseName, receipt) => {
+  const targets = ids.filter((id) => repoResults[id]?.pr?.pr_number).map((id) => ({ id, pr: repoResults[id].pr.pr_number, path: haveAbs ? `${WORKSPACE_ROOT}/${REPOS[id].path}` : REPOS[id].path }))
+  if (!targets.length) { log(`[approve] no PR/MR number on record for ${ids.join(', ')} — nothing to tick.`); return null }
+  const r = await safeAgent(
+    `${tag('all', 'tracker', 'approve')} POST THE APPROVAL — no review, no code, no merge. ${ticket} passed every gate on every repo, so tick the approval on each PR/MR below. One call per repo, each BARE (a writer in a pipe or after \`&&\` is denied silently):\n${targets.map((t) => `• ${t.id} — PR/MR ${t.pr}, repo dir ${t.path}`).join('\n')}\nFor EACH one, in this order: (1) one standalone \`cd <that repo dir>\`; (2) resolve this repo's VCS_REPO in its own command — \`git -C <that repo dir> remote get-url origin\`, then strip the leading \`git@<host>:\`/\`https://<host>/\` and any trailing \`.git\`; (3) \`VCS_REPO=<that> scripts/vcs/pr-approve.sh <that number> --body "<the verdict line>"\`. STEP 2 IS NOT OPTIONAL: PR/MR numbers COLLIDE across repos in this workspace (the same ticket routinely has !806 in two unrelated repos), the adapter resolves its target from cwd unless VCS_REPO says otherwise, and several agents share this Bash session — so a tick sent on cwd alone lands on a stranger's MR. Verify per repo before you write.\nThe verdict line, in the resolved output language, names WHAT CLEARED THE BAR — it is the durable record a human reads next to the diff: requirements met, standards clean, 0 must-fix, and the suite that proved it (${receipt}). An approval that cannot point at a test result is the failure the green gate exists to prevent, so if you cannot name the suite for a repo, say so in \`note\` and skip that repo rather than inventing one.\nThe adapter is IDEMPOTENT — an already-approved PR/MR prints "already approved — nothing to do" and posts nothing, which is a SUCCESS, not a failure: report it in \`posted\` with that note. Report in \`failed\` only a repo whose tick genuinely did not land (a refused permission, an adapter error) — quote the error. Do NOT merge anything, whatever the config says.` +
+      ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+    { agentType: 'developer', model: 'haiku', phase: phaseName, label: `approve:${ticket}:${ids.join('+')}`, schema: APPROVAL_POST_SCHEMA },
+  )
+  const failed = Array.isArray(r?.failed) ? r.failed : []
+  log(`[approve] ${(r?.posted || []).length}/${targets.length} PR/MR ticked${failed.length ? ` — ⚠️ NOT ticked: ${failed.join(' | ')}` : ''}${r?.note ? ` (${r.note})` : ''}`)
+  if (!r) log(`⚠️ [approve] the approval step did not converge — the PR/MR(s) may be unapproved. Tick by hand: scripts/vcs/pr-approve.sh <number> --body "…"`)
+  return r
+}
+
+// Code repos are ticked HERE, at the end of Review — that is the gate whose bar they cleared.
+// The test-suite repos are not: they have no reviewers at all, so their verdict is the
+// cross-repo suite gate below, and they are ticked when it passes (§4).
+const codeRepos = mergeOrder.filter((id) => !REPOS[id].testSuite)
+const reviewApproval = await approvalTick(codeRepos, 'Review',
+  'each repo\'s own code gate ran the repo suite on the PR/MR head and returned a green receipt — quote that repo\'s receipt')
+
 // The workflow advances the ticket ONCE here (decoupled from the per-repo agents): a rich
 // board lands on ready_to_merge; the minimal board on ready_to_test.
 await moveTicket(['ready_to_merge', 'ready_to_test'], runDeferred.length ? `all repos built & reviewed; ${runDeferred.length} criterion/criteria deferred to other owners` : 'all repos built, reviewed & approved', 'Review',
@@ -2352,7 +2443,7 @@ async function runSuiteGate(testSuiteRepo) {
   const gatePrompt = (extra) => `${tag(testSuiteRepo, 'qa-runner', 'test-suite')} CROSS-REPO TEST-SUITE gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite. ${extra ? `${extra} ` : ''}Validate the CANDIDATE (the ticket's work branches, NOT yet merged — ${candidates.join(', ')}).${candidateStackClause(mergeOrder.filter((id) => !REPOS[id].testSuite).map((id) => repoResults[id].plan))} Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/, already on its work branch ${repoResults[testSuiteRepo].plan.work_branch}).${runDeferred.length ? ` COVERAGE BOUNDARY — this change set deliberately does NOT meet every acceptance criterion: ${runDeferred.map((d) => `"${d.criterion}" (owned by ${d.owner})`).join(', ')}. No spec can cover those, and their absence is NOT a failure. State the boundary in your verdict — which criteria you covered, and which you could not because they are deferred — so your pass reads as scoped to what you actually exercised. Do NOT fail the gate over a deferred criterion, and do NOT quietly report a clean pass as though the whole ticket were validated.` : ''} Then run ONLY this ticket's scope:
 1. SCOPE = (a) the ticket's own spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the spec map in agent_logs/${ticket}-automation-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)).
 2. RUN SCOPED — \`scripts/dev.sh test <this repo's own spec-scoping args>\` covering exactly the ticket + regression spec(s). Never \`npm test\` (a stub that exits 1 in several repos here), and never \`scripts/dev.sh test\` with no scoping args: the FULL-suite run is ON-DEMAND (the user triggers it separately) and is NOT part of this gate.
-3. REPORT WITH EVIDENCE — /report-test-results ${ticket}. It reads \`scripts/dev.sh why test\` + \`scripts/dev.sh artifacts\` and posts the per-TC results table to the ticket with the run's OWN screenshots embedded in the comment (failures full-width, passes as a thumbnail strip). A green run that captured no artifacts is reported as unevidenced — say so, never dress it up as proven.
+3. REPORT WITH EVIDENCE — /report-test-results ${ticket}. It reads \`scripts/dev.sh why test\` + \`scripts/dev.sh artifacts\` and posts the per-TC results table to the ticket with the run's OWN screenshots embedded in the comment (failures full-width, passes as a thumbnail strip). A green run that captured no artifacts is reported as unevidenced — say so, never dress it up as proven. THE REPORT IS ONE DURABLE COMMENT PER SUITE REPO, UPDATED IN PLACE: it carries the marker line \`[test-report · ${testSuiteRepo}]\` and goes up via \`scripts/tracker/upsert-ticket-comment.sh ${ticket} --marker "[test-report · ${testSuiteRepo}]"\`, never \`add-ticket-comment.sh\` — this ticket is re-run (fix rounds, resumed invocations, a second dev-cycle) and a fresh report each time buries which numbers are current. Stamp it \`run r<n> · <UTC> · candidate ${candidates.join(', ')}\` and append this run's line to its Run history, carrying every earlier line forward: with the body rewritten in place, that stamp is the ONLY thing that identifies this run's result, and step 4's audit reads it.
 On a red — CLASSIFY, do not guess and do not fix app code yourself. Re-run just the broken case once (the same scoped \`scripts/dev.sh test <args>\` + one \`scripts/dev.sh why test\`) and put every failure in "triage" as exactly one of:
 • "automation" — the spec/Page Object/selector/wait is wrong, or the runner wiring is. You OWN this: fix it in this repo, re-run that one case, and report it fixed.
 • "app" — the automation is correct and the candidate's observable behaviour contradicts the spec's Then. Name the scoped repo that carries the cause in "repo" (it MUST be one of the repos in this run), quote the assertion and the actual value in "evidence", and give the scoped re-run args in "spec". Do NOT read or edit that repo's source — naming it is the whole job.
@@ -2373,7 +2464,7 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
   const rc = ts?.receipt
   const receiptOk = !!(rc?.command && Number.isInteger(rc.exit_code) && rc.summary_line)
   const audit = await safeAgent(
-    `${tag(testSuiteRepo, 'qa-runner', 'test-suite-audit')} AUDIT ONLY — run no tests, fix nothing. The ${ticket} test-suite gate (${testSuiteRepo}) claims: exit_code=${rc?.exit_code ?? '(none)'}, summary="${(rc?.summary_line || '(none)').slice(0, 160)}". Read the ticket's comments (\`scripts/tracker/get-ticket-comments.sh ${ticket}\`) and decide ONE thing: is there a comment reporting THIS run's results — the per-scenario outcome of the run just described? Set posted:true only if you can quote its opening line back in "detail". A comment from an earlier round, a plan, or a bug report is NOT a result comment: posted:false, and say what you found instead.`,
+    `${tag(testSuiteRepo, 'qa-runner', 'test-suite-audit')} AUDIT ONLY — run no tests, fix nothing. The ${ticket} test-suite gate (${testSuiteRepo}) claims: exit_code=${rc?.exit_code ?? '(none)'}, summary="${(rc?.summary_line || '(none)').slice(0, 160)}". Read the marked report comment for THIS suite repo — \`scripts/tracker/find-ticket-comment.sh ${ticket} --marker "[test-report · ${testSuiteRepo}]"\` — and decide ONE thing: does it report THIS run? The report is UPDATED IN PLACE on every run, so its mere existence proves nothing: match its \`run r<n> · <UTC> · candidate …\` stamp and its summary against the claim above. An older stamp, a candidate sha that is not this run's (${candidates.join(', ')}), or a summary that contradicts the claim ⇒ posted:false with what you saw in \`detail\` — that is a gate recorded as NOT RUN, which is the correct answer, not a technicality. No comment at all ⇒ posted:false. Never re-run a test and never edit the comment; read and judge.`,
     { agentType: 'qa-runner', phase: 'Test suite', label: `audit:${ticket}:${testSuiteRepo}`, schema: RESULT_AUDIT_SCHEMA },
   )
   if (!receiptOk || !audit?.posted) {
@@ -2503,6 +2594,12 @@ if (scope.test_suite?.needed && testSuiteRepos.length && mergeOrder.some((id) =>
     return { ticket, status: runStatus, mergeOrder, repoResults, testSuite, testSuiteRequested, why, summary, spend }
   }
   log(`Test-suite gate: ALL ${testSuiteRepos.length} suite(s) PASS (${testSuiteRepos.join(', ')}).`)
+  // The suite repos' own approval tick. They have no code reviewer — `review: null` by kind — so
+  // the Review phase never judged their PR/MR at all, and nothing above would ever tick it.
+  // Their gate is THIS one, with a receipt, so this is the moment their bar is cleared. Leaving
+  // them permanently unapproved beside their ticked siblings would read as "these were rejected".
+  await approvalTick(testSuiteRepos, 'Test suite',
+    'the cross-repo test-suite gate ran this ticket\'s scope (its own spec(s) + the regression scope) against the pre-merge candidate and passed — quote that suite\'s receipt: command, exit code, summary line')
 } else if (scope.test_suite?.needed && !testSuiteRepos.length) {
   testSuiteGateUnavailable = testSuiteGateUnavailable
     || `test-suite gate was requested but no test-suite repo reached the build set — gate did NOT run.`

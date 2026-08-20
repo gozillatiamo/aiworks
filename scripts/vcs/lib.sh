@@ -8,7 +8,8 @@
 #   vcs_require_config                          — ensure the provider CLI is installed
 #   vcs_open_pr   BASE HEAD TITLE BODY [DRY]    — create (or reuse) a PR/MR; print URL + number=
 #   vcs_find_prs  KEY                           — print URLs of OPEN PRs/MRs whose title/branch contains KEY (read-only)
-#   vcs_pr_view   NUMBER                        — print state=<MERGED|OPEN|CLOSED> + merge_sha=
+#   vcs_pr_view   NUMBER                        — print state=<MERGED|OPEN|CLOSED> + merge_sha= + approved=<yes|no|unknown>
+#   vcs_pr_approved NUMBER                      — print yes|no|unknown: does the forge already record an approval on this PR/MR
 #   vcs_pr_comment NUMBER PATH LINE BODY [DRY]  — comment (inline at PATH:LINE where supported;
 #                                                 LINE is a single line N or a range N-M that
 #                                                 highlights the whole block, not just its top)
@@ -17,7 +18,7 @@
 #   vcs_pr_resolve_thread NUMBER THREAD_ID [RESOLVED=true] [DRY] — check/uncheck "Resolve thread"
 #   vcs_pr_reply  NUMBER THREAD_ID BODY [DRY]  — post a threaded reply INSIDE an existing thread (nested, not a new comment)
 #   vcs_merge_pr  NUMBER SUBJECT [DRY]          — server-side squash-merge, then print pr-view
-#   vcs_approve_pr NUMBER BODY [DRY]            — reviewer PASS signal: post BODY as a one-line verdict + host-level approve (decoupled from merge)
+#   vcs_approve_pr NUMBER BODY [DRY]            — reviewer PASS signal: post BODY as a one-line verdict + host-level approve (decoupled from merge). IDEMPOTENT: a no-op when vcs_pr_approved already says yes
 #   vcs_close_pr  NUMBER [DRY]                  — close without merging (branch kept), then pr-view
 #   vcs_upload_media KEY FILE [DRY]             — host one media file, print its embeddable markdown line
 #
@@ -30,6 +31,15 @@
 set -euo pipefail
 
 VCS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# The first characters of every approval verdict this adapter posts. Two jobs, both of which
+# need the string to be STABLE across providers and across runs:
+#   1. it is the second-tier record of an approval on a forge whose approvals API is disabled
+#      (vcs_approve_pr degrades to a plain note; vcs_pr_approved reads that note back), and
+#   2. it is what makes vcs_approve_pr idempotent, so a re-run of a review gate that already
+#      passed does not stack a second identical verdict on the same PR/MR.
+# Callers SHOULD start their --body with it; vcs_approve_pr prepends it when they don't.
+VCS_APPROVAL_MARKER="${VCS_APPROVAL_MARKER:-✅ APPROVED}"
 
 # .env carries the CREDENTIALS and the workspace's normal defaults. It must not, however, be able
 # to overrule a routing variable the CALLER set explicitly on the command line: aiming a call at a

@@ -81,7 +81,7 @@ vcs_list_prs() {
 vcs_pr_view() {
   local num="$1" json state sha up
   if ! json="$(glab api "projects/$(_gl_project)/merge_requests/$num" 2>/dev/null)"; then
-    printf 'state=UNKNOWN\nmerge_sha=\n'; return 0
+    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\n'; return 0
   fi
   state="$(printf '%s' "$json" | jq -r '.state // "unknown"')"
   sha="$(printf '%s' "$json" | jq -r '.merge_commit_sha // .squash_commit_sha // ""')"
@@ -92,7 +92,42 @@ vcs_pr_view() {
     closed|locked) up=CLOSED ;;
     *)             up="$(printf '%s' "$state" | tr '[:lower:]' '[:upper:]')" ;;
   esac
-  printf 'state=%s\nmerge_sha=%s\n' "$up" "$sha"
+  printf 'state=%s\nmerge_sha=%s\napproved=%s\n' "$up" "$sha" "$(vcs_pr_approved "$num")"
+}
+
+# vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this
+# MR already carries a review approval. "unknown" is NOT "no": it means this instance would not
+# answer, and a caller must never skip a review gate on an unanswered question — treat unknown
+# as unapproved and review.
+#
+# Two tiers, because GitLab MR approvals are an instance/edition capability the API can refuse
+# outright (401/403 — the same refusal vcs_approve_pr already degrades around). When the
+# approvals endpoint is unavailable, vcs_approve_pr's fallback leaves the verdict as a NOTE
+# starting with the approval marker, so that note is the second-tier record of the same fact.
+vcs_pr_approved() {
+  local num="$1" json n
+  if json="$(glab api "projects/$(_gl_project)/merge_requests/$num/approvals" 2>/dev/null)"; then
+    # COUNT approved_by; do NOT read `.approved`. GitLab reports `"approved": true` whenever the
+    # MR SATISFIES its approval rules — and a project with zero required approvals satisfies them
+    # with nobody having approved anything. Measured on bluepicode/ofb/agent-webservice !1932:
+    # `{"approved":true,"approved_by":[]}` on an MR no human had touched, next to !1912's
+    # `{"approved":true,"approvals_required":1,"approved_by":["punthisa.t"]}`. Trusting `.approved`
+    # would answer "yes" for every MR in this workspace and freeze every review gate that exists.
+    n="$(printf '%s' "$json" | jq -r '(.approved_by // []) | length' 2>/dev/null || printf '0')"
+    if [[ "${n:-0}" -gt 0 ]]; then printf 'yes\n'; return 0; fi
+    if _gl_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+    printf 'no\n'; return 0
+  fi
+  if _gl_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+  printf 'unknown\n'
+}
+
+# _gl_has_approval_note NUMBER -> 0 when an MR note starts with the approval marker that
+# vcs_approve_pr posts. This is what makes the approval readable on an instance whose
+# approvals API is disabled, and what keeps a re-run from stacking a second verdict note.
+_gl_has_approval_note() {
+  glab api "projects/$(_gl_project)/merge_requests/$1/notes?per_page=100" 2>/dev/null \
+    | jq -e --arg m "$VCS_APPROVAL_MARKER" 'any(.[]; (.body // "") | startswith($m))' >/dev/null 2>&1
 }
 
 # SHA-1 of a string — portable across GNU coreutils (sha1sum) and macOS (shasum).
@@ -416,8 +451,24 @@ vcs_approve_pr() {
     printf 'DRY RUN — %sglab mr approve %s\n' "${body:+glab mr note $num --message <verdict> && }" "$num"
     return 0
   fi
+  # IDEMPOTENT. A review gate that already passed is frozen, and a later invocation must be
+  # able to call this without consequence: re-approving is harmless to the forge but the
+  # verdict note is not — it would stack a second identical "APPROVED" on the MR every run.
+  # An UNKNOWN answer is not a yes: when the instance won't say, approve again rather than
+  # skip, because a missing approval is the failure mode that actually costs something.
+  if [[ "$(vcs_pr_approved "$num")" == "yes" ]]; then
+    printf 'MR !%s is already approved — nothing to do (no second verdict note posted)\n' "$num"
+    return 0
+  fi
+  if [[ -n "$body" && "$body" != "$VCS_APPROVAL_MARKER"* ]]; then body="$VCS_APPROVAL_MARKER — $body"; fi
   local noted=0 err
-  [[ -n "$body" ]] && { glab mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"; noted=1; }
+  # `[[ … ]] && { … }` was wrong here: with an EMPTY body the test fails, the statement exits 1,
+  # and `set -e` killed the whole approval before `glab mr approve` ever ran — which is exactly
+  # the documented "approval only, no verdict note" call. An if/fi has no exit status to leak.
+  if [[ -n "$body" ]]; then
+    glab mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"
+    noted=1
+  fi
   # A project can disable MR approvals outright (the API then answers 401/403). That is a
   # capability of this instance, not a failure of the review — and dying here used to leave a
   # half state: the verdict note was already posted, yet the script exited 1 and the caller
@@ -429,7 +480,7 @@ vcs_approve_pr() {
   fi
   printf 'WARN: host-level approval unavailable on MR !%s — %s\n' "$num" "${err##*$'\n'}" >&2
   if [[ "$noted" -eq 0 ]]; then
-    glab mr note "$num" --message "PASS (host-level approval is unavailable on this project; recording the verdict as a note)." >/dev/null \
+    glab mr note "$num" --message "$VCS_APPROVAL_MARKER (host-level approval is unavailable on this project; recording the verdict as a note)." >/dev/null \
       || die "MR !$num: approval was refused AND the fallback verdict note failed — nothing records this review"
   fi
   printf 'Approved MR !%s (verdict recorded as a NOTE — host-level approval unavailable on this project)\n' "$num"

@@ -71,11 +71,43 @@ vcs_list_prs() {
 vcs_pr_view() {
   local num="$1" json state sha
   if ! json="$(gh pr view "$num" --json state,mergeCommit 2>/dev/null)"; then
-    printf 'state=UNKNOWN\nmerge_sha=\n'; return 0
+    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\n'; return 0
   fi
   state="$(printf '%s' "$json" | jq -r '.state // "UNKNOWN"')"
   sha="$(printf '%s' "$json" | jq -r '.mergeCommit.oid // ""')"
-  printf 'state=%s\nmerge_sha=%s\n' "$state" "$sha"
+  printf 'state=%s\nmerge_sha=%s\napproved=%s\n' "$state" "$sha" "$(vcs_pr_approved "$num")"
+}
+
+# vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this
+# PR already carries a review approval. "unknown" is NOT "no": it means GitHub would not
+# answer, and a caller must never skip a review gate on an unanswered question — treat unknown
+# as unapproved and review.
+#
+# The state is per REVIEWER, latest review wins: an APPROVED that a later CHANGES_REQUESTED
+# from the same person superseded is not an approval. Second tier is the approval marker on a
+# PR comment, which is what vcs_approve_pr leaves when the repo's rules refuse a review
+# (a self-approval, most often) — and what keeps a re-run from stacking a second verdict.
+vcs_pr_approved() {
+  local num="$1" json
+  if json="$(gh pr view "$num" --json reviews 2>/dev/null)"; then
+    if printf '%s' "$json" | jq -e '
+          [(.reviews // [])[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
+          | group_by(.author.login) | map(last)
+          | map(select(.state == "APPROVED")) | length > 0' >/dev/null 2>&1; then
+      printf 'yes\n'; return 0
+    fi
+    if _gh_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+    printf 'no\n'; return 0
+  fi
+  if _gh_has_approval_note "$num"; then printf 'yes\n'; return 0; fi
+  printf 'unknown\n'
+}
+
+# _gh_has_approval_note NUMBER -> 0 when a PR comment starts with the approval marker that
+# vcs_approve_pr posts when the host-level review is refused.
+_gh_has_approval_note() {
+  gh pr view "$1" --json comments 2>/dev/null \
+    | jq -e --arg m "$VCS_APPROVAL_MARKER" 'any((.comments // [])[]; (.body // "") | startswith($m))' >/dev/null 2>&1
 }
 
 # vcs_pr_comment NUMBER PATH LINE BODY [DRY]
@@ -320,6 +352,16 @@ vcs_approve_pr() {
     printf 'DRY RUN — gh pr review %s --approve%s\n' "$num" "${body:+ --body <verdict>}"
     return 0
   fi
+  # IDEMPOTENT. A review gate that already passed is frozen, and a later invocation must be able
+  # to call this without consequence: the APPROVE review is harmless to repeat but its body is
+  # not — it would stack a second identical verdict on the PR every run. An UNKNOWN answer is
+  # not a yes: when GitHub won't say, approve again rather than skip, because a missing approval
+  # is the failure mode that actually costs something.
+  if [[ "$(vcs_pr_approved "$num")" == "yes" ]]; then
+    printf 'PR #%s is already approved — nothing to do (no second verdict posted)\n' "$num"
+    return 0
+  fi
+  if [[ -n "$body" && "$body" != "$VCS_APPROVAL_MARKER"* ]]; then body="$VCS_APPROVAL_MARKER — $body"; fi
   # Approvals can be refused by the repo's own rules (and GitHub always refuses a self-approval).
   # That is a capability of this repo, not a failed review: degrade to a comment carrying the
   # same verdict rather than exiting 1 and leaving the gate recorded as broken.
@@ -329,7 +371,7 @@ vcs_approve_pr() {
     return 0
   fi
   printf 'WARN: host-level approval unavailable on PR #%s — %s\n' "$num" "${err##*$'\n'}" >&2
-  gh pr comment "$num" --body "${body:-PASS} (host-level approval is unavailable on this repository; recording the verdict as a comment.)" >/dev/null \
+  gh pr comment "$num" --body "${body:-$VCS_APPROVAL_MARKER} (host-level approval is unavailable on this repository; recording the verdict as a comment.)" >/dev/null \
     || die "PR #$num: approval was refused AND the fallback verdict comment failed — nothing records this review"
   printf 'Approved PR #%s (verdict recorded as a COMMENT — host-level approval unavailable on this repository)\n' "$num"
 }

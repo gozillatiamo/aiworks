@@ -543,6 +543,13 @@ t  "bare writer, stdin allowed"      0 $P "$(j 'scripts/tracker/add-ticket-comme
 t  "bare writer, redirect allowed"   0 $P "$(j 'scripts/vcs/open-pr.sh --title y > out.txt')"
 t  "piped --dry-run allowed"         0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --dry-run 2>&1 | tail -3')"
 t  "piped READER allowed"            0 $P "$(j 'scripts/vcs/pr-view.sh 11 | head -3')"
+# The comment UPSERT is a writer like any other: it is the one that rewrites a test-report
+# comment in place, so a silently-denied compound call would look like "the report vanished".
+# Its READER half (find-ticket-comment.sh) must stay pipeable — that is how a caller reads the
+# previous run's body before composing the next one.
+t  "bare upsert comment allowed"      0 $P "$(j 'scripts/tracker/upsert-ticket-comment.sh A-1 --marker "[test-report - x]" < report.md')"
+t  "piped upsert comment blocked"     2 $P "$(j 'scripts/tracker/upsert-ticket-comment.sh A-1 --marker "[test-report - x]" | cat')"
+t  "piped comment finder allowed"     0 $P "$(j 'scripts/tracker/find-ticket-comment.sh A-1 --marker "[test-report - x]" | head -1')"
 t  "pipe table in a body allowed"    0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 "| a | b |"')"
 t  "&& inside a body allowed"        0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 "run x && y"')"
 t  "unrelated piped cmd allowed"     0 $P "$(j 'git log --oneline | head -5')"

@@ -13,6 +13,8 @@ print **plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare numb
 | `find-tickets.sh`         | **Search** the tracker (`--query`/`--type`/`--open`) — the dedup lookup |
 | `upsert-ticket-details.sh`| Set Status/Priority/Effort/Title/Description, and write the full spec to the **body** (`--body`/`--body-file`) — updates or creates the ticket |
 | `add-ticket-comment.sh`   | Add a comment (text from an argument or stdin) — Markdown is rendered to the tracker's native style, not posted raw |
+| `find-ticket-comment.sh`  | **Read-only.** Print the id + body of the one comment carrying `--marker <text>`, or nothing |
+| `upsert-ticket-comment.sh`| Add that comment the first time and **update it in place** every run after — one durable comment per marker instead of a growing pile |
 
 The two write scripts accept `--dry-run` to print the request instead of sending it.
 
@@ -63,6 +65,16 @@ the media uuid it needs. To REPLACE or drop an embedded image, add `--no-carry-m
 otherwise the safety net re-appends the one your new body left out, and writing again
 cannot clear it (the carry-over reads the description it just wrote).
 
+**A repeated report is ONE comment, not a pile.** Anything a run posts again on every
+invocation — a per-repo test report, most of all — goes through `upsert-ticket-comment.sh`
+with a `--marker`, so the ticket carries one durable comment per *context* (normally per repo)
+that each later run rewrites. The marker has to be a **visible line** in the body
+(`[test-report · <repo>]`): a comment is posted as Markdown, stored as the tracker's own
+format, and read back as text, and an HTML comment does not survive that trip. The script
+refuses a body that omits its own marker, because such a comment is invisible to the next run
+and the next run then posts a second one. Only **jira** can update a comment in place; notion
+and linear WARN and add a new one — the words are the deliverable, in-place is the nicety.
+
 **Comments render Markdown too:** `add-ticket-comment.sh` no longer posts raw Markdown —
 it converts it to each tracker's native style so headers, bullets, tables and inline
 marks read as intended, not as literal `##`/`-`/`|`. **Jira** comment bodies are full ADF
@@ -97,6 +109,8 @@ tracker/
 ├── get-ticket-comments.sh
 ├── upsert-ticket-details.sh
 ├── add-ticket-comment.sh
+├── find-ticket-comment.sh     # reader: marker -> comment id + body
+├── upsert-ticket-comment.sh   # writer: update the marked comment, else add it
 ├── notion/{impl.sh,notion.jq} # Notion REST implementation
 ├── jira/{impl.sh,jira.jq}     # Jira Cloud REST v3 implementation (ADF)
 └── linear/impl.sh             # Linear GraphQL implementation (Markdown-native)
@@ -134,6 +148,10 @@ Requires `bash`, `curl`, and `jq`.
 ./upsert-ticket-details.sh new     --title "Encrypt DB at rest" --description "one-liner" --body-file spec.md
 ./add-ticket-comment.sh    FM-9    "Moving to Testing — plan attached."
 ./add-ticket-comment.sh    APP-123 < plan.md
+
+# a comment with an IDENTITY — posted once, rewritten by every later run
+./upsert-ticket-comment.sh OFB-2245 --marker '[test-report · ofb-k6-loadtests]' < report.md
+./find-ticket-comment.sh   OFB-2245 --marker '[test-report · ofb-k6-loadtests]' --id-only
 ./upsert-ticket-details.sh APP-123 --status Done --dry-run   # preview, don't send
 
 # create a QA sub-task under a parent (component validated, Implements link added)
