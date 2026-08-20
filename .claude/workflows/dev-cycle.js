@@ -134,7 +134,7 @@ const REPOS = {
     base: { feature: 'main', fix: 'main' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
-    green: 'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand',
+    green: 'tests via cypress passed successfully',
     testSuite: true,
     distribute: null,
   },

@@ -28,6 +28,11 @@
         "matcher": "Shell"
       },
       {
+        "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-bash-context-guard.sh'",
+        "timeout": 10,
+        "matcher": "Shell"
+      },
+      {
         "command": "./.cursor/hooks/hook-shim.sh '\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/pretool-hrun-pipe-guard.sh'",
         "timeout": 10,
         "matcher": "Shell"
