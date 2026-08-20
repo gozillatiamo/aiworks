@@ -1629,10 +1629,11 @@ if [[ $FIX == 1 ]]; then
         for p in "${PLAN[@]}"; do
           cmd="$(rec "$p" 3)"
           printf '  %s→ %s%s\n' "$c_hd" "$cmd" "$c_off"
-          if ( cd "$ROOT" && eval "$cmd" ) >/dev/null 2>&1; then
+          if fixout="$( (cd "$ROOT" && eval "$cmd") 2>&1 )"; then
             printf '    %s✓ done%s\n' "$c_ok" "$c_off"; nfixed=$((nfixed+1))
           else
-            printf '    %s✗ failed — run it yourself to see why%s\n' "$c_err" "$c_off"; nfailed=$((nfailed+1))
+            printf '    %s✗ failed%s\n' "$c_err" "$c_off"; nfailed=$((nfailed+1))
+            printf '%s\n' "$fixout" | tail -n 8 | sed 's/^/      /'
           fi
         done
         printf '\n  %d fixed · %d failed · %d need you\n' "$nfixed" "$nfailed" "${#MANUAL[@]}"
