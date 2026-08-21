@@ -380,8 +380,9 @@ The per-repo symbol/edge database under `<repo>/.codegraph/` (the marker is
 `codegraph.db`, not the directory — `~/.codegraph/` is the CLI's own install dir).
 Queried CLI-first: `query` `explore` `node` `callers` `callees` `impact` `affected`,
 each of which **must** carry `-p $CLAUDE_PROJECT_DIR/<repo>` as an absolute path,
-because a relative one resolves against a cwd that persists between tool calls and
-makes codegraph answer from the wrong repo with exit 0. Enforced by
+because a relative one resolves against whatever cwd this call reports — never
+reliably where an earlier call's `cd` left it — and makes codegraph answer from
+the wrong repo with exit 0. Enforced by
 `pretool-codegraph-guard.sh`; kept current by `posttool-codegraph-sync.sh`.
 Reads code only — never shell or prose, which is the **doc graph**'s half.
 → [ADR-0013](docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md)
