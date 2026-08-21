@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "harnesses": [
+    {
+      "id": "claude",
+      "display_name": "Claude Code",
+      "default_selected": true,
+      "cli": "claude",
+      "projector": null,
+      "workflow_adapter": "native",
+      "project_guidance": "claude"
+    },
+    {
+      "id": "cursor",
+      "display_name": "Cursor",
+      "default_selected": true,
+      "cli": "cursor-agent",
+      "projector": "scripts/aiworks-cursor.sh",
+      "workflow_adapter": "cursor",
+      "project_guidance": "agents-md"
+    },
+    {
+      "id": "codex",
+      "display_name": "Codex",
+      "default_selected": false,
+      "cli": "codex",
+      "projector": "scripts/aiworks-codex.sh",
+      "workflow_adapter": "codex",
+      "project_guidance": "agents-md"
+    }
+  ]
+}

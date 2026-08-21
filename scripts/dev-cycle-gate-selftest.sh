@@ -33,8 +33,10 @@ command -v python3 >/dev/null 2>&1 || { echo "python3 not found — cannot build
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 HARNESS="$TMP/harness.cjs"
 
-# A small, self-contained REPOS registry: two code repos ('db','svc', db→svc chain
-# available for C2/C3) and two test-suite repos ('e2e','api', for C5's fan-out).
+# A small, self-contained REPOS registry: three code repos ('db','svc', db→svc chain available
+# for C2/C3, plus 'app' which DECLARES guard+perf so the scoped quality check of ADR 0024 has a
+# repo to fire on — 'svc' declares neither, which is the other half of that test) and two
+# test-suite repos ('e2e','api', for C5's fan-out).
 # NOTIFY_DM/TEST_SUITE.maxFixRounds/DEV_CYCLE.tokenBudget read from process.env so one
 # generated harness serves every scenario without being regenerated per run.
 CONFIG_FIXTURE='const TICKET_PREFIX = "FM"
@@ -56,6 +58,7 @@ const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", tes
 const REPOS = {
   db:  { path: "db",  kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "db green" },
   svc: { path: "svc", kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "svc green" },
+  app: { path: "app", kind: "frontend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: true, perf: true, green: "app green", guardianFocus: "secrets, data-protection" },
   e2e: { path: "e2e", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "e2e green", testSuite: true },
   api: { path: "api", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "api green", testSuite: true },
 }'
@@ -79,6 +82,9 @@ cat > "$DRIVER" <<'NODE'
 const HARNESS = process.env.HARNESS
 const SCENARIO = process.env.SCENARIO
 const ARGS = process.env.ARGS || 'FM-12 --approve-plan'
+// The ticket fingerprint, scraped from a probe run by the shell below (same idiom as
+// dev-cycle-kickoff-selftest.sh): a 'planned' row is only skippable when it carries THIS run's fp.
+const FP = process.env.FP || ''
 
 const LINES = []
 const SPAWNED = []
@@ -246,72 +252,95 @@ const BASE = {
       const result = await runOnce(ARGS, canned)
       report('G3_GREEN_reaches_merge_gate', result && (result.status === 'merge-skipped' || result.status === 'awaiting-human-ship'))
     } else if (SCENARIO === 'G4') {
-      // C4 — red-gate triage. Gate 1 returns passed:false + one "app" red naming svc. The fix +
-      // re-review stubs return green; gate 2 (round 1's re-run) returns green.
+      // C4 + ADR 0024 — the repair loop. Gate 1 returns passed:false with one "app" red naming the
+      // `app` repo, which DECLARES guard+perf. The fix lands, both scoped quality checks clear it
+      // over the fix diff, and gate 2 (round 1's re-run) is green. No code reviewer anywhere in
+      // this loop: the repo's code review was already cleared in the Review phase.
       const canned = {
         ...BASE,
-        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
         'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
-          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
           test_suite: { needed: true }, tracker_reachable: true },
-        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
-        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
-        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
         'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
-        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'expected 200 got 500' }] },
-        'gate-fix:FM-12:svc#1': { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['svc/src/x.rs'] },
-        'gate-review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok' },
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'expected 200 got 500' }] },
+        'gate-fix:FM-12:app#1.1': { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.1': { passed: true, conclusion: 'no smell introduced by the fix diff' },
+        'gate-perf:FM-12:app#1.1': { passed: true, conclusion: 'no added round-trip on the changed flow' },
         'test-suite:FM-12:e2e#r1': { passed: true, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 0, summary_line: '5 passed' } },
         'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
         'notify:FM-12': { sent: true },
       }
       const result = await runOnce(ARGS, canned)
-      report('G4_fix_then_review_spawned_in_order', SPAWNED.indexOf('gate-fix:FM-12:svc#1') >= 0 && SPAWNED.indexOf('gate-review:FM-12:svc#1') > SPAWNED.indexOf('gate-fix:FM-12:svc#1'))
+      const iFix = SPAWNED.indexOf('gate-fix:FM-12:app#1.1')
+      report('G4_fix_then_scoped_checks_spawned_in_order', iFix >= 0
+        && SPAWNED.indexOf('gate-guard:FM-12:app#1.1') > iFix
+        && SPAWNED.indexOf('gate-perf:FM-12:app#1.1') > iFix)
+      report('G4_no_code_reviewer_in_this_loop', !SPAWNED.some((l) => l.startsWith('gate-review:')))
+      const gp = PROMPTS['gate-guard:FM-12:app#1.1'] || ''
+      report('G4_check_is_diff_scoped_and_names_the_case', gp.includes('SCOPED QUALITY CHECK') && gp.includes('TC001') && gp.includes('Raise NOTHING else'))
+      report('G4_check_is_told_review_already_cleared', gp.includes('already passed in this run'))
+      report('G4_fix_told_its_diff_is_checked', (PROMPTS['gate-fix:FM-12:app#1.1'] || '').includes('YOUR FIX IS CHECKED ON GUARD + PERF'))
       report('G4_gate_reran', SPAWNED.includes('test-suite:FM-12:e2e#r1'))
       report('G4_run_proceeds_past_gate', !!result && result.status !== 'test-suite-failed' && result.status !== 'test-suite-unverified')
-    } else if (SCENARIO === 'G4_REGRESSION_NOT_GREEN') {
+    } else if (SCENARIO === 'G4_CHECK_REJECTED') {
+      // ADR 0024 — a rejected scoped check does NOT halt on the first rejection and does NOT fall
+      // through to the suite re-run: it retries the SAME red's fix inside this round, and only an
+      // exhausted attempt bound halts the suite. FIXTURE_TS_MAX_FIX_ROUNDS=2 ⇒ 2 attempts.
+      const rejected = { passed: false, conclusion: 'the fix bought its green with a per-row query', blocking: [{ title: 'N+1 introduced', scope: 'app/src/x.ts:20', evidence: 'query inside the loop' }] }
       const canned = {
         ...BASE,
-        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
         'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
-          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
           test_suite: { needed: true }, tracker_reachable: true },
-        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
-        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
-        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
         'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
-        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'expected 200 got 500' }] },
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'expected 200 got 500' }] },
         'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
-        'gate-fix:FM-12:svc#1': { work_branch: 'feature/FM-12', summary: 'attempted', status: 'complete', fixed: ['svc/src/x.rs'] },
-        'gate-review:FM-12:svc#1': { approved: false, tests_green: false, conclusion: 'still red' },
+        'gate-fix:FM-12:app#1.1': { work_branch: 'feature/FM-12', summary: 'attempt 1', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.1': { passed: true, conclusion: 'clean' },
+        'gate-perf:FM-12:app#1.1': rejected,
+        'gate-fix:FM-12:app#1.2': { work_branch: 'feature/FM-12', summary: 'attempt 2', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.2': { passed: true, conclusion: 'clean' },
+        'gate-perf:FM-12:app#1.2': rejected,
       }
       const result = await runOnce(ARGS, canned)
-      report('G4b_halts_when_fix_not_reviewed_green', !!result && (result.status === 'test-suite-failed'))
-      report('G4b_no_second_round_spawned', !SPAWNED.includes('gate-fix:FM-12:svc#2'))
+      report('G4b_rejected_check_retries_the_same_red_fix', SPAWNED.includes('gate-fix:FM-12:app#1.2'))
+      report('G4b_retry_brief_carries_what_was_rejected', (PROMPTS['gate-fix:FM-12:app#1.2'] || '').includes('PRIOR ATTEMPT REJECTED') && (PROMPTS['gate-fix:FM-12:app#1.2'] || '').includes('N+1 introduced'))
+      report('G4b_suite_not_rerun_while_the_check_is_unresolved', !SPAWNED.includes('test-suite:FM-12:e2e#r1'))
+      report('G4b_halts_once_the_attempt_bound_is_exhausted', !!result && result.status === 'test-suite-failed' && String(result.why || '').includes('quality check for TC001 did not clear'))
+      report('G4b_no_third_attempt', !SPAWNED.includes('gate-fix:FM-12:app#1.3'))
     } else if (SCENARIO === 'G4_ROUNDS_EXHAUSTED') {
+      const cleared = { passed: true, conclusion: 'clean' }
       const canned = {
         ...BASE,
-        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
         'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
-          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'e2e', depends_on: ['svc'] }],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
           test_suite: { needed: true }, tracker_reachable: true },
-        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'e2e']),
-        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
-        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
         'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
-        // Same "app" red every round, twice — the default max_fix_rounds is 2.
-        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'still 500' }] },
+        // The same "app" red every round, and every round's fix CLEARS its quality check — so the
+        // only thing that ends this is the ROUND budget (FIXTURE_TS_MAX_FIX_ROUNDS=2).
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'still 500' }] },
         'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
-        'gate-fix:FM-12:svc#1': { work_branch: 'feature/FM-12', summary: 'try 1', status: 'complete', fixed: [] },
-        'gate-review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok' },
-        'test-suite:FM-12:e2e#r1': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'still 500' }] },
-        'gate-fix:FM-12:svc#2': { work_branch: 'feature/FM-12', summary: 'try 2', status: 'complete', fixed: [] },
-        'gate-review:FM-12:svc#2': { approved: true, tests_green: true, tests_receipt: 'ok' },
-        'test-suite:FM-12:e2e#r2': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'still 500' }] },
+        'gate-fix:FM-12:app#1.1': { work_branch: 'feature/FM-12', summary: 'try 1', status: 'complete', fixed: [] },
+        'gate-guard:FM-12:app#1.1': cleared,
+        'gate-perf:FM-12:app#1.1': cleared,
+        'test-suite:FM-12:e2e#r1': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'still 500' }] },
+        'gate-fix:FM-12:app#2.1': { work_branch: 'feature/FM-12', summary: 'try 2', status: 'complete', fixed: [] },
+        'gate-guard:FM-12:app#2.1': cleared,
+        'gate-perf:FM-12:app#2.1': cleared,
+        'test-suite:FM-12:e2e#r2': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'still 500' }] },
       }
       const result = await runOnce(ARGS, canned, {})
-      report('G4c_rounds_exhausted_fails_the_gate', !!result && result.status === 'test-suite-failed')
-      report('G4c_third_round_never_spawned', !SPAWNED.includes('gate-fix:FM-12:svc#3'))
+      report('G4c_rounds_exhausted_fails_the_gate', !!result && result.status === 'test-suite-failed' && String(result.why || '').includes('triage round'))
+      report('G4c_third_round_never_spawned', !SPAWNED.includes('gate-fix:FM-12:app#3.1'))
     } else if (SCENARIO === 'G4_PRE_EXISTING') {
       const canned = {
         ...BASE,
@@ -407,6 +436,66 @@ const BASE = {
       }
       const result = await runOnce(ARGS, canned)
       report('G6c_neither_label_spawned', !SPAWNED.some((l) => l.startsWith('dm:') || l === 'notify:FM-12'))
+    } else if (SCENARIO === 'G13') {
+      // Idempotent notify (this fix): same shape as G6A, but run-state already carries an
+      // 'all'/'notified' row from an earlier invocation. A resumed run reaching the same
+      // merge-skipped outcome must NOT re-send the review-request digest.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), runStateRow('all', 'notified')] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'x' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G13_status_merge_skipped', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+      report('G13_notify_not_spawned', !SPAWNED.includes('notify:FM-12'))
+      report('G13_skip_logged', LINES.some((l) => l.includes('[notify]') && l.includes('SKIPPED') && l.includes('already')))
+      report('G13_result_reports_sent', !!result && result.notify && result.notify.sent === true)
+    } else if (SCENARIO === 'G14') {
+      // Idempotent DM, keyed by run_status (this fix). A prior invocation already DM'd for
+      // 'test-suite-failed' — same shape as G6B — so a resume hitting the SAME status again must
+      // NOT re-send; run-state already carries an 'all'/'dm_sent' row for that exact status.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), runStateRow('all', 'dm_sent', { run_status: 'test-suite-failed' })] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G14_status_test_suite_failed', !!result && result.status === 'test-suite-failed')
+      report('G14_dm_not_respawned', !SPAWNED.includes('dm:FM-12:test-suite-failed'))
+      report('G14_skip_logged', LINES.some((l) => l.includes('[notify]') && l.includes('DM SKIPPED')))
+    } else if (SCENARIO === 'G15') {
+      // A NEW ending status still DMs even though an OLDER status already has a dm_sent row —
+      // proving the checkpoint is keyed by run_status, not "any DM ever sent for this ticket".
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), runStateRow('all', 'dm_sent', { run_status: 'budget-stopped' })] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'dm:FM-12:test-suite-failed': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G15_status_test_suite_failed', !!result && result.status === 'test-suite-failed')
+      report('G15_dm_still_spawned_for_new_status', SPAWNED.includes('dm:FM-12:test-suite-failed'))
     } else if (SCENARIO === 'G7') {
       // C1 — gate-only build. e2e's build is NOT resumed (must actually run, to capture its
       // prompt); db is fully resumed-ready. Assert the build prompt forbids suite execution and
@@ -584,6 +673,129 @@ const BASE = {
       await runOnce(ARGS, canned)
       report('G9D_no_tick_anywhere', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
       report('G9D_clean_repo_not_ticked_alone', !SPAWNED.includes('approve:FM-12:db'))
+    } else if (SCENARIO === 'G10') {
+      // ADR 0024, the accepted gap — `svc` declares NEITHER guard nor perf, so a QA-attributed fix
+      // there gets no agent check at all: the suite re-run is the only bar, exactly as before. The
+      // loop must not invent a check a repo never had.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'svc' }, { repo: 'e2e', depends_on: ['svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['svc', 'e2e']),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'svc', evidence: 'expected 200 got 500' }] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'gate-fix:FM-12:svc#1.1': { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['svc/src/x.rs'] },
+        'test-suite:FM-12:e2e#r1': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G10_fix_spawned', SPAWNED.includes('gate-fix:FM-12:svc#1.1'))
+      report('G10_no_quality_check_agent_for_an_undeclared_gate', !SPAWNED.some((l) => l.startsWith('gate-guard:') || l.startsWith('gate-perf:') || l.startsWith('gate-review:')))
+      report('G10_fix_brief_claims_no_check', !(PROMPTS['gate-fix:FM-12:svc#1.1'] || '').includes('YOUR FIX IS CHECKED'))
+      report('G10_straight_to_the_suite_rerun', SPAWNED.includes('test-suite:FM-12:e2e#r1'))
+      report('G10_run_proceeds_past_gate', !!result && result.status !== 'test-suite-failed' && result.status !== 'test-suite-unverified')
+    } else if (SCENARIO === 'G12') {
+      // ADR 0024 — a scoped check that could NOT run is never a pass. It sends the fix back like
+      // any rejection, and an exhausted bound halts: the loop does not fail open on a silent gate.
+      const unavailable = { passed: false, gate_unavailable: true, unavailable_reason: 'the profiler could not run in this run-context' }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'expected 200 got 500' }] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'gate-fix:FM-12:app#1.1': { work_branch: 'feature/FM-12', summary: 'attempt 1', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.1': { passed: true, conclusion: 'clean' },
+        'gate-perf:FM-12:app#1.1': unavailable,
+        'gate-fix:FM-12:app#1.2': { work_branch: 'feature/FM-12', summary: 'attempt 2', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.2': { passed: true, conclusion: 'clean' },
+        'gate-perf:FM-12:app#1.2': unavailable,
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G12_unavailable_check_is_not_a_pass', SPAWNED.includes('gate-fix:FM-12:app#1.2'))
+      report('G12_retry_brief_says_it_could_not_run', (PROMPTS['gate-fix:FM-12:app#1.2'] || '').includes('could not run'))
+      report('G12_halts_rather_than_failing_open', !!result && result.status === 'test-suite-failed' && !SPAWNED.includes('test-suite:FM-12:e2e#r1'))
+    } else if (SCENARIO === 'G11_FP' || SCENARIO === 'G11') {
+      // THE AUDITED SHAPE, in one run (defensive regression test — no new mechanism). Four repos,
+      // TWO bases in play (--feature-base-repos scopes the override), a RESUMED invocation with
+      // MIXED run state: db + app fully resumed-ready, svc mid-review (its gate did its first pass
+      // and left findings open), e2e built + PR open with its suite gate still pending. In the SAME
+      // run: nothing already proven is re-spawned, the in-flight repo's review→fix loop actually
+      // fires, and a finding whose root fix lives in another repo escalates and is re-gated there.
+      // G11_FP is the fingerprint probe: same scope, no rows, plan-approval OFF so it stops right
+      // after Kickoff having logged the fp the assertion run needs for its 'planned' rows.
+      const scope = { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+        repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'app', depends_on: ['svc'] }, { repo: 'e2e', depends_on: ['db', 'svc', 'app'] }],
+        test_suite: { needed: true }, tracker_reachable: true }
+      const kickoffs = {
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'release/1.4'),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'release/1.4'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+      }
+      if (SCENARIO === 'G11_FP') {
+        await runOnce(ARGS, {
+          ...BASE,
+          'resolve-runtime-config': { language: 'en', plan_to_html: false, auto_approve: false, artifacts_enabled: false },
+          'run-state:FM-12': { rows: [] },
+          'scope:FM-12': scope,
+          'plan-guard:FM-12': planGuardOk(['db', 'svc', 'app', 'e2e']),
+          ...kickoffs,
+        })
+        const fpLine = LINES.find((l) => /fp=([0-9a-f]+)/.test(l))
+        const fp = fpLine ? fpLine.match(/fp=([0-9a-f]+)/)[1] : null
+        report('G11_FP_fingerprint_logged', !!fp)
+        if (fp) console.log(`FP=${fp}`)
+      } else {
+        const planned = (repo) => runStateRow(repo, 'planned', { ticket_fp: FP, plan_path: `/tmp/ws/${repo}/plan.md`, plan_bytes: 4096, title: 'T', acceptance: ['A1'] })
+        const canned = {
+          ...BASE,
+          'run-state:FM-12': { rows: [
+            planned('db'), ...readyRows('db', 1),
+            planned('svc'), builtRow('svc'), prRow('svc', 2), gateFirstPassRow('svc', 'review'),
+            planned('app'), ...readyRows('app', 3),
+            planned('e2e'), builtRow('e2e'), prRow('e2e', 4),
+          ] },
+          'scope:FM-12': scope,
+          'plan-guard:FM-12': planGuardOk(['db', 'svc', 'app', 'e2e']),
+          ...kickoffs,
+          'approval-probe:FM-12:db': { approved: 'no' },
+          'approval-probe:FM-12:svc': { approved: 'no' },
+          'approval-probe:FM-12:app': { approved: 'no' },
+          // svc's gate re-visits its own open finding, whose ROOT fix lives in app.
+          'review:FM-12:svc#1': { approved: false, tests_green: true, tests_receipt: 'ok', comments: [{ file_line: 'svc/src/a.rs:10', issue: 'the hot path needs an index this repo cannot add', severity: 'blocking' }] },
+          'pr-fix:FM-12:svc#1': { work_branch: 'feature/FM-12', summary: 'proved the fix belongs upstream', status: 'complete', commits: 1, fixed: ['svc/src/a.rs'],
+            upstream_fix_needed: [{ repo: 'app', finding: 'add the composite index the hot path reads', evidence: 'grepped the app migrations: no such index exists there, and svc vendors it read-only' }] },
+          'xrepo-fix:FM-12:app#1': { work_branch: 'feature/FM-12', summary: 'index added', status: 'complete', commits: 1, fixed: ['app/migrations/x.sql'] },
+          'xrepo-regate:FM-12:app#1': { approved: true, tests_green: true, tests_receipt: 'ok' },
+          'review:FM-12:svc#2': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: ['t1'], still_open: [] },
+          'approve:FM-12:db+svc+app': { posted: [{ repo: 'db' }, { repo: 'svc' }, { repo: 'app' }], failed: [] },
+          'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 0, summary_line: '9 passed' } },
+          'audit:FM-12:e2e': { posted: true, detail: 'run r1 stamp matches' },
+          'approve:FM-12:e2e': { posted: [{ repo: 'e2e' }], failed: [] },
+          'notify:FM-12': { sent: true },
+        }
+        const result = await runOnce(ARGS, canned)
+        report('G11_no_kickoff_respawned', !SPAWNED.some((l) => l.startsWith('kickoff:')))
+        report('G11_no_build_respawned', !SPAWNED.some((l) => l.startsWith('build:')))
+        report('G11_no_open_pr_respawned', !SPAWNED.some((l) => l.startsWith('open-pr:')))
+        report('G11_two_bases_resolved_in_one_run', LINES.some((l) => l.includes('svc@feature/FM-12→release/1.4')) && LINES.some((l) => l.includes('db@feature/FM-12→develop')))
+        report('G11_in_flight_repo_resumes_as_revisit', (PROMPTS['review:FM-12:svc#1'] || '').includes('RE-VISIT (round 1)'))
+        report('G11_review_loop_actually_runs_a_fix_pass', SPAWNED.includes('pr-fix:FM-12:svc#1'))
+        report('G11_cross_repo_finding_escalates_and_is_re_gated', SPAWNED.includes('xrepo-fix:FM-12:app#1') && SPAWNED.includes('xrepo-regate:FM-12:app#1'))
+        report('G11_loop_converges_on_the_next_round', SPAWNED.includes('review:FM-12:svc#2'))
+        report('G11_pending_suite_gate_ran', SPAWNED.includes('test-suite:FM-12:e2e'))
+        report('G11_reaches_the_merge_gate', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+      }
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
@@ -624,14 +836,14 @@ out="$(run_scenario G3)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed '
 echo "── G3 (both green) — reaches the merge gate"
 out="$(run_scenario G3_GREEN)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
-echo "── G4 — red-gate triage (C4), app red fixed within budget"
+echo "── G4 — repair loop (C4 + ADR 0024): app red fixed, scoped guard+perf check, no code reviewer"
 out="$(run_scenario G4)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
-echo "── G4 variant — fix not reviewed-green halts, no second round"
-out="$(run_scenario G4_REGRESSION_NOT_GREEN)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+echo "── G4 variant — a rejected scoped check retries the fix, then halts on its own bound"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G4_CHECK_REJECTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G4 variant — max_fix_rounds exhausted"
-out="$(run_scenario G4_ROUNDS_EXHAUSTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G4_ROUNDS_EXHAUSTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G4 variant — pre_existing_on_base: true skips the fix"
 out="$(run_scenario G4_PRE_EXISTING)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
@@ -647,6 +859,15 @@ out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G6B)"; [[ "$VERBOSE" -eq 1 ]] && p
 
 echo "── G6c — dm_on_incomplete left at the placeholder: neither fires"
 out="$(FIXTURE_NOTIFY_DM=U000000000000 run_scenario G6C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G13 — notify is idempotent (docs/adr/0018): a resumed run does not re-send the digest"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G13)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G14 — the DM is idempotent per run_status: the SAME ending does not re-DM on resume"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G14)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G15 — a NEW ending status still DMs despite an older status' dm_sent row"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G15)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G7 — gate-only build (C1)"
 out="$(run_scenario G7)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
@@ -671,6 +892,24 @@ out="$(run_scenario G9C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 
 
 echo "── G9d — ticket-wide hold: one unready repo ⇒ no tick anywhere, not even on the clean one"
 out="$(run_scenario G9D)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G10 — a repo declaring neither guard nor perf gets NO scoped check (ADR 0024's accepted gap)"
+out="$(run_scenario G10)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G12 — a scoped check that could not run is not a pass (never fail open)"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G12)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+# G11 — the audited shape, in ONE run: 4 repos, 2 bases, mixed resume state, a live review→fix
+# loop and a cross-repo escalation. The probe run first, to learn the ticket fingerprint its
+# 'planned' rows must carry (same two-step as dev-cycle-kickoff-selftest.sh).
+echo "── G11 probe — scrape the ticket fingerprint for the resumed run"
+G11_ARGS="FM-12 --feature-base release/1.4 --feature-base-repos app,svc"
+outFp="$(ARGS="$G11_ARGS" run_scenario G11_FP)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outFp" | sed 's/^/      /'; ingest "$outFp"
+G11_FP_VALUE="$(grep -o 'FP=[0-9a-f]\+' <<<"$outFp" | head -1 | cut -d= -f2)"
+if [[ -n "$G11_FP_VALUE" ]]; then pass "G11_fingerprint_scraped (fp=$G11_FP_VALUE)"; else fail "G11_fingerprint_scraped — could not scrape fp= from the probe run"; fi
+
+echo "── G11 — resumed multi-repo run: nothing re-spawned, the in-flight loop fires, escalation re-gated"
+out="$(ARGS="$G11_ARGS" FP="$G11_FP_VALUE" run_scenario G11)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

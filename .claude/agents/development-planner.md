@@ -39,10 +39,11 @@ tools:
   - Bash(git ls-files:*)
   - Bash(git check-ignore:*)
   - Bash(git remote:*)
-  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. The Bash cwd
-  # persists between calls, so a RELATIVE -p can resolve inside whatever repo you
-  # happen to be in — codegraph then walks up to that index and answers from the
-  # WRONG repo, with exit 0 and no way to tell.
+  # ALWAYS name the repo: `-p $CLAUDE_PROJECT_DIR/<repo>`, absolute. A RELATIVE -p
+  # resolves against whatever cwd this call reports — never assume an earlier
+  # call's `cd` carried forward — so it can land inside the wrong repo entirely;
+  # codegraph then walks up to THAT index and answers from the WRONG repo, with
+  # exit 0 and no way to tell.
   - Bash(codegraph *)
   - Bash(*scripts/diagram/*)
   # Interactive debugger (read-only investigation): the `debugging-code` skill drives `dap` to step

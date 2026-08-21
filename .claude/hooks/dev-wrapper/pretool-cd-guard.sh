@@ -2,12 +2,15 @@
 #
 # PreToolUse(Bash) hook — block a relative `cd` at the START of a command.
 #
-# The Bash tool's working directory PERSISTS between calls. A leading
-# `cd agent-webservice` works the first time, but the next tool call starts
-# *inside* that repo, so the same relative cd resolves against the moved cwd
-# (`agent-webservice/agent-webservice`) and dies with "no such file or
-# directory". In this multi-repo workspace that has bitten real review/agent
-# runs more than once — so we forbid the pattern and steer to absolute paths.
+# A leading `cd your-app` is unsafe REGARDLESS of whether the Bash tool's cwd
+# carries forward to the next call: where it does, a second identical `cd your-app`
+# resolves against the already-moved cwd (`your-app/your-app`) and dies with "no
+# such file or directory"; where it does not (measured true for at least one
+# spawned-agent context in this workspace — cwd resets, it does not carry), a
+# relative cd is unpredictable from the start, for the same underlying reason a
+# relative `-p`/`-C` is (see pretool-codegraph-guard.sh). In this multi-repo
+# workspace that has bitten real review/agent runs more than once — so we forbid
+# the pattern and steer to absolute paths, which are correct in both cases.
 #
 # Only the LEADING cd is guarded. A mid-chain `… && cd sub && …` runs from a
 # cwd established earlier in the SAME command, so it is deterministic and fine.
@@ -51,8 +54,10 @@ esac
 {
   echo "⛔ Blocked relative cd: $cmd"
   echo
-  echo "The Bash tool's cwd PERSISTS across calls, so a leading relative cd"
-  echo "breaks on the next call (it resolves against the already-moved cwd)."
+  echo "A leading relative cd is unsafe whether or not the Bash tool's cwd"
+  echo "carries forward to the next call — it either breaks the next identical"
+  echo "cd (already-moved cwd) or resolves against an unpredictable one (some"
+  echo "contexts reset cwd between calls entirely)."
   echo "Use one of these instead:"
   echo "  • an ABSOLUTE path:   cd /Users/.../<workspace>/agent-webservice && …"
   echo "  • git, scoped:        git -C /abs/path <git-subcommand>"

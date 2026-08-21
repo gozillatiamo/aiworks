@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Default-deny translation of one Claude agent's tool contract for Codex."""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import re
+import shlex
+import sys
+from pathlib import Path
+
+from common import parse_frontmatter
+
+
+READ_COMMANDS = {
+    "awk",
+    "basename",
+    "cat",
+    "codegraph",
+    "cut",
+    "dirname",
+    "du",
+    "file",
+    "find",
+    "git",
+    "grep",
+    "head",
+    "jq",
+    "ls",
+    "pwd",
+    "readlink",
+    "rg",
+    "sed",
+    "sort",
+    "stat",
+    "tail",
+    "test",
+    "tr",
+    "uname",
+    "uniq",
+    "wc",
+    "which",
+}
+READ_GIT = {
+    "branch",
+    "check-ignore",
+    "diff",
+    "diff-tree",
+    "for-each-ref",
+    "log",
+    "ls-files",
+    "merge-base",
+    "remote",
+    "rev-parse",
+    "show",
+    "show-ref",
+    "status",
+    "tag",
+    "worktree",
+}
+SAFE_LOCAL_TOOLS = {"update_plan", "request_user_input", "wait_agent", "wait"}
+
+
+def project_root(payload: dict) -> Path:
+    current = Path(payload.get("cwd") or ".").resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".claude" / "agents").is_dir():
+            return candidate
+        if (candidate / ".git").exists():
+            break
+    return current
+
+
+def denied(reason: str) -> None:
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }
+        )
+    )
+
+
+def bash_patterns(tools: list[str]) -> list[str]:
+    patterns: list[str] = []
+    for tool in tools:
+        match = re.fullmatch(r"Bash\((.*)\)", tool)
+        if not match:
+            continue
+        pattern = match.group(1).replace(":*", " *")
+        patterns.append(pattern)
+    return patterns
+
+
+def explicit_bash_allowed(command: str, patterns: list[str]) -> bool:
+    normalized = " ".join(command.split())
+    return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
+
+
+def read_segment_allowed(segment: str) -> bool:
+    if re.search(r"(^|[^<])>|`|\$\(|\b(system|eval|exec)\s*\(", segment):
+        return False
+    try:
+        parts = shlex.split(segment)
+    except ValueError:
+        return False
+    while parts and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", parts[0]):
+        parts.pop(0)
+    if not parts:
+        return True
+    base = Path(parts[0]).name
+    if base not in READ_COMMANDS:
+        return False
+    if base == "git":
+        args = [part for part in parts[1:] if not part.startswith("-")]
+        return bool(args) and args[0] in READ_GIT and not (
+            args[0] == "worktree" and len(args) > 1 and args[1] not in {"list"}
+        )
+    if base == "find" and any(part in {"-delete", "-exec", "-execdir", "-ok"} for part in parts):
+        return False
+    if base == "sed" and any(part == "-i" or part.startswith("-i") for part in parts[1:]):
+        return False
+    return True
+
+
+def read_bash_allowed(command: str) -> bool:
+    if re.search(r"\n|\|\||&>|>>|<<", command):
+        return False
+    segments = re.split(r"\s*(?:\||&&|;)\s*", command)
+    return all(read_segment_allowed(segment) for segment in segments if segment.strip())
+
+
+def tool_allowed(tool_name: str, payload: dict, tools: list[str], denied_tools: list[str]) -> bool:
+    aliases = {tool_name}
+    if tool_name == "apply_patch":
+        aliases.update({"Write", "Edit"})
+    elif tool_name in {"spawn_agent", "Agent"}:
+        aliases.add("Agent")
+    elif tool_name == "view_image":
+        aliases.add("Read")
+
+    if aliases.intersection(denied_tools):
+        return False
+    if tool_name in SAFE_LOCAL_TOOLS:
+        return True
+    if tool_name == "apply_patch":
+        return bool({"Write", "Edit"}.intersection(tools))
+    if tool_name == "Bash":
+        command = str((payload.get("tool_input") or {}).get("command") or "")
+        patterns = bash_patterns(tools)
+        if explicit_bash_allowed(command, patterns):
+            return True
+        return bool({"Read", "Grep", "Glob"}.intersection(tools)) and read_bash_allowed(command)
+    if tool_name in {"write_stdin", "wait"}:
+        return any(tool.startswith("Bash") for tool in tools)
+    if tool_name.startswith("mcp__"):
+        return tool_name in tools
+    return bool(aliases.intersection(tools))
+
+
+def main() -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        return 0
+    role = sys.argv[1] if len(sys.argv) == 2 else os.environ.get("AIWORKS_CODEX_ROLE", "")
+    if not role:
+        return 0
+
+    source = project_root(payload) / ".claude" / "agents" / f"{role}.md"
+    if not source.is_file():
+        denied(f"{role}: canonical Claude agent definition is missing")
+        return 0
+    frontmatter, _ = parse_frontmatter(source)
+    tools = [str(item) for item in frontmatter.get("tools", [])]
+    denied_tools = [str(item) for item in frontmatter.get("disallowedTools", [])]
+    tool_name = str(payload.get("tool_name") or "")
+    if tool_allowed(tool_name, payload, tools, denied_tools):
+        return 0
+    denied(f"{role}: {tool_name or 'unknown tool'} is outside the canonical Claude tool contract")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

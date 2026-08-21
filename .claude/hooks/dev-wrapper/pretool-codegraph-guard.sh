@@ -8,9 +8,12 @@
 # which means grep. The whole point of the index is lost, silently.
 #
 # Every query subcommand takes `-p/--path`, so no `cd` is needed. But a RELATIVE
-# `-p` is only correct when the cwd happens to be the workspace root, and the
-# Bash tool's cwd PERSISTS across calls — an agent thirty calls into a run can be
-# anywhere. That combination produces the worst failure this hook exists to stop:
+# `-p` is only correct when the cwd happens to be the workspace root, and this
+# call's actual cwd (read below from the hook payload, never assumed) can be
+# anywhere — an agent thirty calls into a run may have moved it, or be in a
+# context where cwd resets between calls and never moved at all. Either way,
+# "wherever cwd happens to be" is not the workspace root reliably enough to
+# trust. That combination produces the worst failure this hook exists to stop:
 #
 #   cwd = <ws>/game
 #   $ codegraph explore 'GameServicePort' -p backoffice
@@ -167,9 +170,10 @@ block() {
     echo "⛔ codegraph $newsub needs an explicit project: $cmd"
     echo
     echo "codegraph indexes ONE repo at a time and the workspace root has no index."
-    echo "Pass the repo as an ABSOLUTE path — the Bash cwd persists between calls, so"
-    echo "a relative -p silently resolves against whatever directory you are in and"
-    echo "codegraph then answers from the WRONG repo with exit 0."
+    echo "Pass the repo as an ABSOLUTE path — a relative -p silently resolves against"
+    echo "whatever directory this call actually starts in (not reliably where an"
+    echo "earlier call's cd left it) and codegraph then answers from the WRONG repo"
+    echo "with exit 0."
     echo
     echo "  codegraph $newsub <args> -p \$CLAUDE_PROJECT_DIR/<repo>"
     echo

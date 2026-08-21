@@ -5,7 +5,7 @@
 #
 # WHY THIS EXISTS: the workspace has many moving parts and every one of them already has an
 # owner command — `aiworks sync` clones and onboards, `aiworks setup` links the adapters,
-# `aiworks cursor` regenerates the Cursor mirror, `aiworks update` moves the tooling forward.
+# `aiworks harnesses sync` regenerates selected projections, `aiworks update` moves tooling forward.
 # What was missing is the surface that tells you WHICH of them you need to run. Before this,
 # a half-finished workspace announced itself as a confusing failure three steps later: an
 # adapter dying on a missing token, an agent grepping a repo that was never cloned, a hook
@@ -760,6 +760,11 @@ check_per_repo() {
 check_agent_cfg() {
   local g=agent-cfg
   local settings="$ROOT/.claude/settings.json"
+  local harness_set=""
+  if [[ -x "$DIR/aiworks-harnesses.sh" ]]; then
+    harness_set=" $($DIR/aiworks-harnesses.sh list 2>/dev/null | tr '\n' ' ') "
+    [[ -n "${harness_set// /}" ]] && pass $g "Agent harness set" "${harness_set# }"
+  fi
 
   if [[ ! -f "$settings" ]]; then
     fail $g ".claude/settings.json missing" "no hooks, no permissions, no plugins" "aiworks sync" slow
@@ -793,27 +798,53 @@ EOF
   # It walks every repo though, which costs ~8s: four times this whole command's budget. So
   # the default run answers the cheap half (is the projection even THERE?) and the real
   # comparison waits for --deep.
-  local nomirror="" r
-  for r in $SELECTED; do
-    repo_ready "$r" || continue
-    [[ -f "$ROOT/$r/AGENTS.md" && -d "$ROOT/$r/.cursor" ]] || nomirror="${nomirror:+$nomirror }$r"
-  done
-  [[ -n "$nomirror" ]] && warn $g "cursor mirror not projected" "$nomirror" "aiworks cursor" \
-                       || pass $g "cursor mirror present" "AGENTS.md + .cursor/ per repo"
+  if [[ "$harness_set" == *" cursor "* ]]; then
+    local nomirror="" r
+    for r in $SELECTED; do
+      repo_ready "$r" || continue
+      [[ -f "$ROOT/$r/AGENTS.md" && -d "$ROOT/$r/.cursor" ]] || nomirror="${nomirror:+$nomirror }$r"
+    done
+    [[ -n "$nomirror" ]] && warn $g "cursor mirror not projected" "$nomirror" "aiworks cursor" \
+                         || pass $g "cursor mirror present" "AGENTS.md + .cursor/ per repo"
 
-  if [[ $DEEP == 1 ]]; then
-    if [[ -x "$DIR/aiworks-cursor.sh" ]]; then
-      if "$DIR/aiworks-cursor.sh" --check >/dev/null 2>&1; then
-        pass $g "cursor mirror in sync"
+    if [[ $DEEP == 1 ]]; then
+      if [[ -x "$DIR/aiworks-cursor.sh" ]]; then
+        if "$DIR/aiworks-cursor.sh" --check >/dev/null 2>&1; then
+          pass $g "cursor mirror in sync"
+        else
+          warn $g "cursor mirror has drifted" "the .cursor/ projection no longer matches the Claude side" \
+               "aiworks cursor"
+        fi
       else
-        warn $g "cursor mirror has drifted" "the .cursor/ projection no longer matches the Claude side" \
-             "aiworks cursor"
+        skip $g "cursor drift" "aiworks-cursor.sh not present"
       fi
     else
-      skip $g "cursor drift" "aiworks-cursor.sh not present"
+      skip $g "cursor drift" "--deep (aiworks cursor --check costs ~8s)"
     fi
   else
-    skip $g "cursor drift" "--deep (aiworks cursor --check costs ~8s)"
+    skip $g "cursor projection" "Cursor is not selected in workspace.config.yaml harnesses"
+  fi
+
+  # Codex is a generated Harness projection with its own strict drift check. Cheap presence is
+  # checked on every run; full source-to-projection comparison waits for --deep like Cursor.
+  if [[ "$harness_set" == *" codex "* ]]; then
+    if [[ -f "$ROOT/.codex/config.toml" && -f "$ROOT/.codex/hooks.json" \
+          && -L "$ROOT/.agents/skills" && -d "$ROOT/.codex/agents" ]]; then
+      pass $g "codex projection present" "config + hooks + agents + canonical skill link"
+    else
+      fail $g "codex projection incomplete" "one or more generated Codex surfaces are missing" "aiworks codex"
+    fi
+    if [[ $DEEP == 1 ]]; then
+      if "$DIR/aiworks-codex.sh" --check >/dev/null 2>&1; then
+        pass $g "codex projection in sync"
+      else
+        warn $g "codex projection has drifted" "generated .codex no longer matches .claude" "aiworks codex"
+      fi
+    else
+      skip $g "codex drift" "--deep (aiworks codex --check)"
+    fi
+  else
+    skip $g "codex projection" "Codex is not selected in workspace.config.yaml harnesses"
   fi
 
   # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at USER scope on purpose

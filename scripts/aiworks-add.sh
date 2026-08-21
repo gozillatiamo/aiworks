@@ -842,8 +842,9 @@ else
     if [[ -d "$REPO_DIR/.claude/skills/$s" && "$FORCE" -ne 1 ]]; then already+=("$s"); continue; fi
     # --agent claude-code (NOT '*'): '*' installs to EVERY agent the CLI knows (~40 — eve, codex,
     # cursor, cline, …), scattering per-agent dirs into the repo (e.g. eve's `agent/skills/`, plus
-    # a `.agents/skills/` canonical + `.claude/skills/` symlinks). This is a Claude Code workspace,
-    # so install only claude-code → a single clean `.claude/skills/<name>/` real dir, no stray dirs.
+    # multiple agent-owned roots, including a real `.agents/skills/`, which would collide with
+    # this framework's Codex-facing directory symlink. Install only claude-code so the one real
+    # canonical copy lands at `.claude/skills/<name>/`.
     npx -y skills@latest add "$src" --skill "$s" --agent claude-code -y >/dev/null 2>&1; npx_rc=$?
     if   [[ "$npx_rc" -eq 0 ]]; then installed+=("$s")
     elif [[ "$(classify_rc "$npx_rc")" == signal ]]; then crashed+=("$s (signal $((npx_rc - 128)))")   # npx/node killed on launch, NOT an install failure
@@ -1228,18 +1229,16 @@ cd "$ROOT"
 fi
 step "11. Back at the workspace root ($ROOT)"
 
-# ── 11.1 the Cursor face of everything seeded above ────────────────────────────
-# Steps 5-9 wrote the Claude-side config (CLAUDE.md, .claude/rules, skills, hooks,
-# settings.json). Cursor reads none of those paths, so project them: symlinks for
-# everything whose format already matches, generated files for hooks/permissions.
-# Idempotent and best-effort — a repo that gains rules later just needs a re-run.
-step "11.1. Project the agent config onto Cursor (.cursor/ + AGENTS.md) in $PATH_REL/"
-if [[ ! -x "$ROOT/scripts/aiworks-cursor.sh" ]]; then
-  skip "11.1. scripts/aiworks-cursor.sh not found — run 'aiworks cursor $REPO_NAME' later"
-elif "$ROOT/scripts/aiworks-cursor.sh" "$REPO_NAME" >/dev/null 2>&1; then
-  ok "Cursor layer projected for $REPO_NAME"
+# ── 11.1 selected Harness projections for everything seeded above ──────────────
+# Steps 5-9 wrote the canonical Claude-side config. The registry now projects whichever
+# organization Harnesses are selected, including safe cleanup for a deselected one.
+step "11.1. Project the agent config onto selected Harnesses in $PATH_REL/"
+if [[ ! -x "$ROOT/scripts/aiworks-harnesses.sh" ]]; then
+  skip "11.1. aiworks-harnesses.sh not found — run 'aiworks harnesses sync $REPO_NAME' later"
+elif "$ROOT/scripts/aiworks-harnesses.sh" sync "$REPO_NAME" >/dev/null 2>&1; then
+  ok "selected Harness layers projected for $REPO_NAME"
 else
-  skip "11.1. 'aiworks cursor $REPO_NAME' reported issues — run it directly to see them"
+  skip "11.1. Harness projection reported issues — run 'aiworks harnesses sync $REPO_NAME' directly"
 fi
 
 # ── summary ──────────────────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 # AI Workspace
 
-The bluePi OFB workspace for running a **team of Claude agents** across every OFB repo: one
-command takes a Jira ticket through the whole delivery cycle. This is the meta-repo — the
-product repos clone into it but stay independent. This glossary is the workspace's ubiquitous
-language; each term links to its canonical home where a fuller one exists.
+The workspace for running one **agent team** through selected Agent harnesses across every product repo: one command
+takes a ticket through the whole delivery cycle. This is the meta-repo — the product repos
+clone into it but stay independent. This glossary is the workspace's ubiquitous language; each
+term links to its canonical home where a fuller one exists.
 
 ## Language
 
@@ -14,7 +14,13 @@ canonical term is the heading and the rest are listed under `_Avoid_`.
 
 **Workflow**:
 A deterministic, multi-agent orchestration script (`.claude/workflows/*.js`) run headless — it
-fans out and sequences agents rather than reasoning turn-by-turn.
+fans out and sequences agents rather than reasoning turn-by-turn. Claude runs it natively; Cursor
+and Codex run the same source through the shared Workflow runtime.
+
+**Workflow runtime**:
+The local adapter behind `aiworks workflow` that supplies a Workflow's orchestration primitives
+through a selected Agent harness without copying or rewriting the canonical script.
+_Avoid_: generated workflow, harness-specific workflow
 
 **dev-cycle**:
 The end-to-end delivery Workflow for a single ticket: plan → build → PR/MR → review → test gate
@@ -95,8 +101,9 @@ escalation** could not land: the target is outside the run, the routed fix faile
 re-gate, or the same finding escalated twice).
 
 **Repair loop**:
-A bounded fix→re-review→re-run cycle a gate runs itself instead of halting, when the cause is
-named and owned inside the run.
+A bounded fix→verify→re-run cycle a gate runs itself instead of halting, when the cause is named
+and owned inside the run. The verify step is role-specific: a **Scoped re-gate** for a cross-repo
+escalation, a **Scoped quality check** for a same-repo QA-attributed fix.
 
 **Cross-repo escalation**:
 A review-fix pass proving, with observed evidence, that a finding's root fix must land in ANOTHER
@@ -109,7 +116,17 @@ an EXISTING upstream fix forward — escalation is asking for one that does not 
 **Scoped re-gate**:
 The code-review gate run over ONLY the commits a cross-repo escalation landed on an
 already-reviewed branch — fix diff + suite green, never a fresh full review. Approval refreshes
-that repo's `reviewed` checkpoint; anything less halts. Never fails open.
+that repo's `reviewed` checkpoint; anything less halts. Never fails open. Not a **Scoped quality
+check**: different trigger (an escalation, not a QA red) and a different gate role.
+
+**Scoped quality check**:
+The guardian and/or performance gates — only the ones a repo declares — run over ONLY a
+QA-attributed fix's diff inside the test-suite **repair loop**: does this fix reintroduce the
+smell, debt or slow path the original review would have held? Never the code reviewer (already
+cleared at Review), never a fresh audit, and never a pass on an un-run check. A rejection returns
+the same red to the developer within a bounded per-red retry — never a silent pass-through to the
+suite re-run. → [ADR 0024](docs/adr/0024-a-qa-attributed-fix-is-quality-checked-not-re-reviewed.md).
+*Avoid*: re-review, gate review (both name the step this replaced).
 
 **Gate-only verification**:
 A suite is EXECUTED at its gate, against the reviewed candidate — never during the build that
@@ -184,6 +201,32 @@ top-priority directives the agents auto-route and resolve. → `docs/agents/huma
 
 ## Providers
 
+**Agent harness**:
+An execution environment through which the agent team works — `claude`, `cursor`, or `codex`.
+_Avoid_: provider, agent provider, editor
+
+**Harness set**:
+The organization-wide selection of Agent harnesses that `setup` and `sync` keep supported across
+the workspace and its repos.
+_Avoid_: provider selection, personal harness preference
+
+**Harness projection**:
+A derived, harness-specific face of the canonical agent configuration. It uses symlinks where the
+harness accepts the canonical format and generated adapters where it does not.
+_Avoid_: copy, duplicate configuration, second source of truth
+
+**Canonical agent configuration**:
+The authored `.claude/` tree from which every Harness projection is derived. Codex discovers its
+skills through `.agents/skills`, which is a directory symlink to `.claude/skills` rather than a
+second owner.
+_Avoid_: neutral agent tree, bidirectional skill ownership
+
+**Harness parity**:
+The guarantee that a selected Agent harness exposes the required agent-team capabilities without
+silently dropping behavior or widening safety constraints. An unimplemented safety mapping fails
+the projection check and blocks the feature from being considered complete.
+_Avoid_: best-effort support, partial compatibility
+
 **Adapter**:
 A script wrapper (`scripts/vcs` · `scripts/tracker` · `scripts/notify`) agents call *instead of*
 `gh`/`glab`/Jira/Slack directly, so the provider is swappable in one place.
@@ -192,6 +235,7 @@ _Avoid_: wrapper, integration
 **Provider**:
 The concrete tool behind an adapter — `gitlab`, `jira`, `slack` — selected in
 `workspace.config.yaml`.
+_Avoid_: agent harness
 
 **vcs** / **tracker** / **notify**:
 The three adapter families: pull/merge requests, tickets, and chat notifications.
@@ -341,8 +385,8 @@ repo) — always **English**, even under `th`, since it lives beside the code.
 ## Config
 
 **`workspace.config.yaml`**:
-The shared source of truth — providers, ticket prefix, status lifecycle, policies, and the
-`products[].repos[]` registry. `aiworks sync` sets the workspace up from it.
+The shared source of truth — Harness set, providers, ticket prefix, status lifecycle, policies,
+and the `products[].repos[]` registry. `aiworks sync` sets the workspace up from it.
 
 **Comment-free config**:
 The rule that both LIVE config files (`workspace.config.yaml`, `workspace.config.local.yaml`)
@@ -370,8 +414,9 @@ The per-repo symbol/edge database under `<repo>/.codegraph/` (the marker is
 `codegraph.db`, not the directory — `~/.codegraph/` is the CLI's own install dir).
 Queried CLI-first: `query` `explore` `node` `callers` `callees` `impact` `affected`,
 each of which **must** carry `-p $CLAUDE_PROJECT_DIR/<repo>` as an absolute path,
-because a relative one resolves against a cwd that persists between tool calls and
-makes codegraph answer from the wrong repo with exit 0. Enforced by
+because a relative one resolves against whatever cwd this call reports — never
+reliably where an earlier call's `cd` left it — and makes codegraph answer from
+the wrong repo with exit 0. Enforced by
 `pretool-codegraph-guard.sh`; kept current by `posttool-codegraph-sync.sh`.
 Reads code only — never shell or prose, which is the **doc graph**'s half.
 → [ADR-0013](docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md)
@@ -385,14 +430,21 @@ repo the code index does not read.
 _Avoid_: knowledge graph, graphify index
 → [ADR-0013](docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md)
 
-## Editors
+## Agent harnesses
 
 **Cursor layer**:
-The `AGENTS.md` + `.cursor/` face of the same agent config, present at the workspace root and in
-every repo. Generated by `aiworks cursor`, never hand-edited: symlinks back to the `.claude/`
-files wherever the format already matches, plus the generated files. Workflows are the one
-capability that does not cross. → [`docs/agents/cursor.md`](docs/agents/cursor.md) ·
+The Cursor Harness projection: the `AGENTS.md` + `.cursor/` face of the same agent config, present
+at the workspace root and in every repo. Generated by `aiworks cursor`, never hand-edited:
+symlinks back to the `.claude/` files wherever the format already matches, plus the generated
+files. Workflows use the shared Workflow runtime with Cursor `auto` routing.
+→ [`docs/agents/cursor.md`](docs/agents/cursor.md) ·
 [ADR-0004](docs/adr/0004-cursor-as-a-generated-mirror.md)
+
+**Codex layer**:
+The Codex Harness projection: `AGENTS.md`, `.agents/skills`, and generated `.codex/` agents,
+configuration, hook wiring, rule index, MCP registry, and native status line. Generated by
+`aiworks codex`, checked by `aiworks codex --check`, and never a second authored source.
+→ [ADR-0023](docs/adr/0023-agent-harnesses-project-from-claude-canonical-source.md)
 
 **Root slice** / **`.cursor/rules/repos/<repo>/`**:
 One product repo's project instruction and rules, re-expressed so they work for a Cursor session

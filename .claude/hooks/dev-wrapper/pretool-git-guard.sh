@@ -204,8 +204,10 @@ for seg in $bare_segments; do
         echo
         echo "⚠️  A WRITER must run BARE — its own command, no 'cd X && …', no pipe, no"
         echo "    redirect. The compound form is denied and you get NO permission prompt,"
-        echo "    which reads exactly like a broken adapter. Enter the repo with a"
-        echo "    separate 'cd <absolute path>' call first; Bash cwd persists."
+        echo "    which reads exactly like a broken adapter. If cwd is not already the"
+        echo "    target repo, resolve it once ('git -C <abs> remote get-url origin') and"
+        echo "    pass VCS_REPO=<owner/repo> on the SAME bare line as the writer — a prior"
+        echo "    separate 'cd' call is not guaranteed to still be in effect."
         echo
         echo "If the adapter itself fails, that IS the answer for this step — report the"
         echo "command, its exit code and its stderr. Do not route around it."

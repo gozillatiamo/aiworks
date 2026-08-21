@@ -8,8 +8,10 @@
 #   k8s_triage         scripts/k8s/k8s_triage_mcp.py               read-only staging + prod Kubernetes
 #   monitoring_triage  scripts/monitoring/monitoring_triage_mcp.py read-only staging + prod Cloud Monitoring
 #
-# All four are registered in **local scope** (`~/.claude.json` → projects[<workspace>].mcpServers),
-# never in the committed `.mcp.json`, so prod credentials never enter the shared repo.
+# All four are registered in each selected Harness's **machine-local scope** (`~/.claude.json`,
+# `~/.codex/config.toml`, or `~/.cursor/mcp.json`), never in committed `.mcp.json`, so prod
+# credentials never enter the shared repo. Registration commands contain paths only; servers read
+# their own protected local configuration at runtime.
 #
 # Registration is ON by default, because STAGING triage needs no authorization and a flag you have
 # to flip before you can look at staging is friction with no payer. PRODUCTION is the part that
@@ -167,18 +169,23 @@ if [[ "$ACTION" == "status" ]]; then
       warn "$name — LEGACY registration still present; run 'scripts/triage-mcp.sh sync' to remove it"
     fi
   done
+  python3 "$ROOT/scripts/harnesses/triage_mcp.py" --root "$ROOT" --action status --want "$WANT" 2>/dev/null || true
   exit 0
 fi
 
 command -v jq >/dev/null 2>&1 || die "jq is required (brew install jq)"
-if ! command -v claude >/dev/null 2>&1; then
-  warn "the claude CLI is not on PATH — skipping triage MCP registration"
-  exit 0
+HARNESS_SET="$(python3 "$ROOT/scripts/harnesses/config.py" list --config "$ROOT/workspace.config.yaml" --registry "$ROOT/scripts/harnesses/registry.json" --fallback 2>/dev/null || printf 'claude\ncursor\n')"
+CLAUDE_AVAILABLE=0
+if printf '%s\n' "$HARNESS_SET" | grep -qx claude && command -v claude >/dev/null 2>&1; then
+  CLAUDE_AVAILABLE=1
+elif printf '%s\n' "$HARNESS_SET" | grep -qx claude; then
+  warn "the claude CLI is not on PATH — skipping Claude triage MCP registration"
 fi
 
 dead_key_warning
 
 # ── migrate the pre-0005 names away ───────────────────────────────────────────────
+if [[ "$CLAUDE_AVAILABLE" -eq 1 ]]; then
 for entry in "${LEGACY[@]}"; do
   name="${entry%%|*}"; rel="${entry#*|}"
   have="$(registered_args "$name")"
@@ -233,6 +240,10 @@ for entry in "${SERVERS[@]}"; do
     fi
   fi
 done
+fi
+
+python3 "$ROOT/scripts/harnesses/triage_mcp.py" --root "$ROOT" --action "$ACTION" --want "$WANT" \
+  $([[ "$DRY" -eq 1 ]] && printf '%s' '--dry-run') || warn "Cursor/Codex triage MCP reconciliation reported a failure"
 
 if [[ "$WANT" -eq 0 ]]; then
   ok "Triage MCPs DISABLED (triage.enabled is off; source: $ENABLED_SRC). Nothing registered, nothing spawns. Drop that line — the default is ON — to get staging triage back."

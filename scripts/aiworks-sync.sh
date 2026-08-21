@@ -1063,15 +1063,19 @@ if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle h
   else "$SUPGEN" >/dev/null || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi   # quiet by default
 fi
 
-# ── project the whole workspace onto Cursor ───────────────────────────────────────
-# One pass over the root + every repo, after the per-repo work above has settled the
-# Claude-side config. Symlinks only (plus the generated hooks/permissions pair), so a
-# repo that was already in sync costs nothing. Never runs in dry-run.
-CURGEN="$DIR/aiworks-cursor.sh"
-if [[ -x "$CURGEN" && "$DRY" -ne 1 ]]; then
-  step "Project the agent config onto Cursor (AGENTS.md + .cursor/) for the root and every repo"
-  if [[ "$VERBOSE" -eq 1 ]]; then "$CURGEN" || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"
-  else "$CURGEN" >/dev/null || warn "could not project the Cursor layer — run 'aiworks cursor' by hand"; fi
+# ── reconcile every selected Agent harness ────────────────────────────────────
+# The Harness registry owns dispatch. Selected projections update; deselected projections remove
+# only generator-owned files. This is the extension seam for future Harnesses such as Hermes.
+HARGEN="$DIR/aiworks-harnesses.sh"
+if [[ -x "$HARGEN" ]]; then
+  step "Reconcile selected Agent harnesses"
+  if [[ "$DRY" -eq 1 ]]; then
+    "$HARGEN" sync --dry-run || warn "could not preview Harness projections"
+  elif [[ "$VERBOSE" -eq 1 ]]; then
+    "$HARGEN" sync || warn "could not reconcile Harness projections — run 'aiworks harnesses sync' by hand"
+  else
+    "$HARGEN" sync >/dev/null || warn "could not reconcile Harness projections — run 'aiworks harnesses sync' by hand"
+  fi
 fi
 
 # ── the root's own instruction is subject to the same budget ─────────────────────

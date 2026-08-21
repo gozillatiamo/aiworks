@@ -1,12 +1,15 @@
 <h1 align="center">⚡ OFB AI Workspace</h1>
 
 <p align="center">
-  <em>The bluePi workspace for running a <strong>team of Claude agents</strong> across every OFB repo.</em><br/>
-  One command takes a Jira ticket through the whole delivery cycle.
+  <em>A multi-repo workspace template for running one <strong>agent team</strong> through Claude Code, Cursor, or Codex across every repo of your product.</em><br/>
+  One command takes a ticket through the whole delivery cycle.
 </p>
 
 <p align="center">
   <img alt="Claude" src="https://img.shields.io/badge/Claude-agents-D97757?logo=anthropic&logoColor=white">
+  <img alt="Cursor" src="https://img.shields.io/badge/Cursor-agents-111111?logo=cursor&logoColor=white">
+  <img alt="Codex" src="https://img.shields.io/badge/Codex-agents-10A37F?logo=openai&logoColor=white">
+  <img alt="GitHub" src="https://img.shields.io/badge/GitHub-PRs-181717?logo=github&logoColor=white">
   <img alt="GitLab" src="https://img.shields.io/badge/GitLab-MRs-FC6D26?logo=gitlab&logoColor=white">
   <img alt="Jira" src="https://img.shields.io/badge/Jira-tickets-0052CC?logo=jira&logoColor=white">
   <img alt="Slack" src="https://img.shields.io/badge/Slack-notify-4A154B?logo=slack&logoColor=white">
@@ -33,11 +36,13 @@ adapters in `scripts/{vcs,tracker,notify}/`.
 ## 📦 What's inside
 
 ```
-workspace.config.yaml       # source of truth: providers, repos, statuses, policies
+workspace.config.yaml       # source of truth: Harnesses, providers, repos, statuses, policies
+workspace.config.example.yaml  # the template you copy it from
 CLAUDE.md                   # workspace instructions for the agents
-aiworks                     # workspace CLI (sync · add · remove · config · setup · run)
+aiworks                     # workspace CLI (setup · sync · harnesses · workflow · run)
 scripts/vcs|tracker|notify  # GitLab · Jira · Slack adapters
-.claude/                    # agents, skills, workflows (dev-cycle, prd, brd)
+.claude/                    # canonical agents, skills, rules, hooks and workflows
+.cursor/ + .codex/          # generated Harness projections — never hand-edit
 mani.yaml + mani.d/         # repo registry — generated, do not hand-edit
 ai-workspace.code-workspace # multi-root IDE workspace — generated
 ```
@@ -54,7 +59,7 @@ independent clone.
 | **Node.js** | [nodejs.org/en/download](https://nodejs.org/en/download) |
 | **Docker** | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 | **mani** | [github.com/alajmo/mani](https://github.com/alajmo/mani#install) |
-| **Claude Code** | [claude.com/claude-code](https://claude.com/claude-code) |
+| **An Agent harness** | Pick Claude Code, Cursor, Codex, or several during `aiworks setup`; missing selected CLIs are installed interactively |
 | **gcloud CLI** | [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install) |
 
 > 🔧 `jq`, `glab` (GitLab CLI), `pnpm`, and `ngrok` are installed by `setup` if missing — just run
@@ -92,8 +97,9 @@ cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 > `aiworks-mcp-sonarqube`). Set `SONARQUBE_ORG` in `.superset/.env` if it differs from the
 > default. Restart Claude Code / Cursor after the first setup so MCP reloads.
 
-**3. Set up the workspace** — clones + onboards every OFB repo, installs node
-dependencies, and starts the shared MCP services. Idempotent, safe to re-run:
+**3. Set up the workspace** — first choose one or more Agent harnesses, then install/login,
+project their configuration, clone + onboard every OFB repo, install dependencies, and start the
+shared MCP services. Idempotent, safe to re-run:
 
 ```sh
 ./aiworks setup
@@ -319,6 +325,10 @@ cursor ai-workspace.code-workspace
 ./aiworks add --url <git-url> --product ofb-platform --kind backend
 ./aiworks remove <repo-name>   # deregister (add --purge to delete the clone)
 ./aiworks config               # regen generated files after editing the config
+./aiworks harnesses list       # organization-wide selected Harnesses
+./aiworks harnesses configure --reconfigure
+./aiworks harnesses check      # every selected projection matches .claude
+./aiworks codex --check        # narrow Codex projection check
 ```
 
 > 💡 Symlink the CLI onto your PATH once — `ln -s "$PWD/aiworks" ~/.local/bin/aiworks` —
@@ -331,13 +341,13 @@ cursor ai-workspace.code-workspace
 
 `setup` only ever **installs what is missing** — it never moves a tool forward. `update` is
 the other half: it upgrades each prerequisite through whichever installer owns it on your
-machine (brew, rustup, corepack, gcloud, the Claude Code CLI + its plugins, codegraph, the
+machine (brew, rustup, corepack, gcloud, selected Harness CLIs + plugins, codegraph, the
 shared MCP images), and skips anything brew doesn't own rather than shadowing it.
 
 ```sh
 ./aiworks update                        # every group; best-effort, one failure never aborts
 ./aiworks update -n                     # preview — print each command, change nothing
-./aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
+./aiworks update --only claude,cursor,codex,plugins
 ./aiworks update --check-deps           # …and report outdated deps per repo (read-only)
 ```
 
@@ -352,4 +362,5 @@ branch + tests + MR per repo, not a maintenance chore). Restart Claude Code afte
 - [`CONTEXT.md`](CONTEXT.md) — the workspace glossary (ubiquitous language, one place)
 - [`docs/adr/`](docs/adr/) — architecture decision records (why the workspace is shaped this way)
 - [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) — how agents read/write Jira tickets
+- [`docs/agents/harnesses.md`](docs/agents/harnesses.md) — projection/runtime contract and how to add Hermes next
 - [`scripts/tracker/README.md`](scripts/tracker/README.md) · [`scripts/vcs/README.md`](scripts/vcs/README.md) — adapter details

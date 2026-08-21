@@ -1,8 +1,9 @@
 # Working this workspace from Cursor
 
-Everything the agents rely on — the project instruction, the rules, the skills, the subagents, the
-guard hooks, the permission model, MCP, and every `scripts/` adapter — works in Cursor as well as in
-Claude Code. One thing does not cross: **workflows**.
+Everything the agents rely on — project guidance, rules, skills, subagents, guard hooks,
+permissions, MCP, adapters, and the three deterministic Workflows — works in Cursor as well as in
+Claude Code. Cursor's persistent configuration is projected; Workflows execute from their original
+`.claude/workflows/*.js` source through the shared runtime.
 
 The Cursor layer is *generated*, never hand-edited. Author on the Claude side; run `aiworks cursor`.
 
@@ -10,6 +11,7 @@ The Cursor layer is *generated*, never hand-edited. Author on the Claude side; r
 aiworks cursor                 # root + every repo (add / sync already do this)
 aiworks cursor backoffice      # one repo
 aiworks cursor --check         # verify only; exit 1 on drift — use it in CI
+aiworks workflow dev-cycle --harness cursor FM-123
 ```
 
 (`--user` is still accepted and does nothing: the plugin skills moved to project scope and
@@ -29,6 +31,7 @@ are linked on every root run.)
 | Permissions | `permissions` in `.claude/settings.json` | `.cursor/cli.json` — **generated** |
 | — | `scripts/cursor/hook-shim.template.sh` | `.cursor/hooks/hook-shim.sh` — **copied** |
 | Each repo's instruction + rules, for a **root** session | `<repo>/CLAUDE.md`, `<repo>/.claude/rules/` | `.cursor/rules/repos/<repo>/*.mdc` — **generated** |
+| Workflows | `.claude/workflows/{brd,prd,dev-cycle}.js` | `aiworks workflow --harness cursor` — shared runtime |
 
 Only those last four are not symlinks; the rest is one file read by both tools. Rule frontmatter
 therefore carries `paths:` (Claude) **and** `globs:` (Cursor) — `aiworks cursor` keeps them in step,
@@ -140,12 +143,15 @@ to your session model. Set that to **`auto`** — `cursor-agent --model auto`, o
 the IDE. Note that every Claude model Cursor offers is a 1M-context variant, which is not what this
 workspace wants pinned; `auto` sidesteps that too.
 
-## What does not cross
+## Workflow support and remaining differences
 
-**Workflows.** `.claude/workflows/{dev-cycle,prd,brd}.js` run on Claude Code's Workflow engine —
-deterministic waves, pipelines, schema-validated subagent output, resume. Cursor has no equivalent
-and none is emulated. Run those from Claude Code. Everything the workflows *call* (the agents, the
-skills, the adapters) works in Cursor when you drive it yourself.
+**Workflows now cross without copies.** Invoke `/dev-cycle FM-123`, `/prd phase-2`, or `/brd …` in
+Cursor. The canonical skill launches `aiworks workflow <name> --harness cursor`; each `agent()` call
+runs through `cursor-agent -p --model auto`, its final JSON is validated against the Workflow's
+existing schema, and a malformed response is resumed with the exact errors at most twice before
+the phase fails. The runtime preserves deterministic phase order and bounded parallelism. Cursor
+does not expose the same token ledger through every CLI release, so the runtime labels a
+conservative observed-stream estimate whenever reported usage is absent.
 
 **Per-agent tool grants.** The `tools:` allowlist in an agent file is inert in Cursor — every
 subagent gets the full tool set. Cursor's `readonly: true` is not a substitute: it blocks shell and
@@ -219,10 +225,12 @@ Change a hook by editing it under `.claude/hooks/`. Change the *translation* by 
 
 ## Onboarding a teammate
 
-1. `aiworks sync` — clones the repos and projects the Cursor layer as part of the run. That
+1. Select Cursor in `workspace.config.yaml` through `aiworks setup` or
+   `aiworks harnesses configure --reconfigure`.
+2. `aiworks sync` — clones the repos and projects the Cursor layer as part of the run. That
    includes the plugin-skill links, so nothing extra is needed to get `caveman` in Cursor.
-2. Set the Cursor model to `auto`.
-3. Open `ai-workspace.code-workspace`, or open one repo at a time. Not the meta-repo folder.
+3. Keep the Cursor model on `auto`; the workflow adapter also pins `auto` deliberately.
+4. Open `ai-workspace.code-workspace`, or open one repo at a time. Not the meta-repo folder.
 
 MCP servers need a one-time per-server approval in Cursor (`cursor-agent mcp list` shows them as
 `not loaded (needs approval)` until then).
