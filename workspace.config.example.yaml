@@ -231,11 +231,15 @@ loadtest:
 
 # ── Cross-repo test-suite gate ─────────────────────────────────────────────────
 test_suite:
-  max_fix_rounds: 2                # a red at the cross-repo gate is CLASSIFIED, then acted on: an
+  max_fix_rounds: 3                # a red at the cross-repo gate is CLASSIFIED, then acted on: an
                                    #   automation bug the suite repo fixes itself, an app bug the
-                                   #   named repo's developer fixes (re-reviewed, then re-run), or a
-                                   #   missing prerequisite the suite repo seeds. This caps those
-                                   #   loops. 0 disables repair: the first red halts with evidence.
+                                   #   named repo's developer fixes — checked by a scoped
+                                   #   guardian+performance pass over that fix diff when the repo
+                                   #   declares those gates, retried up to its own bound BEFORE the
+                                   #   suite re-runs (docs/adr/0024) — or a missing prerequisite the
+                                   #   suite repo seeds. This caps both the rounds and those
+                                   #   per-red retries. 0 disables repair: the first red halts
+                                   #   with evidence.
 
 # ── dev-cycle run limits ───────────────────────────────────────────────────────
 dev_cycle:
