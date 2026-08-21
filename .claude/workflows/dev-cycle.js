@@ -115,7 +115,7 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   baselineCache: '~/.cache/aiworks/loadtest-baselines',
 }
 const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
-  maxFixRounds: 3,             // classified-red → fix → scoped quality check → re-run loops before halting
+  maxFixRounds: 2,             // classified-red → fix → scoped quality check → re-run loops before halting
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: 2000000,        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable

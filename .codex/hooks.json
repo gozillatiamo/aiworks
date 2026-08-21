@@ -47,6 +47,16 @@
       {
         "hooks": [
           {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse Edit anEgLXIgJy50b29sX3Jlc3BvbnNlLmZpbGVQYXRoIC8vIC50b29sX2lucHV0LmZpbGVfcGF0aCcgfCB7IHJlYWQgLXIgZjsgWyAtbiAiJGYiIF0gfHwgZXhpdCAwOyBnaXQgLUMgIiQoZGlybmFtZSAiJGYiKSIgY2hlY2staWdub3JlIC1xICIkKGJhc2VuYW1lICIkZiIpIiAmJiBleGl0IDA7IGNvbW1hbmQgLXYgcHJldHRpZXIgPi9kZXYvbnVsbCAyPiYxIHx8IGV4aXQgMDsgcHJldHRpZXIgLS13cml0ZSAiJGYiOyB9IDI+L2Rldi9udWxsIHx8IHRydWU=",
+            "timeout": 30,
+            "type": "command"
+          }
+        ],
+        "matcher": "^(apply_patch|Write|Edit)$"
+      },
+      {
+        "hooks": [
+          {
             "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse Edit IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvcG9zdHRvb2wtY29kZWdyYXBoLXN5bmMuc2g=",
             "type": "command"
           },
@@ -64,12 +74,17 @@
       {
         "hooks": [
           {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3Mvdm9pY2UtbmFycmF0ZS5zaA==",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
             "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3Mvc3RhZ2VoYW5kLXNob3cuc2g=",
             "timeout": 10,
             "type": "command"
           },
           {
-            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3Mvdm9pY2UtbmFycmF0ZS5zaA==",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3Mvc3RhZ2VoYW5kLWZvbGxvdy5zaA==",
             "timeout": 10,
             "type": "command"
           }

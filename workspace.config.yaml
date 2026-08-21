@@ -1,3 +1,7 @@
+harnesses:
+  - claude
+  - cursor
+  - codex
 org:
   name: bluePi
   product: "OFB"

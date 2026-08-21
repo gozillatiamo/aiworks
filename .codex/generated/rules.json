@@ -3,11 +3,10 @@
   "rules": [
     {
       "scopes": [
-        "your-app/shared-lib/**",
-        "your-service/shared-lib/**",
-        "your-web/packages/ui-kit/**"
+        "agent-webservice/agent-db/**",
+        "paotung-template/packages/customization-widget/**"
       ],
-      "sha256": "c4ca4d3eba6d25afd4f467c541eb29dd96c49ed48dcca55f4e76a810731c244e",
+      "sha256": "6678ca4cd667026bf5b59cfba6f804175c595063e53815e00bec95d490723252",
       "source": ".claude/rules/submodules.md"
     },
     {
@@ -19,6 +18,898 @@
       ],
       "sha256": "9a86f083b36233073c17feb28ddebcbee686e78495a7ac2530199c9cbdb0bc27",
       "source": ".claude/rules/workspace-config.md"
+    },
+    {
+      "scopes": [
+        "agent-ofb-cypress/.gitlab-ci.yml",
+        "agent-ofb-cypress/scripts/**"
+      ],
+      "sha256": "3de7a098d537cab81a59d834c921ca030505441e876d7ead41a1195590e2d584",
+      "source": "agent-ofb-cypress/.claude/rules/ci.md"
+    },
+    {
+      "scopes": [
+        "agent-ofb-cypress/cypress.config.js",
+        "agent-ofb-cypress/cypress/support/queries/**",
+        "agent-ofb-cypress/cypress/.env/**"
+      ],
+      "sha256": "84f935a49e4d993360b42b8b92d284a90525275211b54543f23c6e9edf1aaaeb",
+      "source": "agent-ofb-cypress/.claude/rules/db-and-env.md"
+    },
+    {
+      "scopes": [
+        "agent-ofb-cypress/cypress/e2e/**",
+        "agent-ofb-cypress/cypress/integration/**"
+      ],
+      "sha256": "044319848eec9c7aefbea6832fcd561752b23b01f9d1f1e887b37e9bb8f60746",
+      "source": "agent-ofb-cypress/.claude/rules/test-conventions.md"
+    },
+    {
+      "scopes": [
+        "turnover-commission-batch/src/main.rs",
+        "turnover-commission-batch/src/services/**",
+        "turnover-commission-batch/src/dao/turnover_commission_dao.rs"
+      ],
+      "sha256": "731d019e686b612c2979f1cf4610ecb5b472ce10c4d3312c4eed8bc6667b7091",
+      "source": "turnover-commission-batch/.claude/rules/batch-semantics.md"
+    },
+    {
+      "scopes": [
+        "turnover-commission-batch/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "turnover-commission-batch/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "turnover-commission-batch/src/tests/**",
+        "turnover-commission-batch/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "turnover-commission-batch/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "turnover-commission-batch/src/dao/**",
+        "turnover-commission-batch/src/model.rs",
+        "turnover-commission-batch/src/tests/mock_pg/**"
+      ],
+      "sha256": "9a4e5e7074576bc06df3ade015749add8234d583ddf08a4392ca2f361a832cb6",
+      "source": "turnover-commission-batch/.claude/rules/sql-conventions.md"
+    },
+    {
+      "scopes": [
+        "turnover-commission-batch/src/bin/tests.rs",
+        "turnover-commission-batch/src/tests/**"
+      ],
+      "sha256": "c9be7f7674322481a3bd925e27d3d488cf92555c3c534d4b0f829a47c510e100",
+      "source": "turnover-commission-batch/.claude/rules/testing.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "a6483a446a5b722d285fcc2066278fe7e3e7785d3244158d3d6586bbe7484208",
+      "source": "turnover-commission-batch/.claude/rules/workflow.md"
+    },
+    {
+      "scopes": [
+        "agent-db/changelog/**"
+      ],
+      "sha256": "27b4bdd0786603db570ebbbf27294f18734b103ba3750e07cc101d6136496bdc",
+      "source": "agent-db/.claude/rules/changelogs.md"
+    },
+    {
+      "scopes": [
+        "agent-db/changelog/**/*.sql"
+      ],
+      "sha256": "e52235a2b4aeb275600eabcc2d64d40c4e9905b2fd74131ed66acd7d53e08f39",
+      "source": "agent-db/.claude/rules/coding_standards/changesets.md"
+    },
+    {
+      "scopes": [
+        "agent-db/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "agent-db/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "agent-db/src/tests/**",
+        "agent-db/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "agent-db/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "afcf139d03bd5bfed52114a4bb016285c104f1456761aec570ffa1ce08610f61",
+      "source": "agent-db/.claude/rules/databases.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "ee68037d71278f25437f61df750345734b2a64db613ae1d82a83579a48450ab3",
+      "source": "agent-db/.claude/rules/local-dev.md"
+    },
+    {
+      "scopes": [
+        "paotung-template/src/**/*.{ts,tsx}"
+      ],
+      "sha256": "ec16105f76d4ec601ea2fdc4ae27119a5862e3e66c45f6dff0edc6cf132b245e",
+      "source": "paotung-template/.claude/rules/architecture.md"
+    },
+    {
+      "scopes": [
+        "paotung-template/src/**"
+      ],
+      "sha256": "397c72f42eab66562109d845e9e65697404274e83edb20929cbf54ee6b577612",
+      "source": "paotung-template/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "paotung-template/**/*.test.*",
+        "paotung-template/**/*.spec.*",
+        "paotung-template/**/*.stories.*"
+      ],
+      "sha256": "13cd811c2b80fdb4c51da4908ca0d85cec26ba13ff5c94f453b04fdac76a353c",
+      "source": "paotung-template/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "paotung-template/src/**/*.tsx"
+      ],
+      "sha256": "9e69cd98e0dd6197f728cce07a22ff1e4e5efd456addb3375b3f97ac2ad0e99c",
+      "source": "paotung-template/.claude/rules/data-cy-i18n.md"
+    },
+    {
+      "scopes": [
+        "paotung-template/**/*.stories.tsx"
+      ],
+      "sha256": "b56ec7abf7a2094149027276710c5fb301a73b955a2526243c18db4078a1dc4d",
+      "source": "paotung-template/.claude/rules/storybook.md"
+    },
+    {
+      "scopes": [
+        "customization-widget/src/**"
+      ],
+      "sha256": "d001d0885b18e6857bf826a93b449df5457c0a835b9807eeef39844c7d18cc56",
+      "source": "customization-widget/.claude/rules/architecture.md"
+    },
+    {
+      "scopes": [
+        "customization-widget/src/**"
+      ],
+      "sha256": "397c72f42eab66562109d845e9e65697404274e83edb20929cbf54ee6b577612",
+      "source": "customization-widget/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "customization-widget/**/*.stories.*",
+        "customization-widget/**/*.test.*",
+        "customization-widget/**/*.spec.*"
+      ],
+      "sha256": "d76bcb0f186e08703ec7aa559d202ed5480ebb177f884786cd813b82d7f33f90",
+      "source": "customization-widget/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "customization-widget/src/**/*.{ts,tsx}"
+      ],
+      "sha256": "aac748b008e7f9480d263669ae0f222c85edd861a97d89f6cd0cfe5c348b4820",
+      "source": "customization-widget/.claude/rules/conventions.md"
+    },
+    {
+      "scopes": [
+        "customization-widget/src/**/*.stories.tsx"
+      ],
+      "sha256": "50495674d76d225924c8430e44ea57d1c9b4ef83233e8bf584f155993814bef3",
+      "source": "customization-widget/.claude/rules/storybook.md"
+    },
+    {
+      "scopes": [
+        "front-end/src/services/**",
+        "front-end/src/utils/api.ts",
+        "front-end/src/utils/apiSSR.ts"
+      ],
+      "sha256": "d28a03d95a1354044cbc5608a8e61f06e53b4d52d3c0a9eb73c665ec9027a1fc",
+      "source": "front-end/.claude/rules/api-and-services.md"
+    },
+    {
+      "scopes": [
+        "front-end/src/**"
+      ],
+      "sha256": "0006b57e4f66595e60add849b6ea12c88d8006cba07899044954e3df8e3203f2",
+      "source": "front-end/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "front-end/**/*.test.*",
+        "front-end/**/*.spec.*",
+        "front-end/**/*.stories.*"
+      ],
+      "sha256": "c3891b7eb3967b072ff1d43e014741a182e48859579eb9be3eebbf98b3fe7981",
+      "source": "front-end/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "front-end/src/app/**",
+        "front-end/src/components/**",
+        "front-end/src/hooks/**"
+      ],
+      "sha256": "081d80476ec9b2427aa1d9a4d0a000fbff93fa717d90b947ab589a31df5b23f2",
+      "source": "front-end/.claude/rules/components-and-routing.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "168945d23937fef91c76cbac3f3951e66210f5283341e8e4011f1059ea5b2811",
+      "source": "front-end/.claude/rules/deploy-and-env.md"
+    },
+    {
+      "scopes": [
+        "front-end/src/**/*.tsx",
+        "front-end/src/**/*.css",
+        "front-end/tailwind.config.js",
+        "front-end/postcss.config.js"
+      ],
+      "sha256": "801cb36c5830a1fa3c48584d4c14b664fcdfd67aed462bec859f72aac626da1b",
+      "source": "front-end/.claude/rules/styling.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "35c0ec33152a0ff2a29c7982da096069cf6322c82bd67c6bab997e6f7c600af3",
+      "source": "front-end/.claude/rules/tooling-and-gates.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/routes/external_game_route.rs",
+        "agent-webservice/src/routes/external_game_route/amb_common_flow_route.rs",
+        "agent-webservice/src/services/gambling_middleware_service.rs",
+        "agent-webservice/src/utils/idempotency_key.rs",
+        "agent-webservice/src/redis_utils/redis_gambling_middleware_util.rs"
+      ],
+      "sha256": "964c5ac3ea9f1380f74aadc09a827c8e5d399b664b9205215c1335e4e97541cb",
+      "source": "agent-webservice/.claude/rules/aggregator_proxy.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "7de69d0415b2ef50d897fc6eac776de9992c70ac276603bcd4c1d31034a62e1f",
+      "source": "agent-webservice/.claude/rules/architecture.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/routes/external_game_route.rs",
+        "agent-webservice/src/routes/external_game_route/amb_common_flow_route.rs",
+        "agent-webservice/src/routes/external_game_route/awc_common_route.rs",
+        "agent-webservice/src/services/external_game_service.rs"
+      ],
+      "sha256": "e0b866d2e3a2218e5f537d9b686eea02187f8c4aef55b31d7c854a5f9cf78783",
+      "source": "agent-webservice/.claude/rules/bet.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/aggregators/**",
+        "agent-webservice/src/providers/**",
+        "agent-webservice/src/traits/external_aggregator.rs",
+        "agent-webservice/src/traits/external_game_provider.rs"
+      ],
+      "sha256": "8617113b506ce22f1bf687c9b0c685909b3f13cff3bd477e11ac96fcfa0da25e",
+      "source": "agent-webservice/.claude/rules/coding_standards/aggregator.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/constant.rs"
+      ],
+      "sha256": "a653015d415a41e5161a80f8aeaa3c4352afbee403d3bdd656367cdcebef367f",
+      "source": "agent-webservice/.claude/rules/coding_standards/constant.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/dao/**"
+      ],
+      "sha256": "ec2a47c297c84cbadf9cf5fddffbbdea3c544bc90625ba2cf6a2a2c626303f05",
+      "source": "agent-webservice/.claude/rules/coding_standards/dao.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/errors/**"
+      ],
+      "sha256": "07cee6758ca4b4d8f76386daeeb7fe32703e0dd4b54496137f444c59b854549d",
+      "source": "agent-webservice/.claude/rules/coding_standards/error.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/models/**",
+        "agent-webservice/src/schemas/**",
+        "agent-webservice/src/dto/**"
+      ],
+      "sha256": "952f797ba12451dfe106435c6d7588740238f69f275b82fe84acab99d3b3cb21",
+      "source": "agent-webservice/.claude/rules/coding_standards/models_schemas.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/routes.rs",
+        "agent-webservice/src/routes/**",
+        "agent-webservice/src/schemas/**"
+      ],
+      "sha256": "bd0d656a5883c072f3ae96066bb35f733dad3fdab1568d44e8a1f29e5196b044",
+      "source": "agent-webservice/.claude/rules/coding_standards/route.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/services/**"
+      ],
+      "sha256": "b20ddbe5a01c62641316a70569398da11acb2d6afea32e5f7bf1c95808c82881",
+      "source": "agent-webservice/.claude/rules/coding_standards/services.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/**"
+      ],
+      "sha256": "6a7c06305d03e105bf7e2c512f6bdcd5e92dd8a2f9413c3eda4036d91784ebe5",
+      "source": "agent-webservice/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/tests/**",
+        "agent-webservice/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "agent-webservice/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/utils/**"
+      ],
+      "sha256": "1e593d371a2ef73a4aff977ec64d817ce19b898e9f0985dae35659b581d8f4a2",
+      "source": "agent-webservice/.claude/rules/coding_standards/util.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/logger.rs",
+        "agent-webservice/src/routes/external_game_route.rs",
+        "agent-webservice/src/routes/external_game_route/amb_common_flow_route.rs",
+        "agent-webservice/src/services/seamless_middleware_service.rs"
+      ],
+      "sha256": "f418c60328c85f7a6a1ac64e876bb287e3bb87a5f37c414e5cd46f2d46734e52",
+      "source": "agent-webservice/.claude/rules/tracing_logging/aggregator_proxy_otel.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/logger.rs"
+      ],
+      "sha256": "f286cc3c35a5dac7732fd051cc4eed14dce4dc40190cc91d4e59874412a2cbef",
+      "source": "agent-webservice/.claude/rules/tracing_logging/aggregator_proxy_otel_example_logs.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/logger.rs"
+      ],
+      "sha256": "6f5e28e4d0f281bc78189ea817c980b8153d6999f08eea634a2d3e4427953141",
+      "source": "agent-webservice/.claude/rules/tracing_logging/aggregator_proxy_otel_example_trace.md"
+    },
+    {
+      "scopes": [
+        "agent-webservice/src/routes.rs",
+        "agent-webservice/src/routes/**",
+        "agent-webservice/src/services/**",
+        "agent-webservice/src/dao/**",
+        "agent-webservice/src/utils/**",
+        "agent-webservice/src/middlewares/**",
+        "agent-webservice/src/aggregators/**",
+        "agent-webservice/src/payment_aggregators/**",
+        "agent-webservice/src/providers/**",
+        "agent-webservice/src/sse/**",
+        "agent-webservice/src/logger.rs"
+      ],
+      "sha256": "99094077482593cca7ff6dafb5ad7b3337586c4fe4aaba9d1913b1667abff510",
+      "source": "agent-webservice/.claude/rules/tracing_logging/instrumentation.md"
+    },
+    {
+      "scopes": [
+        "agent-paotung-cypress/cypress.config.js",
+        "agent-paotung-cypress/.env.example",
+        "agent-paotung-cypress/scripts/dev.sh",
+        "agent-paotung-cypress/cypress/support/data/**"
+      ],
+      "sha256": "3f7271e3321c7fbca7730ff033344cb1a2ea64e25fedf93b4cf806ba7ea396c9",
+      "source": "agent-paotung-cypress/.claude/rules/environments.md"
+    },
+    {
+      "scopes": [
+        "agent-paotung-cypress/cypress/pageObjects/**"
+      ],
+      "sha256": "a530cd4503c1d19ac43e2187d5f43acaec579ba99cfc312c99589263d49bbd06",
+      "source": "agent-paotung-cypress/.claude/rules/page-objects.md"
+    },
+    {
+      "scopes": [
+        "agent-paotung-cypress/cypress/support/**",
+        "agent-paotung-cypress/cypress/fixtures/**",
+        "agent-paotung-cypress/cypress/config/**",
+        "agent-paotung-cypress/cypress/.env/**"
+      ],
+      "sha256": "f49f2407d0f90248617b27ce3d6e21ea3f67e706263ef65f9f2cf5cf276e9195",
+      "source": "agent-paotung-cypress/.claude/rules/support-data-db.md"
+    },
+    {
+      "scopes": [
+        "agent-paotung-cypress/cypress/e2e/**"
+      ],
+      "sha256": "8636e1d867de7e7d4d6c6edca13934886742cf4632db8457e43eccbdce4cfe38",
+      "source": "agent-paotung-cypress/.claude/rules/writing-tests.md"
+    },
+    {
+      "scopes": [
+        "backoffice/src/**"
+      ],
+      "sha256": "0006b57e4f66595e60add849b6ea12c88d8006cba07899044954e3df8e3203f2",
+      "source": "backoffice/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "backoffice/**/*.stories.*",
+        "backoffice/**/*.test.*",
+        "backoffice/**/*.spec.*"
+      ],
+      "sha256": "8eb373be01f3faa944725b84bf7c0f2f4cb6dad802d06a91db229b90c622a442",
+      "source": "backoffice/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "backoffice/src/**/*.tsx"
+      ],
+      "sha256": "1c28c8d28270c3a44def9f1357182c5d33f7cd29188268ef1721ea98064cea1d",
+      "source": "backoffice/.claude/rules/data-cy.md"
+    },
+    {
+      "scopes": [
+        "backoffice/**/*.stories.tsx"
+      ],
+      "sha256": "b7ca30209e62ec4cf82b508f6f420a910e3784957899324b3389f8e4c4f258e6",
+      "source": "backoffice/.claude/rules/storybook.md"
+    },
+    {
+      "scopes": [
+        "ofb-backoffice-cypress/api/**"
+      ],
+      "sha256": "aa6afcbb79c5d0da4cde44d6a83c9ae3926343f8bea7fa564d95d2dee6556b17",
+      "source": "ofb-backoffice-cypress/.claude/rules/code_standards/api_newman.md"
+    },
+    {
+      "scopes": [
+        "ofb-backoffice-cypress/cypress/**"
+      ],
+      "sha256": "93ef5ce345cf193d08d1760a3f0b421a25526c5333ca2207606000c88e7bb8c0",
+      "source": "ofb-backoffice-cypress/.claude/rules/code_standards/e2e_cypress.md"
+    },
+    {
+      "scopes": [
+        "ofb-backoffice-cypress/cypress/page-object/**"
+      ],
+      "sha256": "4e2a6283cbfe11ad31533f55d7c4fd82f326d7bfc8dfd5425da0f3ba1c8964d4",
+      "source": "ofb-backoffice-cypress/.claude/rules/code_standards/page-objects.md"
+    },
+    {
+      "scopes": [
+        "ofb-backoffice-cypress/cypress/e2e/**"
+      ],
+      "sha256": "c31ea11602c414af8a5eafb1b8b00d17ccf2a4501a94ca4dfc09a606b4c7bffd",
+      "source": "ofb-backoffice-cypress/.claude/rules/code_standards/writing-specs.md"
+    },
+    {
+      "scopes": [
+        "ofb-backoffice-cypress/cypress/db/**"
+      ],
+      "sha256": "bd1ced5f458974097215e84467351fe33d15dae54ca85e4b1c00326aa50b775e",
+      "source": "ofb-backoffice-cypress/.claude/rules/database.md"
+    },
+    {
+      "scopes": [
+        "ofb-backoffice-cypress/cypress/**"
+      ],
+      "sha256": "4cfb9dbac753d4b2511edfa975723c22eab2e41e158fdadaf209ee3297d7efcc",
+      "source": "ofb-backoffice-cypress/.claude/rules/environments-and-auth.md"
+    },
+    {
+      "scopes": [
+        "mock-agency-api/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "mock-agency-api/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "mock-agency-api/src/tests/**",
+        "mock-agency-api/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "mock-agency-api/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "mock-agency-api/mock-agency-api.json"
+      ],
+      "sha256": "bd3280a0c83e86ac04cfccabd645a4f090bf74d244b2adedaa07739a4b064241",
+      "source": "mock-agency-api/.claude/rules/mockoon-editing.md"
+    },
+    {
+      "scopes": [
+        "commission-batch/src/**"
+      ],
+      "sha256": "397c72f42eab66562109d845e9e65697404274e83edb20929cbf54ee6b577612",
+      "source": "commission-batch/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "commission-batch/tests/**",
+        "commission-batch/**/*_test.rs"
+      ],
+      "sha256": "37dbe0e80ab79b563c451b896e82e10dad55d3dd93919a5f8e95aeb5c7e19107",
+      "source": "commission-batch/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "seamless-api/app/**"
+      ],
+      "sha256": "51731abbd31d809aabfdf9eb5f50bc0114c7635769f679437ff0f7f5a01d9029",
+      "source": "seamless-api/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "seamless-api/app/**/*.test.*",
+        "seamless-api/app/**/*.spec.*",
+        "seamless-api/app/**/__tests__/**"
+      ],
+      "sha256": "186bb947294c7a38d2f7992a565ad903f36b459df287d592f8f2984486b97d9a",
+      "source": "seamless-api/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "seamless-api/Dockerfile",
+        "seamless-api/docker-compose.yml",
+        "seamless-api/entrypoint.sh",
+        "seamless-api/.gitlab-ci.yml",
+        "seamless-api/k8s/**"
+      ],
+      "sha256": "1c6ab42f0274afeeb5a9cab11cc7e6e6bbd7514bf56d3cb231f727f37d30976b",
+      "source": "seamless-api/.claude/rules/deploy.md"
+    },
+    {
+      "scopes": [
+        "seamless-api/scraper/**",
+        "seamless-api/server/**",
+        "seamless-api/scripts/**"
+      ],
+      "sha256": "1a8262909b507ad5525cf2c77ee92ba821518835227882a2837af7ead187f82f",
+      "source": "seamless-api/.claude/rules/docs-mirror.md"
+    },
+    {
+      "scopes": [
+        "seamless-api/app/**"
+      ],
+      "sha256": "ca5a41e08b9b6e35cb72a912e174964fbc29f167a1480441c1c40712005dc543",
+      "source": "seamless-api/.claude/rules/test-suite.md"
+    },
+    {
+      "scopes": [
+        "game/src/**"
+      ],
+      "sha256": "f4a3c873aecedab34e1114d6769758d2f16f6f9990827031ab7561f0382f39ca",
+      "source": "game/.claude/rules/architecture.md"
+    },
+    {
+      "scopes": [
+        "game/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "game/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "game/src/tests/**",
+        "game/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "game/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "game/src/**"
+      ],
+      "sha256": "397c72f42eab66562109d845e9e65697404274e83edb20929cbf54ee6b577612",
+      "source": "game/.claude/rules/coding_standards.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "5a677af1b968dc9849c0572f3edfe982dc61842b1a3e61112d6899f44fb3e851",
+      "source": "game/.claude/rules/data-stores.md"
+    },
+    {
+      "scopes": [
+        "game/tests/**",
+        "game/benches/**",
+        "game/src/bin/tests.rs"
+      ],
+      "sha256": "24097dc345d91af28b2a4ab6a34e0882d807f4e3b4e7ddb80d3f50115843d040",
+      "source": "game/.claude/rules/testing.md"
+    },
+    {
+      "scopes": [
+        "cashback-batch/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "cashback-batch/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "cashback-batch/src/tests/**",
+        "cashback-batch/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "cashback-batch/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "crypto-watcher/.gitlab-ci.yml",
+        "crypto-watcher/Dockerfile"
+      ],
+      "sha256": "0c06c067b384c110e9a01bce8bad92dfe5dc2311d94fcea7af2532deb5e8bbe9",
+      "source": "crypto-watcher/.claude/rules/ci-cd.md"
+    },
+    {
+      "scopes": [
+        "crypto-watcher/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "crypto-watcher/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "crypto-watcher/src/tests/**",
+        "crypto-watcher/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "crypto-watcher/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "crypto-watcher/db/**",
+        "crypto-watcher/src/dao/**",
+        "crypto-watcher/src/models/**"
+      ],
+      "sha256": "5469d6f2398a782a73a7296b82cfed5a7101bf2681dc81223cac945938400b22",
+      "source": "crypto-watcher/.claude/rules/database.md"
+    },
+    {
+      "scopes": [
+        "crypto-watcher/src/logger.rs",
+        "crypto-watcher/src/main.rs"
+      ],
+      "sha256": "4b41f780659d9e0876c8a5e9db7343e2cb40bc8c74a83618c31894dec9d4556c",
+      "source": "crypto-watcher/.claude/rules/observability.md"
+    },
+    {
+      "scopes": [
+        "bet-aggregator/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "bet-aggregator/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "bet-aggregator/src/tests/**",
+        "bet-aggregator/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "bet-aggregator/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "bet-aggregator/.gitlab-ci.yml",
+        "bet-aggregator/Dockerfile.build"
+      ],
+      "sha256": "bae2831fab3a3f45a4fc9bb9cee15c3bec438876ce7912d5a05a91349a73c973",
+      "source": "bet-aggregator/.claude/rules/deployment.md"
+    },
+    {
+      "scopes": [
+        "bet-aggregator/src/redis_util.rs",
+        "bet-aggregator/src/redis_bet_model.rs",
+        "bet-aggregator/src/player_wallet_enum.rs",
+        "bet-aggregator/src/main.rs"
+      ],
+      "sha256": "e3ab111fe84efc49658f7f704d44ef598e7767e89f3eda766e50eea183b7f26d",
+      "source": "bet-aggregator/.claude/rules/redis-model.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "1936460c2b61c8cc62c9179b06315e32be8c42a3d6268a80626cb6f707eee792",
+      "source": "campaign-sub/.claude/rules/architecture.md"
+    },
+    {
+      "scopes": [
+        "campaign-sub/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "campaign-sub/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "campaign-sub/src/tests/**",
+        "campaign-sub/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "campaign-sub/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "fc022ad4aa362ab0542e40b80bf720c38104564c77b70dd21cd766b39f6a1342",
+      "source": "campaign-sub/.claude/rules/config.md"
+    },
+    {
+      "scopes": [
+        "campaign-sub/src/dao/**",
+        "campaign-sub/src/models/**",
+        "campaign-sub/src/utils/db_util.rs",
+        "campaign-sub/src/utils/shard_util.rs"
+      ],
+      "sha256": "418aa8075d01152ed8be1c22975ec8f69889902cc913bd3440357eddc811cf18",
+      "source": "campaign-sub/.claude/rules/data-access.md"
+    },
+    {
+      "scopes": [
+        "live-sub/src/main.rs",
+        "live-sub/src/service/**"
+      ],
+      "sha256": "ff32e3cf8d97047d75740ce857dd0c170f329bde5c8d4304587ff919a6f9e6fe",
+      "source": "live-sub/.claude/rules/architecture.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "fd841160e55bf3936e1b7a7614a82298b22d7188eca4b720abb7ce251aa6621a",
+      "source": "live-sub/.claude/rules/build-run-test.md"
+    },
+    {
+      "scopes": [
+        "live-sub/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "live-sub/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "live-sub/src/tests/**",
+        "live-sub/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "live-sub/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "1d5546f55b3c734688dd7b598f3119c0c5350c10639a5f19b1e97bcefce15469",
+      "source": "live-sub/.claude/rules/conventions-and-ci.md"
+    },
+    {
+      "scopes": [
+        "live-sub/src/db_connection.rs",
+        "live-sub/src/util/shard_util.rs",
+        "live-sub/src/dao/**",
+        "live-sub/src/model/**"
+      ],
+      "sha256": "1c0a41486fb612f00cac8a29ab2d42eef1ec8d364414e653b8dd2ec4fa62f619",
+      "source": "live-sub/.claude/rules/database-and-sharding.md"
+    },
+    {
+      "scopes": [
+        "live-sub/src/util/redis_util.rs",
+        "live-sub/src/util/pubnub_util.rs",
+        "live-sub/src/logger.rs",
+        "live-sub/src/schema/**"
+      ],
+      "sha256": "3e733c51b1d070828103f398c135f38e776aeb8ee306ae0dd6fbe9335f97dfe3",
+      "source": "live-sub/.claude/rules/integrations-and-observability.md"
+    },
+    {
+      "scopes": [
+        "ofb-k6-loadtests/src/**/*.js"
+      ],
+      "sha256": "afd99a4268fb4741384f59db6052a6bb050724d0752734700e513979032e850b",
+      "source": "ofb-k6-loadtests/.claude/rules/code-style.md"
+    },
+    {
+      "scopes": [
+        "ofb-k6-loadtests/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "ofb-k6-loadtests/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "ofb-k6-loadtests/src/tests/**",
+        "ofb-k6-loadtests/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "ofb-k6-loadtests/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "ofb-k6-loadtests/src/data/**"
+      ],
+      "sha256": "0ad961df7eef21ad63b354ab03ca60989251ab0c5667c65687880cef5b8d4559",
+      "source": "ofb-k6-loadtests/.claude/rules/data-fixtures.md"
+    },
+    {
+      "scopes": [
+        "ofb-k6-loadtests/src/scenarios/**",
+        "ofb-k6-loadtests/src/functions/**"
+      ],
+      "sha256": "811a31813d6d75e33f979c5d9ebd63d2f0ab926383ee7b0405b7f1837d862b4d",
+      "source": "ofb-k6-loadtests/.claude/rules/scenario-conventions.md"
+    },
+    {
+      "scopes": [
+        "lotto-service/src/**"
+      ],
+      "sha256": "6eafe4e8c9067d672df8cd05f56b8621e63024116367cb4ae6564089db9acc79",
+      "source": "lotto-service/.claude/rules/architecture.md"
+    },
+    {
+      "scopes": [
+        "lotto-service/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "lotto-service/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "lotto-service/src/tests/**",
+        "lotto-service/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "lotto-service/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "lotto-service/src/tests/**",
+        "lotto-service/src/bin/tests.rs"
+      ],
+      "sha256": "32c115baa522a35c7b22c3b1a0d94dcbc4211fe1b3c83eb0ce65f3bc696e673c",
+      "source": "lotto-service/.claude/rules/testing.md"
+    },
+    {
+      "scopes": [
+        "dev-script/src/**"
+      ],
+      "sha256": "762b9f264ee2fb3c45c927fcdb0057f4af22097c9a530e88f436b2ce369c349c",
+      "source": "dev-script/.claude/rules/coding_standards/standards.md"
+    },
+    {
+      "scopes": [
+        "dev-script/src/tests/**",
+        "dev-script/**/*_test.rs"
+      ],
+      "sha256": "dabb3bc9446be9d8d3af4dbcfd8b648fd8fa2b005913b1ebb8b9e0d2c7932688",
+      "source": "dev-script/.claude/rules/coding_standards/tests.md"
+    },
+    {
+      "scopes": [
+        "dev-script/get-amb-bet-detail/**"
+      ],
+      "sha256": "db29c173e9c3351d78eb08a0dc8b05db3039795d3f1fd0df1d4bbba04156feb3",
+      "source": "dev-script/.claude/rules/get-amb-bet-detail.md"
+    },
+    {
+      "scopes": [
+        "dev-script/pg-tshoot/**"
+      ],
+      "sha256": "94c2aa92e1d99c4ea33e4ffa00f5ef01cde3d7aead8b40a6af17c969e88bd9c4",
+      "source": "dev-script/.claude/rules/pg-tshoot.md"
+    },
+    {
+      "scopes": [
+        "dev-script/retry-amb-callback/**",
+        "dev-script/get-amb-raw-request/**"
+      ],
+      "sha256": "0aa98835a2c6bbc6ea0d6513cefa81cbc3cf1500c8e5504a9734d3d68a5205c1",
+      "source": "dev-script/.claude/rules/retry-amb-callback.md"
     }
   ]
 }

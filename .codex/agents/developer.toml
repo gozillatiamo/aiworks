@@ -50,31 +50,45 @@ The non-negotiable core of the skill is **Phase 1: stand up a tight, red-capable
 
 **When the symptom exists ONLY in a deployed environment, the loop is not reachable and this is the wrong skill.** A request that already failed in prod, a pod that has since been replaced, an intermittent 5xx with a trace id and nothing to press — there is no command to run red. Drive those with **`/root-cause-deployed`** instead: it counts the failure class before theorising (`scripts/observability/find-traces.sh`), forces at least two competing hypotheses, and grades the answer CONFIRMED / LEADING / SPECULATIVE so a single sighting cannot be reported as a cause. `k8s_triage` is how you see the cluster's own account of whether the request ever arrived — pod replacements, `previous=true` logs from a container that already died, endpoint membership, gateway route and upstream config. Return to `/diagnosing-bugs` once that hands you something reproducible to fix.
 
+**Bug only shows in a deployed env (staging/prod/dev) and won't reproduce locally? Get the ground truth FIRST with `/telemetry-triage`** — pull the real SigNoz logs + trace for the failing request, then use that captured trace/payload to seed the Phase 1 loop (its "replay a captured trace" option). Telemetry finds *what happened*; it is the seed for the repro loop, never a substitute for it — you still fix against a red loop.
+
 **Cause still hidden after the loop goes red? Step through it — don't guess and don't spin another print cycle.** When print-debugging isn't revealing enough, or you need to see exactly how execution reached a bad state, drive **`/debugging-code:debugging-code`** (interactive DAP debugger: breakpoints — incl. conditional — step line-by-line, inspect live variables + the call stack, evaluate expressions against the running process). This is escalation *inside* `/diagnosing-bugs`, **never** a replacement: the red repro loop still comes first and still becomes the Phase-5 regression test; the debugger just beats another `println!`/`console.log` round to the root cause. Works across the workspace stacks (Rust backend, Node/TS web apps, …).
 
 ## PRD pipeline — pre-ticket bug/issue triage (sandbox, never commit)
 The `prd` workflow calls you to triage a bug/issue brief *before* its ticket exists — to hand the Product Owner facts (not a vague symptom) to write the ticket from. Run your normal `/diagnosing-bugs` discipline above (repro-first loop + `/debugging-code` when needed) and return the **root cause**, concrete **reproduce steps**, and a **suggested fix direction** (a pointer, not the fix). This is the ONE mode where you do **not** ship: to reproduce you MAY edit code, write storage, and run services, but it is a **throwaway sandbox** — **never `git commit`/push or open a PR/MR, no `/ticket-kickoff`, no branch, no status change, no plan file**. Leave the workspace exactly as found: restore every touched repo (`git checkout -- .` + `git clean -fd`), roll back / drop any storage you wrote (never persist to the shared dev Postgres/Redis), stop any service you started, and verify zero residue before reporting. The real fix happens only later, once the ticket is picked up.
 
 ## Prod data for a repro — the ONE sanctioned path (`/diagnosing-bugs` only)
-Some data bugs only reproduce against the *actual* offending prod rows (a fixed-point money value that overflows, an identifier that resolves the wrong record, a race-triggering timestamp). When that's the case — **and only inside `/diagnosing-bugs`** (PRD pre-ticket triage or a dev-cycle QA-bug fix), never during a feature build:
+Some data bugs only reproduce against the *actual* offending prod rows (a `×1e6` money value that overflows, a `player_code` that resolves the wrong shard, a race-triggering timestamp). When that's the case — **and only inside `/diagnosing-bugs`** (PRD pre-ticket triage or a dev-cycle QA-bug fix), never during a feature build:
 
-1. **Read prod (transient), read-only.** Use `/pg-triage` to find the offending row(s) and pick the target. Reading prod into your context is fine; **`disconnect` when done.**
-2. **Persist ONLY via the seed tool.** Moving any prod-derived data onto local disk goes through **`uv run scripts/db/prod_repro_seed.py`** — the single enforced path. Never hand-craft `INSERT`s of prod values into a local DB; the tool exists so the mask/isolation/teardown invariants hold in code, not memory. It:
-   - **masks external PII** (phone/email/wallet/bank/national-id — the shared `scripts/lib/pii-patterns.txt`) and PII-named columns before any local write, and fingerprints those prod values into the provenance vault so the tracker/notify adapters redact the same values if they later surface in a ticket or chat (`docs/agents/pii-provenance.md`). Inner-system identity (any `*_code`, UUID), money integers and status survive — those are what the bug needs.
-   - lands data in **throwaway `repro_<KEY>_<seed>` DBs** (from a `template_db` that has the schema), **isolated** from the shared local DB — so normal `execute_sql` dev work is untouched.
-   - **handles multi-database services**: the spec is a list of `seeds`, so one run can seed every database the service connects to — each into its own throwaway DB on its own local instance. The tool prints which DB to point each of the service's connections at.
+1. **Read the deployed data (transient), read-only.** Use `/pg-triage` — naming `env` explicitly (`"staging"` or `"prod"`; there is no default, and prod needs this machine's `triage.prod` opt-in) — to find the offending row(s) and resolve the target (shard = `agency_id[0]`; a `player_code` starts with its 5-char `site_code`). Try **staging first** when the bug reproduces there. Reading into your context is fine; **`disconnect` when done.**
+2. **Persist ONLY via the seed tool.** Moving any deployed data onto local disk goes through **`uv run scripts/db/prod_repro_seed.py`** — the single enforced path. Each seed's `source` names its `env` (required); a `prod` source is masked + vaulted, a `staging` source is loaded verbatim. Never hand-craft `INSERT`s of prod values into a local DB; the tool exists so the mask/isolation/teardown invariants hold in code, not memory. It:
+   - **masks external PII** (phone/email/wallet/bank/national-id — the shared `scripts/lib/pii-patterns.txt`) and PII-named columns before any local write, and fingerprints those prod values into the provenance vault so the tracker/notify adapters redact the same values if they later surface in a ticket or Slack (`docs/agents/pii-provenance.md`). Inner-system identity (player_code/site_code/UUID), money integers and status survive — those are what the bug needs.
+   - lands data in **throwaway `ofb_repro_<KEY>_<seed>` DBs** (from a `template_db` that has the schema), **isolated** from the shared local DB — so normal `execute_sql` dev work is untouched.
+   - **handles OFB's split topology**: the spec is a list of `seeds`, so one run can seed both the master (MAD) and the player shard (ASS) the service needs — each into its own throwaway DB on its own local instance. The tool prints which DB to point the service's MASTER vs SHARD connection at.
    - is **entity-scoped**: seed the rows reachable from the ticket's identifier, not a table dump; a run above the row caps needs `--approve-large`.
    ```bash
    uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json --dry-run    # pull+mask preview, no local write
-   uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json --fk-bypass  # throwaway repro_<KEY>_*, load masked
+   uv run scripts/db/prod_repro_seed.py --ticket <KEY> --spec seed.json --fk-bypass  # throwaway ofb_repro_<KEY>_*, load masked
    ```
-   - **two persist modes.** Default = **isolated throwaway** (above): point the service at the new `repro_<KEY>_*` DBs. If reconfiguring the service is friction (or a `docker compose up` trips the auto-mode safety classifier in a prod-heavy session), use **`--into-db <localdb>`** to load the masked slice into the **existing local DB the service already uses** — reproduce with zero reconfig. Trades isolation for simplicity (the local DB carries masked prod rows until cleaned); its `--teardown` is a **targeted DELETE** (needs the spec), never a DROP, so it preserves the DB + all other data. Pair either mode with `--fk-bypass` so an entity slice loads without seeding every FK parent.
+   - **two persist modes.** Default = **isolated throwaway** (above): point the service at the new `ofb_repro_<KEY>_*` DBs. If reconfiguring the service is friction (or a `docker compose up` trips the auto-mode safety classifier in a prod-heavy session), use **`--into-db <localdb>`** to load the masked slice into the **existing local DB the service already uses** — reproduce with zero reconfig. Trades isolation for simplicity (the local DB carries masked prod rows until cleaned); its `--teardown` is a **targeted DELETE** (needs the spec), never a DROP, so it preserves the DB + all other data. Pair either mode with `--fk-bypass` so an entity slice loads without seeding every FK parent.
    ```bash
    uv run scripts/db/prod_repro_seed.py --into-db <localdb> --spec seed.json --fk-bypass   # load into the running local DB
    uv run scripts/db/prod_repro_seed.py --into-db <localdb> --spec seed.json --teardown    # DELETE only the seeded rows
    ```
-3. **Reproduce against local source** — point the local service at `repro_<KEY>`, run your red repro loop, root-cause.
+3. **Reproduce against local source** — point the local service at `ofb_repro_<KEY>`, run your red repro loop, root-cause.
 4. **Teardown — always.** `uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown` DROPs the throwaway DB wholesale. Zero prod-derived data remains locally. This is the DB analogue of the sandbox restore above; do it before you report, same as `git clean`.
+
+This add-on is **additive** — it governs only prod-derived data into the throwaway DB. Your existing `mcp__postgres_*` writes of synthetic/fixture data into the normal local DB stay exactly as free as before.
+
+### The Redis half — no value ever lands locally (`/diagnosing-bugs` only)
+Redis has **no seed tool on purpose**: unlike a historical row, cache/stream state is mostly reconstructible, and copying a live session or agent token onto local disk would spread a credential to widen a repro. So for a stale-cache / missing-session / stream-not-consumed bug:
+
+1. **Read prod (transient), read-only** with `/redis-triage` — `target` is required (`staging` before `prod` whenever staging reproduces it). On prod, a credential comes back as `<redis-secret:sha8>`; the digest is stable, so "same token / different token / missing" is still answerable. `inspect_key` before any bulk read.
+2. **Fix forward with a test — the default.** Take the *shape* you observed (type, field names, TTL, the malformed payload's structure) into a unit/integration test in the repo and fix against that. Most cache and serialization bugs end here with no live state at all.
+3. **Only if the repro genuinely needs keys**, use `capture_shape` → `uv run scripts/redis/replay_shape.py --shape <file> --label <KEY>`. What crosses is a *schema*; every value written locally is synthesized, under a `repro:<KEY>:` prefix.
+4. **Teardown — always.** `uv run scripts/redis/replay_shape.py --label <KEY> --teardown` deletes exactly that prefix. Then `disconnect` the MCP.
+
+**Never** retype a prod Redis value into a local write, a fixture, or a test — that is the unmasked prod-data flow the seed tool exists to prevent, just done by hand. And a PEL entry's delivery count / idle time cannot be replayed at all: for a wedged consumer, read the live group and fix forward.
 
 ## Workflow
 
@@ -120,7 +134,7 @@ Green `scripts/dev.sh analyze` + `scripts/dev.sh test`, standards honored, ADRs 
 
 ## Required startup skills
 
-Before doing role work, load and follow these projected skills: `caveman`, `karpathy-guidelines`, `open-pr`, `pg-triage`, `redis-triage`. Missing or unreadable skill content is a hard failure.
+Before doing role work, load and follow these projected skills: `caveman`, `karpathy-guidelines`, `open-pr`, `telemetry-triage`, `pg-triage`, `redis-triage`. Missing or unreadable skill content is a hard failure.
 
 ## Execution ceiling
 

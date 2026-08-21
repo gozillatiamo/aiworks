@@ -26,12 +26,12 @@ args = ["-c", "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec ba
 url = "http://localhost:25434/mcp"
 bearer_token_env_var = "SONARQUBE_TOKEN"
 
-[mcp_servers.postgres_main]
+[mcp_servers.postgres_mad]
 command = "npx"
 args = ["-y", "mcp-remote@latest", "http://localhost:25432/sse"]
 startup_timeout_sec = 30
 
-[mcp_servers.postgres_secondary]
+[mcp_servers.postgres_ass]
 command = "npx"
 args = ["-y", "mcp-remote@latest", "http://localhost:25433/sse"]
 startup_timeout_sec = 30
