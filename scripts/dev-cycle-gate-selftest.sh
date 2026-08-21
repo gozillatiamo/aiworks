@@ -436,6 +436,66 @@ const BASE = {
       }
       const result = await runOnce(ARGS, canned)
       report('G6c_neither_label_spawned', !SPAWNED.some((l) => l.startsWith('dm:') || l === 'notify:FM-12'))
+    } else if (SCENARIO === 'G13') {
+      // Idempotent notify (this fix): same shape as G6A, but run-state already carries an
+      // 'all'/'notified' row from an earlier invocation. A resumed run reaching the same
+      // merge-skipped outcome must NOT re-send the review-request digest.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), runStateRow('all', 'notified')] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'x' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G13_status_merge_skipped', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+      report('G13_notify_not_spawned', !SPAWNED.includes('notify:FM-12'))
+      report('G13_skip_logged', LINES.some((l) => l.includes('[notify]') && l.includes('SKIPPED') && l.includes('already')))
+      report('G13_result_reports_sent', !!result && result.notify && result.notify.sent === true)
+    } else if (SCENARIO === 'G14') {
+      // Idempotent DM, keyed by run_status (this fix). A prior invocation already DM'd for
+      // 'test-suite-failed' — same shape as G6B — so a resume hitting the SAME status again must
+      // NOT re-send; run-state already carries an 'all'/'dm_sent' row for that exact status.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), runStateRow('all', 'dm_sent', { run_status: 'test-suite-failed' })] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G14_status_test_suite_failed', !!result && result.status === 'test-suite-failed')
+      report('G14_dm_not_respawned', !SPAWNED.includes('dm:FM-12:test-suite-failed'))
+      report('G14_skip_logged', LINES.some((l) => l.includes('[notify]') && l.includes('DM SKIPPED')))
+    } else if (SCENARIO === 'G15') {
+      // A NEW ending status still DMs even though an OLDER status already has a dm_sent row —
+      // proving the checkpoint is keyed by run_status, not "any DM ever sent for this ticket".
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1), ...readyRows('e2e', 2), runStateRow('all', 'dm_sent', { run_status: 'budget-stopped' })] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'dm:FM-12:test-suite-failed': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G15_status_test_suite_failed', !!result && result.status === 'test-suite-failed')
+      report('G15_dm_still_spawned_for_new_status', SPAWNED.includes('dm:FM-12:test-suite-failed'))
     } else if (SCENARIO === 'G7') {
       // C1 — gate-only build. e2e's build is NOT resumed (must actually run, to capture its
       // prompt); db is fully resumed-ready. Assert the build prompt forbids suite execution and
@@ -799,6 +859,15 @@ out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G6B)"; [[ "$VERBOSE" -eq 1 ]] && p
 
 echo "── G6c — dm_on_incomplete left at the placeholder: neither fires"
 out="$(FIXTURE_NOTIFY_DM=U000000000000 run_scenario G6C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G13 — notify is idempotent (docs/adr/0018): a resumed run does not re-send the digest"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G13)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G14 — the DM is idempotent per run_status: the SAME ending does not re-DM on resume"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G14)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G15 — a NEW ending status still DMs despite an older status' dm_sent row"
+out="$(FIXTURE_NOTIFY_DM=U012345 run_scenario G15)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G7 — gate-only build (C1)"
 out="$(run_scenario G7)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
