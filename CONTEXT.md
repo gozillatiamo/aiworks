@@ -101,8 +101,9 @@ escalation** could not land: the target is outside the run, the routed fix faile
 re-gate, or the same finding escalated twice).
 
 **Repair loop**:
-A bounded fix→re-review→re-run cycle a gate runs itself instead of halting, when the cause is
-named and owned inside the run.
+A bounded fix→verify→re-run cycle a gate runs itself instead of halting, when the cause is named
+and owned inside the run. The verify step is role-specific: a **Scoped re-gate** for a cross-repo
+escalation, a **Scoped quality check** for a same-repo QA-attributed fix.
 
 **Cross-repo escalation**:
 A review-fix pass proving, with observed evidence, that a finding's root fix must land in ANOTHER
@@ -115,7 +116,17 @@ an EXISTING upstream fix forward — escalation is asking for one that does not 
 **Scoped re-gate**:
 The code-review gate run over ONLY the commits a cross-repo escalation landed on an
 already-reviewed branch — fix diff + suite green, never a fresh full review. Approval refreshes
-that repo's `reviewed` checkpoint; anything less halts. Never fails open.
+that repo's `reviewed` checkpoint; anything less halts. Never fails open. Not a **Scoped quality
+check**: different trigger (an escalation, not a QA red) and a different gate role.
+
+**Scoped quality check**:
+The guardian and/or performance gates — only the ones a repo declares — run over ONLY a
+QA-attributed fix's diff inside the test-suite **repair loop**: does this fix reintroduce the
+smell, debt or slow path the original review would have held? Never the code reviewer (already
+cleared at Review), never a fresh audit, and never a pass on an un-run check. A rejection returns
+the same red to the developer within a bounded per-red retry — never a silent pass-through to the
+suite re-run. → [ADR 0024](docs/adr/0024-a-qa-attributed-fix-is-quality-checked-not-re-reviewed.md).
+*Avoid*: re-review, gate review (both name the step this replaced).
 
 **Gate-only verification**:
 A suite is EXECUTED at its gate, against the reviewed candidate — never during the build that
