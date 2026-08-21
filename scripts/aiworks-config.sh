@@ -32,7 +32,7 @@
 #   quality_gate.provider            → const QUALITY_GATE            (dev-cycle.js; 'none' ⇒ guardian gate skips+passes)
 #   review.level                     → const REVIEW_LEVEL            (dev-cycle.js; 'strict' ⇒ must-fixes only, no nice-to-have)
 #   loadtest.*                       → const LOADTEST                (dev-cycle.js; the base-branch non-degradation gate)
-#   test_suite.max_fix_rounds        → const TEST_SUITE              (dev-cycle.js; the cross-repo gate's own red-triage loop)
+#   test_suite.max_fix_rounds        → const TEST_SUITE              (dev-cycle.js; the cross-repo gate's own repair loop)
 #   dev_cycle.token_budget           → const DEV_CYCLE               (dev-cycle.js; the run's own spend ceiling)
 #   notify.dm_on_incomplete          → const NOTIFY_DM                (dev-cycle.js; a Slack member id DMed on a non-complete ending)
 #   language                         → const LANGUAGE                (dev-cycle.js AND prd.js; 'en' default | 'th' ⇒ English spine, Thai prose)
@@ -364,8 +364,9 @@ RL_RAW='strict' # review.level — 'strict' (must-fixes only) unless the org dec
 # match the workflow's fallbacks; every one is a number the gate reads at runtime.
 LT_TOL='10'; LT_NOISE_RUNS='2'; LT_NOISE_CEIL='2'; LT_FIX_ROUNDS='2'
 LT_CACHE='~/.cache/aiworks/loadtest-baselines'
-# test_suite.max_fix_rounds — the cross-repo gate's own bounded red-triage loop (C4).
-TS_FIX_ROUNDS='2'
+# test_suite.max_fix_rounds — the cross-repo gate's own bounded red-triage loop (C4), and the
+# per-red attempt bound its scoped quality check retries within one round (docs/adr/0024).
+TS_FIX_ROUNDS='3'
 # dev_cycle.token_budget — the run's own spend ceiling (C9), and notify.dm_on_incomplete (C10).
 DC_TOKEN_BUDGET='2000000'
 NOTIFY_DM=''
@@ -639,7 +640,7 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   baselineCache: $(jsq "$LT_CACHE"),
 }
 const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
-  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → re-review → re-run loops before halting
+  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → scoped quality check → re-run loops before halting
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: ${DC_TOKEN_BUDGET},        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
