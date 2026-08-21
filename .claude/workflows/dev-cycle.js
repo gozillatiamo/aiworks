@@ -277,6 +277,14 @@ const stateWrite = (repo, milestone, extra = '') => ` RUN-STATE CHECKPOINT (mand
 // been given a chance to fix. One row carries the two facts that stop that: FIRST PASS DONE (=>
 // re-visit, never a second first review) and PASSED (=> frozen, not re-reviewed at all). One file
 // per gate, not one per repo: the three gates write concurrently and would race a shared file.
+// RUN-LEVEL MARKER (docs/adr/0018) — a checkpoint with no repo/branch to anchor to: whether a
+// human-facing notification for this run has already gone out, so a resumed invocation that
+// reaches the same outcome again does not re-send it. Never degraded (same third-proof-class
+// treatment as the review ledger and test_suite — see the run-state loader above): its proof is
+// the send itself, not a branch head. Write ONLY on a confirmed successful send; a failed send
+// must leave no row, so the next invocation retries it rather than remembering a send that never
+// happened. A fresh notify despite an existing row is a human call: delete the file.
+const runMarkerWrite = (milestone, extra = '') => ` RUN-STATE CHECKPOINT (mandatory, as your LAST action before the structured result, with the Write tool — the directory already exists, created at Kickoff, so no mkdir needed): ONLY IF you sent successfully (the adapter exited 0, printed ok=1), Write \`agent_logs/${ticket}-dev-cycle-state/all-${milestone}.json\` at the WORKSPACE ROOT — the dir holding .claude/. Content exactly: {"repo":"all","milestone":"${milestone}","status":"done","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"${extra}}. This is a RUN-LEVEL marker, not tied to any repo's branch — do not invent a work_branch or head_sha for it. On ANY failure, write NOTHING — a missing row is what tells the next invocation to actually retry the send.`
 const gateRow = (repo, key) => ` REVIEW-LEDGER CHECKPOINT (mandatory, as your LAST action before the structured result, with the Write tool — the directory already exists, created at Kickoff, so no mkdir needed): Write \`agent_logs/${ticket}-dev-cycle-state/${repo}-gate_${key}.json\` at the WORKSPACE ROOT — the dir holding .claude/, NOT this repo's agent_logs/ — overwriting your own file from an earlier round or an earlier invocation. Content exactly: {"repo":"${repo}","milestone":"gate_${key}","status":"<done|in-progress>","first_pass":true,"head_sha":"<git rev-parse HEAD, the full sha>","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. Use "status":"done" ONLY when your verdict is a genuine pass AND every review thread you own is resolved; "in-progress" for anything else. WRITE THE ROW EITHER WAY — first_pass:true is what tells the next invocation you already did your ONE complete review, so skipping the row on an open verdict is precisely what makes a later run re-derive a whole new finding set instead of re-visiting yours. Never write "done" for a gate that could not run (gate_unavailable): an un-run gate must not read as proven.`
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1023,15 +1031,24 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
   const result = s ?? { summary_path: null, token_table_appended: false, note: 'summary agent did not converge' }
   // C10 — every ending EXCEPT the two COMPLETE ones DMs the configured member instead of posting
   // to the channel; folded into writeSummary so every return path is covered by construction.
+  // RESUME (docs/adr/0018) — keyed by run_status, not just "any DM ever sent": a run that ends the
+  // SAME way again on a resumed invocation must not re-DM, but a NEW ending (e.g. review-stalled →
+  // budget-stopped) is a genuinely different thing to tell the human and still gets its own DM.
+  // Never degraded, same as the notify checkpoint — a human forces a fresh one by deleting the row.
+  const dmAlreadySent = stateRows.some((r) => r.repo === 'all' && r.milestone === 'dm_sent' && r.status === 'done' && r.degraded !== true && r.run_status === runStatus)
   if (!COMPLETE_ENDINGS.includes(runStatus) && dmTarget) {
-    await safeAgent(
-      `${tag('all', 'notifier', 'dm')} Send ONE Slack DIRECT MESSAGE about an INCOMPLETE dev-cycle run. Run it from the WORKSPACE (org) ROOT; do NOT cd, do NOT touch git or the tracker, do NOT post to any channel. The command is a mutating adapter call, so it must be the WHOLE Bash command — no pipe, no &&, no $( ), no heredoc:
+    if (dmAlreadySent) {
+      log(`[notify] DM SKIPPED — run state says a "${runStatus}" DM for ${ticket} already went out; delete agent_logs/${ticket}-dev-cycle-state/all-dm_sent.json to force a fresh one.`)
+    } else {
+      await safeAgent(
+        `${tag('all', 'notifier', 'dm')} Send ONE Slack DIRECT MESSAGE about an INCOMPLETE dev-cycle run. Run it from the WORKSPACE (org) ROOT; do NOT cd, do NOT touch git or the tracker, do NOT post to any channel. The command is a mutating adapter call, so it must be the WHOLE Bash command — no pipe, no &&, no $( ), no heredoc:
 
 scripts/notify/send.sh --channel ${dmTarget} ${JSON.stringify(`${ticket} dev-cycle ended: ${runStatus}. Summary: ${result.summary_path || '(none written)'}. Resume: /dev-cycle ${ticket}`)}
 
-On success it prints \`ok=1\`. Return sent:true ONLY if it exited 0, with the permalink when printed; on ANY failure return sent:false with the command's stderr in note. Do NOT retry more than once and send nothing else.`,
-      { agentType: 'documentor', model: 'haiku', phase: 'Summary', label: `dm:${ticket}:${runStatus}`, schema: NOTIFY_SCHEMA },
-    )
+On success it prints \`ok=1\`. Return sent:true ONLY if it exited 0, with the permalink when printed; on ANY failure return sent:false with the command's stderr in note. Do NOT retry more than once and send nothing else.` + runMarkerWrite('dm_sent', `,"run_status":${JSON.stringify(runStatus)}`),
+        { agentType: 'documentor', model: 'haiku', phase: 'Summary', label: `dm:${ticket}:${runStatus}`, schema: NOTIFY_SCHEMA },
+      )
+    }
   }
   return result
 }
@@ -1060,6 +1077,15 @@ const budgetStop = async (nextPhase, payload, deferredScopeRun = []) => {
 async function notifyReview(reposInOrder) {
   if (!NOTIFY) return null
   phase('Notify')
+  // RESUME (docs/adr/0018) — a prior invocation already sent this ticket's review-request digest
+  // and nothing here re-derives whether the digest content would differ, so a resumed run that
+  // lands on the same merge-skipped outcome again must not re-announce it. Never degraded (see the
+  // run-state loader): the proof is the send itself. A genuinely fresh digest is a human call —
+  // delete agent_logs/${ticket}-dev-cycle-state/all-notified.json.
+  if (doneAt('all', 'notified')) {
+    log(`[notify] SKIPPED — run state says the review-request digest for ${ticket} already went out; delete agent_logs/${ticket}-dev-cycle-state/all-notified.json to force a fresh one.`)
+    return { sent: true, note: 'already notified this run — skipped (docs/adr/0018)' }
+  }
   const title = scope?.title || plans.find((p) => p?.title)?.title || ''
   if (!reposInOrder.some((id) => repoResults[id]?.pr?.pr_url)) {
     log('[notify] no open PR/MR to announce — Notify skipped.'); return null
@@ -1071,7 +1097,7 @@ async function notifyReview(reposInOrder) {
 
 scripts/notify/send.sh --review ${ticket}${titleArg}${channelArg}
 
-On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY if it exited 0 (printed ok=1), with the permalink + channel="${NOTIFY_CHANNEL}" when printed; on ANY failure (including "no open PR/MR found … nothing to announce") return sent:false with the command's stderr in note. Do NOT retry more than once.`,
+On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY if it exited 0 (printed ok=1), with the permalink + channel="${NOTIFY_CHANNEL}" when printed; on ANY failure (including "no open PR/MR found … nothing to announce") return sent:false with the command's stderr in note. Do NOT retry more than once.` + runMarkerWrite('notified'),
     { agentType: 'documentor', phase: 'Notify', label: `notify:${ticket}`, schema: NOTIFY_SCHEMA },
   )
   tick('notify')
@@ -1712,7 +1738,7 @@ const RUN_STATE_SCHEMA = {
           repo: { type: 'string' },                // a REPOS key, or "all" for a run-level row
           // gate_review | gate_guard | gate_perf are the REVIEW LEDGER rows (docs/adr/0021):
           // one per repo per gate, carrying first_pass and whether that gate passed.
-          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'gate_review', 'gate_guard', 'gate_perf', 'reviewed', 'test_suite', 'merged', 'distributed', 'artifact_published'] },
+          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'gate_review', 'gate_guard', 'gate_perf', 'reviewed', 'test_suite', 'merged', 'distributed', 'artifact_published', 'notified', 'dm_sent'] },
           status: { type: 'string', enum: ['done', 'in-progress'] },
           work_branch: { type: ['string', 'null'] },
           head_sha: { type: ['string', 'null'] },   // the sha recorded WHEN the milestone landed
@@ -1728,6 +1754,7 @@ const RUN_STATE_SCHEMA = {
           artifact_url: { type: ['string', 'null'] }, // C11 — the published plan page for this repo
           degraded: { type: 'boolean' },            // proof no longer holds → NOT skippable
           first_pass: { type: ['boolean', 'null'] }, // gate_* rows — this gate completed its ONE full review
+          run_status: { type: ['string', 'null'] }, // dm_sent rows — the runStatus this DM already covered
         },
       },
     },
@@ -1738,7 +1765,7 @@ const runState = await safeAgent(
 1. \`ls agent_logs/${ticket}-dev-cycle-state/*.json\` from your cwd (the workspace root). ONE FILE PER CHECKPOINT (not one shared file), named \`<repo>-<milestone>.json\`. If the directory does not exist or is empty, return found:false with rows:[] — that is the normal first-invocation answer, not an error.
 2. \`cat\` each file and parse it as one JSON object. A file that fails to parse is DISCARDED with no attempt to repair it. There is no duplicate-row question here — each (repo, milestone) has its own path, so nothing to dedupe.
 3. For every row carrying a work_branch AND a milestone OTHER than "planned", resolve what that branch points at NOW, using the repo dir from this map (do NOT cd; use git -C): ${Object.entries(REPOS).map(([id, d]) => `${id}=${d.path}`).join(', ')}. Run \`git -C <that dir> rev-parse --verify <work_branch>\` and put the result in live_sha (null when the branch does not exist). For a "planned" row, ALSO measure the plan markdown it points at: \`wc -c < "<plan_path>"\` and put the byte count in plan_bytes (0 when the file is missing or unreadable — never guess a size, and never create the file).
-4. DEGRADE mechanically, by what each milestone's proof actually IS. For every milestone EXCEPT "planned": set degraded:true AND status:"in-progress" on any row whose live_sha is null or differs from its recorded head_sha — a moved head means the milestone is no longer proven, full stop. For a "planned" row the proof is the PLAN FILE, not the branch head (commits landing on a work branch are the build doing its job and do not invalidate the plan that produced them): set degraded:true AND status:"in-progress" when plan_bytes is 0/absent or the row carries no plan_path, and otherwise leave degraded:false — do NOT compare its head_sha to live_sha at all. The gate_* rows (the review ledger) and the test_suite row are a THIRD proof class and are NEVER degraded: their proof is the gate's own recorded verdict plus the threads it left on the PR/MR, not a branch head. Leave them degraded:false even when live_sha is null, and never compare their head_sha (it is an audit trail, not a claim about the branch NOW) — a passed gate stays passed, which is deliberate (docs/adr/0021), not an oversight for you to correct. Do not reason about whether a difference matters; apply exactly these two rules.
+4. DEGRADE mechanically, by what each milestone's proof actually IS. For every milestone EXCEPT "planned": set degraded:true AND status:"in-progress" on any row whose live_sha is null or differs from its recorded head_sha — a moved head means the milestone is no longer proven, full stop. For a "planned" row the proof is the PLAN FILE, not the branch head (commits landing on a work branch are the build doing its job and do not invalidate the plan that produced them): set degraded:true AND status:"in-progress" when plan_bytes is 0/absent or the row carries no plan_path, and otherwise leave degraded:false — do NOT compare its head_sha to live_sha at all. The gate_* rows (the review ledger), the test_suite row, and the notified/dm_sent rows are a THIRD proof class and are NEVER degraded: their proof is the gate's own recorded verdict (or, for notified/dm_sent, the fact that the send already happened) plus whatever the gate left on the PR/MR — not a branch head. Leave them degraded:false even when live_sha is null (notified/dm_sent rows carry no work_branch at all — do not expect one), and never compare their head_sha (it is an audit trail, not a claim about the branch NOW) — a passed gate stays passed, which is deliberate (docs/adr/0021), not an oversight for you to correct. Do not reason about whether a difference matters; apply exactly these two rules.
 5. Return every row you parsed, degraded flags applied, plus found and the directory path. Add nothing, invent nothing, and never fabricate a head_sha you did not read from a file.` + CAVEMAN_DIRECTIVE,
   { agentType: 'general-purpose', model: 'haiku', phase: 'Scope', label: `run-state:${ticket}`, schema: RUN_STATE_SCHEMA },
 )
