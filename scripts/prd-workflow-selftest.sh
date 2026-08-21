@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# prd-workflow-selftest.sh — offline, zero-token proof of the OFB-2335 audit fixes to
-# .claude/workflows/prd.js (agent_logs/OFB-2335-prd-workflow-audit.md):
+# prd-workflow-selftest.sh — offline, zero-token proof of a TICKET MODE audit's fixes to
+# .claude/workflows/prd.js:
 #   T1 — a tracker ticket URL (not just a bare key) is recognized as TICKET MODE.
 #   T2 — TICKET MODE write scope stays the ONE named ticket even when Recon finds another
 #        covering ticket; the anchor is the named ticket, never a Recon-suggested one.
@@ -85,25 +85,25 @@ function report(name, ok, detail) {
   console.log(`RESULT ${name} ${ok ? 'PASS' : 'FAIL'}${detail ? ' ' + detail : ''}`)
 }
 
-// One recon result shared by every scenario: the request names OFB-2335, but Recon (a plain
-// board search) ALSO surfaces OFB-2324 as a covering ticket — the exact shape the audited run
+// One recon result shared by every scenario: the request names APP-501, but Recon (a plain
+// board search) ALSO surfaces APP-500 as a covering ticket — the exact shape the audited run
 // hit. recon.anchor is deliberately set to the OTHER ticket, to prove the script ignores it
 // and keeps the human-named ticket as anchor.
 const RECON = {
   existing: [
-    { key: 'OFB-2335', title: 'Clarify payment method tab', status: 'To Do', sprint: 'Sprint 74 (id 74)', parent: null, covers: 'the requested ticket itself' },
-    { key: 'OFB-2324', title: 'Payment methods revamp', status: 'To Do', sprint: 'Sprint 75 (id 75)', parent: null, covers: 'a broader related slice' },
+    { key: 'APP-501', title: 'Clarify payment method tab', status: 'To Do', sprint: 'Sprint 74 (id 74)', parent: null, covers: 'the requested ticket itself' },
+    { key: 'APP-500', title: 'Payment methods revamp', status: 'To Do', sprint: 'Sprint 75 (id 75)', parent: null, covers: 'a broader related slice' },
   ],
-  anchor: 'OFB-2324',
+  anchor: 'APP-500',
   note: '',
 }
 const CANNED_BASE = {
   'resolve-language': { language: 'en', source: 'workspace.config.yaml' },
-  'recon:ofb-2335': RECON,
-  'intake:ofb-2335': { features: [{ name: 'Clarify OFB-2335', ui_bearing: false, is_bug: false, brief: 'b', user_value: 'v', acceptance_intent: ['A1'], priority: 'Medium', effort: 'Small', dependencies: [] }], notes: '' },
-  'consult:ofb-2335': { findings: [{ feature: 'Clarify OFB-2335', feasible: true, approach: 'a', risks: [], cross_repo: [], adr_implications: [], technical_dependencies: [] }], notes: '' },
-  'tickets:ofb-2335': { tickets: [{ task_name: 'Clarify OFB-2335', url: 'https://tracker/OFB-2335', ui_bearing: false, figma_link: null, priority: 'Medium', effort: 'Small', sprint: 'unscheduled' }], board_url: 'https://tracker', coverage_note: 'refreshed OFB-2335 only' },
-  'summary:ofb-2335': { summary_path: 'agent_logs/ofb-2335-PRD-SUMMARY.md', note: '' },
+  'recon:app-501': RECON,
+  'intake:app-501': { features: [{ name: 'Clarify APP-501', ui_bearing: false, is_bug: false, brief: 'b', user_value: 'v', acceptance_intent: ['A1'], priority: 'Medium', effort: 'Small', dependencies: [] }], notes: '' },
+  'consult:app-501': { findings: [{ feature: 'Clarify APP-501', feasible: true, approach: 'a', risks: [], cross_repo: [], adr_implications: [], technical_dependencies: [] }], notes: '' },
+  'tickets:app-501': { tickets: [{ task_name: 'Clarify APP-501', url: 'https://tracker/APP-501', ui_bearing: false, figma_link: null, priority: 'Medium', effort: 'Small', sprint: 'unscheduled' }], board_url: 'https://tracker', coverage_note: 'refreshed APP-501 only' },
+  'summary:app-501': { summary_path: 'agent_logs/app-501-PRD-SUMMARY.md', note: '' },
 }
 // A generic doc-space URL (no ticket key, no "phase-N" in its slug) resolves workKey to the
 // isUrl fallback 'brd-import' — separate stubs, since the label carries that workKey.
@@ -120,32 +120,32 @@ const CANNED_DOC_URL = {
   try {
     if (SCENARIO === 'T1_URL_IS_TICKET_MODE') {
       // A Jira-style "view ticket" URL, not a bare key — the exact input shape of the audited
-      // run (`Workflow({ name: "prd", args: "https://bluepi.atlassian.net/browse/OFB-2335" })`).
-      const result = await runOnce('https://bluepi.atlassian.net/browse/OFB-2335', CANNED_BASE)
-      report('T1_ticketKey_resolved', result && result.ticketKey === 'OFB-2335', `got ${result && result.ticketKey}`)
-      report('T1_workKey_from_ticket', result && result.workKey === 'ofb-2335', `got ${result && result.workKey}`)
+      // run (`Workflow({ name: "prd", args: "https://tracker.example/browse/APP-501" })`).
+      const result = await runOnce('https://tracker.example/browse/APP-501', CANNED_BASE)
+      report('T1_ticketKey_resolved', result && result.ticketKey === 'APP-501', `got ${result && result.ticketKey}`)
+      report('T1_workKey_from_ticket', result && result.workKey === 'app-501', `got ${result && result.workKey}`)
     } else if (SCENARIO === 'T1B_DOC_URL_STAYS_GENERIC') {
       // Guard against over-matching: a generic doc-space URL with no ticket-shaped path
       // segment must NOT be misread as a ticket key.
       const result = await runOnce('https://notion.so/team/Some-Feature-42-notes-abcdef0123456789', CANNED_DOC_URL)
       report('T1B_no_false_ticket_key', result && result.ticketKey === null, `got ${result && result.ticketKey}`)
     } else if (SCENARIO === 'T2_WRITE_SCOPE_STAYS_NAMED_TICKET') {
-      const result = await runOnce('https://bluepi.atlassian.net/browse/OFB-2335', CANNED_BASE)
-      report('T2_revampKeys_is_named_ticket_only', JSON.stringify(result.revampKeys) === JSON.stringify(['OFB-2335']), `got ${JSON.stringify(result.revampKeys)}`)
-      report('T2_anchor_is_named_ticket_not_recon_anchor', result.anchorKey === 'OFB-2335', `got ${result.anchorKey}`)
-      report('T2_other_covering_ticket_kept_as_context_only', result.existing.some((e) => e.key === 'OFB-2324') && !result.revampKeys.includes('OFB-2324'))
-      const ticketingPrompt = PROMPTS['tickets:ofb-2335'] || ''
-      report('T2_prompt_writable_keys_is_named_ticket_only', ticketingPrompt.includes('WRITABLE keys — the ONLY keys you may write to: OFB-2335.') || ticketingPrompt.includes('OFB-2335.'), 'writable-keys clause')
-      report('T2_prompt_never_lists_other_ticket_as_writable', !/write to: [^.]*OFB-2324/.test(ticketingPrompt))
+      const result = await runOnce('https://tracker.example/browse/APP-501', CANNED_BASE)
+      report('T2_revampKeys_is_named_ticket_only', JSON.stringify(result.revampKeys) === JSON.stringify(['APP-501']), `got ${JSON.stringify(result.revampKeys)}`)
+      report('T2_anchor_is_named_ticket_not_recon_anchor', result.anchorKey === 'APP-501', `got ${result.anchorKey}`)
+      report('T2_other_covering_ticket_kept_as_context_only', result.existing.some((e) => e.key === 'APP-500') && !result.revampKeys.includes('APP-500'))
+      const ticketingPrompt = PROMPTS['tickets:app-501'] || ''
+      report('T2_prompt_writable_keys_is_named_ticket_only', ticketingPrompt.includes('WRITABLE keys — the ONLY keys you may write to: APP-501.') || ticketingPrompt.includes('APP-501.'), 'writable-keys clause')
+      report('T2_prompt_never_lists_other_ticket_as_writable', !/write to: [^.]*APP-500/.test(ticketingPrompt))
     } else if (SCENARIO === 'T3_INTAKE_FORBIDS_SPLIT_BUG_TICKET') {
-      await runOnce('https://bluepi.atlassian.net/browse/OFB-2335', CANNED_BASE)
-      const intakePrompt = PROMPTS['intake:ofb-2335'] || ''
+      await runOnce('https://tracker.example/browse/APP-501', CANNED_BASE)
+      const intakePrompt = PROMPTS['intake:app-501'] || ''
       report('T3_prompt_names_ticket_mode', intakePrompt.includes('TICKET MODE'))
       report('T3_prompt_demands_exactly_one_brief', intakePrompt.includes('EXACTLY ONE brief'))
       report('T3_prompt_bans_is_bug_on_grounding_finding', intakePrompt.includes('is NEVER `is_bug: true`'))
     } else if (SCENARIO === 'T4_TICKETING_GUARDS_SPRINT_AND_NEW_TICKET') {
-      await runOnce('https://bluepi.atlassian.net/browse/OFB-2335', CANNED_BASE)
-      const ticketingPrompt = PROMPTS['tickets:ofb-2335'] || ''
+      await runOnce('https://tracker.example/browse/APP-501', CANNED_BASE)
+      const ticketingPrompt = PROMPTS['tickets:app-501'] || ''
       report('T4_prompt_bans_moving_anchor_off_active_sprint', ticketingPrompt.includes('a writable key ALREADY sitting in an ACTIVE sprint is NEVER moved'))
       report('T4_prompt_never_the_anchor_itself', ticketingPrompt.includes('not even the anchor itself'))
       report('T4_prompt_bans_new_ticket_for_grounding_finding', ticketingPrompt.includes('NEVER create a new ticket in TICKET MODE'))
@@ -177,7 +177,7 @@ ingest() {
   done <<<"$1"
 }
 
-echo "PRD workflow selftest (OFB-2335 audit fixes)"
+echo "PRD workflow selftest (TICKET MODE audit fixes)"
 
 echo "── T1 — a tracker ticket URL is recognized as TICKET MODE, not generic BRD import"
 out="$(run_scenario T1_URL_IS_TICKET_MODE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
