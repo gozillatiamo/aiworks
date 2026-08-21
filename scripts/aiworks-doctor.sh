@@ -391,7 +391,7 @@ check_repos() {
     local d=""
     [[ -n "$only_mani" ]] && d="in mani.d only: $only_mani"
     [[ -n "$only_cfg"  ]] && d="${d:+$d; }in config only: $only_cfg"
-    fail $g "mani.d and products[] disagree" "$d" "./aiworks sync"
+    fail $g "mani.d and products[] disagree" "$d" "./aiworks sync -y"
   else
     pass $g "mani.d ↔ products[] agree" "$(mani_repos | grep -c .) repos"
   fi
@@ -424,7 +424,7 @@ check_repos() {
   done
   shopt -u nullglob
   if [[ -n "$stale_prod" ]]; then
-    fail $g "stale mani.d product file(s)" "$stale_prod — not in products[].id; duplicate keys make mani drop projects"          "./aiworks sync"
+    fail $g "stale mani.d product file(s)" "$stale_prod — not in products[].id; duplicate keys make mani drop projects"          "./aiworks sync -y"
   else
     pass $g "mani.d product files match products[].id"
   fi
@@ -441,7 +441,7 @@ check_repos() {
     }
   ' "$ROOT"/mani.d/*.yaml 2>/dev/null || true)"
   if [[ -n "$dups" ]]; then
-    fail $g "duplicate mani project key(s)" "$(printf '%s' "$dups" | tr '\n' '; ')"          "./aiworks sync"
+    fail $g "duplicate mani project key(s)" "$(printf '%s' "$dups" | tr '\n' '; ')"          "./aiworks sync -y"
   else
     pass $g "no duplicate mani project keys"
   fi
@@ -454,14 +454,14 @@ check_repos() {
       [[ $VERBOSE == 1 ]] && pass $g "$r cloned" "HEAD $(git -C "$ROOT/$r" rev-parse --short HEAD 2>/dev/null)"
     elif [[ -d "$ROOT/$r" ]]; then
       fail $g "$r has no valid HEAD" "the directory exists but the clone did not finish" \
-           "rm -rf $r && ./aiworks sync $r" slow
+           "rm -rf $r && ./aiworks sync -y $r" slow
     else
       missing="${missing:+$missing }$r"
     fi
   done
   if [[ -n "$missing" ]]; then
     fail $g "$(printf '%s' "$missing" | wc -w | tr -d ' ') repo(s) not cloned" "$missing" \
-         "./aiworks sync${NARROWED:+ }$( [[ $NARROWED == 1 ]] && printf '%s' "$missing" | tr ' ' ',')" slow
+         "./aiworks sync -y${NARROWED:+ }$( [[ $NARROWED == 1 ]] && printf '%s' "$missing" | tr ' ' ',')" slow
   fi
   [[ $VERBOSE == 0 ]] && pass $g "clones" "$ready/$total ready"
 
@@ -732,20 +732,20 @@ check_per_repo() {
     return
   fi
 
-  [[ -n "$no_dev"     ]] && fail $g "scripts/dev.sh not scaffolded" "$no_dev" "./aiworks sync" slow
+  [[ -n "$no_dev"     ]] && fail $g "scripts/dev.sh not scaffolded" "$no_dev" "./aiworks sync -y" slow
   [[ -n "$noexec_dev" ]] && fail $g "scripts/dev.sh not executable" \
                                  "$noexec_dev — every dev.sh call is a permission error" \
                                  "chmod +x $noexec_dev"
   [[ -z "$no_dev" && -z "$noexec_dev" ]] && pass $g "scripts/dev.sh" "$checked repos"
-  [[ -n "$no_claude" ]] && warn $g "no CLAUDE.md" "$no_claude — agents get no repo instructions" "./aiworks sync" slow
+  [[ -n "$no_claude" ]] && warn $g "no CLAUDE.md" "$no_claude — agents get no repo instructions" "./aiworks sync -y" slow
   [[ -n "$over"      ]] && warn $g "CLAUDE.md over the 100-line budget" "$over" "\$EDITOR <repo>/CLAUDE.md"
   [[ -z "$no_claude" && -z "$over" ]] && pass $g "per-repo CLAUDE.md budget" "$checked repos ≤100 lines"
   [[ -n "$no_link"   ]] && fail $g "adapter link(s) missing in repo" "$no_link" "./aiworks setup" \
                         || pass $g "adapter symlinks" "tracker + vcs in $checked repos"
   [[ -n "$no_cg"     ]] && warn $g "no .codegraph index" "$no_cg — codegraph queries answer from nothing" \
-                                "./aiworks sync" slow \
+                                "./aiworks sync -y" slow \
                         || pass $g "codegraph index" "$checked repos"
-  [[ -n "$no_lock"   ]] && warn $g "no skills-lock.json" "$no_lock" "./aiworks sync" slow \
+  [[ -n "$no_lock"   ]] && warn $g "no skills-lock.json" "$no_lock" "./aiworks sync -y" slow \
                         || pass $g "skills-lock.json" "$checked repos"
   [[ -n "$bad_rules" ]] && warn $g "rules file scoped with 'globs:' and no 'paths:'" \
                                 "$bad_rules — the rule loads and matches nothing" \
@@ -767,7 +767,7 @@ check_agent_cfg() {
   fi
 
   if [[ ! -f "$settings" ]]; then
-    fail $g ".claude/settings.json missing" "no hooks, no permissions, no plugins" "./aiworks sync" slow
+    fail $g ".claude/settings.json missing" "no hooks, no permissions, no plugins" "./aiworks sync -y" slow
     return
   fi
 
@@ -785,13 +785,13 @@ check_agent_cfg() {
 $(grep -oE '\.claude/hooks/[A-Za-z0-9._/-]+\.sh' "$settings" 2>/dev/null | sort -u)
 EOF
 
-  [[ -n "$missing" ]] && fail $g "hook(s) referenced but not present" "$missing" "./aiworks sync" slow
+  [[ -n "$missing" ]] && fail $g "hook(s) referenced but not present" "$missing" "./aiworks sync -y" slow
   [[ -n "$noexec"  ]] && fail $g "hook(s) not executable" "$noexec — the harness silently skips them" \
                               "chmod +x $noexec"
   [[ -z "$missing" && -z "$noexec" ]] && pass $g "hooks" "$n wired, present, executable"
 
   [[ -d "$ROOT/.claude/skills" ]] && pass $g ".claude/skills" \
-    || warn $g "no .claude/skills" "skill packs are not installed" "./aiworks sync" slow
+    || warn $g "no .claude/skills" "skill packs are not installed" "./aiworks sync -y" slow
 
   # The Cursor face of this workspace is GENERATED, and `aiworks cursor --check` is its own
   # drift detector — one exit code, one definition of "in sync", nothing reimplemented here.
@@ -1050,7 +1050,7 @@ check_voice() {
            "./aiworks voice status"
     fi
   else
-    fail $g "voice enabled but the adapter is missing" "scripts/aiworks-voice.sh not present" "./aiworks sync" slow
+    fail $g "voice enabled but the adapter is missing" "scripts/aiworks-voice.sh not present" "./aiworks sync -y" slow
   fi
 }
 
@@ -1128,7 +1128,7 @@ check_headroom() {
     done
     if [[ $stale -gt 0 ]]; then
       fail $g "$stale repo(s) carry a pre-hcat .env guard" \
-           "the mirrored copy is stale, so hcat can dump a .env in those repos" "./aiworks sync" slow
+           "the mirrored copy is stale, so hcat can dump a .env in those repos" "./aiworks sync -y" slow
     else
       pass $g "env guard covers hcat" "root + mirrored copies"
     fi
@@ -1142,7 +1142,7 @@ check_headroom() {
   elif [[ ! -f "$ROOT/$size_rel" ]]; then
     fail $g "hcat size guard missing" \
          "hcat has no upper bound of its own — a huge file is passed through in full" \
-         "./aiworks sync" slow
+         "./aiworks sync -y" slow
   else
     stale=0
     for rp in $SELECTED; do
@@ -1150,7 +1150,7 @@ check_headroom() {
       [[ -f "$ROOT/$rp/$size_rel" ]] || stale=$((stale+1))
     done
     if [[ $stale -gt 0 ]]; then
-      fail $g "$stale repo(s) have no hcat size guard" "the mirrored copy is missing" "./aiworks sync" slow
+      fail $g "$stale repo(s) have no hcat size guard" "the mirrored copy is missing" "./aiworks sync -y" slow
     else
       pass $g "hcat size guard present" "root + mirrored copies"
     fi
