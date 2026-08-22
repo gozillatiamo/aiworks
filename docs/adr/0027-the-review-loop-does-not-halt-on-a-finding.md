@@ -185,5 +185,8 @@ than a repeat.
   in the workflow ends on a finding.
 - [ADR 0029](0029-a-reviewed-but-unresolved-repo-still-gets-the-gate.md) — the same argument one
   level up: a repo left `review-unresolved` here no longer stops the RUN from gating the rest.
+- [ADR 0030](0030-a-repo-whose-criteria-already-hold-is-finished-not-stalled.md) — the same reading
+  applied to a repo with nothing to finish, where the halt was a proxy test (commit count) standing
+  in for the question actually being asked.
 - `docs/agents/review-ledger.md` — a finding is raised once; this document is about what happens
   when it cannot be closed.
