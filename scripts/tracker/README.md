@@ -71,9 +71,21 @@ with a `--marker`, so the ticket carries one durable comment per *context* (norm
 that each later run rewrites. The marker has to be a **visible line** in the body
 (`[test-report · <repo>]`): a comment is posted as Markdown, stored as the tracker's own
 format, and read back as text, and an HTML comment does not survive that trip. The script
-refuses a body that omits its own marker, because such a comment is invisible to the next run
-and the next run then posts a second one. Only **jira** can update a comment in place; notion
-and linear WARN and add a new one — the words are the deliverable, in-place is the nicety.
+refuses a body that omits its own marker, because such a record is invisible to the next run
+and the next run then posts a second one.
+
+**Every provider updates in place** — by whichever route its API actually offers. **Jira** and
+**Linear** rewrite the comment body (`commentUpdate` on Linear). **Notion**'s comment API has no
+update endpoint at all, so there a marked record is not a comment: it is ONE `callout` **block**
+on the page, the marker being the callout's own text and the record its children, and an update
+archives that block and appends a fresh one. So the marker still identifies exactly one record,
+`find-ticket-comment.sh` still reads it back, and the comment feed stays a place for humans.
+
+This is load-bearing, not cosmetic. `dev-cycle` proves its cross-repo test-suite gate really ran
+by having a second agent *find* this run's result on the ticket through `tracker_find_comment`.
+While notion and linear answered "nothing" unconditionally, that gate could never be verified on
+either — it was recorded as **NOT RUN** on every ticket. A find that cannot find is not a missing
+nicety; it is a gate that cannot pass.
 
 **Comments render Markdown too:** `add-ticket-comment.sh` no longer posts raw Markdown —
 it converts it to each tracker's native style so headers, bullets, tables and inline
@@ -109,9 +121,10 @@ tracker/
 ├── get-ticket-comments.sh
 ├── upsert-ticket-details.sh
 ├── add-ticket-comment.sh
-├── find-ticket-comment.sh     # reader: marker -> comment id + body
-├── upsert-ticket-comment.sh   # writer: update the marked comment, else add it
-├── notion/{impl.sh,notion.jq} # Notion REST implementation
+├── find-ticket-comment.sh     # reader: marker -> record id + body
+├── upsert-ticket-comment.sh   # writer: update the marked record, else add it
+├── durable-record-selftest.sh # offline regression for the marker upsert on every provider
+├── notion/{impl.sh,notion.jq} # Notion REST implementation (records are page BLOCKS — see above)
 ├── jira/{impl.sh,jira.jq}     # Jira Cloud REST v3 implementation (ADF)
 └── linear/impl.sh             # Linear GraphQL implementation (Markdown-native)
 ```

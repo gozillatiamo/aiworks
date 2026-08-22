@@ -52,7 +52,11 @@ const QUALITY_GATE = "none"
 const REVIEW_LEVEL = "strict"
 const LANGUAGE = "en"
 const LOADTEST = { tolerancePct: 10, noiseRuns: 2, noiseCeilingMultiple: 2, maxFixRounds: 2, baselineCache: "~/.cache/x" }
-const TEST_SUITE = { maxFixRounds: Number(process.env.FIXTURE_TS_MAX_FIX_ROUNDS || 2) }
+const TEST_SUITE = { maxFixRounds: Number(process.env.FIXTURE_TS_MAX_FIX_ROUNDS || 2), maxSuiteRepairAttempts: Number(process.env.FIXTURE_TS_MAX_REPAIR || 3) }
+// docs/adr/0027 — per-condition budgets for the review loop. Deliberately 1 here so a scenario can
+// exhaust one in a single round instead of fourteen; real defaults live in workspace.config.yaml.
+// (No apostrophes in this block: CONFIG_FIXTURE is a single-quoted shell string.)
+const REVIEW = { maxRounds: Number(process.env.FIXTURE_RV_MAX_ROUNDS || 14), maxRegressionFixes: Number(process.env.FIXTURE_RV_MAX_REGRESSION || 1), maxStallReattempts: Number(process.env.FIXTURE_RV_MAX_STALL || 1), maxEscalationAttempts: Number(process.env.FIXTURE_RV_MAX_ESCALATION || 1) }
 const DEV_CYCLE = { tokenBudget: Number(process.env.FIXTURE_TOKEN_BUDGET || 0) }
 const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", testing: "Testing", done: "Done" }
 const REPOS = {
@@ -61,6 +65,7 @@ const REPOS = {
   app: { path: "app", kind: "frontend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: true, perf: true, green: "app green", guardianFocus: "secrets, data-protection" },
   e2e: { path: "e2e", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "e2e green", testSuite: true },
   api: { path: "api", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "api green", testSuite: true },
+  load: { path: "load", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "load green", testSuite: true, suiteKind: "load" },
 }'
 
 python3 - "$WORKFLOW" "$HARNESS" <<PY
@@ -108,6 +113,10 @@ const gatePassedRow = (repo, key) => ({ ...runStateRow(repo, `gate_${key}`), fir
 const gateFirstPassRow = (repo, key) => ({ ...runStateRow(repo, `gate_${key}`), status: 'in-progress', first_pass: true, head_sha: `sha-${repo}` })
 // A repo that should return 'ready' with ZERO agent spawns this run — fully resumed.
 const readyRows = (repo, n) => [builtRow(repo), prRow(repo, n), reviewedRow(repo)]
+// ADR-0027 §Across invocations. Items with status 'done' are CARRIED; the same row rewritten
+// 'in-progress' with an empty list is how a clean run clears it (a workflow cannot delete a file).
+const blockedRow = (repo, items) => ({ ...runStateRow(repo, 'blocked'), blocking: items })
+const blockedClearedRow = (repo) => ({ ...runStateRow(repo, 'blocked'), status: 'in-progress', blocking: [] })
 
 async function runOnce(argsStr, canned, opts = {}) {
   const spendJumpAfterPhase = opts.spendJumpAfterPhase || null
@@ -119,6 +128,19 @@ async function runOnce(argsStr, canned, opts = {}) {
   const agent = async (prompt, opts2) => {
     const label = opts2 && opts2.label
     if (label) { SPAWNED.push(label); PROMPTS[label] = prompt }
+    // The target-branch gate (docs/adr/0025) runs on EVERY repo that opens or resumes a PR/MR, so
+    // stubbing it per scenario would mean adding a row to twenty canned tables to say "yes, the
+    // MR points where it should". Default it to agreement, derived from the base the prompt itself
+    // states — the same field a real agent reads off the forge — and let a scenario override the
+    // label to exercise a mismatch. Absent this, every scenario halts on an unstubbed label and
+    // the suite tests nothing but the gate.
+    if (label && label.startsWith('target-gate:') && !(label in canned)) {
+      const num = (prompt.match(/PR\/MR (\d+), read what it actually targets/) || [])[1] || 1
+      const base = (prompt.match(/IS `([^`]+)`\. It is a fact of the run/) || [])[1] || 'develop'
+      const repo = label.split(':').pop()
+      return { repo, target_branch: base, matches: true, retargeted: false, detail: null,
+               open_prs: [{ number: Number(num), target_branch: base, source_branch: 'feature/FM-12', url: `https://x/${num}` }] }
+    }
     if (!label || !(label in canned)) throw new Error('selftest: unstubbed agent label ' + label)
     return canned[label]
   }
@@ -286,9 +308,10 @@ const BASE = {
       report('G4_gate_reran', SPAWNED.includes('test-suite:FM-12:e2e#r1'))
       report('G4_run_proceeds_past_gate', !!result && result.status !== 'test-suite-failed' && result.status !== 'test-suite-unverified')
     } else if (SCENARIO === 'G4_CHECK_REJECTED') {
-      // ADR 0024 — a rejected scoped check does NOT halt on the first rejection and does NOT fall
-      // through to the suite re-run: it retries the SAME red's fix inside this round, and only an
-      // exhausted attempt bound halts the suite. FIXTURE_TS_MAX_FIX_ROUNDS=2 ⇒ 2 attempts.
+      // ADR 0024 + ADR 0028 — a rejected scoped check retries the SAME red's fix inside this round.
+      // An exhausted attempt bound no longer HALTS the suite: it RECORDS, the round's re-run still
+      // happens, and the record is what keeps the un-cleared diff off the merge train even when
+      // that re-run comes back GREEN. FIXTURE_TS_MAX_FIX_ROUNDS=2 ⇒ 2 attempts.
       const rejected = { passed: false, conclusion: 'the fix bought its green with a per-row query', blocking: [{ title: 'N+1 introduced', scope: 'app/src/x.ts:20', evidence: 'query inside the loop' }] }
       const canned = {
         ...BASE,
@@ -307,13 +330,25 @@ const BASE = {
         'gate-fix:FM-12:app#1.2': { work_branch: 'feature/FM-12', summary: 'attempt 2', status: 'complete', fixed: ['app/src/x.ts'] },
         'gate-guard:FM-12:app#1.2': { passed: true, conclusion: 'clean' },
         'gate-perf:FM-12:app#1.2': rejected,
+        // The fix DID make the symptom go green. Under the old halt this line was unreachable.
+        'test-suite:FM-12:e2e#r1': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '4 passed' } },
       }
       const result = await runOnce(ARGS, canned)
+      const bk = (result && result.blockingByRepo) || []
+      const items = bk.flatMap((b) => b.items)
       report('G4b_rejected_check_retries_the_same_red_fix', SPAWNED.includes('gate-fix:FM-12:app#1.2'))
       report('G4b_retry_brief_carries_what_was_rejected', (PROMPTS['gate-fix:FM-12:app#1.2'] || '').includes('PRIOR ATTEMPT REJECTED') && (PROMPTS['gate-fix:FM-12:app#1.2'] || '').includes('N+1 introduced'))
-      report('G4b_suite_not_rerun_while_the_check_is_unresolved', !SPAWNED.includes('test-suite:FM-12:e2e#r1'))
-      report('G4b_halts_once_the_attempt_bound_is_exhausted', !!result && result.status === 'test-suite-failed' && String(result.why || '').includes('quality check for TC001 did not clear'))
       report('G4b_no_third_attempt', !SPAWNED.includes('gate-fix:FM-12:app#1.3'))
+      // ADR 0028 — records, does not halt: the round's re-run still runs.
+      report('G4b_records_and_reruns', SPAWNED.includes('test-suite:FM-12:e2e#r1'))
+      report('G4b_records_the_unchecked_fix', items.some((i) => i.kind === 'gate-fix-unchecked' && String(i.detail).includes('TC001')), `got=${JSON.stringify(items.map((i) => i.kind))}`)
+      report('G4b_names_the_human_action', items.some((i) => i.kind === 'gate-fix-unchecked' && String(i.human_action || '').includes('gate:')))
+      // THE FAIL-OPEN GUARD. Green re-run + a recorded item ⇒ still not a pass, still no merge.
+      report('G4b_green_rerun_is_not_a_pass', !!result && result.status === 'test-suite-unresolved', `got=${result && result.status}`)
+      report('G4b_test_suite_reported_not_passed', !!result && result.testSuite && result.testSuite.passed === false)
+      report('G4b_why_says_green_but_blocked', String((result || {}).why || '').includes('green, but'))
+      report('G4b_never_reaches_merge', !PHASES.includes('Merge'))
+      report('G4b_banner_is_loud', LINES.some((l) => l.includes('BLOCKING ITEM(S) the test-suite gate worked')))
     } else if (SCENARIO === 'G4_ROUNDS_EXHAUSTED') {
       const cleared = { passed: true, conclusion: 'clean' }
       const canned = {
@@ -339,8 +374,12 @@ const BASE = {
         'test-suite:FM-12:e2e#r2': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: 'red' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'still 500' }] },
       }
       const result = await runOnce(ARGS, canned, {})
-      report('G4c_rounds_exhausted_fails_the_gate', !!result && result.status === 'test-suite-failed' && String(result.why || '').includes('triage round'))
+      report('G4c_rounds_exhausted_fails_the_gate', !!result && result.status === 'test-suite-failed', `got=${result && result.status}`)
       report('G4c_third_round_never_spawned', !SPAWNED.includes('gate-fix:FM-12:app#3.1'))
+      // ADR 0028 — the round budget running out is a RECORD carrying the reds it could not close,
+      // not a bare `why` string. The status stays `failed` because the suite is genuinely red.
+      report('G4c_records_the_standing_red', ((result && result.blockingByRepo) || []).flatMap((b) => b.items)
+        .some((i) => i.kind === 'gate-red' && String(i.detail).includes('triage round') && String(i.detail).includes('TC001')))
     } else if (SCENARIO === 'G4_PRE_EXISTING') {
       const canned = {
         ...BASE,
@@ -358,6 +397,10 @@ const BASE = {
       const result = await runOnce(ARGS, canned)
       report('G4d_pre_existing_no_fix_spawned', !SPAWNED.some((l) => l.startsWith('gate-fix:')))
       report('G4d_halts_with_evidence', !!result && result.status === 'test-suite-failed')
+      // ADR 0028 — a base that is already red gets its OWN record, so the reader is not left with a
+      // generic "did not converge" for a finding that is not about this ticket at all.
+      report('G4d_records_the_base_as_the_cause', ((result && result.blockingByRepo) || []).flatMap((b) => b.items)
+        .some((i) => i.kind === 'reds-pre-existing-on-base' && String(i.human_action || '').includes('base branch')))
     } else if (SCENARIO === 'G5') {
       // C9 — budget stop. spent() jumps to a big number the moment phase('Kickoff') has fired,
       // so the "before Build" overBudget() check (which runs after phase('Kickoff') but before
@@ -699,8 +742,9 @@ const BASE = {
       report('G10_straight_to_the_suite_rerun', SPAWNED.includes('test-suite:FM-12:e2e#r1'))
       report('G10_run_proceeds_past_gate', !!result && result.status !== 'test-suite-failed' && result.status !== 'test-suite-unverified')
     } else if (SCENARIO === 'G12') {
-      // ADR 0024 — a scoped check that could NOT run is never a pass. It sends the fix back like
-      // any rejection, and an exhausted bound halts: the loop does not fail open on a silent gate.
+      // ADR 0024 + ADR 0028 — a scoped check that could NOT run is never a pass. It sends the fix
+      // back like any rejection; an exhausted bound RECORDS. The loop does not fail open on a
+      // silent gate, and it does not stop working either.
       const unavailable = { passed: false, gate_unavailable: true, unavailable_reason: 'the profiler could not run in this run-context' }
       const canned = {
         ...BASE,
@@ -719,11 +763,13 @@ const BASE = {
         'gate-fix:FM-12:app#1.2': { work_branch: 'feature/FM-12', summary: 'attempt 2', status: 'complete', fixed: ['app/src/x.ts'] },
         'gate-guard:FM-12:app#1.2': { passed: true, conclusion: 'clean' },
         'gate-perf:FM-12:app#1.2': unavailable,
+        'test-suite:FM-12:e2e#r1': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'still 500' }] },
       }
       const result = await runOnce(ARGS, canned)
       report('G12_unavailable_check_is_not_a_pass', SPAWNED.includes('gate-fix:FM-12:app#1.2'))
       report('G12_retry_brief_says_it_could_not_run', (PROMPTS['gate-fix:FM-12:app#1.2'] || '').includes('could not run'))
-      report('G12_halts_rather_than_failing_open', !!result && result.status === 'test-suite-failed' && !SPAWNED.includes('test-suite:FM-12:e2e#r1'))
+      report('G12_records_rather_than_failing_open', !!result && result.status === 'test-suite-failed'
+        && ((result.blockingByRepo || []).flatMap((b) => b.items).some((i) => i.kind === 'gate-fix-unchecked')), `got=${result && result.status}`)
     } else if (SCENARIO === 'G11_FP' || SCENARIO === 'G11') {
       // THE AUDITED SHAPE, in one run (defensive regression test — no new mechanism). Four repos,
       // TWO bases in play (--feature-base-repos scopes the override), a RESUMED invocation with
@@ -796,12 +842,636 @@ const BASE = {
         report('G11_pending_suite_gate_ran', SPAWNED.includes('test-suite:FM-12:e2e'))
         report('G11_reaches_the_merge_gate', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
       }
+    } else if (SCENARIO === 'G16a' || SCENARIO === 'G16b' || SCENARIO === 'G16c' || SCENARIO === 'G16d') {
+      // TARGET-BRANCH GATE (docs/adr/0025) — the postmortem's most serious miss. The pipeline was
+      // thorough about the base right up to PR/MR creation and blind afterwards, so a four-repo
+      // ticket reached its designed clean finish ("reviewed + validated", merge-skipped) with
+      // every MR pointed at a branch nobody had asked for. A human caught it after the fact.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+      }
+      const oneMr = (t) => [{ number: 7, target_branch: t, source_branch: 'feature/FM-12', url: 'https://x/7' }]
+      if (SCENARIO === 'G16a') {
+        // Mismatch the run could not repair (the base is not on the remote): halt, loudly, and
+        // never tick an approval on it.
+        canned['target-gate:FM-12:db'] = { repo: 'db', target_branch: 'main', matches: false, retargeted: false,
+          detail: 'git ls-remote --exit-code --heads origin develop exited 2', open_prs: oneMr('main') }
+      } else if (SCENARIO === 'G16b') {
+        // TWO open MRs for one repo. `pr_open` proof is a head sha, not an MR identity, so a
+        // resume could open another — and one measured repo really did carry two, targeting
+        // different branches. Closing an MR stays a human call, so this halts rather than repairs.
+        canned['target-gate:FM-12:db'] = { repo: 'db', target_branch: 'develop', matches: true, retargeted: false, detail: null,
+          open_prs: [...oneMr('develop'), { number: 4, target_branch: 'main', source_branch: 'feature/FM-12', url: 'https://x/4' }] }
+      } else if (SCENARIO === 'G16c') {
+        // Repaired in place and re-read back: the run continues, and says so.
+        canned['target-gate:FM-12:db'] = { repo: 'db', target_branch: 'develop', matches: true, retargeted: true, detail: null,
+          open_prs: oneMr('develop') }
+      } else {
+        // NEVER FAIL OPEN: an assert that did not converge is not a pass. Same rule as the
+        // test-suite audit — "nobody checked" was the previous state, and it is what shipped.
+        canned['target-gate:FM-12:db'] = null
+      }
+      const result = await runOnce(ARGS, canned)
+      const status = result && result.status
+      if (SCENARIO === 'G16c') {
+        report('G16c_repaired_run_continues', status !== 'target-branch-halt', `got=${status}`)
+        report('G16c_repair_is_logged', LINES.some((l) => l.includes('target branch REPAIRED') && l.includes('approvals are unaffected')))
+      } else if (SCENARIO === 'G16b') {
+        // ADR-0027 splits this from the mismatch case: two open PR/MRs still leaves THIS run's own
+        // MR with a computable diff, so the review is real work and the repo keeps going. What it
+        // may never do is merge — closing the other MR is a human call.
+        report('G16b_does_NOT_halt_the_repo', status !== 'target-branch-halt', `got=${status}`)
+        report('G16b_but_cannot_reach_ready', status !== 'awaiting-human-ship' && status !== 'merge-skipped', `got=${status}`)
+        report('G16b_records_it_as_blocking', LINES.some((l) => l.includes('BLOCKING RECORDED (multiple-open-prs)')))
+        report('G16b_review_still_ran', SPAWNED.some((l) => l.startsWith('review:')))
+        report('G16b_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
+      } else {
+        const why = { G16a: 'a target that cannot be made right', G16d: 'a non-convergent assert' }[SCENARIO]
+        report(`G16_${SCENARIO}_halts_on_${why.replace(/\W+/g, '_')}`, status === 'target-branch-halt', `got=${status}`)
+        report(`G16_${SCENARIO}_nothing_approved`, !SPAWNED.some((l) => l.startsWith('approve:')))
+        report(`G16_${SCENARIO}_banner_names_the_target_branch`, LINES.some((l) => l.includes('TARGET BRANCH')))
+        // This one deliberately STAYS a halt: without the base ref on the remote there is no
+        // `git diff base...head` to review, so sending reviewers at it buys misleading findings.
+        report(`G16_${SCENARIO}_no_reviewer_was_paid`, !SPAWNED.some((l) => l.startsWith('review:') || l.startsWith('guard') || l.startsWith('perf')))
+      }
+      if (SCENARIO === 'G16a') {
+        report('G16a_offers_the_retarget_command', LINES.some((l) => l.includes('retarget-pr.sh') && l.includes('--base develop')))
+        report('G16a_before_any_reviewer_is_paid', !SPAWNED.some((l) => l.startsWith('review:') || l.startsWith('guard') || l.startsWith('perf')))
+      }
+      if (SCENARIO === 'G16b') report('G16b_offers_close_not_an_auto_close', LINES.some((l) => l.includes('close-pr.sh') && l.includes('human call')))
+    } else if (SCENARIO === 'G18a' || SCENARIO === 'G18b') {
+      // A ROUND BOUNDS ATTEMPTS, NOT HYPOTHESES. Measured: a wrong diagnosis ("a defect in the test
+      // runner, fixable only by a repo-wide version bump") survived two rounds because round two
+      // re-ran the same spec, got a byte-identical failure, and recorded it as confirmation —
+      // "No new fix attempted". The real cause was one fixture line, derivable from screenshots
+      // round one had already captured. So an UNCHANGED failure signature must change the brief.
+      const red = (caseName) => ({
+        passed: false,
+        receipt: { command: 'scripts/dev.sh test x', exit_code: 1, summary_line: 'red' },
+        triage: [{ case: caseName, kind: 'app', repo: 'db', spec: 'x', evidence: 'same TypeError' }],
+        failures: [caseName],
+      })
+      // G18a: the signature REPEATS across rounds. G18b: it moves (a different case fails next).
+      const second = SCENARIO === 'G18a' ? red('deposit.cy.js') : red('withdraw.cy.js')
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'automated', status: 'complete', fixed: [] },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/5', pr_number: 5 },
+        'test-suite:FM-12:e2e': red('deposit.cy.js'),
+        'test-suite:FM-12:e2e#r1': second,
+        'test-suite:FM-12:e2e#r2': second,
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'fix:FM-12:db': { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['db/x'] },
+        'dm:FM-12:test-suite-failed': { sent: true },
+      }
+      await runOnce(ARGS, canned)
+      // The re-run brief is the artifact under test: find whichever re-run prompt was issued.
+      const rerun = Object.keys(PROMPTS).filter((k) => k.startsWith('test-suite:FM-12:e2e#')).map((k) => PROMPTS[k]).join('\n')
+      if (SCENARIO === 'G18a') {
+        report('G18a_repeat_is_briefed_to_re-derive', rerun.includes('SAME FAILURE SIGNATURE AS THE PREVIOUS ROUND'))
+        report('G18a_prior_conclusion_is_a_hypothesis', rerun.includes('HYPOTHESIS TO DISPROVE'))
+        report('G18a_must_name_the_evidence_re-read', rerun.includes('WHICH prior evidence you re-read'))
+        report('G18a_warns_the_error_may_be_a_mask', rerun.includes('is a mask, not the fault'))
+        report('G18a_logged_for_the_operator', LINES.some((l) => l.includes('briefed to RE-DERIVE, not re-confirm')))
+      } else {
+        // A MOVING signature is progress: the fix landed and something else is red now. Demanding
+        // a re-derivation there would be noise, so the directive must NOT fire.
+        report('G18b_a_new_signature_is_not_briefed_to_re-derive', !rerun.includes('SAME FAILURE SIGNATURE'))
+        report('G18b_and_nothing_is_logged_about_it', !LINES.some((l) => l.includes('briefed to RE-DERIVE')))
+      }
+      // Holds on every round, not just a repeat: the two inference errors that produced the wrong
+      // diagnosis in the first place.
+      const gate = PROMPTS['test-suite:FM-12:e2e'] || ''
+      report(`${SCENARIO}_identical_control_means_shared_cause`, gate.includes('confirms a SHARED cause'))
+      report(`${SCENARIO}_out_of_bounds_needs_a_second_read`, gate.includes('out_of_gate_bounds_second_read'))
+    } else if (SCENARIO.startsWith('G19')) {
+      // ADR-0027 — THE LOOP DOES NOT HALT ON A FINDING. Each of these used to end the repo on the
+      // spot. The contract now: it becomes a must-fix in the developer's batch, the loop keeps
+      // working, and if it cannot be closed it is RECORDED — which still keeps the repo out of
+      // 'ready', because "does not halt" must never mean "passes without evidence".
+      //
+      // The fixture sets every per-condition budget to 1, so one round exhausts it and both halves
+      // (the must-fix, then the recording) are observable inside a single scenario.
+      // `comments` is what the loop counts as open findings for the code gate (rv.open), not `open`.
+      const REVIEWERS_OPEN = { approved: false, tests_green: true, comments: [{ path: 'x.ts', line: 1, body: 'must-fix' }], conclusion: 'one finding', receipt: { command: 'scripts/dev.sh test', exit_code: 0, summary_line: 'ok' } }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/7', pr_number: 7 },
+      }
+      // Every reviewer/fix label the loop may reach, answered so the loop runs its full course.
+      for (let n = 1; n <= 4; n++) {
+        canned[`review:FM-12:app#${n}`] = REVIEWERS_OPEN
+        canned[`guard:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['x.ts'], commits: 1 }
+      }
+      // A suite that cannot run does not fix itself between rounds, so the gate keeps reporting
+      // gate_unavailable — which is what lets the repair budget actually run out inside a scenario.
+      const SUITE_DOWN = (why) => ({ approved: false, tests_green: false, gate_unavailable: true, unavailable_reason: why, comments: [], conclusion: 'suite did not run' })
+      if (SCENARIO === 'G19a') {
+        // SUITE COULD NOT RUN. Used to return review-tests-unverified immediately.
+        for (let n = 1; n <= 4; n++) canned[`review:FM-12:app#${n}`] = SUITE_DOWN('docker daemon unreachable')
+      } else if (SCENARIO === 'G19b') {
+        // FIX-CAUSED REGRESSION on re-visit. Used to return review-regression-halt.
+        canned['review:FM-12:app#2'] = { ...REVIEWERS_OPEN, fix_regression: true, regression_detail: 'the r1 fix broke checkout totals' }
+      } else if (SCENARIO === 'G19c') {
+        // STALL: same finding set, and the fix pass produces NO commit.
+        for (let n = 1; n <= 4; n++) canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'nothing to change', status: 'complete', fixed: [], commits: 0 }
+      } else if (SCENARIO === 'G19d') {
+        // A DECLARED "CANNOT" with evidence closes that condition's attempts early.
+        for (let n = 1; n <= 4; n++) canned[`review:FM-12:app#${n}`] = SUITE_DOWN('no container runtime')
+        canned['pr-fix:FM-12:app#1'] = { work_branch: 'feature/FM-12', summary: 'cannot', status: 'complete', fixed: [], commits: 0,
+          cannot_fix: [{ kind: 'suite-unverified', why: 'class (d): no container runtime on this host', evidence: '`docker info` exit 1, repeated', tried: 'dev.sh clean, stack probe, port check' }] }
+      } else if (SCENARIO === 'G19e') {
+        // A "CANNOT" with NO evidence must be DROPPED, not honoured.
+        for (let n = 1; n <= 4; n++) canned[`review:FM-12:app#${n}`] = SUITE_DOWN('no container runtime')
+        canned['pr-fix:FM-12:app#1'] = { work_branch: 'feature/FM-12', summary: 'cannot', status: 'complete', fixed: [], commits: 0,
+          cannot_fix: [{ kind: 'suite-unverified', why: 'infra', evidence: 'no', tried: 'x' }] }
+      }
+      const result = await runOnce(ARGS, canned)
+      const st = result && result.status
+      const fixPrompts = Object.keys(PROMPTS).filter((k) => k.startsWith('pr-fix:FM-12:app')).map((k) => PROMPTS[k]).join('\n')
+      // NONE of these may end the repo on the halt status it used to return.
+      for (const dead of ['review-tests-unverified', 'review-regression-halt', 'review-stalled']) {
+        report(`${SCENARIO}_no_longer_returns_${dead.replace(/\W+/g, '_')}`, st !== dead, `got=${st}`)
+      }
+      report(`${SCENARIO}_repo_did_not_reach_ready`, st !== 'awaiting-human-ship' && st !== 'merge-skipped', `got=${st}`)
+      report(`${SCENARIO}_nothing_approved`, !SPAWNED.some((l) => l.startsWith('approve:')))
+      if (SCENARIO === 'G19a') {
+        report('G19a_suite_failure_reaches_the_developer', fixPrompts.includes('THE SUITE DID NOT RUN'))
+        report('G19a_brief_quotes_what_the_gate_got', fixPrompts.includes('docker daemon unreachable'))
+        report('G19a_brief_carries_the_failure_classes', fixPrompts.includes('(a) THE HARNESS ITSELF') && fixPrompts.includes('(d) GENUINELY ABSENT'))
+        report('G19a_brief_demands_a_receipt', fixPrompts.includes('YOU MUST END WITH A RECEIPT'))
+        report('G19a_recorded_when_attempts_run_out', LINES.some((l) => l.includes('BLOCKING RECORDED (suite-unverified)')))
+      }
+      if (SCENARIO === 'G19b') {
+        report('G19b_regression_handed_straight_back', fixPrompts.includes('YOUR OWN LAST FIX CAUSED THIS'))
+        report('G19b_brief_carries_the_detail', fixPrompts.includes('broke checkout totals'))
+        report('G19b_told_not_to_just_revert', fixPrompts.includes('undoing your fix to clear the regression'))
+      }
+      if (SCENARIO === 'G19c') {
+        report('G19c_stall_escalates_instead_of_repeating', LINES.some((l) => l.includes('escalating the next attempt')))
+        report('G19c_brief_says_do_something_different', fixPrompts.includes('Repeating it is not an option'))
+        report('G19c_recorded_when_reattempts_run_out', LINES.some((l) => l.includes('BLOCKING RECORDED (stalled)')))
+      }
+      if (SCENARIO === 'G19d') {
+        report('G19d_evidenced_cannot_is_accepted', LINES.some((l) => l.includes('BLOCKING RECORDED (suite-unverified)')))
+        report('G19d_and_closes_the_attempts_early', !LINES.some((l) => l.includes('attempt 2/')))
+      }
+      if (SCENARIO === 'G19e') {
+        report('G19e_unevidenced_cannot_is_DROPPED', LINES.some((l) => l.includes('was DROPPED')))
+        report('G19e_and_attempts_continue', LINES.some((l) => l.includes('attempt 2/')))
+      }
+    } else if (SCENARIO === 'G20a' || SCENARIO === 'G20b') {
+      // ADR 0028 — a `prereq` and an `automation` red used to get NO agent at all: only kind 'app'
+      // was ever routed, so the round counter ticked, the suite re-ran byte-identically, and the
+      // gate "did not converge" having never once been asked to fix what it found. Both route now:
+      // prereq to a code repo (the first one, when the gate named none), automation to the SUITE
+      // repo, because a wrong spec is the suite's own to fix.
+      const prereq = SCENARIO === 'G20a'
+      const owner = prereq ? 'app' : 'e2e'
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        // NOTE: no `repo` on the triage row — a prereq failure usually names none, which is exactly
+        // the shape that used to fall through every filter.
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '1 error' },
+          triage: [prereq
+            ? { case: 'TC001', kind: 'prereq', evidence: 'nothing answered on :8080 for the whole run' }
+            : { case: 'TC001', kind: 'automation', evidence: 'the selector moved; the assertion never saw the row' }] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        [`gate-fix:FM-12:${owner}#1.1`]: { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['x'] },
+        [`gate-guard:FM-12:${owner}#1.1`]: { passed: true, conclusion: 'clean' },
+        [`gate-perf:FM-12:${owner}#1.1`]: { passed: true, conclusion: 'clean' },
+        'test-suite:FM-12:e2e#r1': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '4 passed' } },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      const p = PROMPTS[`gate-fix:FM-12:${owner}#1.1`] || ''
+      report(`${SCENARIO}_red_is_routed_at_all`, SPAWNED.includes(`gate-fix:FM-12:${owner}#1.1`), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('gate-fix:')))}`)
+      report(`${SCENARIO}_brief_matches_the_kind`, prereq
+        ? p.includes('PRECONDITION failure') && p.includes('THE ONLY CLASS NOTHING CAN FIX')
+        : p.includes("SUITE'S OWN") && p.includes('a spec bent to match whatever the app currently does'))
+      report(`${SCENARIO}_brief_offers_the_evidenced_cannot`, p.includes('cannot_fix') && p.includes('without evidence and `tried` it is refused'))
+      report(`${SCENARIO}_a_working_fix_still_passes_the_gate`, !!result && result.status !== 'test-suite-failed' && result.status !== 'test-suite-unresolved', `got=${result && result.status}`)
+      report(`${SCENARIO}_nothing_recorded_when_the_fix_worked`, !((result && result.blockingByRepo) || []).length)
+    } else if (SCENARIO === 'G21a' || SCENARIO === 'G21b') {
+      // ADR 0028 — the sanctioned "cannot" for ONE red. Evidenced: that red's attempts end, it is
+      // recorded, and the SIBLING red in the same round is still worked (the whole point — the old
+      // early return threw the sibling away). Unevidenced: dropped, and attempt 2 happens.
+      const evidenced = SCENARIO === 'G21a'
+      const cf = evidenced
+        ? [{ kind: 'gate-red', why: 'the device matrix has no such platform', evidence: 'scripts/dev.sh test e2e --platform=x → exit 64, "unknown platform"', tried: 'ruled out the harness and the stack: both green for the sibling case' }]
+        : [{ kind: 'gate-red', why: 'infra', evidence: 'nope', tried: 'no' }]
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('svc', 2), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'svc' }, { repo: 'e2e', depends_on: ['app', 'svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'svc', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '2 failed' }, triage: [
+          { case: 'TC001', kind: 'app', repo: 'app', evidence: 'expected 200 got 500' },
+          { case: 'TC002', kind: 'app', repo: 'svc', evidence: 'expected 201 got 409' },
+        ] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'gate-fix:FM-12:app#1.1': { work_branch: 'feature/FM-12', summary: 'cannot', status: 'blocked', fixed: [], cannot_fix: cf },
+        // Only reached when the claim is DROPPED — an accepted one ends this red's attempts.
+        'gate-fix:FM-12:app#1.2': { work_branch: 'feature/FM-12', summary: 'attempt 2', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.2': { passed: true, conclusion: 'clean' },
+        'gate-perf:FM-12:app#1.2': { passed: true, conclusion: 'clean' },
+        // The SIBLING red, which the old early return never got to.
+        'gate-fix:FM-12:svc#1.1': { work_branch: 'feature/FM-12', summary: 'sibling fixed', status: 'complete', fixed: ['svc/src/y.rs'] },
+        'test-suite:FM-12:e2e#r1': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '4 passed' } },
+      }
+      const result = await runOnce(ARGS, canned)
+      const items = ((result && result.blockingByRepo) || []).flatMap((b) => b.items)
+      report(`${SCENARIO}_sibling_red_is_still_worked`, SPAWNED.includes('gate-fix:FM-12:svc#1.1'))
+      if (evidenced) {
+        report('G21a_accepted_claim_ends_that_reds_attempts', !SPAWNED.includes('gate-fix:FM-12:app#1.2'))
+        report('G21a_accepted_claim_is_recorded', items.some((i) => i.kind === 'gate-red' && String(i.detail).includes('unknown platform')), `got=${JSON.stringify(items.map((i) => i.kind))}`)
+        report('G21a_green_rerun_still_not_a_pass', !!result && result.status === 'test-suite-unresolved', `got=${result && result.status}`)
+      } else {
+        report('G21b_unevidenced_claim_is_dropped', LINES.some((l) => l.includes('was DROPPED') && l.includes('gate-red')))
+        report('G21b_attempts_continue', SPAWNED.includes('gate-fix:FM-12:app#1.2'))
+        report('G21b_nothing_recorded_from_the_dropped_claim', !items.some((i) => i.kind === 'gate-red'))
+      }
+    } else if (SCENARIO === 'G22') {
+      // ADR 0028 — a gate that returns no RECEIPT is telling us the suite would not run, and
+      // re-briefing the qa-runner a third time does not make a stack listen. Every repair attempt
+      // after the first sends a DEVELOPER at the stack first, on the same four-class ladder the
+      // review loop got in ADR 0027. FIXTURE_TS_MAX_REPAIR=2 ⇒ one unblock pass, then a record.
+      const noReceipt = { passed: true, conclusion: 'ran it', receipt: { command: '', exit_code: 0, summary_line: '' } }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': noReceipt,
+        'test-suite:FM-12:e2e#rverify1': noReceipt,
+        'test-suite:FM-12:e2e#rverify2': noReceipt,
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'audit:FM-12:e2e#verify1': { posted: true, detail: 'result posted' },
+        'audit:FM-12:e2e#verify2': { posted: true, detail: 'result posted' },
+        'gate-unblock:FM-12:app#verify2': { work_branch: 'feature/FM-12', summary: 'brought the stack up', status: 'complete', fixed: ['app/compose.yml'] },
+      }
+      const result = await runOnce(ARGS, canned)
+      const up = PROMPTS['gate-unblock:FM-12:app#verify2'] || ''
+      const items = ((result && result.blockingByRepo) || []).flatMap((b) => b.items)
+      report('G22_developer_is_sent_at_an_unrunnable_gate', SPAWNED.includes('gate-unblock:FM-12:app#verify2'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('gate-unblock:')))}`)
+      report('G22_no_developer_on_the_first_attempt', !SPAWNED.includes('gate-unblock:FM-12:app#verify1'))
+      report('G22_brief_carries_the_four_classes', up.includes('(a) THE HARNESS ITSELF') && up.includes('(d) GENUINELY ABSENT FROM THIS ENVIRONMENT'))
+      report('G22_brief_demands_a_receipt', up.includes('YOU MUST END WITH A RECEIPT'))
+      report('G22_brief_names_the_unmerged_candidate', up.includes('THE CANDIDATE IS UNMERGED') && up.includes('app@feature/FM-12'))
+      report('G22_records_and_never_passes', !!result && result.status === 'test-suite-unverified', `got=${result && result.status}`)
+      report('G22_record_says_unverified', items.some((i) => i.kind === 'gate-unverified' && String(i.detail).includes('receipt')), `got=${JSON.stringify(items.map((i) => i.kind))}`)
+    } else if (SCENARIO === 'G23') {
+      // ADR 0028 — a load suite that met its own thresholds but LOST to its base is recorded, not
+      // halted, and the run must not log a passed baseline for it. The `cannot_fix` the brief has
+      // always offered is now actually read: evidenced, it ends the load rounds.
+      const green = { command: 'k6 run x.js', exit_code: 0, summary_line: 'checks 100%' }
+      const regressed = { verdict: 'fail', base_sha: 'base1', candidate_sha: 'cand1', regressed: ['p95 +38%'], markdown: '| m | base | cand |' }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('svc', 1), ...readyRows('load', 2)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'svc' }, { repo: 'load', depends_on: ['svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['svc', 'load']),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:load': REPO_PLAN('load', 'main'),
+        'test-suite:FM-12:load': { passed: true, receipt: green, loadtest: regressed },
+        'audit:FM-12:load': { posted: true, detail: 'result posted' },
+        'lt-attribute:FM-12:1': { attribution: 'attributable', reasoning: 'the new lookup runs per row', evidence: 'svc/src/q.rs:88', repo: 'svc' },
+        'lt-fix:FM-12:1': { work_branch: 'feature/FM-12', summary: 'inherent', status: 'blocked', fixed: [],
+          cannot_fix: [{ kind: 'loadtest-regression', why: 'the ticket requires a per-request authorization lookup that cannot be batched', evidence: 'p95 +38% with the lookup, +2% without it — svc/src/q.rs:88', tried: 'batched it per request, cached it per caller: both changed what a caller observes' }] },
+      }
+      const result = await runOnce(ARGS, canned)
+      const items = ((result && result.blockingByRepo) || []).flatMap((b) => b.items)
+      report('G23_attribution_runs_before_any_fix', SPAWNED.indexOf('lt-attribute:FM-12:1') >= 0 && SPAWNED.indexOf('lt-attribute:FM-12:1') < SPAWNED.indexOf('lt-fix:FM-12:1'))
+      report('G23_fix_brief_carries_the_threshold_shape', (PROMPTS['lt-fix:FM-12:1'] || '').includes('the environment\'s own noise floor'))
+      report('G23_fix_brief_forbids_the_escapes', (PROMPTS['lt-fix:FM-12:1'] || '').includes('do NOT relax a threshold'))
+      report('G23_evidenced_cannot_ends_the_rounds', !SPAWNED.includes('lt-fix:FM-12:2'))
+      // ONE row for one condition: the developer's evidenced claim carries the number and what was
+      // ruled out, so the generic post-loop record must not add a second — a reader counting
+      // blocking items would double-count it.
+      report('G23_regression_is_recorded_once', items.filter((i) => i.kind === 'loadtest-regression').length === 1
+        && String(items[0].detail).includes('p95 +38%') && String(items[0].detail).includes('cannot be batched'), `got=${JSON.stringify(items.map((i) => i.kind))}`)
+      report('G23_green_suite_is_still_not_a_pass', !!result && result.status === 'test-suite-unresolved', `got=${result && result.status}`)
+      // The verdict branches are an if/else-if chain now that 'fail' no longer returns. A regression
+      // must land in NEITHER neighbour: not the ✅ line, not the loud "could not judge" one.
+      report('G23_no_passed_baseline_logged', !LINES.some((l) => l.includes('no tracked metric degraded')))
+      report('G23_not_reported_as_unavailable_either', !LINES.some((l) => l.includes('LOAD-TEST BASELINE UNAVAILABLE')))
+      report('G23_never_reaches_merge', !PHASES.includes('Merge'))
+      report('G23_gate_told_not_to_checkpoint_a_lost_baseline', (PROMPTS['test-suite:FM-12:load'] || '').includes('LOAD SUITE THAT MET ITS OWN THRESHOLDS BUT LOST TO ITS BASE IS NOT GREEN'))
+    } else if (SCENARIO === 'G24') {
+      // ADR 0028's ONE retraction. Round 1's fix for TC001 is rejected to exhaustion and recorded.
+      // Round 2 fixes the same case and the SAME scoped check clears it — a fresher statement by
+      // the same reviewer over a superset of the same diff — so the record is retracted and the run
+      // is not blocked by a finding that no longer holds. Nothing else is retractable.
+      const rejected = { passed: false, conclusion: 'still slower', blocking: [{ title: 'N+1 introduced', scope: 'app/src/x.ts:20', evidence: 'query in the loop' }] }
+      const cleared = { passed: true, conclusion: 'clean' }
+      const red = { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '1 failed' }, triage: [{ case: 'TC001', kind: 'app', repo: 'app', evidence: 'expected 200 got 500' }] }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': red,
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'gate-fix:FM-12:app#1.1': { work_branch: 'feature/FM-12', summary: 'try 1', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.1': cleared,
+        'gate-perf:FM-12:app#1.1': rejected,
+        'gate-fix:FM-12:app#1.2': { work_branch: 'feature/FM-12', summary: 'try 2', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#1.2': cleared,
+        'gate-perf:FM-12:app#1.2': rejected,
+        'test-suite:FM-12:e2e#r1': red,
+        'gate-fix:FM-12:app#2.1': { work_branch: 'feature/FM-12', summary: 'try 3, properly', status: 'complete', fixed: ['app/src/x.ts'] },
+        'gate-guard:FM-12:app#2.1': cleared,
+        'gate-perf:FM-12:app#2.1': cleared,
+        'test-suite:FM-12:e2e#r2': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G24_round1_recorded_the_unchecked_fix', LINES.some((l) => l.includes('BLOCKING RECORDED (gate-fix-unchecked)')))
+      report('G24_round2_retracted_it', LINES.some((l) => l.includes('RETRACTED (gate-fix-unchecked · TC001)')))
+      report('G24_run_is_not_blocked_by_a_finding_that_no_longer_holds', !((result && result.blockingByRepo) || []).length, `got=${JSON.stringify(((result && result.blockingByRepo) || []).flatMap((b) => b.items.map((i) => i.kind)))}`)
+      report('G24_gate_passes', !!result && result.status !== 'test-suite-unresolved' && result.status !== 'test-suite-failed', `got=${result && result.status}`)
+    } else if (SCENARIO === 'G25') {
+      // ADR 0028 — an `app` red naming a repo this run does not carry is a finding about SCOPE. The
+      // prereq fallback ("no repo named ⇒ the first code repo") must NOT apply to it: sending its
+      // fix to an unrelated repo would be a confident wrong answer, which is worse than a record.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('app', 1), ...readyRows('e2e', 3)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: false, receipt: { command: 'x', exit_code: 1, summary_line: '1 failed' },
+          triage: [{ case: 'TC001', kind: 'app', repo: 'billing', evidence: 'the invoice total came back wrong' }] },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+      }
+      const result = await runOnce(ARGS, canned)
+      const items = ((result && result.blockingByRepo) || []).flatMap((b) => b.items)
+      report('G25_no_fix_sent_to_an_unrelated_repo', !SPAWNED.some((l) => l.startsWith('gate-fix:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('gate-fix:')))}`)
+      report('G25_records_the_scope_gap', items.some((i) => i.kind === 'gate-red-unowned' && String(i.detail).includes('billing')), `got=${JSON.stringify(items.map((i) => i.kind))}`)
+      report('G25_never_a_pass', !!result && result.status === 'test-suite-failed', `got=${result && result.status}`)
+      // A round that routed nothing must not re-run the gate: no branch moved, so the verdict would
+      // be byte-identical. And it must not stack a generic "did not converge" row on top of the
+      // specific reason — one condition, one row.
+      report('G25_no_pointless_rerun', !SPAWNED.includes('test-suite:FM-12:e2e#r1') && LINES.some((l) => l.includes('routed no fix at all')))
+      report('G25_records_exactly_once', items.length === 1, `got=${JSON.stringify(items.map((i) => i.kind))}`)
+    } else if (SCENARIO === 'G26' || SCENARIO === 'G27') {
+      // ADR-0027 §Across invocations — the cross-invocation fail-open. A repo that ended
+      // `review-unresolved` has every gate ledgered PASSED (the gates DID pass; the blocking item
+      // was not a gate finding), so the next invocation skipped review at the early `ready` return
+      // and merged exactly what the previous run recorded as unclosable. G26: the item is carried,
+      // so review runs and the item reaches the developer. G27: the same row rewritten CLEARED is
+      // ignored, so a repo whose blocker was resolved still resumes for free.
+      const carried = SCENARIO === 'G26'
+      const item = { kind: 'cross-repo', detail: 'the root fix for the totals finding belongs in billing, which this ticket does not carry', human_action: 'widen FM-12 to billing, or waive the finding' }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [
+          ...readyRows('app', 7),
+          gatePassedRow('app', 'review'), gatePassedRow('app', 'guard'), gatePassedRow('app', 'perf'),
+          carried ? blockedRow('app', [item]) : blockedClearedRow('app'),
+        ] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'notify:FM-12': { sent: true },
+      }
+      // Reviewers pass on sight: the point is that the loop RUNS at all and the carried item lands
+      // in the fix batch — not that a reviewer re-derives it (a re-visit may only raise a
+      // fix-caused regression, so the reviewer was never going to be the one that re-finds it).
+      for (let n = 1; n <= 3; n++) {
+        canned[`review:FM-12:app#${n}`] = { approved: true, tests_green: true, comments: [], conclusion: 'clean', receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } }
+        canned[`guard:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'the billing gap was closed by hand last week; verified', status: 'complete', fixed: ['app/src/x.ts'], commits: 1 }
+      }
+      const result = await runOnce(ARGS, canned)
+      const skipped = LINES.some((l) => l.includes('review SKIPPED'))
+      if (carried) {
+        report('G26_review_is_not_skipped_over_a_carried_item', !skipped, `lines=${JSON.stringify(LINES.filter((l) => l.includes('SKIPPED')))}`)
+        report('G26_carried_item_is_logged_loudly', LINES.some((l) => l.includes('blocking item(s) CARRIED from a previous invocation') && l.includes('cross-repo')))
+        // The proof the freeze was lifted is that the reviewers RAN at all: with `gate_*: done`
+        // rows and no carried item, every one of them would have been frozen. (No `guard` here —
+        // this fixture sets QUALITY_GATE="none", so guard is never in the reviewer set at all.)
+        report('G26_frozen_gates_are_re_opened', SPAWNED.includes('review:FM-12:app#1') && SPAWNED.includes('perf:FM-12:app#1'),
+          `spawned=${JSON.stringify(SPAWNED.filter((l) => /^(review|guard|perf):/.test(l)))}`)
+        report('G26_item_reaches_the_developer', (PROMPTS['pr-fix:FM-12:app#1'] || '').includes('CARRIED FROM AN EARLIER RUN')
+          && (PROMPTS['pr-fix:FM-12:app#1'] || '').includes('belongs in billing'))
+        report('G26_developer_told_to_check_it_still_stands', (PROMPTS['pr-fix:FM-12:app#1'] || '').includes('FIRST, CHECK WHETHER IT STILL STANDS'))
+        // NOT permanently blocking: re-worked, and a run that closes it proceeds.
+        report('G26_a_closed_item_lets_the_run_proceed', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+        report('G26_summary_is_told_to_clear_the_row', (PROMPTS['summary:FM-12'] || '').includes('app-blocked.json') && (PROMPTS['summary:FM-12'] || '').includes('"status":"in-progress"'))
+      } else {
+        report('G27_a_cleared_row_is_ignored', skipped)
+        report('G27_no_carry_logged', !LINES.some((l) => l.includes('CARRIED from a previous invocation')))
+        report('G27_no_fix_pass_invented', !SPAWNED.some((l) => l.startsWith('pr-fix:')))
+        report('G27_resumes_for_free', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+      }
+    } else if (SCENARIO === 'G28') {
+      // The same veto on the suite side. The gate brief tells the agent not to write a `test_suite`
+      // row while a blocking item stands — but an instruction is not a mechanism, so a row that got
+      // written anyway must not let the gate be skipped.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [
+          ...readyRows('app', 1), ...readyRows('e2e', 3),
+          runStateRow('e2e', 'test_suite'),
+          blockedRow('e2e', [{ kind: 'loadtest-regression', detail: 'p95 +38% vs base after 3 fix round(s)', human_action: 'decide whether FM-12 ships at this cost' }]),
+        ] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G28_gate_is_not_skipped_over_a_carried_item', SPAWNED.includes('test-suite:FM-12:e2e'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
+      report('G28_not_reported_as_resumed', !LINES.some((l) => l.includes('SKIPPED — run state says this suite already passed')))
+      report('G28_a_genuinely_green_rerun_proceeds', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+    } else if (SCENARIO === 'G29' || SCENARIO === 'G30') {
+      // ADR-0029 — a repo short of `ready` used to end the run BEFORE the cross-repo gate, so a run
+      // with a ready repo and one carrying a recorded blocking item never learned whether the change
+      // set breaks the suite; that answer cost a whole extra invocation. G29: every unresolved repo
+      // is `review-unresolved` (reviewed, fixed to budget — the final state this run can reach), so
+      // the gate RUNS, advisory. G30: one repo has no build result at all, so the candidate is unfit
+      // to measure and the run returns exactly as it always did.
+      const advisory = SCENARIO === 'G29'
+      const SUITE_DOWN = { approved: false, tests_green: false, gate_unavailable: true, unavailable_reason: 'docker daemon unreachable', comments: [], conclusion: 'suite did not run' }
+      const PASSES = { approved: true, tests_green: true, comments: [], conclusion: 'clean', receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'svc' }, { repo: 'e2e', depends_on: ['app', 'svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'svc', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        // G30's unfit candidate: no structured handoff at all ⇒ `build-unresolved`.
+        'build:FM-12:svc': advisory ? { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] } : null,
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/11', pr_number: 11 },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/12', pr_number: 12 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/13', pr_number: 13 },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '6 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'dm:FM-12:repo-unresolved': { sent: true },
+      }
+      // `app` records `suite-unverified` (FIXTURE_TS_MAX_REPAIR=1 ⇒ one must-fix, then the record)
+      // and ends `review-unresolved`. `svc` passes on sight.
+      for (let n = 1; n <= 4; n++) {
+        canned[`review:FM-12:app#${n}`] = SUITE_DOWN
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'tried the stack', status: 'complete', fixed: ['app/x'], commits: 1 }
+        canned[`review:FM-12:svc#${n}`] = PASSES
+      }
+      const result = await runOnce(ARGS, canned)
+      const gp = PROMPTS['test-suite:FM-12:e2e'] || ''
+      if (advisory) {
+        report('G29_gate_runs_instead_of_deferring_the_answer', SPAWNED.includes('test-suite:FM-12:e2e'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
+        report('G29_gate_is_told_it_is_advisory', gp.includes('ADVISORY RUN') && gp.includes('suite-unverified'))
+        report('G29_gate_is_told_to_write_no_state_row', gp.includes('Write NO row, whatever your verdict'))
+        report('G29_logged_for_the_operator', LINES.some((l) => l.includes('ADVISORY GATE')))
+        // Authority: none. The tick is ticket-wide (ADR-0022), so it is all or nothing.
+        report('G29_nothing_is_approved', !SPAWNED.some((l) => l.startsWith('approve:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('approve:')))}`)
+        report('G29_ticket_is_not_advanced', !SPAWNED.includes('status:FM-12:ready_to_merge') && !SPAWNED.includes('status:FM-12:ready_to_test') && !SPAWNED.includes('status:FM-12:testing'))
+        report('G29_never_reaches_merge', !PHASES.includes('Merge'))
+        // The ending is about the repos, not the gate: a green advisory gate must not relabel the run.
+        report('G29_ends_on_the_unresolved_repo', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
+        report('G29_records_that_the_gate_ran', String((result || {}).advisory_gate || '').includes('advisory') && String(result.advisory_gate).includes('does not break the suite'))
+        report('G29_review_records_still_carried', ((result && result.blockingByRepo) || []).flatMap((b) => b.items).some((i) => i.kind === 'suite-unverified'))
+      } else {
+        report('G30_gate_does_not_run_on_an_unfit_candidate', !SPAWNED.some((l) => l.startsWith('test-suite:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
+        report('G30_no_advisory_log', !LINES.some((l) => l.includes('ADVISORY GATE')))
+        report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
+        report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
+      }
+    } else if (SCENARIO === 'G31') {
+      // ADR-0029 — the SIBLINGS of the near-miss. Removing the abort `return` promoted every return
+      // below it into a new reachable state, and those were written when "a repo was not ready"
+      // could not be true — so each would end the run having DROPPED the recorded blocking items.
+      // Dropped items means no `blocked` rows, which re-opens the cross-invocation fail-open
+      // ADR-0027 §Across invocations closed. This drives the budget-stop one (both it and
+      // `nothing-delivered` thread the same `abortFields()`); the assertion that matters is that the
+      // rows still get written on the way out.
+      const SUITE_DOWN = { approved: false, tests_green: false, gate_unavailable: true, unavailable_reason: 'docker daemon unreachable', comments: [], conclusion: 'suite did not run' }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/11', pr_number: 11 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/13', pr_number: 13 },
+        'summary:FM-12': { summary_path: '/tmp/x.md', token_table_appended: true, note: 'ok' },
+        'dm:FM-12:budget-stopped': { sent: true },
+      }
+      for (let n = 1; n <= 4; n++) {
+        canned[`review:FM-12:app#${n}`] = SUITE_DOWN
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'tried', status: 'complete', fixed: ['app/x'], commits: 1 }
+      }
+      // Spend jumps once phase('Build') has fired ⇒ the Test-suite boundary is the first check to
+      // trip, which is exactly the newly reachable return.
+      const result = await runOnce(ARGS, canned, { spendJumpAfterPhase: 'Build' })
+      const sp = PROMPTS['summary:FM-12'] || ''
+      report('G31_stops_on_the_budget_not_the_repo', !!result && result.status === 'budget-stopped' && result.stopped_before === 'Test suite', `got=${result && result.status}/${result && result.stopped_before}`)
+      report('G31_records_are_not_dropped_on_the_way_out', ((result && result.blockingByRepo) || []).flatMap((b) => b.items).some((i) => i.kind === 'suite-unverified'),
+        `got=${JSON.stringify(((result && result.blockingByRepo) || []).flatMap((b) => b.items.map((i) => i.kind)))}`)
+      report('G31_blocked_row_is_still_written', sp.includes('app-blocked.json') && sp.includes('"status":"done"') && sp.includes('suite-unverified'))
+      report('G31_gate_never_ran', !SPAWNED.some((l) => l.startsWith('test-suite:')))
+      report('G31_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
+    } else if (SCENARIO === 'G17') {
+      // R12 — writeSummary used to write ONE fixed path with Write, so every invocation destroyed
+      // the previous round's summary. That is why one postmortem's timeline had to be rebuilt from
+      // a chat log instead of the repo. Each invocation now also keeps its own numbered file.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'notify:FM-12': { sent: true },
+      }
+      await runOnce(ARGS, canned)
+      const sp = PROMPTS['summary:FM-12'] || ''
+      report('G17_per_invocation_summary_written', sp.includes('FM-12-DEV-CYCLE-SUMMARY-r1.md'))
+      report('G17_latest_pointer_still_written', sp.includes('FM-12-DEV-CYCLE-SUMMARY.md'))
+      report('G17_budget_unit_stated_as_output_tokens', sp.includes('OUTPUT tokens') && sp.includes('29x'))
+      report('G17_per_ticket_total_reported', sp.includes('across r1..r1'))
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
   } catch (e) {
     report(`scenario-${SCENARIO}_crashed`, false, String((e && e.stack) || e).split('\n')[0])
     process.exitCode = 1
+  }
+  // DUMP_LINES=1 prints the run's own log and the labels it spawned. A failing assertion here says
+  // only "false", and the interesting question is always what the loop actually did.
+  if (process.env.DUMP_LINES) {
+    console.log('--- LOG ---'); LINES.forEach((l) => console.log(l))
+    console.log('--- SPAWNED ---'); console.log(SPAWNED.join('\n'))
   }
 })()
 NODE
@@ -910,6 +1580,84 @@ if [[ -n "$G11_FP_VALUE" ]]; then pass "G11_fingerprint_scraped (fp=$G11_FP_VALU
 
 echo "── G11 — resumed multi-repo run: nothing re-spawned, the in-flight loop fires, escalation re-gated"
 out="$(ARGS="$G11_ARGS" FP="$G11_FP_VALUE" run_scenario G11)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16a — a PR/MR targeting the wrong branch halts the repo (ADR 0025)"
+out="$(run_scenario G16a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16b — two open PR/MRs for one repo halts too; closing one stays human"
+out="$(run_scenario G16b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16c — a repaired target is re-read and the run continues"
+out="$(run_scenario G16c)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16d — an assert that did not converge is not a pass"
+out="$(run_scenario G16d)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G18a — an unchanged failure signature is briefed to re-derive, not re-confirm"
+out="$(run_scenario G18a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G18b — a signature that MOVED is progress, and gets no such directive"
+out="$(run_scenario G18b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19a — a suite that could not run becomes a must-fix, then a recorded blocking item"
+out="$(run_scenario G19a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19b — a fix-caused regression is handed straight back instead of halting"
+out="$(run_scenario G19b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19c — a stall escalates the attempt rather than repeating or halting"
+out="$(run_scenario G19c)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19d — an EVIDENCED 'cannot' closes that condition's attempts early"
+out="$(run_scenario G19d)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19e — an UNEVIDENCED 'cannot' is dropped and the attempts continue"
+out="$(run_scenario G19e)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G20a — a prereq red is routed to a developer instead of ticking a round away"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G20a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G20b — an automation red is routed to the suite repo that owns the spec"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G20b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G21a — an EVIDENCED 'cannot' on one red ends its attempts; the sibling is still worked"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G21a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G21b — an UNEVIDENCED 'cannot' is dropped and the attempts continue"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G21b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G22 — an unrunnable gate routes to a developer, then records; never a pass"
+out="$(FIXTURE_TS_MAX_REPAIR=2 run_scenario G22)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G23 — a load regression that stands is recorded, and a green suite is still not a pass"
+out="$(run_scenario G23)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G24 — the one retraction: a later CLEARED check on the same case drops its record"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G24)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G25 — an app red naming an out-of-scope repo is recorded, never misrouted"
+out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G25)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G26 — a carried blocking item survives the resume and reaches the developer"
+out="$(run_scenario G26)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G27 — a CLEARED blocked row is ignored, so a resolved repo still resumes for free"
+out="$(run_scenario G27)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G28 — a carried item vetoes the suite-gate skip too, whatever the test_suite row says"
+out="$(run_scenario G28)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G29 — the gate runs advisory when every unresolved repo is review-unresolved"
+out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G29)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G30 — and does NOT run when the candidate is unfit to measure"
+out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G30)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G31 — a return newly reachable past the abort point still carries the records out"
+out="$(FIXTURE_TS_MAX_REPAIR=1 FIXTURE_TOKEN_BUDGET=1000000 run_scenario G31)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
+out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

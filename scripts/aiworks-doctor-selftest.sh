@@ -514,6 +514,66 @@ OUT="$(run_chain)"
 ck "a bar without the badge is still a finding" "savings badge not wired"              "$OUT"
 ck "it does not claim a chain that is not there" "ABSENT:wired through a chained"      "$OUT"
 
+# ── base drift (docs/adr/0025) ────────────────────────────────────────────────────
+# The base a run cuts a branch from lived only as a constant in the generated workflow mirror, and
+# nothing validated it. Measured: repos projected onto a base 99 and 157 commits behind their real
+# trunk, one of them a 16-file scaffold a year stale, so a ticket's branch was cut off a dead
+# branch and a whole round went into finding out. This is the check that says so BEFORE the run.
+#
+# base_fixture <dir> <projected-base> [origin-head-branch] — stages the mirror the check reads and
+# the remote-tracking refs it compares against. No remote is needed: update-ref writes the same
+# refs/remotes/origin/* a fetch would, which is exactly what the check inspects.
+# -v, because the default view collapses a passing check to a count and ellipsises a long
+# detail line ("… (+31 more)") — both of which these cases assert on.
+dr() { "$1/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1; }
+# The text view ellipsises a long detail at ~96 chars even under -v; --json is the channel
+# that carries it whole, so a case asserting on the tail of a detail reads that instead.
+drj() { "$1/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --json 2>&1; }
+base_fixture() {
+  local w="$1" projected="$2" head_branch="${3:-}"
+  mkdir -p "$w/.claude/workflows"
+  { printf "const REPOS = {\n"
+    printf "  'demo-repo': {\n"
+    printf "    path: 'demo-repo', kind: 'backend',\n"
+    printf "    base: { feature: '%s', fix: 'main' },\n" "$projected"
+    printf "  },\n}\n"; } > "$w/.claude/workflows/dev-cycle.js"
+  local r="$w/demo-repo" sha
+  sha="$(git -C "$r" rev-parse HEAD 2>/dev/null)"
+  [[ -n "$head_branch" ]] || return 0
+  git -C "$r" update-ref "refs/remotes/origin/$head_branch" "$sha" 2>/dev/null
+  git -C "$r" symbolic-ref "refs/remotes/origin/HEAD" "refs/remotes/origin/$head_branch" 2>/dev/null
+}
+
+# 20a — projected base agrees with what the remote calls its default: silent, and green.
+W="$T/base-ok"; make_ws "$W"; stage "$W"; base_fixture "$W" develop develop
+git -C "$W/demo-repo" update-ref refs/remotes/origin/develop "$(git -C "$W/demo-repo" rev-parse HEAD)" 2>/dev/null
+OUT="$(dr "$W")"
+ck "a base matching origin/HEAD passes"        "feature base vs origin/HEAD" "$OUT"
+ck "…and raises no drift warning"              "ABSENT:disagrees with origin/HEAD" "$OUT"
+
+# 20b — projected base EXISTS but is not the remote's default: warn, and name both sides. This is
+# the shape that is sometimes legitimate (a repo really on its own branch policy), so it must not
+# be a failure — it must tell you how to declare it.
+W="$T/base-drift"; make_ws "$W"; stage "$W"
+base_fixture "$W" main develop
+git -C "$W/demo-repo" update-ref refs/remotes/origin/main "$(git -C "$W/demo-repo" rev-parse HEAD)" 2>/dev/null
+OUT="$(dr "$W")"
+ck "drift against origin/HEAD is reported"     "feature base disagrees with origin/HEAD" "$OUT"
+ck "…naming the base the run would use"        "uses main"        "$OUT"
+ck "…and what the remote actually points at"   "origin/HEAD→develop" "$OUT"
+ck "…and how to declare it deliberately"       "feature_base"     "$(drj "$W")"
+ck "drift is a warning, not a failure"         "ABSENT:1 fail"    "$OUT"
+
+# 20c — projected base is not on the remote AT ALL. Not a style question: the open-PR precondition
+# hard-stops on it, so no ticket can finish in that repo until it is fixed.
+W="$T/base-gone"; make_ws "$W"; stage "$W"
+base_fixture "$W" release/9.9 develop
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1)"; RC=$?
+ck "a base absent from the remote FAILS"       "does not exist on the remote" "$OUT"
+ck "…naming the repo and the branch"           "demo-repo(→release/9.9)"      "$OUT"
+ck "…and saying what it costs"                 "no ticket can finish"         "$OUT"
+ck_exit "…so the run exits non-zero"           1 "$RC"
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]

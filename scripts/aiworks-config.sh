@@ -47,14 +47,17 @@
 #   image_generation.enabled         → const IMAGE_GEN_ENABLED          (prd.js only)
 #   image_generation.quality         → const IMAGE_GEN_QUALITY          (prd.js only)
 #   image_generation.max_per_request → const IMAGE_GEN_MAX_PER_REQUEST  (prd.js only)
-#   branch_model.{feature,fix}_base  → each repo's base.{feature,fix} (kind may override)
+#   branch_model.{feature,fix}_base  → each repo's base.{feature,fix}, for EVERY kind
 #   products[].repos[]               → const REPOS  (one entry per repo)
 #       url               → the REPOS key (repo name) + path default
 #       kind              → the role/gate DEFAULTS below (plan/build/review/guard/perf/
-#                           testSuite/green/guardianFocus/base) — the single source of truth
+#                           testSuite/green/guardianFocus) — the single source of truth
 #                           for what each kind means in the workflow
 #       suite_kind        → which flavour of test-suite ('load' arms the base-branch
 #                           non-degradation gate — docs/agents/loadtest-gate.md)
+#       feature_base / fix_base → this repo's OWN branch policy, overriding branch_model.
+#                           The only way a repo on `develop → staging → main` states that
+#                           without editing generated code (docs/adr/0025).
 #       path / distribute / auto_merge / green / guardian_focus → optional per-repo overrides
 #
 # ALSO GENERATES — the multi-root <workspace>.code-workspace file (one folder root per repo)
@@ -367,6 +370,12 @@ LT_CACHE='~/.cache/aiworks/loadtest-baselines'
 # test_suite.max_fix_rounds — the cross-repo gate's own bounded red-triage loop (C4), and the
 # per-red attempt bound its scoped quality check retries within one round (docs/adr/0024).
 TS_FIX_ROUNDS='3'
+# test_suite.max_suite_repair_attempts — a suite that COULD NOT RUN is a must-fix, not a halt
+# (docs/adr/0027). Never a verdict: no receipt means the gate did not run.
+TS_MAX_REPAIR='3'
+# review.* — the review loop's own bounds. max_rounds is the ONE terminal bound; the rest are
+# per-condition attempt budgets for the states that used to halt a repo mid-review.
+RV_MAX_ROUNDS='14'; RV_MAX_REGRESSION='3'; RV_MAX_STALL='3'; RV_MAX_ESCALATION='3'
 # dev_cycle.token_budget — the run's own spend ceiling (C9), and notify.dm_on_incomplete (C10).
 DC_TOKEN_BUDGET='2000000'
 NOTIFY_DM=''
@@ -400,6 +409,11 @@ while IFS=$'\t' read -r k v; do
     LT_MAX_FIX_ROUNDS)  LT_FIX_ROUNDS="$v" ;;
     LT_BASELINE_CACHE)  LT_CACHE="$v" ;;
     TS_MAX_FIX_ROUNDS)  TS_FIX_ROUNDS="$v" ;;
+    TS_MAX_REPAIR)      TS_MAX_REPAIR="$v" ;;
+    RV_MAX_ROUNDS)      RV_MAX_ROUNDS="$v" ;;
+    RV_MAX_REGRESSION)  RV_MAX_REGRESSION="$v" ;;
+    RV_MAX_STALL)       RV_MAX_STALL="$v" ;;
+    RV_MAX_ESCALATION)  RV_MAX_ESCALATION="$v" ;;
     DC_TOKEN_BUDGET)    DC_TOKEN_BUDGET="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
@@ -431,6 +445,11 @@ done < <(
     sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
     sec=="quality_gate" && /^  provider:/            { print "QUALITY_GATE\t" val($0); next }
     sec=="review"       && /^  level:/               { print "REVIEW_LEVEL\t" val($0); next }
+    sec=="review"       && /^  max_rounds:/          { print "RV_MAX_ROUNDS\t"  val($0); next }
+    sec=="review"       && /^  max_regression_fixes:/    { print "RV_MAX_REGRESSION\t" val($0); next }
+    sec=="review"       && /^  max_stall_reattempts:/    { print "RV_MAX_STALL\t"      val($0); next }
+    sec=="review"       && /^  max_escalation_attempts:/ { print "RV_MAX_ESCALATION\t" val($0); next }
+    sec=="test_suite"   && /^  max_suite_repair_attempts:/ { print "TS_MAX_REPAIR\t"   val($0); next }
     sec=="loadtest"     && /^  tolerance_pct:/        { print "LT_TOLERANCE\t"      val($0); next }
     sec=="loadtest"     && /^  noise_runs:/           { print "LT_NOISE_RUNS\t"     val($0); next }
     sec=="loadtest"     && /^  noise_ceiling_multiple:/ { print "LT_NOISE_CEILING\t" val($0); next }
@@ -456,7 +475,13 @@ case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # cl
 [[ "$LT_NOISE_CEIL" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_CEIL" -ge 1 ]] || LT_NOISE_CEIL='2'
 [[ "$LT_FIX_ROUNDS" =~ ^[0-9]+$ ]]  || LT_FIX_ROUNDS='2'
 LT_CACHE="${LT_CACHE:-~/.cache/aiworks/loadtest-baselines}"
-[[ "$TS_FIX_ROUNDS" =~ ^[0-9]+$ ]]    || TS_FIX_ROUNDS='2'
+[[ "$TS_FIX_ROUNDS" =~ ^[0-9]+$ ]]    || TS_FIX_ROUNDS='3'
+[[ "$TS_MAX_REPAIR" =~ ^[0-9]+$ ]]    || TS_MAX_REPAIR='3'
+# max_rounds is the run's ONLY terminal review bound now, so a 0 or a typo must not disarm it.
+[[ "$RV_MAX_ROUNDS" =~ ^[0-9]+$ ]] && [[ "$RV_MAX_ROUNDS" -ge 1 ]] || RV_MAX_ROUNDS='14'
+[[ "$RV_MAX_REGRESSION" =~ ^[0-9]+$ ]] || RV_MAX_REGRESSION='3'
+[[ "$RV_MAX_STALL" =~ ^[0-9]+$ ]]      || RV_MAX_STALL='3'
+[[ "$RV_MAX_ESCALATION" =~ ^[0-9]+$ ]] || RV_MAX_ESCALATION='3'
 [[ "$DC_TOKEN_BUDGET" =~ ^[0-9]+$ ]]  || DC_TOKEN_BUDGET='2000000'
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
@@ -470,6 +495,16 @@ fi
 # ── 2. kind → role/gate DEFAULTS (the one authoritative table) ────────────────────
 # `kind` is a FREE-FORM, tech-agnostic development-context label (frontend, backend,
 # web-app, service, migration, generic, …) — the tech is captured by `lang`, NOT the kind.
+#
+# EVERY archetype takes its bases from `branch_model` — feature/* → feature_base, fix/* →
+# fix_base. A test-suite repo used to be the exception, given fix_base for BOTH kinds on the
+# reasoning that a suite repo has no develop flow. Measured, that was simply false: suite repos
+# had `origin/HEAD` on the feature base with the fix base 99 and 157 commits behind, one of them
+# a 16-file scaffold last touched a year earlier. A ticket's suite branch was therefore cut off a
+# dead trunk, and since `workspace.config.yaml` carried no per-repo base at all, the only way to
+# say otherwise was to edit generated code. The exception is gone; a repo that genuinely differs
+# says so with `feature_base:` / `fix_base:` on its own `repos[]` entry (docs/adr/0025).
+#
 # Behaviour is decided by ARCHETYPE, and there are exactly three:
 #   test-suite → QA pipeline: qa-planner/qa-runner build the suite, no code review, and this
 #                repo PROVIDES the cross-repo test-suite gate. The ONE behaviourally-special kind.
@@ -489,7 +524,7 @@ kind_defaults() {
   case "$kind" in
     test-suite)
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
-        qa-planner qa-runner null false false true "$FIX_BASE" "$FIX_BASE" \
+        qa-planner qa-runner null false false true "$FEATURE_BASE" "$FIX_BASE" \
         'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand' \
         '' ;;
     document|documentation|fixture|mock|mocks)
@@ -510,7 +545,7 @@ repos_body=""
 repo_count=0
 folders_tsv=""   # accumulates "<folder name>\t<folder path>\n" per repo, in declared order,
                  # for the multi-root <name>.code-workspace `folders` array (built in step 6).
-while IFS=$'\037' read -r url kind path dist green gf am sk kfr; do   # \037 (US): empty fields preserved
+while IFS=$'\037' read -r url kind path dist green gf am sk kfr bf bx; do   # \037 (US): empty fields preserved
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
@@ -526,6 +561,10 @@ while IFS=$'\037' read -r url kind path dist green gf am sk kfr; do   # \037 (US
   # per-repo overrides (else the kind default)
   [[ -n "$green" ]] && d_green="$green"
   [[ -n "$gf" ]]    && d_gf="$gf"
+  # A repo whose branch policy is not the workspace's own says so here, and the config —
+  # not generated code — is then the source of truth for it (docs/adr/0025).
+  [[ -n "$bf" ]]    && d_basef="$bf"
+  [[ -n "$bx" ]]    && d_basex="$bx"
 
   # distribute: none/empty → null, else 'value'
   local_dist='null'
@@ -565,9 +604,10 @@ done < <(
       else if(k~/^path:/) path=val(k); else if(k~/^distribute:/) dist=val(k)
       else if(k~/^green:/) green=val(k); else if(k~/^guardian_focus:/) gf=val(k)
       else if(k~/^auto_merge:/) am=val(k); else if(k~/^suite_kind:/) sk=val(k)
-      else if(k~/^known_false_reds:/) kfr=val(k) }
-    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk,kfr }
-      url="";kind="";path="";dist="";green="";gf="";am="";sk="";kfr="" }
+      else if(k~/^known_false_reds:/) kfr=val(k)
+      else if(k~/^feature_base:/) bf=val(k); else if(k~/^fix_base:/) bx=val(k) }
+    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk,kfr,bf,bx }
+      url="";kind="";path="";dist="";green="";gf="";am="";sk="";kfr="";bf="";bx="" }
     /^products:[ \t]*$/ { inp=1; next }
     inp && /^  - id:/ { flush(); inrepos=0; next }
     inp && /^    repos:[ \t]*$/ { inrepos=1; next }
@@ -640,7 +680,14 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   baselineCache: $(jsq "$LT_CACHE"),
 }
 const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
-  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → scoped quality check → re-run loops before halting
+  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → scoped quality check → re-run loops
+  maxSuiteRepairAttempts: ${TS_MAX_REPAIR},   // a suite that COULD NOT RUN: repair attempts before it is RECORDED unverified (docs/adr/0027)
+}
+const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bounds (docs/adr/0027)
+  maxRounds: ${RV_MAX_ROUNDS},                // reviewer pass + fix pass per repo — the ONE terminal bound
+  maxRegressionFixes: ${RV_MAX_REGRESSION},   // a fix that caused a new blocking problem, handed straight back
+  maxStallReattempts: ${RV_MAX_STALL},        // same finding set + no new commit ⇒ ESCALATE the brief, then retry
+  maxEscalationAttempts: ${RV_MAX_ESCALATION},// cross-repo fix + scoped re-gate, per (repo, finding)
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: ${DC_TOKEN_BUDGET},        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable

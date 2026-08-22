@@ -11,7 +11,8 @@ remote** when unset. All commands run against the repo in the current directory.
 | `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=`. `--media <ref>` (repeatable) attaches visual results to the body |
 | `find-prs.sh`       | Print the URL of every OPEN PR/MR in the current repo whose **title or source branch contains the ticket key** — one per line (read-only; never pushes/creates) |
 | `upload-media.sh`   | Host media (image/video files, a dir of them, or http(s) URLs) and print an embeddable **## Visual results** markdown section |
-| `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` + `approved=<yes\|no\|unknown>` (`--approved` prints just the last) |
+| `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` + `approved=<yes\|no\|unknown>` + `target_branch=` + `source_branch=` (`--approved` prints just the last) |
+| `retarget-pr.sh`    | Repoint an OPEN PR/MR at a different base (`--base <branch>`), then read the new target back from the forge. Approvals survive a retarget; close+reopen does not |
 | `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |
 | `pr-comments.sh`    | Print a PR/MR's comments / review notes as plain text |
 | `pr-threads.sh`     | List a PR/MR's resolvable **review threads** with their thread ids + resolved state (so a fix can be tied back to a thread) |
@@ -19,7 +20,17 @@ remote** when unset. All commands run against the repo in the current directory.
 | `merge-pr.sh`       | **Squash-merge server-side** so the web PR/MR shows *Merged*, then prints pr-view |
 | `pr-approve.sh`     | **The reviewer's PASS signal** — register a host approval (+ post a one-line verdict via `--body`). Decoupled from merge; the merge stays gated on `vcs.auto_merge` |
 
-`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, `merge-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
+`open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, `merge-pr.sh`,
+`retarget-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
+
+**Why `pr-view.sh` prints the branches.** It always fetched the whole PR/MR object —
+`target_branch` included — and printed three of its fields, so the one question a pipeline needs to
+ask, *does this PR/MR target the branch the run said?*, had no answer through the adapter, and
+reaching past it to `glab`/`gh` is forbidden. That is why no gate ever checked it, and why one
+measured run reported its clean finish with every MR of a four-repo ticket pointed at a branch
+nobody had asked for. `retarget-pr.sh` is the repair half, and it does **not** decide what the right
+base is — pass the base the run recorded
+([ADR 0025](../../docs/adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md)).
 
 ## Layout
 
@@ -30,7 +41,9 @@ vcs/
 ├── gitlab.sh          # glab implementation
 ├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
 ├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
-├── approve-selftest.sh  # offline regression for the approval read + write (stubbed CLI)
+├── retarget-pr.sh     find-prs.sh  list-prs.sh  close-pr.sh
+├── approve-selftest.sh       # offline regression for the approval read + write (stubbed CLI)
+├── target-branch-selftest.sh # offline regression for reading + changing a target branch
 └── .env.example       # optional VCS_PROVIDER override
 ```
 

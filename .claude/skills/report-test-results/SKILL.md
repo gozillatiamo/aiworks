@@ -74,7 +74,16 @@ Read **`report-template.md`** (next to this skill), fill every `{{ … }}` place
 - **Results table** — one row per test-plan `TC<nnn>`: `TC · Scenario · Result · Evidence · Notes`. Keep cells terse.
 - **Failures** — **only if any ❌.** One short block per failing `TC`: expected (the plan's `Then`) vs actual, the `why` signal, and the failure screenshot. No raw logs.
 - **Coverage** — automated count vs total planned, which scenarios were not automated (with a one-line reason), the regression checks' status if the plan listed any, and the run-wide artifacts (video, report).
-- **Run history** — every earlier run's line carried over verbatim, then this run's appended.
+- **Run history** — rendered from the ledger file, never re-typed. Append **one** line for this run, then render the whole file:
+  ```sh
+  printf 'r%s\t%s\t%s\n' "<n>" "$(date -u +%Y-%m-%dT%H:%MZ)" "<result, e.g. 5/5 + 4/4 green>" \
+    >> agent_logs/<KEY>-test-report-history.tsv
+  awk -F'\t' '{printf "- %s · %s · %s\n", $1, $2, $3}' agent_logs/<KEY>-test-report-history.tsv
+  ```
+  **Do not carry the old lines forward by hand.** Re-merging history into a rewritten body is a
+  lossy operation performed by a language model, repeatedly — measured, it produced a report that
+  contradicted its own run three times over (wrong pass/fail counts, a `grep=` label for a filter
+  nobody ran, the wrong spec name). The ledger *is* the history; you only ever append to it.
 
 Three things in that template are **identity, not content**, and a run that gets them wrong
 breaks something downstream rather than just reading oddly:
@@ -88,8 +97,8 @@ breaks something downstream rather than just reading oddly:
   place of a new comment each time, that stamp is the only thing separating this run's report
   from the last one's — get it wrong and a green gate is recorded as **not run**.
 - **The run-history lines** — the only audit trail that survives an in-place update, since the
-  body above is always just the latest run. Carry every old line forward untouched; never
-  rewrite or prune one.
+  body above is always just the latest run. They come from the ledger file (§4); never rewrite or
+  prune a line, and never re-type the earlier ones from the previous record.
 
 ## 5. Post it to the ticket — with the evidence in the comment
 
@@ -98,7 +107,23 @@ Attaching and embedding is **`/update-ticket`'s** job — read its §4 for the e
 - **A failing `TC`** → its `fail-screenshot`, **alone on its own line** inside that TC's Failures block, so it renders wide (~446px). A reviewer has to actually look at this one.
 - **Passing `TC`s** → their `screenshot`s, **all on ONE line** under the Results table, so they render as a thumbnail strip. This is proof-of-record, not something anyone reads one by one.
 - **The rendered run report** (§3) → one line under Coverage.
-- **Video** → attach only when a failure is a sequence a still cannot show. It is large and rarely opened.
+- **Video → always, when the run produced one.** Green or red. A results table tells the team what
+  happened; a video is the only artifact that shows them *the product doing it*, and that is the
+  context a team actually watches when it wants to trust a suite it did not run itself. This rule
+  used to read "attach only when a failure is a sequence a still cannot show — it is large and
+  rarely opened", and the measured outcome was that no video ever reached a ticket at all.
+
+  **Order and budget**, so a big regression run cannot silently blow past the tracker's limit:
+  1. Failing specs' videos first, then the rest, then the run-wide video (`TC-id` = `-`).
+  2. Attach in that order while the running total stays under **25 MB** (`du -k` each file first).
+  3. Everything you did not attach gets a named line under Coverage — file, size, and its path:
+     `_Not attached_ — \`full_regression.mp4\` (41 MB, over the 25 MB budget): agent_logs/<KEY>-artifacts/full_regression.mp4`
+
+  Never silently drop one. A report that omits evidence without saying so reads as a report that
+  had none, which is the same failure mode as a gate that passes without running.
+- **Videos go under Coverage**, each on its own line under a `**Run video**` heading (a video is
+  not a table cell). Jira renders an attached video as a playable media card; on a provider that
+  cannot embed, the upload dies loud and the words still post — say which you got.
 
 Rename every file before upload — `<KEY>-TC001-fail.png`, `<KEY>-report.png` — into `agent_logs/<KEY>-artifacts/`, suffixing the round (`-r2`) on a re-run. Then **update this suite repo's own report comment**, rather than adding another one:
 
@@ -115,8 +140,12 @@ scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[test-report · <this r
   (`find-ticket-comment.sh`, §1) may be piped freely.
 - The call **fails** if the body does not contain its own marker — that is deliberate, an
   unmarked report is invisible to the next run. Fix the body, don't switch scripts.
-- Only **jira** updates in place. On notion/linear the adapter WARNs and posts a new comment;
-  say so in your report-back rather than presenting it as an update.
+- **Every provider updates in place.** jira and linear rewrite the comment; notion keeps the
+  record as one callout block on the page (its comment API cannot update), so there the report
+  moves to the bottom of the page each round instead of staying put. Either way there is exactly
+  one report per suite repo and the audit can read it back.
+- If the adapter WARNs that it could not update, say so in your report-back rather than
+  presenting it as an update.
 - Preview with `--dry-run` if unsure of the resolved ticket.
 - **Only Jira embeds images.** On another provider the upload dies loud and the comment still posts — the words are the deliverable, the pictures are the proof. Say which you got.
 - Moving the ticket's **Status** is **not** this skill's job — that's `/update-ticket`. Mention it if the run warrants it; don't change it here.

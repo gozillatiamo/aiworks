@@ -53,29 +53,48 @@ vcs_find_prs() {
 }
 
 # vcs_list_prs -> one TSV line per OPEN PR in the repo of the current directory:
-#   number <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> title <TAB> url
+#   number <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> target <TAB> title <TAB> url
 # Read-only. Same contract as the GitLab implementation; see the note there on why this exists
 # alongside the key-filtered vcs_find_prs.
 vcs_list_prs() {
   gh pr list --state open --limit 100 \
-      --json number,isDraft,author,updatedAt,title,url 2>/dev/null \
+      --json number,isDraft,author,updatedAt,baseRefName,title,url 2>/dev/null \
     | jq -r '.[] | [ (.number|tostring),
                      (if .isDraft then "yes" else "no" end),
                      (.author.login // "-"),
                      ((.updatedAt // "")[0:10]),
+                     (.baseRefName // "-"),
                      (.title // ""),
                      (.url // "") ] | @tsv' 2>/dev/null || true
 }
 
-# vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
+# vcs_pr_view NUMBER -> "state=", "merge_sha=", "approved=", "target_branch=", "source_branch=".
+# See the GitLab implementation for why the branches are printed: a gate cannot assert what the
+# sanctioned tool refuses to show, and this call already fetched the PR.
 vcs_pr_view() {
-  local num="$1" json state sha
-  if ! json="$(gh pr view "$num" --json state,mergeCommit 2>/dev/null)"; then
-    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\n'; return 0
+  local num="$1" json state sha tgt src
+  if ! json="$(gh pr view "$num" --json state,mergeCommit,baseRefName,headRefName 2>/dev/null)"; then
+    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\ntarget_branch=\nsource_branch=\n'; return 0
   fi
   state="$(printf '%s' "$json" | jq -r '.state // "UNKNOWN"')"
   sha="$(printf '%s' "$json" | jq -r '.mergeCommit.oid // ""')"
-  printf 'state=%s\nmerge_sha=%s\napproved=%s\n' "$state" "$sha" "$(vcs_pr_approved "$num")"
+  tgt="$(printf '%s' "$json" | jq -r '.baseRefName // ""')"
+  src="$(printf '%s' "$json" | jq -r '.headRefName // ""')"
+  printf 'state=%s\nmerge_sha=%s\napproved=%s\ntarget_branch=%s\nsource_branch=%s\n' \
+    "$state" "$sha" "$(vcs_pr_approved "$num")" "$tgt" "$src"
+}
+
+# vcs_pr_retarget NUMBER BASE -> repoint an OPEN PR at a different base branch.
+# `gh pr edit --base` is the supported route (PATCH /pulls/:n with `base` underneath). GitHub
+# dismisses no approval for a base change by default, so this is the non-destructive repair —
+# unlike close + reopen, which loses review state.
+vcs_pr_retarget() {
+  local num="$1" base="$2" dry="${3:-0}" out
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr edit %s --base %s\n' "$num" "$base"; return 0
+  fi
+  out="$(gh pr edit "$num" --base "$base" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+  printf 'target_branch=%s\n' "$(gh pr view "$num" --json baseRefName -q '.baseRefName' 2>/dev/null || printf '%s' "$base")"
 }
 
 # vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this

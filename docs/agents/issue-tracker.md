@@ -20,8 +20,43 @@ adapter in `scripts/tracker/`, which dispatches by `TRACKER_PROVIDER`
 | Set project + label | `scripts/tracker/upsert-ticket-details.sh <KEY> --project "<name>" --label <name>` (Jira ignores `--project` and says so — the project is `JIRA_PROJECT_KEY` at create) |
 | Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --estimate-reason-file <r.md>` |
 | Create a child / sub-task | `scripts/tracker/upsert-ticket-details.sh new --parent <KEY> --subtask --title … --component <name> --link Implements:<KEY> --body-file …` |
-| Add a comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
-| Update a repeated report | `scripts/tracker/upsert-ticket-comment.sh <KEY> --marker '[test-report · <repo>]' < report.md` — one durable comment per context, rewritten each run; read it back with `find-ticket-comment.sh` |
+| Add a **one-off** comment | `scripts/tracker/add-ticket-comment.sh <KEY> "text"` (or pipe a file via stdin) |
+| Write a **durable record** | `scripts/tracker/upsert-ticket-comment.sh <KEY> --marker '[<kind> · <scope>]' < body.md` — one record per context, rewritten each run; read it back with `find-ticket-comment.sh` |
+
+## A ticket is a record, not a transcript
+
+Anything a run would write **again on a later invocation** is a durable record: one per
+(kind, scope), identified by a visible marker line, upserted. Anything a run writes **once, ever**
+is an ordinary comment. That is the whole test. Full reasoning:
+[ADR 0026](../adr/0026-a-ticket-is-a-record-not-a-transcript.md).
+
+| Marker | Written by | Contents |
+|---|---|---|
+| `[dev-status · <repo>]` | the build role | work branch, PR/MR, one line per deferred criterion + owner |
+| `[regression · <repo>]` | the build role | the regression scope QA must cover — QA never guesses this |
+| `[qa-plan · <repo>]` | the QA planner | the BDD plan (current revision) + a revision ledger |
+| `[test-report · <repo>]` | `/report-test-results` | the run's verdict, screenshots and video |
+| `[plans · <KEY>]` | the main session | plan Artifact links, one line per repo — omitted entirely when artifacts are off |
+
+Rules that make a record work:
+
+- **The marker is the body's first line**, verbatim: `**[<kind> · <scope>]**`. Never translated
+  under a non-English `language` policy, never reworded, never merged across scopes. A comment is
+  posted as Markdown, stored in the tracker's own format and read back as text, so an HTML comment
+  would not survive; the marker has to be visible.
+- The upsert **refuses** a body that omits its own marker. An unmarked record is invisible to the
+  next run, which then posts a second one — the exact failure the marker prevents.
+- **Never a "done" or "build finished" note.** The PR/MR is the code story; a comment restating it
+  is noise on a ticket a person is trying to read.
+- **History comes from a ledger, not from the previous record.** Append one line to
+  `agent_logs/<KEY>-<kind>-history.tsv` and render the whole file. Asking an agent to carry old
+  lines forward into a rewritten body is what produced three test reports that contradicted their
+  own runs.
+- Every provider updates in place, by whichever route its API offers — Jira and Linear rewrite the
+  comment; Notion keeps the record as one callout **block** on the page, since its comment API
+  cannot update. This is load-bearing: `dev-cycle` verifies its test-suite gate by *finding* the
+  report through `find-ticket-comment.sh`, so a provider that cannot find one is a provider whose
+  gate can never pass.
 
 Both write scripts accept `--dry-run`. The flags are **abstract**; the adapter maps them
 to the provider (Notion properties; Jira fields + a status transition; Linear GraphQL fields

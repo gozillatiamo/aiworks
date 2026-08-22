@@ -17,8 +17,14 @@
 # match the whole command string, so a compound call is denied silently (../../CLAUDE.md).
 # Read the existing comment with find-ticket-comment.sh, which is a reader and may be piped.
 #
-# Providers: jira updates in place. notion/linear cannot update a comment at all, so there the
-# call WARNs and posts a new comment — the words are the deliverable, in-place is the nicety.
+# Providers: every one updates in place, by the route its API actually offers.
+#   jira    — rewrites the comment body.
+#   linear  — rewrites the comment body (commentUpdate).
+#   notion  — its comment API has no update endpoint at all, so a marked record is kept as ONE
+#             callout BLOCK on the page instead: the marker is the callout's own text, the record
+#             is its children, and an update archives that block and appends a fresh one. The
+#             comment feed is left to humans. A record therefore moves to the bottom of the page
+#             each time it is rewritten, which is the honest ordering.
 #
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -77,7 +83,9 @@ esac
 
 existing="$(tracker_find_comment "$ticket" "$marker" || true)"
 if [[ -n "$existing" ]]; then
-  tracker_edit_comment "$ticket" "${existing%%$'\n'*}" "$dry" "$text"
+  tracker_edit_comment "$ticket" "${existing%%$'\n'*}" "$dry" "$text" "$marker"
 else
-  tracker_add_comment "$ticket" "$dry" "$text"
+  # NOT tracker_add_comment: the record must be findable again by its marker on the next run, and
+  # on a provider whose comments cannot be rewritten that means it is not stored as a comment.
+  tracker_add_marked "$ticket" "$dry" "$text" "$marker"
 fi

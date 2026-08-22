@@ -46,6 +46,10 @@ quality_gate:
 
 review:
   level: strict
+  max_rounds: 14
+  max_regression_fixes: 3
+  max_stall_reattempts: 3
+  max_escalation_attempts: 3
 
 loadtest:
   tolerance_pct: 10
@@ -154,6 +158,7 @@ monitoring:
 
 test_suite:
   max_fix_rounds: 2
+  max_suite_repair_attempts: 3
 
 dev_cycle:
   token_budget: 2000000

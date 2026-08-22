@@ -150,6 +150,16 @@ function report(name, ok, detail) {
       const prompt = PROMPTS['publish-request:FM-12'] || ''
       report('scenario-A_republish-url-threaded-for-your-app', prompt.includes('url=https://claude.ai/public/artifacts/abc'))
       report('scenario-A_your-tests-marked-not-published-before', /your-tests[\s\S]*not published before/.test(prompt))
+      // ADR-0025/0026 — what a FRESH kickoff must ask its planner for, since these are the fields
+      // the resume path and the ticket's records are built out of.
+      const kp = PROMPTS['kickoff:FM-12:your-app'] || ''
+      report('scenario-A_planner-asked-for-plan-sha', kp.includes('plan_sha') && kp.includes('shasum -a 256'))
+      report('scenario-A_planned-row-records-the-base', kp.includes('"base_branch":"develop"'))
+      const qp = PROMPTS['kickoff:FM-12:your-tests'] || ''
+      report('scenario-A_qa-plan-is-a-durable-record', qp.includes('[qa-plan · your-tests]') && qp.includes('upsert-ticket-comment.sh'))
+      report('scenario-A_qa-plan-history-is-a-ledger', qp.includes('FM-12-qa-plan-history.tsv'))
+      report('scenario-A_automation-plan-not-published', qp.includes('AUTOMATION plan is NOT published'))
+      report('scenario-A_plan-links-record-requested', prompt.includes('[plans · FM-12]') && prompt.includes('upsert-ticket-comment.sh'))
     } else if (SCENARIO === 'B') {
       const result = await runOnce(ARGS, cannedFor('B', FP))
       report('scenario-B_skip_no-kickoff-spawned', !SPAWNED.some((l) => l.startsWith('kickoff:')))
@@ -165,7 +175,16 @@ function report(name, ok, detail) {
       report('scenario-C_both-repos-replanned', SPAWNED.includes('kickoff:FM-12:your-app') && SPAWNED.includes('kickoff:FM-12:your-tests'))
     } else if (SCENARIO === 'D') {
       await runOnce(ARGS, cannedFor('D', ''))
-      report('scenario-D_scoped-base-resolved', LINES.some((l) => l.includes('your-app@feature/FM-12→release/1.4')) && LINES.some((l) => l.includes('your-tests@feature/FM-12→main')))
+      // The unscoped repo keeps ITS OWN base — which for a test-suite repo is now the workspace
+      // feature base, not the fix base (docs/adr/0025). This assertion used to expect 'main',
+      // encoding the very constant that cut suite branches off a dead trunk: it asserted the
+      // projection instead of the intent, so it passed all the way through the incident.
+      report('scenario-D_scoped-base-resolved', LINES.some((l) => l.includes('your-app@feature/FM-12→release/1.4')) && LINES.some((l) => l.includes('your-tests@feature/FM-12→develop')))
+      report('scenario-D_resolved-base-table-printed-before-any-planner',
+        LINES.findIndex((l) => l.startsWith('Resolved bases')) !== -1
+        && LINES.findIndex((l) => l.startsWith('Resolved bases')) < LINES.findIndex((l) => l.includes('Build: all')))
+      report('scenario-D_table-attributes-each-base-to-its-source',
+        LINES.some((l) => l.includes('your-app→release/1.4 [flag]') && l.includes('your-tests→develop [repo default]')))
     } else if (SCENARIO === 'D2') {
       await runOnce(ARGS, cannedFor('D', ''))
       report('scenario-D2_unscoped-base-applies-to-both', LINES.some((l) => l.includes('your-app@feature/FM-12→release/1.4')) && LINES.some((l) => l.includes('your-tests@feature/FM-12→release/1.4')))
@@ -181,6 +200,66 @@ function report(name, ok, detail) {
       const fp = fpLine ? fpLine.match(/fp=([0-9a-f]+)/)[1] : null
       report(`scenario-${SCENARIO}_fingerprint-logged`, !!fp)
       if (fp) console.log(`FP=${fp}`)
+    } else if (SCENARIO === 'F') {
+      // ARG SANITY (docs/adr/0025). Each bad invocation must THROW, and must throw before any
+      // agent is spawned at all — an argument the run cannot honour costs zero tokens. The
+      // measured failure this replaces: one invocation spent ~20 agents resolving every repo to
+      // its unchanged default because an invented flag shape was only ever logged.
+      const cases = [
+        ['free-text-base', 'FM-12 a fast-track for release/v7.10.3', ['unrecognised argument', 'looks like a branch', '--feature-base release/v7.10.3']],
+        ['repos-without-value', 'FM-12 --feature-base-repos your-app', ['without --feature-base', 'no repo=value mapping form']],
+        ['repo-eq-value-token', 'FM-12 --feature-base develop --feature-base-repos your-app=release/1.4', ['unregistered repo id', 'your-app=release/1.4']],
+        ['base-and-feature-base', 'FM-12 --base main --feature-base develop', ['both given']],
+      ]
+      for (const [name, argv, wants] of cases) {
+        SPAWNED.length = 0
+        let msg = null
+        try { await runOnce(argv, cannedFor('A', '')) } catch (e) { msg = String((e && e.message) || e) }
+        report(`scenario-F_${name}_throws`, !!msg, msg ? '' : 'no error thrown')
+        report(`scenario-F_${name}_spawned-nothing`, SPAWNED.length === 0, `spawned=${SPAWNED.join(',')}`)
+        for (const w of wants) report(`scenario-F_${name}_says_${w.replace(/\W+/g, '-')}`, !!msg && msg.includes(w), msg || '')
+      }
+      // And the valid shapes still parse — a guard that rejects good input is worse than none.
+      for (const [name, argv] of [['plain', 'FM-12'], ['scoped', 'FM-12 --feature-base release/1.4 --feature-base-repos your-app'], ['booleans', 'FM-12 --dry-run --approve-plan --token-budget 5 --accept-base-change']]) {
+        let msg = null
+        try { await runOnce(argv, cannedFor('A', '')) } catch (e) { msg = String((e && e.message) || e) }
+        report(`scenario-F_valid-${name}_accepted`, !msg || !msg.includes('unrecognised'), msg || '')
+      }
+    } else if (SCENARIO === 'G' || SCENARIO === 'G2' || SCENARIO === 'G3') {
+      // BASE AS STATE. The 'planned' rows record base_branch=release/1.4 for your-app.
+      const canned = cannedFor('B', FP)
+      canned['run-state:FM-12'] = { rows: rowsFor('B', FP).map((r) => (
+        r.repo === 'your-app' ? { ...r, base_branch: 'release/1.4' } : { ...r, base_branch: 'develop' })) }
+      let msg = null, result = null
+      try { result = await runOnce(ARGS, canned) } catch (e) { msg = String((e && e.message) || e) }
+      if (SCENARIO === 'G') {
+        // No flag this invocation: the RECORDED base wins, so the silent revert to the repo
+        // default cannot happen — the failure that put four MRs on unasked-for branches.
+        report('scenario-G_recorded-base-wins', !msg && LINES.some((l) => l.includes('your-app → release/1.4') && l.includes('RECORDED')), msg || '')
+        report('scenario-G_table-attributes-it-to-run-state', LINES.some((l) => l.includes('your-app→release/1.4 [run state]')))
+        report('scenario-G_plan-carries-the-recorded-base', !!result && (result.plans || []).some((p) => p.repo === 'your-app' && p.base_branch === 'release/1.4'))
+      } else if (SCENARIO === 'G2') {
+        // A flag that DISAGREES, without --accept-base-change: stop, never silently re-base.
+        report('scenario-G2_conflict-throws', !!msg && msg.includes('base conflict'), msg || 'no error')
+        report('scenario-G2_names-both-branches', !!msg && msg.includes('release/1.4') && msg.includes('develop'), msg || '')
+        report('scenario-G2_offers-the-flag', !!msg && msg.includes('--accept-base-change'), msg || '')
+      } else {
+        // With --accept-base-change: proceed, and invalidate what was proven against the old base.
+        report('scenario-G3_accepted-does-not-throw', !msg, msg || '')
+        report('scenario-G3_logs-the-rebase', LINES.some((l) => l.includes('RE-BASED release/1.4 → develop')))
+        report('scenario-G3_degrades-the-old-proof', LINES.some((l) => l.includes('DEGRADED') && l.includes('its base changed')))
+      }
+    } else if (SCENARIO === 'H') {
+      // PLAN → BUILD FINGERPRINT. The loader stamps the LIVE plan's sha onto the 'planned' row;
+      // the reuse path must carry it into the plan so the Build phase can compare it against
+      // what the 'built' row says it was built FROM. The deadlock this fixes: a re-plan does not
+      // move the branch head, so 'built' stayed non-degraded, Build was skipped as already-done,
+      // and the corrected plan was never built — twice, on one ticket.
+      const canned = cannedFor('B', FP)
+      canned['run-state:FM-12'] = { rows: rowsFor('B', FP).map((r) => ({ ...r, plan_sha: 'aaaaaaaaaaaaaaaa' })) }
+      const result = await runOnce(ARGS, canned)
+      const plan = (result && (result.plans || []).find((p) => p.repo === 'your-app')) || null
+      report('scenario-H_reused-plan-carries-plan-sha', !!plan && plan.plan_sha === 'aaaaaaaaaaaaaaaa', plan ? `got=${plan.plan_sha}` : 'no plan')
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
@@ -247,6 +326,31 @@ if [[ -n "$FP_E1" && "$FP_E1" == "$FP_E2" ]]; then
 else
   fail "scenario-E_fingerprint-identical-with-and-without-comment_count (E1=$FP_E1 E2=$FP_E2)"
 fi
+
+echo "── scenario F — a bad argument stops the run before it costs an agent"
+outF="$(run_scenario F)"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outF" | sed 's/^/      /'
+ingest "$outF"
+
+echo "── scenario G — the recorded base wins on a resume with no flag"
+outG="$(run_scenario G "$FP")"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outG" | sed 's/^/      /'
+ingest "$outG"
+
+echo "── scenario G2 — a disagreeing override stops instead of re-basing quietly"
+outG2="$(run_scenario G2 "$FP" "FM-12 --feature-base develop")"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outG2" | sed 's/^/      /'
+ingest "$outG2"
+
+echo "── scenario G3 — --accept-base-change re-bases and invalidates the old proof"
+outG3="$(run_scenario G3 "$FP" "FM-12 --feature-base develop --accept-base-change")"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outG3" | sed 's/^/      /'
+ingest "$outG3"
+
+echo "── scenario H — a reused plan carries the live plan's fingerprint"
+outH="$(run_scenario H "$FP")"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outH" | sed 's/^/      /'
+ingest "$outH"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

@@ -77,10 +77,21 @@ into a service's history where no reviewer wants it.
 
 Publish a plan **by reference**:
 
-- onto the ticket — `scripts/tracker/add-ticket-comment.sh` (prose follows the
-  workspace `language` policy; the `.md` file itself is always English)
 - as a shareable page — publish the HTML render as a Claude **Artifact** and
   hand over the URL
+- onto the ticket — as the single `[plans · <KEY>]` durable record, which is **nothing but
+  links**: one line per repo, rendered from the `artifact_published` run-state rows so it never
+  has to be merged by hand ([ADR 0026](../adr/0026-a-ticket-is-a-record-not-a-transcript.md))
+
+**A plan's BODY does not go on the ticket.** It is a working artifact superseded by the next
+planning pass, which is the same reason `agent_logs/` is git-ignored — and a ticket run seven times
+would otherwise carry seven of them with no way to tell which is current. If neither
+`planning.to_html` nor `artifacts.enabled` produced a URL, **post nothing**: not an empty record,
+not a filesystem path no teammate can open.
+
+The one exception is the QA **BDD test plan**, which stays a body under
+`[qa-plan · <repo>]` — it is the artifact the team reads to know what will be tested, not an
+implementation plan. The QA **automation** plan is never published at all.
 
 `git add -f` to get one committed anyway is blocked by
 `.claude/hooks/dev-wrapper/pretool-git-guard.sh`. If a path genuinely belongs in
