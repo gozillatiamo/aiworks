@@ -667,7 +667,7 @@ def main() -> int:
             project_target(root, base, repo_dirs, is_root, projection)
 
     print(f"\nCodex projection: changed={projection.changed} drift={len(projection.drifts)} notes={len(projection.notes)}")
-    return 1 if projection.drifts else 0
+    return 1 if args.check and projection.drifts else 0
 
 
 if __name__ == "__main__":
