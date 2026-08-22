@@ -317,12 +317,16 @@ _gh_nwo_once() { [[ -n "$_GH_NWO" ]] || _GH_NWO="$(_gh_nwo)"; printf '%s' "$_GH_
 # DIRECTORY's git remote unless told otherwise, so in a multi-repo run — where the cwd is the
 # workspace root, not the target repo — every untargeted call acted on the wrong repository or
 # failed outright. `vcs_open_pr` was the only function that passed `--repo`; the rest inherited
-# the cwd. One wrapper names the repo for all of them, and logs the resolved target so a
-# wrong-repo call is readable in the transcript instead of surfacing as a bare exit 1.
+# the cwd. One wrapper names the repo for all of them; the resolved target itself is announced
+# once by lib.sh, deliberately outside any stderr a call site captures and then pattern-matches.
 _gh_pr() {
   local verb="$1"; shift
   local nwo; nwo="$(_gh_nwo_once)"
-  printf 'vcs[github] pr %s → %s\n' "$verb" "${nwo:-<cwd git remote>}" >&2
+  # Mutations only, and on fd 9 (see lib.sh): the reads are called from places that parse their
+  # output, and a mutation is the call whose silent misfire cost a real run three rounds.
+  case "$verb" in create|edit|comment|review|close|merge)
+    printf 'vcs[github] pr %s → %s\n' "$verb" "${nwo:-<cwd git remote>}" >&9 ;;
+  esac
   if [[ -n "$nwo" ]]; then gh pr "$verb" --repo "$nwo" "$@"; else gh pr "$verb" "$@"; fi
 }
 

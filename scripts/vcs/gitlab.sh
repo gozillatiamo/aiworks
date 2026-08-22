@@ -25,12 +25,16 @@ _gl_project() {
 # workspace root and not the target repo. Those calls then acted on the wrong project or 404'd,
 # and under `set -e` the failing assignment killed the caller before the function reached its own
 # `die` — the caller saw a bare exit 1 with no output. One wrapper fixes the targeting in one
-# place, and names the resolved target on stderr so a recurrence is readable in the transcript
-# instead of requiring an adapter source read.
+# place; the resolved target itself is announced once by lib.sh, deliberately outside any stderr a
+# call site captures and then pattern-matches.
 _gl_mr() {
   local verb="$1"; shift
   local r; r="$(vcs_repo_ref)"
-  printf 'vcs[gitlab] mr %s → %s\n' "$verb" "${r:-<cwd git remote>}" >&2
+  # Mutations only, and on fd 9 (see lib.sh): the reads are called from places that parse their
+  # output, and a mutation is the call whose silent misfire cost a real run three rounds.
+  case "$verb" in create|note|close|merge|approve)
+    printf 'vcs[gitlab] mr %s → %s\n' "$verb" "${r:-<cwd git remote>}" >&9 ;;
+  esac
   if [[ -n "$r" ]]; then glab mr "$verb" -R "$r" "$@"; else glab mr "$verb" "$@"; fi
 }
 

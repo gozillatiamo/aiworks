@@ -66,6 +66,18 @@ unset _vcs_arg_provider _vcs_arg_remote _vcs_arg_repo
 # default (unchanged behaviour for every existing caller that never sets VCS_REPO).
 vcs_repo_ref() { printf '%s' "${VCS_REPO:-}"; }
 
+# A DIAGNOSTIC CHANNEL that a command substitution cannot swallow. The providers' mutation calls
+# announce which project they resolved (a wrong-target call used to surface as a bare exit 1 with no
+# output at all), but several call sites capture a command's stderr — `err=$(… 2>&1)` — and then
+# CLASSIFY the text: `case "$err" in *405*|*"not allowed"*`. A line written to fd 2 inside such a
+# call lands in that string, so a group or repo whose name merely contains one of those patterns
+# would turn any failure into a confident misdiagnosis.
+#
+# fd 9 is a duplicate of stderr taken HERE, before any of those redirections exist, so writing to it
+# reaches the real stderr and never the captured value. `exec 9>&2` (not `{fd}>&2`) because macOS
+# still ships bash 3.2.
+exec 9>&2
+
 # GitLab's URL-encoded project-path form (owner%2Frepo). No `${var//…}` substitution — it behaves
 # differently on bash 3.2 (macOS's /bin/bash) vs 5.x for this pattern; sed is portable.
 vcs_urlencode_path() { printf '%s' "$1" | sed 's@/@%2F@g'; }

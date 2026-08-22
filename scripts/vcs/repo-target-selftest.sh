@@ -145,6 +145,23 @@ for provider in gitlab github; do
   has "$provider: stderr names the resolved target" "$TARGET" "$note"
 done
 
+# The diagnostic must not be able to change a diagnosis. `vcs_merge_pr` captures its command's
+# stderr and CLASSIFIES it (`*405*` ⇒ "this project refuses API merges"), so a target line written
+# to fd 2 inside that call would let a repo whose NAME contains 405 turn any failure into that
+# verdict. It goes to fd 9 instead. This asserts the outcome, not the plumbing.
+echo "── a repo name that looks like an error code cannot rewrite the error"
+CALLS="$TMP/calls.$$"; : > "$CALLS"
+cat > "$BIN/glab" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CALLS"
+case "$*" in *"mr merge"*) printf 'dial tcp: connection refused\n' >&2; exit 1 ;; *) printf '{}\n' ;; esac
+STUB
+chmod +x "$BIN/glab"
+err="$( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$CALLS" VCS_PROVIDER=gitlab VCS_REPO='group/svc-405' \
+    bash -c '. "$1"/lib.sh; vcs_merge_pr 7 subject' _ "$DIR" 2>&1 >/dev/null )"
+has  "the real failure is reported"        'merge failed'            "$err"
+case "$err" in *"refuses API merges"*) bad "not misread as a 405 refusal" "the generic merge failure" "$err" ;; *) ok "not misread as a 405 refusal" ;; esac
+
 echo
 if [[ "$fail" -eq 0 ]]; then printf '%s%d passed%s\n' "$c_ok" "$pass" "$c_off"; exit 0; fi
 printf '%s%d passed · %d FAILED%s\n' "$c_err" "$pass" "$fail" "$c_off"; exit 1
