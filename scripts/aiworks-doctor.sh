@@ -501,7 +501,7 @@ check_repos() {
   if [[ -n "$orphans" ]]; then
     warn $g "clone(s) no mani.d entry declares" \
          "$orphans${orphans_open:+ — and $orphans_open is not git-ignored, so \`git add -A\` stages it as a gitlink}" \
-         "see: aiworks add <url> to declare it, or remove the directory"
+         "see: ./aiworks add <url> to declare it, or remove the directory"
   else
     pass $g "no undeclared clones"
   fi
@@ -977,7 +977,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
     git|curl|awk)              printf 'see: %s is part of the base system — install Xcode CLT or coreutils' "$1" ;;
     node)                      printf 'see: nvm install --lts --reinstall-packages-from=current (a node switch moves the global bin dir)' ;;
     docker)                    printf 'see: install Docker Desktop — https://docker.com/products/docker-desktop' ;;
-    claude)                    printf 'see: https://claude.com/claude-code — then re-run aiworks update --only claude' ;;
+    claude)                    printf 'see: https://claude.com/claude-code — then re-run ./aiworks update --only claude' ;;
     codegraph)                 printf 'see: %s is installed outside this workspace; reinstall it the way you first did' "$1" ;;
     graphify)                  printf 'uv tool install --python 3.12 "graphifyy[leiden,svg,sql]"' ;;
     *)                         printf 'see: install %s' "$1" ;;
@@ -1258,7 +1258,7 @@ check_headroom() {
       else
         warn $g "savings badge measures nothing" \
              "missing beside ~/.claude/headroom-statusline.sh:$miss, and no plugin scripts/lib to copy from" \
-             "see: reinstall the headroom plugin, then re-run aiworks doctor --only headroom" slow
+             "see: reinstall the headroom plugin, then re-run ./aiworks doctor --only headroom" slow
       fi
     fi
   else
@@ -1694,7 +1694,7 @@ if [[ $FIX == 1 ]]; then
           fi
         done
         printf '\n  %d fixed · %d failed · %d need you\n' "$nfixed" "$nfailed" "${#MANUAL[@]}"
-        printf '  re-run: aiworks doctor\n'
+        printf '  re-run: ./aiworks doctor\n'
       else
         printf '  cancelled.\n'
       fi
