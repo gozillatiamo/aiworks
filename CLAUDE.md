@@ -15,12 +15,14 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so already in context. Keys documented in
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
-  `docs/adr/` — why the workspace is shaped this way (`0001`–`0023`).
+  `docs/adr/` — why the workspace is shaped this way (`0001`–`0026`).
 - `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
   (Hermes is next) · `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`): author on
   the Claude side, never hand-edit `.cursor/`, open the `.code-workspace` **file**, not the folder · `language.md` ·
   `register.md` · `caveman.md` · `ponytail.md` · `voice.md` · `stagehand.md` — always-on conventions, own sections
-  below · `issue-tracker.md` — tickets: the adapter, status names, id format · `human-review.md` — a `Human:` review
+  below · `issue-tracker.md` — tickets: the adapter, status names, id format, and the marker table: everything a run
+  writes on a ticket is ONE durable record per (kind, repo), **upserted** — a ticket is a record, not a transcript, and
+  never carries a "dev done" note the PR/MR already tells · `human-review.md` — a `Human:` review
   comment is a blocking directive the agents auto-route and resolve; a `Human:` **reply on an agent's own must-fix
   CLEARS it** — approve and advance, never re-open it.
 - `docs/agents/review-ledger.md` — a finding is raised ONCE: first pass IS the complete pass, `[gate:*]` threads are that
@@ -33,7 +35,9 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace root ·
   `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
   `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit a
-  persisted run script · `doctor.md` — `aiworks doctor` names what is broken + its owner command, `--fix` runs it ·
+  persisted run script. It also keeps **the base it started with**: recorded per repo, authoritative on resume, moved
+  only by `--accept-base-change`, and the forge's own `target_branch` is asserted against it (`docs/adr/0025`) — a base
+  is never re-derived downstream · `doctor.md` — `aiworks doctor` names what is broken + its owner command, `--fix` runs it ·
   `figma.md` · `image-generation.md` · `diagram-generation.md` — each behind its `enabled` flag (default OFF) ·
   `headroom.md` — `hcat` for a big file, never a bare `cat`: an unbounded read ≥8 KiB is hook-BLOCKED, as is a read-modify-write
   heredoc patch (`Edit` ships only the delta).

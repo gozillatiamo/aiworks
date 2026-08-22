@@ -73,7 +73,7 @@ Groups 1–8 run offline by default. 9–12 need `--deep`.
 | 1 | `workspace` | `mani.yaml` present · the config parses and declares repos · no comments in `workspace.config[.local].yaml` · no typo'd feature switch · root `CLAUDE.md` within its 100-line budget |
 | 2 | `repos` | every declared repo is cloned with a valid HEAD · `mani.d` and `products[]` still agree · each clone is git-ignored |
 | 3 | `adapters` | per provider: the `.env` exists and every **required** var is set · the provider CLI is installed · writer scripts are executable · the `.git/info/exclude` trap · `notify` / `observability` skipped when their `enabled` flag is false |
-| 4 | `per-repo` | `scripts/dev.sh` present and executable · `CLAUDE.md` within 100 lines · adapter symlinks (`tracker` + `vcs`) · `.codegraph/` · `skills-lock.json` · no rules file scoped with `globs:` and no `paths:` |
+| 4 | `per-repo` | `scripts/dev.sh` present and executable · `CLAUDE.md` within 100 lines · adapter symlinks (`tracker` + `vcs`) · `.codegraph/` · `skills-lock.json` · no rules file scoped with `globs:` and no `paths:` · **the feature base the workflow mirror will use, against the remote's own default** |
 | 5 | `agent-cfg` | every canonical hook exists and is executable · `.claude/skills` installed · selected Cursor/Codex projections present and, under `--deep`, drift-free · declared plugin components installed or projected |
 | 6 | `tooling` | the prerequisite binaries are on PATH, each missing one named with the installer that actually owns it |
 | 7 | `voice` | delegates `aiworks voice status` — skipped unless `voice.enabled` |
@@ -85,6 +85,25 @@ Groups 1–8 run offline by default. 9–12 need `--deep`.
 
 Narrow with `--only` / `--skip`, or pass a repo name (`aiworks doctor your-app`) to look at
 one repo — the groups that are not repo-scoped then report as skipped.
+
+### The base check, and why it grades in two tiers
+
+The base a ticket's branch is cut from lives as a constant in the generated workflow mirror, and
+nothing validated it. Measured on a real ticket: two repos were projected onto a base 99 and 157
+commits behind their actual trunk — one of them a 16-file scaffold last touched a year earlier — so
+a ticket's branch was cut off a dead branch, missing shared code the specs import, at the cost of a
+whole round per repo. Group 4 now compares what the mirror will use against
+`git symbolic-ref refs/remotes/origin/HEAD` in the clone:
+
+- **absent from the remote → FAIL.** Not a style question: the open-PR step hard-stops on a base
+  that is not there, so no ticket can finish in that repo until it is corrected.
+- **present, but not the remote's default → WARN.** Sometimes entirely legitimate — a repo really
+  can run its own branch policy. The warning says how to declare that deliberately (`feature_base:`
+  on the repo's `products[].repos[]` entry) rather than inheriting a workspace default that does not
+  fit it. See
+  [ADR 0025](../adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md).
+
+The full detail line is ellipsised in the text view; `--json` carries it whole.
 
 ### What is deliberately *not* checked, and why
 

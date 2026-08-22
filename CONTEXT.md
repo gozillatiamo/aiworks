@@ -137,6 +137,30 @@ The session that launched a workflow; it directs agents and never implements the
 
 **Run budget**:
 The token ceiling a run stops itself at, at a phase boundary, leaving a resumable checkpoint.
+Counted in **OUTPUT tokens, per invocation** — measured at roughly 1/29th of a run's total tokens,
+so the number is far smaller than it reads.
+*Avoid*: token budget (it invites reading the value as a total-token cap).
+
+**Run base**:
+The branch each repo's work targets on THIS run — resolved once from the run's own arguments,
+recorded on the `planned` run-state row, and authoritative on every resume. Not a default, not
+something a downstream step may re-derive: the forge's own `target_branch` is asserted against it
+after the PR/MR is opened and again before approval.
+→ [ADR 0025](docs/adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md).
+*Avoid*: base branch, default branch (both name the repo's habit, not this run's decision).
+
+**Durable record**:
+One marker-keyed comment per (kind, scope) that a run REWRITES on every later invocation, rather
+than appending another — `[dev-status · <repo>]`, `[regression · <repo>]`, `[qa-plan · <repo>]`,
+`[test-report · <repo>]`, `[plans · <KEY>]`. A ticket carries the current state of the work, not a
+transcript of the runs that produced it.
+→ [ADR 0026](docs/adr/0026-a-ticket-is-a-record-not-a-transcript.md).
+*Avoid*: status comment, progress update (both describe a transcript entry).
+
+**Record ledger**:
+The append-only `agent_logs/<KEY>-<kind>-history.tsv` a durable record renders its history from —
+one `printf >>` per run. It exists because asking an agent to carry old history lines forward into a
+rewritten body is lossy, measurably: it produced three test reports that contradicted their own runs.
 
 **prd** / **brd**:
 Workflows that produce a Product / Business Requirements Document from a brief.

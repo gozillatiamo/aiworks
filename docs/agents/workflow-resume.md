@@ -36,6 +36,36 @@ A fresh invocation mints a new run id, so the previous run's agent cache is not
 reused and the early phases run again. That is the cost, and it is the correct cost:
 the alternative is a run whose gates disagree with the config the repo actually has.
 
+## A resumed run keeps the base it started with
+
+`dev-cycle` records the base branch each repo was planned against on its `planned` run-state row,
+and on a resume **that recorded base wins**. Forgetting `--base` / `--feature-base` on invocation
+four can no longer move it — the run logs which base it took and where from (flag, run state, or
+repo default) before the first planner spawns.
+
+An override that *disagrees* with the record is a hard stop, not a quiet re-base:
+
+```
+⛔ base conflict in 1 repo(s) — a run keeps the base it started with.
+   svc: run state says release/1.4, this invocation says develop
+   Re-base this run in place (re-plans, rebuilds and re-reviews the affected repos):
+     /dev-cycle APP-2335 --feature-base develop --accept-base-change
+   Or drop the flag to keep the recorded base.
+```
+
+`--accept-base-change` is the only way to move it. It degrades every row that was proven against the
+old base — `planned`, `built`, `pr_open`, `reviewed` and the gate rows — because a plan and a build
+made against a different branch prove nothing about this one. Expect that repo to re-plan and
+rebuild; that is the flag working, not a fault.
+
+The same "proof must still hold" rule applies one link down: a `built` row records the fingerprint of
+the plan it was built **from**, and a re-plan that changes the plan invalidates it. Without that, a
+re-plan could not force a rebuild — a re-plan does not move the branch head, which was `built`'s only
+proof — so a corrected plan got written and then skipped as "already built". If you ever find
+yourself deleting checkpoint files by hand to get a re-plan built, that is a bug in this mechanism,
+not the intended recovery. See
+[ADR 0025](../adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md).
+
 A **copy** is the fourth case, and the one that hides. `/dev-cycle` invoked by name runs
 `.claude/workflows/dev-cycle.js`; a scratchpad or hand-edited copy runs whatever that file said
 when it was copied, and its log is indistinguishable — except for one line. Every dev-cycle run
