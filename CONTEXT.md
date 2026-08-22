@@ -47,8 +47,9 @@ finding set**, and no later round or later invocation adds to it. *Avoid*: first
 **Re-visit**:
 A gate confirming its own closed finding set is addressed, raising nothing new — the mode every
 pass after the first one runs in. Not a second first pass. The one thing it may raise is a
-regression the fix itself caused, which halts the repo rather than extending the loop. *Avoid*:
-re-review (reads as "review again from scratch", the exact thing it is not).
+regression the fix itself caused, which is handed straight back to the developer as a must-fix
+inside its own attempt budget ([ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md)).
+*Avoid*: re-review (reads as "review again from scratch", the exact thing it is not).
 
 **Review ledger**:
 What a gate leaves behind so a later invocation knows what it already did: its tagged threads on
@@ -90,15 +91,15 @@ A dependency batch of repos, derived from each repo's declared upstreams. Waves 
 not the build: every scoped repo builds concurrently. *Avoid*: stage, phase, batch.
 
 **Repo status** (dev-cycle):
-The verdict one repo's pipeline returns. `ready` is the only one that lets the change set proceed;
-the rest each name a different stop: `build-unresolved` (the build did not hand back a complete
-state), `pr-unresolved` (the PR/MR could not be opened), `review-unresolved` (findings still open
-at the round cap), `review-tests-unverified` (the reviewer could not run the suite, so nothing can
-say the branch is green), `review-regression-halt` (a fix caused a new blocking problem),
-`review-stalled` (the same findings survived two rounds with no new commit), and
-`review-blocked-on` (a finding names a declared upstream that is not ready yet, or a **cross-repo
-escalation** could not land: the target is outside the run, the routed fix failed its scoped
-re-gate, or the same finding escalated twice).
+The verdict one repo's pipeline returns. `ready` is the only one that lets the change set proceed.
+Since [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md) the review loop does
+not stop on a finding, so **`review-unresolved` is the one review outcome that is not `ready`**: the
+loop worked to `review.max_rounds` and hands back whatever it could not close as **blocking items**
+(an unrunnable suite, a regression it could not undo, a stall, a cross-repo gap, a second open
+PR/MR). The remaining statuses are the states with no loop to continue into: `build-unresolved` (the
+build handed back no complete state, so there is no diff to review), `pr-unresolved` (no PR/MR
+number, which every reviewer prompt needs) and `target-branch-halt` (the base is missing from the
+remote, so `git diff base...head` cannot be computed at all).
 
 **Repair loop**:
 A bounded fix→verify→re-run cycle a gate runs itself instead of halting, when the cause is named
@@ -108,8 +109,10 @@ escalation, a **Scoped quality check** for a same-repo QA-attributed fix.
 **Cross-repo escalation**:
 A review-fix pass proving, with observed evidence, that a finding's root fix must land in ANOTHER
 repo of the same run (`upstream_fix_needed`), and the workflow routing a scoped fix pass there
-instead of re-confirming the gap every round. One level deep, one attempt per (repo, finding);
-a repo outside the run's scope halts for a human instead. *Avoid*: upstream sync (that is bringing
+instead of re-confirming the gap every round. One level deep, and bounded per (repo, finding) by
+`review.max_escalation_attempts`; a target outside the run's scope, or a budget that runs out,
+becomes a **blocking item** rather than a halt — the loop carries on with this repo's other
+findings and the repo still cannot reach `ready`. *Avoid*: upstream sync (that is bringing
 an EXISTING upstream fix forward — escalation is asking for one that does not exist yet).
 → [ADR-0020](docs/adr/0020-a-cross-repo-finding-escalates-instead-of-looping.md)
 
@@ -148,6 +151,19 @@ something a downstream step may re-derive: the forge's own `target_branch` is as
 after the PR/MR is opened and again before approval.
 → [ADR 0025](docs/adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md).
 *Avoid*: base branch, default branch (both name the repo's habit, not this run's decision).
+
+**Blocking item**:
+A condition the review loop worked on, could not close, and RECORDED — a regression it could not
+undo, an unrunnable suite, a cross-repo gap, a second open PR/MR. The loop keeps working every other
+finding; the repo cannot reach `ready` while one stands, so nothing is approved and nothing merges.
+Not a halt, and not a pass.
+→ [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md).
+*Avoid*: halt, blocker (both suggest the loop stopped, which it does not).
+
+**Declared cannot**:
+`cannot_fix[]` — the one sanctioned way an agent ends a single condition's attempts early, refused
+unless it carries the evidence (a command + exit code, or the number) AND what was ruled out first.
+It closes that condition, records it, and leaves the rest of the repo's findings being worked.
 
 **Durable record**:
 One marker-keyed comment per (kind, scope) that a run REWRITES on every later invocation, rather

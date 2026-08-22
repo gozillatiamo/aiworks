@@ -124,3 +124,29 @@ Two rules that keep this from lying:
 left open, approved, and the merge is a human's separate, later decision — which is also what
 makes the run ticking its own work acceptable rather than a rubber stamp
 ([ADR 0022](../adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md)).
+
+## 6. The loop does not halt on a finding — it records what it cannot close
+
+A finding never ends a repo's review. Every condition that used to stop one mid-loop — a
+fix-caused regression, a stall, a cross-repo escalation that did not settle, a suite that could not
+run, a second open PR/MR — is a **must-fix with its own attempt budget**, and when a budget runs out
+the condition is **recorded** while the loop carries on with everything else. `review.max_rounds`
+is the only terminal bound. Full reasoning:
+[ADR 0027](../adr/0027-the-review-loop-does-not-halt-on-a-finding.md).
+
+Two things follow that matter when reading a run:
+
+**A recorded item is not a pass.** A repo carrying one cannot return `ready`, so — because the
+approval tick is ticket-wide (§5) — nothing is approved anywhere and nothing merges. If you see a
+run end `review-unresolved` with a blocking list, the loop did the work and could not close those
+specific items; it did not give up on the rest.
+
+**A stall changes the attempt, not just the count.** The same finding set surviving a fix round with
+no new commit escalates the next brief rather than repeating it: name what did not move, treat the
+previous reading as a hypothesis to disprove, re-read the actual threads. And "I believe there is
+nothing to change" is a claim about the **finding**, so it belongs on the finding's thread — an
+answered thread is a real outcome, silence reads as a stall.
+
+There is one sanctioned way to end a condition's attempts early: `cannot_fix[]`, refused unless it
+carries both the evidence (a command and its exit code, or the number) and what was ruled out first.
+It closes that one condition, records it, and leaves every other finding still being worked.

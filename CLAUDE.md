@@ -15,7 +15,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so already in context. Keys documented in
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
-  `docs/adr/` — why the workspace is shaped this way (`0001`–`0026`).
+  `docs/adr/` — why the workspace is shaped this way (`0001`–`0027`).
 - `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
   (Hermes is next) · `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`): author on
   the Claude side, never hand-edit `.cursor/`, open the `.code-workspace` **file**, not the folder · `language.md` ·
@@ -27,7 +27,10 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   CLEARS it** — approve and advance, never re-open it.
 - `docs/agents/review-ledger.md` — a finding is raised ONCE: first pass IS the complete pass, `[gate:*]` threads are that
   closed set, no gate passes above an unresolved thread it owns, a re-run re-visits. A pass ENDS in the forge's approve
-  tick — orchestrator-posted, ticket-wide or not at all; ticked ⇒ FROZEN whole.
+  tick — orchestrator-posted, ticket-wide or not at all; ticked ⇒ FROZEN whole. **The loop does NOT halt on a finding**
+  (`docs/adr/0027`): a regression, a stall, an unrunnable suite, a cross-repo gap are must-fixes with attempt budgets;
+  what a budget cannot close is RECORDED, and a recorded item keeps its repo out of `ready` — so "does not halt" never
+  means an un-run gate reads green. `review.max_rounds` is the only terminal bound.
 - `docs/agents/loadtest-gate.md` — a green load suite is only **half** a verdict: a `suite_kind: load` repo must also beat
   its base branch against a measured noise floor. Home of the rule binding EVERY test-suite gate — it **never fails
   open**: no receipt (command + exit code + summary) and no result comment ⇒ *not run* · `pii-provenance.md` — egress

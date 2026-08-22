@@ -370,6 +370,12 @@ LT_CACHE='~/.cache/aiworks/loadtest-baselines'
 # test_suite.max_fix_rounds — the cross-repo gate's own bounded red-triage loop (C4), and the
 # per-red attempt bound its scoped quality check retries within one round (docs/adr/0024).
 TS_FIX_ROUNDS='3'
+# test_suite.max_suite_repair_attempts — a suite that COULD NOT RUN is a must-fix, not a halt
+# (docs/adr/0027). Never a verdict: no receipt means the gate did not run.
+TS_MAX_REPAIR='3'
+# review.* — the review loop's own bounds. max_rounds is the ONE terminal bound; the rest are
+# per-condition attempt budgets for the states that used to halt a repo mid-review.
+RV_MAX_ROUNDS='14'; RV_MAX_REGRESSION='3'; RV_MAX_STALL='3'; RV_MAX_ESCALATION='3'
 # dev_cycle.token_budget — the run's own spend ceiling (C9), and notify.dm_on_incomplete (C10).
 DC_TOKEN_BUDGET='2000000'
 NOTIFY_DM=''
@@ -403,6 +409,11 @@ while IFS=$'\t' read -r k v; do
     LT_MAX_FIX_ROUNDS)  LT_FIX_ROUNDS="$v" ;;
     LT_BASELINE_CACHE)  LT_CACHE="$v" ;;
     TS_MAX_FIX_ROUNDS)  TS_FIX_ROUNDS="$v" ;;
+    TS_MAX_REPAIR)      TS_MAX_REPAIR="$v" ;;
+    RV_MAX_ROUNDS)      RV_MAX_ROUNDS="$v" ;;
+    RV_MAX_REGRESSION)  RV_MAX_REGRESSION="$v" ;;
+    RV_MAX_STALL)       RV_MAX_STALL="$v" ;;
+    RV_MAX_ESCALATION)  RV_MAX_ESCALATION="$v" ;;
     DC_TOKEN_BUDGET)    DC_TOKEN_BUDGET="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
@@ -434,6 +445,11 @@ done < <(
     sec=="image_generation" && /^  max_per_request:/ { print "IMG_MAX\t"     val($0); next }
     sec=="quality_gate" && /^  provider:/            { print "QUALITY_GATE\t" val($0); next }
     sec=="review"       && /^  level:/               { print "REVIEW_LEVEL\t" val($0); next }
+    sec=="review"       && /^  max_rounds:/          { print "RV_MAX_ROUNDS\t"  val($0); next }
+    sec=="review"       && /^  max_regression_fixes:/    { print "RV_MAX_REGRESSION\t" val($0); next }
+    sec=="review"       && /^  max_stall_reattempts:/    { print "RV_MAX_STALL\t"      val($0); next }
+    sec=="review"       && /^  max_escalation_attempts:/ { print "RV_MAX_ESCALATION\t" val($0); next }
+    sec=="test_suite"   && /^  max_suite_repair_attempts:/ { print "TS_MAX_REPAIR\t"   val($0); next }
     sec=="loadtest"     && /^  tolerance_pct:/        { print "LT_TOLERANCE\t"      val($0); next }
     sec=="loadtest"     && /^  noise_runs:/           { print "LT_NOISE_RUNS\t"     val($0); next }
     sec=="loadtest"     && /^  noise_ceiling_multiple:/ { print "LT_NOISE_CEILING\t" val($0); next }
@@ -459,7 +475,13 @@ case "$QUALITY_GATE" in sonarqube|none) ;; *) QUALITY_GATE='none' ;; esac   # cl
 [[ "$LT_NOISE_CEIL" =~ ^[0-9]+$ ]] && [[ "$LT_NOISE_CEIL" -ge 1 ]] || LT_NOISE_CEIL='2'
 [[ "$LT_FIX_ROUNDS" =~ ^[0-9]+$ ]]  || LT_FIX_ROUNDS='2'
 LT_CACHE="${LT_CACHE:-~/.cache/aiworks/loadtest-baselines}"
-[[ "$TS_FIX_ROUNDS" =~ ^[0-9]+$ ]]    || TS_FIX_ROUNDS='2'
+[[ "$TS_FIX_ROUNDS" =~ ^[0-9]+$ ]]    || TS_FIX_ROUNDS='3'
+[[ "$TS_MAX_REPAIR" =~ ^[0-9]+$ ]]    || TS_MAX_REPAIR='3'
+# max_rounds is the run's ONLY terminal review bound now, so a 0 or a typo must not disarm it.
+[[ "$RV_MAX_ROUNDS" =~ ^[0-9]+$ ]] && [[ "$RV_MAX_ROUNDS" -ge 1 ]] || RV_MAX_ROUNDS='14'
+[[ "$RV_MAX_REGRESSION" =~ ^[0-9]+$ ]] || RV_MAX_REGRESSION='3'
+[[ "$RV_MAX_STALL" =~ ^[0-9]+$ ]]      || RV_MAX_STALL='3'
+[[ "$RV_MAX_ESCALATION" =~ ^[0-9]+$ ]] || RV_MAX_ESCALATION='3'
 [[ "$DC_TOKEN_BUDGET" =~ ^[0-9]+$ ]]  || DC_TOKEN_BUDGET='2000000'
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
@@ -658,7 +680,14 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   baselineCache: $(jsq "$LT_CACHE"),
 }
 const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
-  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → scoped quality check → re-run loops before halting
+  maxFixRounds: ${TS_FIX_ROUNDS},             // classified-red → fix → scoped quality check → re-run loops
+  maxSuiteRepairAttempts: ${TS_MAX_REPAIR},   // a suite that COULD NOT RUN: repair attempts before it is RECORDED unverified (docs/adr/0027)
+}
+const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bounds (docs/adr/0027)
+  maxRounds: ${RV_MAX_ROUNDS},                // reviewer pass + fix pass per repo — the ONE terminal bound
+  maxRegressionFixes: ${RV_MAX_REGRESSION},   // a fix that caused a new blocking problem, handed straight back
+  maxStallReattempts: ${RV_MAX_STALL},        // same finding set + no new commit ⇒ ESCALATE the brief, then retry
+  maxEscalationAttempts: ${RV_MAX_ESCALATION},// cross-repo fix + scoped re-gate, per (repo, finding)
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: ${DC_TOKEN_BUDGET},        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable

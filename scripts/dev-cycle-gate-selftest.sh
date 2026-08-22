@@ -52,7 +52,11 @@ const QUALITY_GATE = "none"
 const REVIEW_LEVEL = "strict"
 const LANGUAGE = "en"
 const LOADTEST = { tolerancePct: 10, noiseRuns: 2, noiseCeilingMultiple: 2, maxFixRounds: 2, baselineCache: "~/.cache/x" }
-const TEST_SUITE = { maxFixRounds: Number(process.env.FIXTURE_TS_MAX_FIX_ROUNDS || 2) }
+const TEST_SUITE = { maxFixRounds: Number(process.env.FIXTURE_TS_MAX_FIX_ROUNDS || 2), maxSuiteRepairAttempts: Number(process.env.FIXTURE_TS_MAX_REPAIR || 3) }
+// docs/adr/0027 — per-condition budgets for the review loop. Deliberately 1 here so a scenario can
+// exhaust one in a single round instead of fourteen; real defaults live in workspace.config.yaml.
+// (No apostrophes in this block: CONFIG_FIXTURE is a single-quoted shell string.)
+const REVIEW = { maxRounds: Number(process.env.FIXTURE_RV_MAX_ROUNDS || 14), maxRegressionFixes: Number(process.env.FIXTURE_RV_MAX_REGRESSION || 1), maxStallReattempts: Number(process.env.FIXTURE_RV_MAX_STALL || 1), maxEscalationAttempts: Number(process.env.FIXTURE_RV_MAX_ESCALATION || 1) }
 const DEV_CYCLE = { tokenBudget: Number(process.env.FIXTURE_TOKEN_BUDGET || 0) }
 const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", testing: "Testing", done: "Done" }
 const REPOS = {
@@ -850,11 +854,23 @@ const BASE = {
       if (SCENARIO === 'G16c') {
         report('G16c_repaired_run_continues', status !== 'target-branch-halt', `got=${status}`)
         report('G16c_repair_is_logged', LINES.some((l) => l.includes('target branch REPAIRED') && l.includes('approvals are unaffected')))
+      } else if (SCENARIO === 'G16b') {
+        // ADR-0027 splits this from the mismatch case: two open PR/MRs still leaves THIS run's own
+        // MR with a computable diff, so the review is real work and the repo keeps going. What it
+        // may never do is merge — closing the other MR is a human call.
+        report('G16b_does_NOT_halt_the_repo', status !== 'target-branch-halt', `got=${status}`)
+        report('G16b_but_cannot_reach_ready', status !== 'awaiting-human-ship' && status !== 'merge-skipped', `got=${status}`)
+        report('G16b_records_it_as_blocking', LINES.some((l) => l.includes('BLOCKING RECORDED (multiple-open-prs)')))
+        report('G16b_review_still_ran', SPAWNED.some((l) => l.startsWith('review:')))
+        report('G16b_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
       } else {
-        const why = { G16a: 'mismatch', G16b: 'two open MRs', G16d: 'non-convergent assert' }[SCENARIO]
+        const why = { G16a: 'a target that cannot be made right', G16d: 'a non-convergent assert' }[SCENARIO]
         report(`G16_${SCENARIO}_halts_on_${why.replace(/\W+/g, '_')}`, status === 'target-branch-halt', `got=${status}`)
         report(`G16_${SCENARIO}_nothing_approved`, !SPAWNED.some((l) => l.startsWith('approve:')))
         report(`G16_${SCENARIO}_banner_names_the_target_branch`, LINES.some((l) => l.includes('TARGET BRANCH')))
+        // This one deliberately STAYS a halt: without the base ref on the remote there is no
+        // `git diff base...head` to review, so sending reviewers at it buys misleading findings.
+        report(`G16_${SCENARIO}_no_reviewer_was_paid`, !SPAWNED.some((l) => l.startsWith('review:') || l.startsWith('guard') || l.startsWith('perf')))
       }
       if (SCENARIO === 'G16a') {
         report('G16a_offers_the_retarget_command', LINES.some((l) => l.includes('retarget-pr.sh') && l.includes('--base develop')))
@@ -913,6 +929,90 @@ const BASE = {
       const gate = PROMPTS['test-suite:FM-12:e2e'] || ''
       report(`${SCENARIO}_identical_control_means_shared_cause`, gate.includes('confirms a SHARED cause'))
       report(`${SCENARIO}_out_of_bounds_needs_a_second_read`, gate.includes('out_of_gate_bounds_second_read'))
+    } else if (SCENARIO.startsWith('G19')) {
+      // ADR-0027 — THE LOOP DOES NOT HALT ON A FINDING. Each of these used to end the repo on the
+      // spot. The contract now: it becomes a must-fix in the developer's batch, the loop keeps
+      // working, and if it cannot be closed it is RECORDED — which still keeps the repo out of
+      // 'ready', because "does not halt" must never mean "passes without evidence".
+      //
+      // The fixture sets every per-condition budget to 1, so one round exhausts it and both halves
+      // (the must-fix, then the recording) are observable inside a single scenario.
+      // `comments` is what the loop counts as open findings for the code gate (rv.open), not `open`.
+      const REVIEWERS_OPEN = { approved: false, tests_green: true, comments: [{ path: 'x.ts', line: 1, body: 'must-fix' }], conclusion: 'one finding', receipt: { command: 'scripts/dev.sh test', exit_code: 0, summary_line: 'ok' } }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/7', pr_number: 7 },
+      }
+      // Every reviewer/fix label the loop may reach, answered so the loop runs its full course.
+      for (let n = 1; n <= 4; n++) {
+        canned[`review:FM-12:app#${n}`] = REVIEWERS_OPEN
+        canned[`guard:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['x.ts'], commits: 1 }
+      }
+      // A suite that cannot run does not fix itself between rounds, so the gate keeps reporting
+      // gate_unavailable — which is what lets the repair budget actually run out inside a scenario.
+      const SUITE_DOWN = (why) => ({ approved: false, tests_green: false, gate_unavailable: true, unavailable_reason: why, comments: [], conclusion: 'suite did not run' })
+      if (SCENARIO === 'G19a') {
+        // SUITE COULD NOT RUN. Used to return review-tests-unverified immediately.
+        for (let n = 1; n <= 4; n++) canned[`review:FM-12:app#${n}`] = SUITE_DOWN('docker daemon unreachable')
+      } else if (SCENARIO === 'G19b') {
+        // FIX-CAUSED REGRESSION on re-visit. Used to return review-regression-halt.
+        canned['review:FM-12:app#2'] = { ...REVIEWERS_OPEN, fix_regression: true, regression_detail: 'the r1 fix broke checkout totals' }
+      } else if (SCENARIO === 'G19c') {
+        // STALL: same finding set, and the fix pass produces NO commit.
+        for (let n = 1; n <= 4; n++) canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'nothing to change', status: 'complete', fixed: [], commits: 0 }
+      } else if (SCENARIO === 'G19d') {
+        // A DECLARED "CANNOT" with evidence closes that condition's attempts early.
+        for (let n = 1; n <= 4; n++) canned[`review:FM-12:app#${n}`] = SUITE_DOWN('no container runtime')
+        canned['pr-fix:FM-12:app#1'] = { work_branch: 'feature/FM-12', summary: 'cannot', status: 'complete', fixed: [], commits: 0,
+          cannot_fix: [{ kind: 'suite-unverified', why: 'class (d): no container runtime on this host', evidence: '`docker info` exit 1, repeated', tried: 'dev.sh clean, stack probe, port check' }] }
+      } else if (SCENARIO === 'G19e') {
+        // A "CANNOT" with NO evidence must be DROPPED, not honoured.
+        for (let n = 1; n <= 4; n++) canned[`review:FM-12:app#${n}`] = SUITE_DOWN('no container runtime')
+        canned['pr-fix:FM-12:app#1'] = { work_branch: 'feature/FM-12', summary: 'cannot', status: 'complete', fixed: [], commits: 0,
+          cannot_fix: [{ kind: 'suite-unverified', why: 'infra', evidence: 'no', tried: 'x' }] }
+      }
+      const result = await runOnce(ARGS, canned)
+      const st = result && result.status
+      const fixPrompts = Object.keys(PROMPTS).filter((k) => k.startsWith('pr-fix:FM-12:app')).map((k) => PROMPTS[k]).join('\n')
+      // NONE of these may end the repo on the halt status it used to return.
+      for (const dead of ['review-tests-unverified', 'review-regression-halt', 'review-stalled']) {
+        report(`${SCENARIO}_no_longer_returns_${dead.replace(/\W+/g, '_')}`, st !== dead, `got=${st}`)
+      }
+      report(`${SCENARIO}_repo_did_not_reach_ready`, st !== 'awaiting-human-ship' && st !== 'merge-skipped', `got=${st}`)
+      report(`${SCENARIO}_nothing_approved`, !SPAWNED.some((l) => l.startsWith('approve:')))
+      if (SCENARIO === 'G19a') {
+        report('G19a_suite_failure_reaches_the_developer', fixPrompts.includes('THE SUITE DID NOT RUN'))
+        report('G19a_brief_quotes_what_the_gate_got', fixPrompts.includes('docker daemon unreachable'))
+        report('G19a_brief_carries_the_failure_classes', fixPrompts.includes('(a) THE HARNESS ITSELF') && fixPrompts.includes('(d) GENUINELY ABSENT'))
+        report('G19a_brief_demands_a_receipt', fixPrompts.includes('YOU MUST END WITH A RECEIPT'))
+        report('G19a_recorded_when_attempts_run_out', LINES.some((l) => l.includes('BLOCKING RECORDED (suite-unverified)')))
+      }
+      if (SCENARIO === 'G19b') {
+        report('G19b_regression_handed_straight_back', fixPrompts.includes('YOUR OWN LAST FIX CAUSED THIS'))
+        report('G19b_brief_carries_the_detail', fixPrompts.includes('broke checkout totals'))
+        report('G19b_told_not_to_just_revert', fixPrompts.includes('undoing your fix to clear the regression'))
+      }
+      if (SCENARIO === 'G19c') {
+        report('G19c_stall_escalates_instead_of_repeating', LINES.some((l) => l.includes('escalating the next attempt')))
+        report('G19c_brief_says_do_something_different', fixPrompts.includes('Repeating it is not an option'))
+        report('G19c_recorded_when_reattempts_run_out', LINES.some((l) => l.includes('BLOCKING RECORDED (stalled)')))
+      }
+      if (SCENARIO === 'G19d') {
+        report('G19d_evidenced_cannot_is_accepted', LINES.some((l) => l.includes('BLOCKING RECORDED (suite-unverified)')))
+        report('G19d_and_closes_the_attempts_early', !LINES.some((l) => l.includes('attempt 2/')))
+      }
+      if (SCENARIO === 'G19e') {
+        report('G19e_unevidenced_cannot_is_DROPPED', LINES.some((l) => l.includes('was DROPPED')))
+        report('G19e_and_attempts_continue', LINES.some((l) => l.includes('attempt 2/')))
+      }
     } else if (SCENARIO === 'G17') {
       // R12 — writeSummary used to write ONE fixed path with Write, so every invocation destroyed
       // the previous round's summary. That is why one postmortem's timeline had to be rebuilt from
@@ -940,6 +1040,12 @@ const BASE = {
   } catch (e) {
     report(`scenario-${SCENARIO}_crashed`, false, String((e && e.stack) || e).split('\n')[0])
     process.exitCode = 1
+  }
+  // DUMP_LINES=1 prints the run's own log and the labels it spawned. A failing assertion here says
+  // only "false", and the interesting question is always what the loop actually did.
+  if (process.env.DUMP_LINES) {
+    console.log('--- LOG ---'); LINES.forEach((l) => console.log(l))
+    console.log('--- SPAWNED ---'); console.log(SPAWNED.join('\n'))
   }
 })()
 NODE
@@ -1066,6 +1172,21 @@ out="$(run_scenario G18a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed
 
 echo "── G18b — a signature that MOVED is progress, and gets no such directive"
 out="$(run_scenario G18b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19a — a suite that could not run becomes a must-fix, then a recorded blocking item"
+out="$(run_scenario G19a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19b — a fix-caused regression is handed straight back instead of halting"
+out="$(run_scenario G19b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19c — a stall escalates the attempt rather than repeating or halting"
+out="$(run_scenario G19c)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19d — an EVIDENCED 'cannot' closes that condition's attempts early"
+out="$(run_scenario G19d)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G19e — an UNEVIDENCED 'cannot' is dropped and the attempts continue"
+out="$(run_scenario G19e)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
 out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

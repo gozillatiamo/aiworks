@@ -113,11 +113,18 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   tolerancePct: 10,            // a metric may degrade this much before it counts as a regression
   noiseRuns: 2,                // base-vs-base runs used to measure the env's own run-to-run spread
   noiseCeilingMultiple: 2,     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
-  maxFixRounds: 2,             // attributed-regression → developer fix → re-run loops before halting
+  maxFixRounds: 3,             // attributed-regression → developer fix → re-run loops
   baselineCache: '~/.cache/aiworks/loadtest-baselines',
 }
 const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
-  maxFixRounds: 3,             // classified-red → fix → scoped quality check → re-run loops before halting
+  maxFixRounds: 3,             // classified-red → fix → scoped quality check → re-run loops
+  maxSuiteRepairAttempts: 3,   // a suite that COULD NOT RUN: repair attempts before it is RECORDED unverified (docs/adr/0027)
+}
+const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bounds (docs/adr/0027)
+  maxRounds: 14,               // reviewer pass + fix pass per repo — the ONE terminal bound
+  maxRegressionFixes: 3,       // a fix that caused a new blocking problem, handed straight back
+  maxStallReattempts: 3,       // same finding set + no new commit ⇒ ESCALATE the brief, then retry
+  maxEscalationAttempts: 3,    // cross-repo fix + scoped re-gate, per (repo, finding)
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: 2000000,        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
@@ -369,7 +376,7 @@ const gateRow = (repo, key) => ` REVIEW-LEDGER CHECKPOINT (mandatory, as your LA
 // nothing new — so extra rounds cannot widen scope. They only let a repo finish its own
 // finding list inside ONE invocation instead of stranding a nearly-done PR at the cap. The
 // loop still exits the moment no findings remain, so the cap costs nothing when unused.
-const MAX_REVIEW_ROUNDS = Number(flag('max-review-rounds')) || opt.maxReviewRounds || 10
+const MAX_REVIEW_ROUNDS = Number(flag('max-review-rounds')) || opt.maxReviewRounds || REVIEW.maxRounds
 // Attributed load-test regression → developer fix → re-run, per repo. Small by contrast: a
 // load run costs wall clock, not tokens (workspace.config.yaml loadtest.max_fix_rounds).
 const MAX_LOADTEST_FIX_ROUNDS = opt.maxLoadtestFixRounds || LOADTEST.maxFixRounds
@@ -686,6 +693,24 @@ const DEV_SCHEMA = {
     // scope did not already declare out of reach is adjudicated by a separate verifier that can
     // downgrade it to `partial`.
     status: { type: 'string', enum: ['complete', 'partial', 'blocked', 'deferred'] },
+    // ADR-0027 — the sanctioned way to say "this particular condition cannot be fixed here", so an
+    // immovable one stops consuming attempts instead of being ground at until a budget runs out.
+    // It ends that condition's attempts ONLY; the loop carries on with every other finding, and the
+    // condition is recorded so the repo cannot reach 'ready'. Because this is the one field an
+    // agent could reach for to escape hard work, it is refused without `evidence` AND `tried`:
+    // a command with its exit code, or a measurement — never "it looks like infra".
+    cannot_fix: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['kind', 'why', 'evidence', 'tried'],
+        properties: {
+          kind: { type: 'string' },      // which condition: 'suite-unverified' | 'loadtest-regression' | …
+          why: { type: 'string' },       // the class or reason, in one line
+          evidence: { type: 'string' },  // the command + exit code, or the number, that proves it
+          tried: { type: 'string' },     // what you ruled out first — the cheap classes before the expensive claim
+        },
+      },
+    },
     // REQUIRED when status === 'deferred'. One entry per acceptance criterion this repo cannot meet.
     deferred: {
       type: 'array', items: {
@@ -1113,8 +1138,8 @@ async function writeSummary(runStatus, runResult, deferredScopeRun = []) {
   phase('Summary')
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
-1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.${['repo-unresolved', 'review-regression-halt', 'review-tests-unverified', 'review-stalled', 'review-blocked-on'].includes(runStatus) ? ' Also state plainly, near the top, whether the cross-repo test-suite gate ran: on a stopped run it did NOT, so the change set is UNVALIDATED end-to-end and the run summary must not read as though it were.' : ''}
-${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}
+1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.${['repo-unresolved', 'review-unresolved', 'target-branch-halt', 'review-blocked-on'].includes(runStatus) ? ' Also state plainly, near the top, whether the cross-repo test-suite gate ran: on a stopped run it did NOT, so the change set is UNVALIDATED end-to-end and the run summary must not read as though it were.' : ''}
+${(runResult?.blockingByRepo || []).length ? `1a. ⛔ BLOCKING ITEMS — the review loop WORKED these and could not close them, which is why this run did not finish. Give them their own "## Blocking — needs a person" section ABOVE the narrative, one row per item: the repo, the kind, what it says, and the human action named. Do NOT soften them into "minor issues" and do NOT bury them in the per-repo narrative: each one is the reason a repo could not reach ready, and a reader who misses them will think the run merely ran out of rounds. Items: ${JSON.stringify(runResult.blockingByRepo).slice(0, 2000)}\n` : ''}${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}
 ${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}${budgetStopped ? `2e. 🛑 BUDGET STOP — put this as the FIRST line of the file, as a prominent banner: "${budgetStopped}" Say plainly which phases did NOT run, so nobody reads this summary as a completed cycle.\n` : ''}3. WRITE that narrative with the Write tool TWICE, to two paths at the WORKSPACE (org) ROOT: agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r${RUN_SEQ}.md (this invocation's own record, which NOTHING may overwrite — it is how a later reader reconstructs what each round of a hard ticket actually did, and its absence is why one postmortem had to be rebuilt from a chat log) and agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md (the LATEST pointer every other tool reads) — the workspace (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write BOTH files AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. Under that heading also state, in one line each: this invocation is r${RUN_SEQ} of ${ticket}; it spent ${budget.spent()} OUTPUT tokens against a ceiling of ${TOKEN_BUDGET} (dev_cycle.token_budget counts OUTPUT tokens only — total run tokens have measured roughly 29x that, so do not present the ceiling as a total-token budget); and the per-ticket running total, which you get by adding this invocation's output tokens to the same figure in the newest agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md that already exists (grep it out with \`grep -h 'output tokens this invocation' agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md\`), so a reader can see what the WHOLE ticket has cost across every round rather than just the last one. Write the line as: "<n> output tokens this invocation · <total> across r1..r${RUN_SEQ}". If nothing earlier exists, this invocation IS the total. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 5. ARM THE ORCHESTRATOR GUARD — the run is over, so this session's job from here is to orchestrate, not to implement (docs/adr/0019). Read the session id with \`printf '%s\\n' "$CLAUDE_CODE_SESSION_ID"\`, then with the Write tool REPLACE \`agent_logs/${ticket}-dev-cycle-state/orchestrator-guard.json\` with exactly {"session_id":"<what that printed>","ticket":"${ticket}","armed":true,"run_state":"ended","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. Write it whatever the run's status is. If the env var printed nothing, write "session_id":"" — the guard stays inert rather than arming against an unknown session.
@@ -1128,7 +1153,7 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
   // C10 — every ending EXCEPT the two COMPLETE ones DMs the configured member instead of posting
   // to the channel; folded into writeSummary so every return path is covered by construction.
   // RESUME (docs/adr/0018) — keyed by run_status, not just "any DM ever sent": a run that ends the
-  // SAME way again on a resumed invocation must not re-DM, but a NEW ending (e.g. review-stalled →
+  // SAME way again on a resumed invocation must not re-DM, but a NEW ending (e.g. repo-unresolved →
   // budget-stopped) is a genuinely different thing to tell the human and still gets its own DM.
   // Never degraded, same as the notify checkpoint — a human forces a fresh one by deleting the row.
   const dmAlreadySent = stateRows.some((r) => r.repo === 'all' && r.milestone === 'dm_sent' && r.status === 'done' && r.degraded !== true && r.run_status === runStatus)
@@ -1139,7 +1164,7 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
       await safeAgent(
         `${tag('all', 'notifier', 'dm')} Send ONE Slack DIRECT MESSAGE about an INCOMPLETE dev-cycle run. Run it from the WORKSPACE (org) ROOT; do NOT cd, do NOT touch git or the tracker, do NOT post to any channel. The command is a mutating adapter call, so it must be the WHOLE Bash command — no pipe, no &&, no $( ), no heredoc:
 
-scripts/notify/send.sh --channel ${dmTarget} ${JSON.stringify(`${ticket} dev-cycle ended: ${runStatus}. Summary: ${result.summary_path || '(none written)'}. Resume: /dev-cycle ${ticket}`)}
+scripts/notify/send.sh --channel ${dmTarget} ${JSON.stringify(`${ticket} dev-cycle ended: ${runStatus}.${(runResult?.blockingByRepo || []).length ? ` ${runResult.blockingByRepo.reduce((n, b) => n + b.items.length, 0)} blocking item(s) the loop could not close: ${runResult.blockingByRepo.map((b) => `${b.id} (${b.items.map((i) => i.kind).join(', ')})`).join('; ')}.` : ''} Summary: ${result.summary_path || '(none written)'}. Resume: /dev-cycle ${ticket}`)}
 
 On success it prints \`ok=1\`. Return sent:true ONLY if it exited 0, with the permalink when printed; on ANY failure return sent:false with the command's stderr in note. Do NOT retry more than once and send nothing else.` + runMarkerWrite('dm_sent', `,"run_status":${JSON.stringify(runStatus)}`),
         { agentType: 'documentor', model: 'haiku', phase: 'Summary', label: `dm:${ticket}:${runStatus}`, schema: NOTIFY_SCHEMA },
@@ -1205,7 +1230,10 @@ On success it prints \`ok=1\` and a \`permalink=\` line. Return sent:true ONLY i
 // PER-REPO PIPELINE  —  build ↔ gates ↔ PR ↔ review for ONE repo, up to
 // "approved, ready to merge". This is the OLD single-repo flow, parameterized by
 // the repo descriptor. Does NOT merge (merge is the ordered, cross-repo phase).
-// Returns { repo, status:'ready'|'build-unresolved'|'pr-unresolved'|'target-branch-halt'|'review-unresolved'|'review-tests-unverified'|'review-regression-halt'|'review-stalled'|'review-blocked-on', ... }.
+// Returns { repo, status:'ready'|'build-unresolved'|'pr-unresolved'|'target-branch-halt'|'review-unresolved'|'review-blocked-on', blocking:[…], … }.
+// ADR-0027 — the review loop no longer RETURNS a per-condition halt. A regression, a stall, an
+// unrunnable suite or a cross-repo gap it could not close comes back as a `blocking[]` entry on a
+// 'review-unresolved' repo, which is what keeps it out of 'ready'.
 // NOTE: never calls phase() — multiple of these run in parallel within a wave, so
 // every agent() sets opts.phase explicitly to avoid racing the global phase state.
 // ──────────────────────────────────────────────────────────────────────────
@@ -1301,8 +1329,11 @@ Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUA
   if (!v) return { ok: false, why: `the target-branch assert did not converge for ${repoId} — the PR/MR's target is unknown, so it is not verified. Check by hand: VCS_REPO=${repoId} scripts/vcs/pr-view.sh ${num}` }
   const others = (v.open_prs || []).filter((p) => String(p.number) !== String(num))
   if (others.length) {
+    // `multipleOpen` matters to the caller: this run's own PR/MR still has a computable diff, so
+    // the review is worth doing (ADR-0027) — unlike a base that is missing from the remote, where
+    // there is nothing to diff against at all.
     return {
-      ok: false,
+      ok: false, multipleOpen: true,
       why: `${repoId} has ${others.length + 1} OPEN PR/MR(s) for ${ticket}; exactly one is expected. This run owns #${num} (→ ${v.target_branch}); also open: ${others.map((p) => `#${p.number} → ${p.target_branch}`).join(', ')}. Close the ones that should not land — \`VCS_REPO=${repoId} scripts/vcs/close-pr.sh <number> --body "<why>"\` — then re-run. Closing an MR is a human call, so the run will not do it.`,
     }
   }
@@ -1321,6 +1352,38 @@ async function runRepoPipeline(rp, desc, branchKind) {
   const R = rp.repo
   const absR = absOf(R)
   const inRepo = shellClauseFor(R)
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // THE LOOP DOES NOT HALT ON A FINDING (docs/adr/0027)
+  //
+  // Every condition that used to stop this repo mid-review — a fix-caused regression, a stall, a
+  // cross-repo escalation that did not settle, a suite that could not run, a mis-targeted PR/MR —
+  // is now a MUST-FIX with its own attempt budget. When a budget runs out the condition is
+  // RECORDED here and the loop carries on with everything else, so one immovable finding no longer
+  // costs a whole invocation's worth of other work.
+  //
+  // What this must NEVER become is a pass. `blocking` is the load-bearing half: a repo carrying any
+  // entry cannot return 'ready', so nothing is approved and nothing merges. "Does not halt" means
+  // the loop keeps working — it does not mean an un-run gate reads as green
+  // (docs/agents/loadtest-gate.md: no receipt ⇒ not run, never fail open).
+  //
+  // MAX_REVIEW_ROUNDS is the one terminal bound left. A repo that reaches it ends
+  // 'review-unresolved' carrying this list.
+  const blocking = []
+  const record = (kind, detail, human) => {
+    if (blocking.some((b) => b.kind === kind && b.detail === detail)) return
+    blocking.push({ kind, detail, human_action: human || null })
+    log(`⚠️ [${R}] BLOCKING RECORDED (${kind}) — ${String(detail).slice(0, 200)}. The loop continues on this repo's other findings; it cannot reach 'ready'.`)
+  }
+  // Per-condition attempt budgets. Deliberately separate from the round budget: a repo that meets
+  // a regression AND a stall AND an escalation would otherwise spend its rounds on whichever came
+  // first and never reach the others.
+  const attempts = {}
+  const spend = (k) => (attempts[k] = (attempts[k] || 0) + 1)
+  const left = (k, cap) => cap - (attempts[k] || 0)
+  // Must-fix directives appended to the NEXT developer pass. This is how a former halt reaches the
+  // developer as work rather than as a stop.
+  let extraMustFix = []
 
   // BUILD — initial implementation from the plan. Code repos: developer (TDD).
   // The test-suite repo: qa-runner branches, implements POM, iterates SCOPED, then
@@ -1493,9 +1556,23 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
   // whose PR/MR cannot be made to point at this run's base halts here: reviewing a diff against
   // the wrong base is work spent on a question nobody asked.
   const tgtOpen = await assertTargetBranch(R, rp, pr, { repair: true, phaseName: 'Open PR' })
-  if (!tgtOpen.ok) {
-    log(`⛔ [${R}] TARGET BRANCH — ${tgtOpen.why}`)
-    return { repo: R, status: 'target-branch-halt', plan: rp, pr, handoff: { status: 'blocked', summary: `the PR/MR does not target this run's base (${rp.base_branch})`, remaining: tgtOpen.why, decision_needed: 'retarget or close the PR/MR so exactly one open PR/MR targets this run\'s base, then re-run' } }
+  // ADR-0027 splits this in two, because the two failures are not the same kind of thing.
+  //
+  // MORE THAN ONE OPEN PR/MR: this run's own MR exists and its diff is computable, so review is
+  // still real work. Closing the other one is a human call, so it becomes a MUST-FIX carried into
+  // the loop and a recorded blocking item — the repo works, and it cannot merge with two MRs open.
+  //
+  // A TARGET THAT CANNOT BE MADE RIGHT (the base does not exist on the remote) STILL STOPS THE REPO,
+  // and deliberately so: `git diff <base>...<head>` cannot be computed without that ref, so there
+  // is no diff to review. Sending three reviewers at it would produce findings about the wrong
+  // comparison — garbage in, and expensive garbage. This is not a halt the loop can absorb.
+  if (!tgtOpen.ok && tgtOpen.multipleOpen) {
+    log(`⚠️ [${R}] TARGET BRANCH — ${tgtOpen.why} Recording it and continuing into review: this run's own PR/MR is computable, so the review is still worth doing.`)
+    record('multiple-open-prs', tgtOpen.why, `close the PR/MR(s) that should not land, then re-run — the run will not close one for you`)
+    extraMustFix.push(`⚠️ THIS REPO HAS MORE THAN ONE OPEN PR/MR FOR ${ticket}. ${tgtOpen.why} Do NOT close one yourself unless you are certain which is abandoned — say in your summary which number you believe should land and why, so a person can close the other in one step.`)
+  } else if (!tgtOpen.ok) {
+    log(`⛔ [${R}] TARGET BRANCH — ${tgtOpen.why} Stopping this repo: without that base ref on the remote there is no diff to review.`)
+    return { repo: R, status: 'target-branch-halt', plan: rp, pr, blocking, handoff: { status: 'blocked', summary: `the PR/MR does not target this run's base (${rp.base_branch})`, remaining: tgtOpen.why, decision_needed: 'retarget or close the PR/MR so exactly one open PR/MR targets this run\'s base, then re-run' } }
   }
 
   // REVIEW — code-reviewer + guardian + performance ALL review the OPEN PR/MR, each
@@ -1587,8 +1664,10 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
   // escalated fix that landed upstream last round; the NEXT fix pass here must sync it forward
   // (pin bump / re-vendor) — carried explicitly so the sync never depends on a reviewer happening
   // to re-name the upstream this round.
-  const xrepoDone = new Set()
+  const xrepoDone = new Map()   // (repo::finding) -> attempts spent, capped at REVIEW.maxEscalationAttempts
   let pendingSync = []
+
+
   while (reviewRound < MAX_REVIEW_ROUNDS) {
     reviewRound++
     const isRetest = fixPasses > 0
@@ -1726,9 +1805,16 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       return new RegExp(`(^|[^\\w-])(${id}|${REPOS[id].path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})([^\\w-]|$)`).test(hay)
     })
     const hardBlockers = named.filter((id) => upstreamState(id) !== 'ready' && upstreamState(id) !== 'pending')
+    // BLOCKED-ON a FINISHED, non-ready upstream. This used to halt. It does not any more
+    // (ADR-0027): the finding goes to the fix pass as a must-fix that may ESCALATE into that
+    // upstream through the cross-repo route below — the mechanism built for exactly this. Recorded
+    // either way, because the honest position is unchanged: the upstream's own pipeline failed, the
+    // ticket is ship-coupled, and nothing merges until it recovers. What changes is that this repo
+    // now spends its remaining rounds working instead of stopping on a fact about another repo.
     if (hardBlockers.length) {
-      log(`⛔ [${R}] BLOCKED ON ${hardBlockers.join(', ')} — a reviewer finding names a declared upstream whose own pipeline FINISHED without reaching 'ready' (${hardBlockers.map((id) => `${id}=${upstreamState(id)}`).join(', ')}). Halting this repo; PR left OPEN. Resolve it, then re-run \`/dev-cycle ${ticket}\` — run state resumes each repo from its own milestone.`)
-      return { repo: R, status: 'review-blocked-on', plan: rp, pr, reviewRound, verdict, blockedOn: hardBlockers, handoff: { status: 'blocked', summary: `review finding names upstream ${hardBlockers.join(', ')}`, remaining: `this repo cannot resolve a finding that lives in ${hardBlockers.join(', ')}`, decision_needed: `whether to land ${hardBlockers.join(' + ')} first, or re-scope the finding onto this repo` } }
+      log(`⚠️ [${R}] BLOCKED ON ${hardBlockers.join(', ')} — a reviewer finding names a declared upstream whose own pipeline FINISHED without reaching 'ready' (${hardBlockers.map((id) => `${id}=${upstreamState(id)}`).join(', ')}). Recording it and continuing; the fix pass may escalate into it.`)
+      record('blocked-on', `a reviewer finding names upstream ${hardBlockers.join(', ')}, whose own pipeline finished without reaching ready`, `whether to land ${hardBlockers.join(' + ')} first, or re-scope the finding onto this repo`)
+      extraMustFix.push(`⚠️ A FINDING HERE NAMES ${hardBlockers.join(' + ')}, whose own pipeline in this run FINISHED WITHOUT REACHING READY. Do NOT re-implement that repo's work inside this one. Pick one of two, explicitly: (1) if the ROOT fix genuinely lives there and this run holds that repo, return it in \`upstream_fix_needed\` with evidence — the workflow routes a scoped fix + re-gate into it; (2) if the finding can be resolved inside ${R} on its own terms (a guard, a fallback, a narrower contract), do that and say why it is a real fix rather than paper over the upstream gap.`)
     }
     // REPAIRABLE-ON — the named upstream is ready (or still building and expected to be): the
     // finding is a SYNC, not a defect. Hand the fix agent the upstream's own merge-ready head so
@@ -1743,28 +1829,64 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       : ''
     if (repairOn.length) log(`[${R}] review finding names declared upstream ${repairOn.join(', ')} (state: ${repairOn.map((id) => upstreamState(id)).join(', ')}) — routing to the fix pass with the upstream head, not halting.`)
 
-    // TEST GATE COULD NOT RUN — hard halt, never fail-open. The reviewer tried the repo harness
-    // (and any dependency stack it needs) and still could not produce a green receipt, so the
-    // verdict is UNVERIFIED: leave the PR/MR OPEN, merge nothing, and surface the unblocking
-    // command for a human. Re-run the dev-cycle once the suite can run.
+    // TEST GATE COULD NOT RUN — a must-fix, not a halt (docs/adr/0027), and never a pass either.
+    //
+    // A suite that could not RUN is a different thing from a red suite: there is no verdict at all,
+    // so nothing here can say the PR/MR does not break the tests. This used to end the repo on the
+    // spot. Most of the time it is genuinely fixable — an unresolved dependency, a candidate stack
+    // that is not up, a migration nobody applied — so it now goes to the developer as work, with
+    // the evidence the gate actually got and the failure classes worth checking IN ORDER. Only the
+    // last class is unfixable, and an agent that names it with evidence closes these attempts early
+    // rather than grinding the budget on a machine that has no container runtime.
+    //
+    // Whatever happens, `review` never enters `done` as a pass while unverified: either the repair
+    // lands a green receipt, or the condition is recorded and the repo cannot reach 'ready'.
     const testGateDown = openReviewers.find((rv) => rv.key === 'review' && verdict[rv.key]?.gate_unavailable === true)
     if (testGateDown) {
       const why = verdict.review?.unavailable_reason || 'the repo test suite could not run in this run-context (no reason given)'
-      log(`⛔ [${R}] TEST GATE COULD NOT RUN on review round ${reviewRound} — ${why}. No approval, nothing merged; PR left OPEN. Unblock the suite, then re-run the dev-cycle.`)
-      return { repo: R, status: 'review-tests-unverified', plan: rp, pr, reviewRound, verdict, handoff: { status: 'blocked', summary: 'code review could not verify the suite is green', remaining: why } }
+      const rc = verdict.review?.receipt
+      if (left('suite_repair', TEST_SUITE.maxSuiteRepairAttempts) <= 0) {
+        record('suite-unverified', `the repo suite could not be made to run in ${attempts.suite_repair} attempt(s): ${why}`,
+          `unblock the suite in ${R} (last reported reason: ${why}), then re-run the dev-cycle — no green receipt exists for this change set`)
+        done.review = 'unverified'   // stop re-running a gate that cannot answer; `blocking` holds the repo
+      } else {
+        spend('suite_repair')
+        log(`[${R}] test gate could not run (attempt ${attempts.suite_repair}/${TEST_SUITE.maxSuiteRepairAttempts}) — routing it to the developer as a must-fix: ${why}`)
+        extraMustFix.push(`⛔ THE SUITE DID NOT RUN — fix that first, it outranks every other finding in this batch. This is NOT a red suite: there is no verdict at all, so nothing in this run can say your change does not break the tests, and no amount of reading the diff substitutes for a receipt.
+WHAT THE GATE GOT, verbatim: ${why}${rc?.command ? ` · command: \`${rc.command}\`${Number.isInteger(rc.exit_code) ? ` · exit ${rc.exit_code}` : ''}` : ' · (it reported no command)'}
+GREEN FOR THIS REPO MEANS: ${desc.green}
+THIS REPO'S DECLARED KNOWN FALSE REDS: ${desc.knownFalseReds || '(none declared)'} — check these FIRST: if the failure matches one, it is an environment failure, so re-run that check in isolation against ${rp.base_branch} before treating it as real.
+CLASSIFY IT, then fix that class — in this order, because each is cheaper to rule out than the next:
+  (a) THE HARNESS ITSELF — scripts/dev.sh missing, or dependencies unresolved after a manifest change. Run \`scripts/dev.sh clean\` (its install/resolve step), then re-run the check.
+  (b) THE CANDIDATE STACK IS NOT UP — the suite needs a service that is not listening. Bring each one up FROM ITS OWN TICKET WORK BRANCH and PROVE it answers by probing the port. ⚠️ a harness \`run\` that probes and then tears its server down has not given you a stack: it prints an UP verdict while nothing listens — start it in the background and re-probe.
+  (c) A DATA PRECONDITION — a migration or seed the suite assumes and nobody applied to the local store.
+  (d) GENUINELY ABSENT FROM THIS ENVIRONMENT — no container runtime, no credential, no such service. THE ONLY CLASS NOTHING CAN FIX.
+YOU MUST END WITH A RECEIPT: the exact command, its exit code, and the runner's own summary line quoted verbatim. No receipt means the gate still did not run, whatever you changed.
+IF IT IS CLASS (d): say so explicitly in your handoff — name the class, the command and exit code that proves it, and what you already tried. That is a RESULT, and it stops these attempts; it is not a failure to try. Do NOT claim (d) to avoid (a)–(c): the classes above are ordered by how cheap they are to rule out, so rule them out.`)
+      }
     }
 
     // A reviewer that COMPLETED a pass in first-review mode has now done its one full review, so
     // every later pass for it is a re-visit. A crash (null verdict) leaves it in first-review mode.
     openReviewers.forEach((rv) => { if (verdict[rv.key] != null && modeThisRound[rv.key] === 'first') didFirstReview[rv.key] = true })
 
-    // FIX-CAUSED REGRESSION (re-visit only) — the ONE thing a re-visit may raise. It is NOT a dev-fix
-    // loop item: HALT this repo LOUDLY and leave the PR open for human action; re-run to resume.
+    // FIX-CAUSED REGRESSION (re-visit only) — the ONE thing a re-visit may raise, and the most
+    // natural must-fix of the lot (ADR-0027): the developer who broke it is right here, holding the
+    // context. It used to halt for LOUDNESS, not because it was unfixable. Its own counter, because
+    // fix → regression → fix can oscillate and would otherwise eat rounds that other findings need.
     const regressed = openReviewers.filter((rv) => modeThisRound[rv.key] === 'revisit' && verdict[rv.key]?.fix_regression === true)
     if (regressed.length) {
       const detail = regressed.map((rv) => `${rv.key}: ${verdict[rv.key]?.regression_detail || 'fix-caused regression (no detail)'}`).join(' | ')
-      log(`⛔ [${R}] FIX-CAUSED REGRESSION on re-visit round ${reviewRound} — ${detail}. Halting this repo LOUDLY for human action; PR left OPEN. Address it, then re-run the dev-cycle to resume.`)
-      return { repo: R, status: 'review-regression-halt', plan: rp, pr, reviewRound, verdict, handoff: { status: 'blocked', summary: `fix-caused regression flagged by ${regressed.map((rv) => rv.key).join('+')} on re-visit`, remaining: detail } }
+      if (left('regression_fix', REVIEW.maxRegressionFixes) <= 0) {
+        record('regression', `a fix in this repo caused a new blocking problem and ${attempts.regression_fix} repair attempt(s) did not settle it: ${detail}`,
+          `review the last commits on ${rp.work_branch} by hand — the loop caused a regression it could not undo`)
+      } else {
+        spend('regression_fix')
+        log(`⚠️ [${R}] FIX-CAUSED REGRESSION on re-visit round ${reviewRound} (repair ${attempts.regression_fix}/${REVIEW.maxRegressionFixes}) — handing it straight back: ${detail}`)
+        extraMustFix.push(`⛔ YOUR OWN LAST FIX CAUSED THIS — it outranks every other finding in this batch, because the branch is now worse than before that fix. Reported by ${regressed.map((rv) => rv.key).join(' + ')} on re-visit: ${detail}
+This is a REGRESSION, not a pre-existing defect: it was not there before your last push, so start from the diff of that push${lastFixed.length ? ` — you touched: ${lastFixed.join('; ')}` : ''} rather than re-reading the whole change. Reproduce it FIRST (a failing test if the shape allows), then fix, then confirm the ORIGINAL finding that fix was for is still resolved — undoing your fix to clear the regression puts the original must-fix back and does not count.
+Keep ${desc.green}. If the regression and the original finding are genuinely in tension — the only fix for one re-breaks the other — say so in \`cannot_fix\` with kind "regression", the evidence for both sides, and what you tried.`)
+      }
     }
 
     const crashed = openReviewers.filter((rv) => verdict[rv.key] == null).map((rv) => rv.key)
@@ -1773,11 +1895,13 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     tick(`${R}:review#${reviewRound}`)
 
     // Converge ONLY when EVERY reviewer has an explicit pass/approve (freeze-once-passed).
+    // A recorded blocking item is NOT a pass, and the final return below is what enforces that —
+    // converging here with `blocking` non-empty still ends the repo unresolved.
     if (reviewers.every((rv) => done[rv.key])) break
     if (reviewRound >= MAX_REVIEW_ROUNDS) {
       const why = crashed.length ? `${crashed.join('+')} reviewer ERRORED (inconclusive)` : 'open findings'
-      log(`⚠️ [${R}] hit MAX_REVIEW_ROUNDS (${MAX_REVIEW_ROUNDS}) with ${why} — NOT merge-ready; PR left open for human review.`)
-      return { repo: R, status: 'review-unresolved', plan: rp, pr, reviewRound, verdict, crashed }
+      log(`⚠️ [${R}] hit MAX_REVIEW_ROUNDS (${MAX_REVIEW_ROUNDS}) with ${why}${blocking.length ? ` + ${blocking.length} recorded blocking item(s)` : ''} — NOT merge-ready; PR left open for human review.`)
+      return { repo: R, status: 'review-unresolved', plan: rp, pr, reviewRound, verdict, crashed, blocking }
     }
     // SALVAGE — a reviewer that returned nothing is not the same as a reviewer that found nothing.
     // A gate posts its findings to the PR/MR as it goes and returns its verdict LAST, so one that
@@ -1805,7 +1929,10 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       }
     }
     // Nothing to fix — no verdict AND no findings on the MR → just re-run the inconclusive reviewer.
-    if (openFindings === 0 && salvaged === 0) {
+    // A converted must-fix (ADR-0027) counts as something to fix even when no reviewer raised a
+    // finding this round: a suite that could not run produces zero findings BY DEFINITION, and
+    // skipping the fix pass on that basis is exactly how it never got fixed.
+    if (openFindings === 0 && salvaged === 0 && extraMustFix.length === 0) {
       log(`[${R}] no findings to fix — re-running inconclusive reviewer(s) next round: ${crashed.join(', ') || 'none'}.`)
       continue
     }
@@ -1818,7 +1945,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       : ''
     // Developer fixes the WHOLE combined batch (every open reviewer's PR comments) in ONE pass, pushing to the PR.
     const fix = await safeAgent(
-      `${tag(R, desc.build, 'pr-fix', reviewRound)} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (\`git -C ${absR} push\`). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line AND its \`[gate:review|guard|perf]\` tag to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Ticking Resolve is part of the fix, not paperwork after it: an unresolved thread is the forge's own record that the finding is still open, the gates re-check exactly that list, and a fix you never resolved reads to every later reader — and to the next invocation of this workflow — as never done. Count the threads you resolved against the comments you fixed before you return; if the two numbers differ, you are not finished. Keep ${desc.green}.${upstreamRepairClause}${pendingSyncClause} In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
+      `${tag(R, desc.build, 'pr-fix', reviewRound)}${extraMustFix.length ? `\n\n${extraMustFix.join('\n\n')}\n\nTHE ABOVE IS PART OF THIS BATCH, and it comes FIRST. If any of it turns out to be genuinely unfixable here, return it in \`cannot_fix\` with its \`kind\`, the class or reason, the command + exit code (or the number) that PROVES it, and what you ruled out first — that ends the attempts on that one condition and is a legitimate result. Without evidence and \`tried\` it is refused and the attempts continue.\n\n` : ''} PR/MR review-fix batch for ${ticket} in ${R} (round ${reviewRound}) on ${rp.work_branch}, PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}). ${inRepo} Read ALL open review comments on the PR/MR (code-reviewer + guardian + performance) via \`scripts/vcs/pr-comments.sh ${pr.pr_number ?? '<number>'}\`. ${STRICT ? 'The batch is must-fixes only (review.level=strict) — there are no "[minor / fold-in]" comments to apply.' : 'The batch includes both must-fixes AND any comment prefixed "[minor / fold-in]" — those are small guardian/perf improvements to apply in THIS PR (no separate ticket); fold them in too.'} Fix the WHOLE batch in this single pass: reproduce with a failing test first where applicable (/tdd) — a mechanical fold-in may not need one — fix to green, commit (fix(…) Refs ${ticket}), and push (\`git -C ${absR} push\`). Reply on each resolved comment via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --body "<reply>"\` so the reviewers can re-check, THEN check its "Resolve thread" box: list the thread ids with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`, match each unresolved thread by its file:line AND its \`[gate:review|guard|perf]\` tag to the comment you fixed, and resolve it via \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — resolve ONLY threads you actually addressed in this pass (leave anything still open unresolved). Ticking Resolve is part of the fix, not paperwork after it: an unresolved thread is the forge's own record that the finding is still open, the gates re-check exactly that list, and a fix you never resolved reads to every later reader — and to the next invocation of this workflow — as never done. Count the threads you resolved against the comments you fixed before you return; if the two numbers differ, you are not finished. Keep ${desc.green}.${upstreamRepairClause}${pendingSyncClause} In the returned "fixed" array, list the files/areas you changed — the reviewers use this to locate your fixes and to judge whether the fix itself introduced any regression. Set status="complete" when you resolved the whole batch, else "partial" (what's still open in "remaining"); never end without the structured handoff.` + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
       { agentType: desc.build, phase: 'Review', label: `pr-fix:${ticket}:${R}#${reviewRound}`, schema: DEV_SCHEMA },
     )
     // STALL DETECTOR — the same unresolved finding set, with no new commit, surviving two
@@ -1826,6 +1953,21 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // still-open reviewers' verdicts BEFORE the fix (what this round actually had to resolve).
     const fpThisRound = stallFp(openReviewers.filter((rv) => !done[rv.key]).map((rv) => [rv.key, verdict[rv.key]]))
     if (fix) fixPasses++
+    // A DECLARED "CANNOT" (ADR-0027). Accepted only with evidence AND what was ruled out first —
+    // this is the one field an agent could reach for to escape hard work, so an unevidenced claim
+    // is dropped and the attempts continue. Accepted, it records the condition and closes ITS
+    // attempts; every other finding in this repo keeps being worked.
+    for (const cf of (Array.isArray(fix?.cannot_fix) ? fix.cannot_fix : [])) {
+      if (!cf?.kind || String(cf.evidence || '').trim().length < 12 || String(cf.tried || '').trim().length < 12) {
+        log(`[${R}] a cannot_fix claim for "${cf?.kind ?? '?'}" was DROPPED — it carried no usable evidence/tried. Attempts on it continue.`)
+        continue
+      }
+      record(String(cf.kind), `${cf.why} — evidence: ${cf.evidence}; already ruled out: ${cf.tried}`,
+        `decide what happens to this: ${cf.why}`)
+      if (cf.kind === 'suite-unverified') { attempts.suite_repair = TEST_SUITE.maxSuiteRepairAttempts; done.review = 'unverified' }
+      if (cf.kind === 'regression') attempts.regression_fix = REVIEW.maxRegressionFixes
+    }
+    extraMustFix = []
     pendingSync = []
     lastFixed = Array.isArray(fix?.fixed) ? fix.fixed : []
     const noNewCommit = !(fix?.commits > 0)
@@ -1852,20 +1994,29 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
       const T = esc.repo
       const escKey = `${T}::${String(esc.finding).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 160)}`
       const tPlan = repoResults[T]?.plan || plans.find((p) => p.repo === T)
-      const escHalt = (summary, remaining, decision) => ({ repo: R, status: 'review-blocked-on', plan: rp, pr, reviewRound, verdict, blockedOn: [T], handoff: { status: 'blocked', summary, remaining, decision_needed: decision } })
+      // ADR-0027 — an escalation that does not land no longer ends the repo. It is RECORDED and the
+      // loop carries on with this repo's other findings. `escRecord` replaces the old escHalt: same
+      // information, no early return. Kept as a closure so every exit below reads the same.
+      const escRecord = (summary, remaining, decision) => record('cross-repo', `${summary} — ${remaining}`, decision)
+      // NOT FIXABLE BY ANY AMOUNT OF LOOPING: there is no clone, no plan and no agent that can
+      // touch that repo, so this one is not a must-fix in any honest sense (ADR-0027). It stops
+      // being a HALT — recorded, and the loop carries on with this repo's other findings — but the
+      // repo cannot reach 'ready' while it stands, because the finding is real and unfixed.
       if (!REPOS[T] || !tPlan) {
-        log(`⛔ [${R}] CROSS-REPO FIX NEEDED IN ${T}, which is ${REPOS[T] ? 'not part of this run' : 'not a declared workspace repo'} — scope the ticket never authorized; halting for a human. Finding: ${String(esc.finding).slice(0, 160)}`)
-        return escHalt(`review finding needs new work in ${T}, outside this run's scope`, `${esc.finding} — evidence: ${esc.evidence}`, `whether to widen ${ticket} to include ${T}, ship the gap as a follow-up there, or waive the finding`)
+        log(`⚠️ [${R}] CROSS-REPO FIX NEEDED IN ${T}, which is ${REPOS[T] ? 'not part of this run' : 'not a declared workspace repo'} — scope the ticket never authorized, and nothing in this run can touch it. Recording it; the loop continues here. Finding: ${String(esc.finding).slice(0, 160)}`)
+        escRecord(`review finding needs new work in ${T}, outside this run's scope`, `${esc.finding} — evidence: ${esc.evidence}`, `whether to widen ${ticket} to include ${T}, ship the gap as a follow-up there, or waive the finding`)
+        continue
       }
-      if (xrepoDone.has(escKey)) {
-        log(`⛔ [${R}] REPEATED cross-repo escalation to ${T} for the same finding — the routed fix did not settle it; halting for a human rather than ping-ponging.`)
-        return escHalt(`escalated fix in ${T} did not settle the finding`, `${esc.finding} — a scoped fix pass already ran in ${T} this run and the finding is still open here`, `whether the ${T} fix actually addresses the finding, or the finding should be waived / re-scoped`)
+      if (left(`esc:${escKey}`, REVIEW.maxEscalationAttempts) <= 0) {
+        log(`⚠️ [${R}] cross-repo escalation to ${T} EXHAUSTED (${REVIEW.maxEscalationAttempts} attempt(s)) for the same finding — recording it rather than ping-ponging; the loop continues here.`)
+        escRecord(`escalated fix in ${T} did not settle the finding after ${REVIEW.maxEscalationAttempts} attempt(s)`, `${esc.finding} — a scoped fix pass ran in ${T} this run and the finding is still open here`, `whether the ${T} fix actually addresses the finding, or the finding should be waived / re-scoped`)
+        continue
       }
       if (!repoResults[T] && !doneAt(T, 'reviewed')) {
         log(`[${R}] cross-repo escalation to ${T} deferred — its own pipeline is still in flight this run; re-checking next round rather than racing its build agent on the same clone.`)
         continue
       }
-      xrepoDone.add(escKey)
+      spend(`esc:${escKey}`)
       const tDesc = REPOS[T]
       const tBranch = tPlan.work_branch || `${branchKind}/${ticket}`
       const tBase = tPlan.base_branch || tDesc.base[branchKind]
@@ -1877,8 +2028,9 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
         { agentType: tDesc.build, phase: 'Review', label: `xrepo-fix:${ticket}:${T}#${reviewRound}`, schema: DEV_SCHEMA },
       )
       if (!tFix || tFix.status !== 'complete') {
-        log(`⛔ [${R}] escalated fix pass in ${T} did not complete (${tFix?.status ?? 'no handoff'}) — halting for a human. ${String(tFix?.remaining || '').slice(0, 200)}`)
-        return escHalt(`escalated fix in ${T} did not complete`, tFix?.remaining || 'the routed fix pass returned no structured handoff', tFix?.decision_needed || `whether ${T} can actually absorb this fix for ${ticket}, and who lands it`)
+        log(`⚠️ [${R}] escalated fix pass in ${T} did not complete (${tFix?.status ?? 'no handoff'}) — attempt ${attempts[`esc:${escKey}`]}/${REVIEW.maxEscalationAttempts}; the loop continues here and retries next round if budget remains. ${String(tFix?.remaining || '').slice(0, 200)}`)
+        escRecord(`escalated fix in ${T} did not complete`, tFix?.remaining || 'the routed fix pass returned no structured handoff', tFix?.decision_needed || `whether ${T} can actually absorb this fix for ${ticket}, and who lands it`)
+        continue
       }
       // SCOPED RE-GATE — the escalated commits are new, un-reviewed code on a branch this run
       // already reviewed once, so they get their own gate before anything syncs them forward:
@@ -1891,7 +2043,8 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
         )
         if (!(tGate?.approved === true && tGate?.tests_green === true)) {
           log(`⛔ [${R}] scoped re-gate in ${T} did not approve the escalated fix (approved=${tGate?.approved ?? 'no verdict'}, tests_green=${tGate?.tests_green ?? '?'}) — halting for a human; nothing syncs forward un-reviewed.`)
-          return escHalt(`escalated fix in ${T} failed its scoped re-gate`, tGate?.conclusion || tGate?.unavailable_reason || 'the re-gate returned no verdict', `whether the ${T} fix is genuinely wrong, or the gate needs a human re-run there`)
+          escRecord(`escalated fix in ${T} failed its scoped re-gate`, tGate?.conclusion || tGate?.unavailable_reason || 'the re-gate returned no verdict', `whether the ${T} fix is genuinely wrong, or the gate needs a human re-run there`)
+          continue
         }
       } else {
         log(`[${R}] ${T} declares no code reviewer — the escalated fix rides to the cross-repo test-suite gate, same as that repo's own pipeline.`)
@@ -1902,13 +2055,39 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     }
     if (escalatedOk) stalled = 0
 
+    // REVIEW STALL — the same unresolved finding set survived a fix round that produced no commit.
+    // This used to halt, and the reason was sound: repeating an identical attempt is not progress,
+    // and five no-commit rounds were measured ending in the same human call. So it does not halt
+    // (ADR-0027) and it does not simply repeat either — it ESCALATES THE ATTEMPT. The next brief
+    // names what did not move and treats the previous read as a hypothesis to disprove. Same
+    // posture change the test-suite gate makes on a repeated failure signature, for the same
+    // reason: change the attempt, not just the count.
     if (stalled >= 1) {
-      log(`⛔ [${R}] REVIEW STALLED — the same unresolved finding set survived two rounds with no new commit on ${rp.work_branch}. Halting this repo rather than spending the remaining ${MAX_REVIEW_ROUNDS - reviewRound} round(s) on a finding it cannot converge on; PR left OPEN.`)
-      return { repo: R, status: 'review-stalled', plan: rp, pr, reviewRound, verdict, handoff: { status: 'blocked', summary: `review loop stalled at round ${reviewRound}`, remaining: `the same finding set was still open after a fix round that produced no commit. Unresolved: ${String(fpThisRound).slice(0, 400)}`, decision_needed: 'whether the finding is genuinely actionable, or should be waived / re-scoped' } }
+      if (left('stall_reattempt', REVIEW.maxStallReattempts) <= 0) {
+        record('stalled', `the same unresolved finding set survived ${REVIEW.maxStallReattempts} escalated re-attempt(s) with no new commit on ${rp.work_branch}: ${openReviewers.filter((rv) => !done[rv.key]).map((rv) => rv.key).join('+') || 'unknown'}`,
+          `read the open threads on ${pr.pr_url} — the loop could not move this finding set, so a person has to judge whether the finding or the approach is the thing that is wrong`)
+        stalled = 0   // recorded once; do not re-enter this branch every remaining round
+      } else {
+        spend('stall_reattempt')
+        stalled = 0
+        log(`⚠️ [${R}] REVIEW STALLED at round ${reviewRound} — escalating the next attempt (${attempts.stall_reattempt}/${REVIEW.maxStallReattempts}) rather than repeating it.`)
+        extraMustFix.push(`⛔ THE LAST ROUND MOVED NOTHING — the same finding set is still open and your last pass produced no commit. Repeating it is not an option: do something DIFFERENT this round.
+STILL OPEN: ${openReviewers.filter((rv) => !done[rv.key]).map((rv) => rv.key).join(', ') || '(see the threads)'} on ${pr.pr_url}.
+Treat your own previous reading of these findings as a HYPOTHESIS TO DISPROVE, not as settled. Re-read the actual threads on the PR/MR rather than your memory of them, and say in your summary which ones you re-read and what you had misread.
+If you produced no commit because you believe there is nothing to change, that is a claim about the FINDING, not about the code: reply ON ITS THREAD saying which finding you dispute and why. An answered thread is a real outcome; silence reads as a stall to this loop and always will.`)
+      }
     }
   }
 
-  return { repo: R, status: 'ready', plan: rp, pr, reviewRound, verdict, gatesUnavailable: gatesUnavail, deferred: deferredScope, met_acceptance: dev.met_acceptance || [], build: { summary: dev.summary, fixed: Array.isArray(dev.fixed) ? dev.fixed : [] } }
+  // THE FAIL-OPEN GUARD (docs/adr/0027). Every reviewer converged — but a recorded blocking item
+  // means something this run could not verify or could not fix, and a repo in that state must not
+  // read as merge-ready. This one line is what keeps "the loop does not halt" from turning into
+  // "the loop passes anything".
+  if (blocking.length) {
+    log(`⚠️ [${R}] every reviewer converged, but ${blocking.length} blocking item(s) stand — NOT merge-ready: ${blocking.map((b) => b.kind).join(', ')}. PR/MR left open.`)
+    return { repo: R, status: 'review-unresolved', plan: rp, pr, reviewRound, verdict, crashed: [], blocking, handoff: { status: 'blocked', summary: `${blocking.length} blocking item(s) the review loop could not close`, remaining: blocking.map((b) => `${b.kind}: ${b.detail}`).join(' | '), decision_needed: blocking.map((b) => b.human_action).filter(Boolean).join(' | ') || 'whether to accept these as-is, fix them by hand, or widen the ticket' } }
+  }
+  return { repo: R, status: 'ready', plan: rp, pr, reviewRound, verdict, blocking, gatesUnavailable: gatesUnavail, deferred: deferredScope, met_acceptance: dev.met_acceptance || [], build: { summary:dev.summary, fixed: Array.isArray(dev.fixed) ? dev.fixed : [] } }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -2439,35 +2618,38 @@ if (aborted.length) {
   // A fix-caused regression flagged on re-visit is a LOUDER, distinct halt (human-action-required):
   // banner it and give the run a distinct status so the summary/caller treat it as a pause, not a
   // routine unresolved build. The PR is left OPEN — a human addresses it, then re-runs to resume.
-  const regressionHalts = aborted.filter((id) => repoResults[id]?.status === 'review-regression-halt')
-  if (regressionHalts.length) {
-    log(`⛔⛔ FIX-CAUSED REGRESSION HALT — human action required before this run can finish: ${regressionHalts.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR'})`).join(' | ')}. Nothing merged or distributed; the PR(s) are left OPEN. Fix the regression, then re-run \`/dev-cycle ${ticket}\` to resume.`)
-  }
-  // A code gate that could not RUN the suite is its own loud halt — distinct from open findings,
-  // because nothing here failed review: the review simply could not prove the branch is green, and
-  // approving/merging on that is precisely what the green gate forbids.
-  const testsUnverified = aborted.filter((id) => repoResults[id]?.status === 'review-tests-unverified')
-  if (testsUnverified.length) {
-    log(`⛔⛔ TEST GATE UNVERIFIED — the code review could not run the suite, so no approval was posted and nothing was merged: ${testsUnverified.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR'})`).join(' | ')}. The PR(s) are left OPEN. Unblock the suite, then re-run \`/dev-cycle ${ticket}\` to resume.`)
-  }
-  // STALLED / BLOCKED-ON (C4) — same loud-banner treatment: neither failed review, both need a
-  // human decision (waive a stuck finding, or land a named upstream) before a re-run can converge.
-  const stalls = aborted.filter((id) => repoResults[id]?.status === 'review-stalled')
-  if (stalls.length) log(`⛔⛔ REVIEW STALLED — ${stalls.map((id) => `${id} (round ${repoResults[id]?.reviewRound})`).join(' | ')}: the same finding set survived two rounds with no commit. A human decides whether the finding is actionable; nothing merged, PR(s) OPEN.`)
+  // ADR-0027 — `review-regression-halt`, `review-tests-unverified` and `review-stalled` used to be
+  // filtered and bannered here, one branch each. None of them can be RETURNED any more: the loop
+  // converts each into a must-fix and, when a budget runs out, into a blocking item on a
+  // `review-unresolved` repo. The banner they used to get is the blockingByRepo one below, which
+  // carries the same information for every kind at once instead of three near-identical branches
+  // that can no longer fire.
   // ADR-0025 — the PR/MR does not point where this run said, and the run could not repair it (the
   // base is missing on the remote, or the repo carries more than one open PR/MR for this ticket).
   // Loud and distinct: on the run this gate was written for, the SILENT version of this state was
   // handed to a human as "reviewed + validated".
   const targetHalts = aborted.filter((id) => repoResults[id]?.status === 'target-branch-halt')
   if (targetHalts.length) log(`⛔⛔ TARGET BRANCH — nothing was approved or merged: ${targetHalts.map((id) => `${id} (${repoResults[id]?.handoff?.remaining ?? 'see PR/MR'})`).join(' | ')}`)
+  // ADR-0027 — the loudness the converted halts gave up. A halt used to be a banner mid-run; a
+  // recorded blocking item is a line in a data structure, and if it never reaches a person the
+  // change has traded a visible stop for a silent degradation. So it is bannered here, threaded
+  // into writeSummary (which puts it in the run summary AND the incomplete-run DM), and carried on
+  // the run result. THIS IS PART OF THE FEATURE, not decoration.
+  const blockingByRepo = buildIds
+    .map((id) => ({ id, items: repoResults[id]?.blocking || [] }))
+    .filter((b) => b.items.length)
+  if (blockingByRepo.length) {
+    log(`⛔⛔ ${blockingByRepo.reduce((n, b) => n + b.items.length, 0)} BLOCKING ITEM(S) the review loop worked and could NOT close — these are why the run did not finish, and each needs a person:`)
+    blockingByRepo.forEach((b) => b.items.forEach((it) => log(`   [${b.id}] ${it.kind}: ${it.detail}${it.human_action ? ` → ${it.human_action}` : ''}`)))
+  }
   const blocked = aborted.filter((id) => repoResults[id]?.status === 'review-blocked-on')
   if (blocked.length) log(`⛔⛔ BLOCKED ON ANOTHER REPO — ${blocked.map((id) => `${id} → ${(repoResults[id]?.blockedOn || []).join('+')}`).join(' | ')}. Land the upstream, then re-run; the run state resumes each repo from its own milestone.`)
-  const runStatus = targetHalts.length ? 'target-branch-halt' : regressionHalts.length ? 'review-regression-halt' : testsUnverified.length ? 'review-tests-unverified' : blocked.length ? 'review-blocked-on' : stalls.length ? 'review-stalled' : 'repo-unresolved'
+  const runStatus = targetHalts.length ? 'target-branch-halt' : blocked.length ? 'review-blocked-on' : 'repo-unresolved'
   // C10 — this is NOT a complete ending (the change set is not merge-ready), so the channel
   // Notify digest is superseded by writeSummary's own incomplete-run DM: no separate review
   // request here. The Summary written below is what a human needs to pick this back up.
-  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, targetHalts, regressionHalts, testsUnverified, stalls, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable })
-  return { ticket, status: runStatus, aborted, handoffs, targetHalts, regressionHalts, testsUnverified, stalls, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: runStatus, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.
@@ -2608,18 +2790,50 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
   // a SECOND agent must find the result on the ticket. Mirrors the code reviewer's green-gate
   // rule at review time: a gate that could not run HALTS rather than passing.
   const rc = ts?.receipt
-  const receiptOk = !!(rc?.command && Number.isInteger(rc.exit_code) && rc.summary_line)
-  const audit = await safeAgent(
+  // `let`, not `const`: the repair loop below re-runs the gate and re-audits, so both are reassigned.
+  let receiptOk = !!(rc?.command && Number.isInteger(rc.exit_code) && rc.summary_line)
+  let audit = await safeAgent(
     `${tag(testSuiteRepo, 'qa-runner', 'test-suite-audit')} AUDIT ONLY — run no tests, fix nothing. The ${ticket} test-suite gate (${testSuiteRepo}) claims: exit_code=${rc?.exit_code ?? '(none)'}, summary="${(rc?.summary_line || '(none)').slice(0, 160)}". THIS RUN IS r${RUN_SEQ}, so the stamp you are looking for begins \`run r${RUN_SEQ}\`. Read the marked report comment for THIS suite repo — \`scripts/tracker/find-ticket-comment.sh ${ticket} --marker "[test-report · ${testSuiteRepo}]"\` — and decide ONE thing: does it report THIS run? The report is UPDATED IN PLACE on every run, so its mere existence proves nothing: match its \`run r<n> · <UTC> · candidate …\` stamp and its summary against the claim above. An older stamp, a candidate sha that is not this run's (${candidates.join(', ')}), or a summary that contradicts the claim ⇒ posted:false with what you saw in \`detail\` — that is a gate recorded as NOT RUN, which is the correct answer, not a technicality. No comment at all ⇒ posted:false. Never re-run a test and never edit the comment; read and judge.`,
     { agentType: 'qa-runner', phase: 'Test suite', label: `audit:${ticket}:${testSuiteRepo}`, schema: RESULT_AUDIT_SCHEMA },
   )
-  if (!receiptOk || !audit?.posted) {
-    const why = !receiptOk
+  // ADR-0027 — an unverifiable gate gets bounded REPAIR attempts before it is recorded, instead of
+  // ending the phase on the first miss. The two causes have different repairs and the agent is told
+  // which one it is: a missing receipt means the run itself has to be re-done and quoted properly;
+  // a report that cannot be found on the ticket means the RESULT never landed, which is a reporting
+  // fix, not a re-run. What does not change is the verdict: no receipt and no findable result means
+  // NOT RUN, and not run can never read as a pass however many attempts it took.
+  let repair = 0
+  let verifyFail = null
+  while (!receiptOk || !audit?.posted) {
+    verifyFail = !receiptOk
       ? 'the gate returned no usable receipt (command + exit code + summary line)'
       : `an independent read of the ticket found no result comment for this run (${audit?.detail || 'no detail'})`
-    log(`⛔ TEST-SUITE GATE UNVERIFIED [${testSuiteRepo}] — ${why}. Treating the verdict as NOT RUN, never as a pass.`)
-    return { suite: testSuiteRepo, verdict: ts, unverified: true, why }
+    if (repair >= TEST_SUITE.maxSuiteRepairAttempts) {
+      log(`⛔ TEST-SUITE GATE UNVERIFIED [${testSuiteRepo}] after ${repair} repair attempt(s) — ${verifyFail}. Treating the verdict as NOT RUN, never as a pass.`)
+      return { suite: testSuiteRepo, verdict: ts, unverified: true, why: verifyFail }
+    }
+    repair++
+    log(`⚠️ [test-suite] ${testSuiteRepo} verdict UNVERIFIABLE (${verifyFail}) — repair attempt ${repair}/${TEST_SUITE.maxSuiteRepairAttempts}.`)
+    const redo = await safeAgent(
+      gatePrompt(`⛔ YOUR PREVIOUS VERDICT COULD NOT BE VERIFIED, so it does not count — ${verifyFail}. ${receiptOk
+        ? `The RUN is not the problem: your result never reached the ticket where an independent reader can find it. Re-post it with /report-test-results ${ticket}, as r${RUN_SEQ}, and make sure the marker line \`[test-report · ${testSuiteRepo}]\` is the body's FIRST line and the stamp begins \`run r${RUN_SEQ}\` — a stamp that does not match is exactly what made this unverifiable. Then re-state the same receipt; do NOT re-run the suite just to satisfy this.`
+        : `You must ACTUALLY RUN the scoped suite and quote its own output: the exact command line, its integer exit code, and the runner's own summary line verbatim. A verdict with no receipt is indistinguishable from a suite that never ran, and is treated as such.`}`),
+      gateOpts(`verify${repair}`),
+    )
+    if (!redo) break
+    ts = redo
+    const rc2 = ts?.receipt
+    receiptOk = !!(rc2?.command && Number.isInteger(rc2.exit_code) && rc2.summary_line)
+    audit = await safeAgent(
+      `${tag(testSuiteRepo, 'qa-runner', 'test-suite-audit')} AUDIT ONLY — run no tests, fix nothing. Re-check after repair attempt ${repair}. THIS RUN IS r${RUN_SEQ}, so the stamp you are looking for begins \`run r${RUN_SEQ}\`. Read the marked report comment for THIS suite repo — \`scripts/tracker/find-ticket-comment.sh ${ticket} --marker "[test-report · ${testSuiteRepo}]"\` — and decide ONE thing: does it report THIS run? Answer posted:true only if the stamp matches this run and the summary matches the claim exit_code=${ts?.receipt?.exit_code ?? '(none)'}.` + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+      { agentType: 'qa-runner', phase: 'Test suite', label: `audit:${ticket}:${testSuiteRepo}#verify${repair}`, schema: RESULT_AUDIT_SCHEMA },
+    )
   }
+  if (!receiptOk || !audit?.posted) {
+    log(`⛔ TEST-SUITE GATE UNVERIFIED [${testSuiteRepo}] — ${verifyFail || 'the verdict could not be verified'}. Treating the verdict as NOT RUN, never as a pass.`)
+    return { suite: testSuiteRepo, verdict: ts, unverified: true, why: verifyFail || 'the verdict could not be verified' }
+  }
+  if (repair) log(`✅ [test-suite] ${testSuiteRepo} verdict verified after ${repair} repair attempt(s).`)
 
   // C4 — bounded red-triage loop. Halts, all with evidence, never fails open: rounds exhausted,
   // an unclassified red, every red pre_existing_on_base, or a fix whose scoped quality check
@@ -2749,7 +2963,11 @@ Only "attributable" earns a fix round — the other two flip the gate to a loud 
       const fixRepo = REPOS[attribution.repo] ? attribution.repo : attrRepo
       log(`[loadtest] round ${ltRound}: ATTRIBUTED to ${fixRepo} — ${String(attribution.reasoning).slice(0, 120)}`)
       const fix = await safeAgent(
-        `${tag(fixRepo, 'developer', 'loadtest-fix', ltRound)} Fix the ATTRIBUTED load-test regression for ${ticket} in ${fixRepo}, on ${repoResults[fixRepo]?.plan?.work_branch}. Cause (your own attribution): ${attribution.reasoning}${attribution.evidence ? ` — evidence: ${attribution.evidence}` : ''}. Measured: ${(lt.regressed || []).join('; ') || 'see the comparison table on the PR/MR'}. Fix the cause, keep ${REPOS[fixRepo]?.green}, commit (fix(…) Refs ${ticket}) and push — the gate re-runs the candidate against the SAME cached baseline, so the next measurement is comparable only if you push. Do not touch the load-test repo or its thresholds: moving the bar is not fixing the regression.`,
+        `${tag(fixRepo, 'developer', 'loadtest-fix', ltRound)} Fix the ATTRIBUTED load-test regression for ${ticket} in ${fixRepo}, on ${repoResults[fixRepo]?.plan?.work_branch}. Cause (your own attribution): ${attribution.reasoning}${attribution.evidence ? ` — evidence: ${attribution.evidence}` : ''}. Measured: ${(lt.regressed || []).join('; ') || 'see the comparison table on the PR/MR'}. Fix the cause, keep ${REPOS[fixRepo]?.green}, commit (fix(…) Refs ${ticket}) and push — the gate re-runs the candidate against the SAME cached baseline, so the next measurement is comparable only if you push. Do not touch the load-test repo or its thresholds: moving the bar is not fixing the regression.
+THE NUMBERS, so you can tell a small avoidable cost from a structural one: candidate ${lt.candidate_sha || '(sha not reported)'} vs base ${lt.base_sha || '(sha not reported)'}, and the effective threshold per metric is max(${LOADTEST.tolerancePct}%, the environment's own noise floor measured from ${LOADTEST.noiseRuns} base runs). Just over the line is usually one avoidable unit of work per request; a multiple of it is structural, and the two want different fixes.${lt.table ? ` The gate's own comparison table: ${String(lt.table).slice(0, 900)}` : ''}
+WHERE REQUEST-PATH TIME ACTUALLY GOES — check in this order, cheapest to rule out first: a query per iteration where one would do (N+1) · a predicate this change introduced with no index behind it · the same value resolved, deserialized or hashed twice per request · a lookup added to a hot path that could be resolved once per batch · work newly done synchronously that the response does not depend on.
+FORBIDDEN, and every one of them tempting: do NOT relax a threshold · do NOT re-baseline · do NOT re-run hoping for a friendlier sample · do NOT move the work behind a flag the scenario does not exercise · do NOT cache in a way that changes what a caller observes. Each of those makes the number go green without making the system faster, which is the single outcome this gate exists to prevent.
+IF THE COST IS INHERENT to the behaviour ${ticket} requires — the change adds a lookup that genuinely cannot be avoided, batched, or moved off the request path — say so in \`cannot_fix\` with kind "loadtest-regression", the number, and what you tried. That is a legitimate result and a decision for a person. It is NOT a pass, and it is not a way out of looking.`,
         { agentType: 'developer', phase: 'Test suite', label: `lt-fix:${ticket}:${ltRound}`, schema: DEV_SCHEMA },
       )
       log(`[loadtest] round ${ltRound} fix: ${fix?.summary?.slice(0, 80) ?? 'no summary'}`)
