@@ -167,3 +167,14 @@ recorded, and the gate keeps going on its other reds. Two things to know when re
 One retraction exists, and only one: a per-case "the fix was never cleared" record is dropped if a
 later round's fix for that same case clears the same check. Every other record is a budget that ran
 out, and a budget does not un-run.
+
+**A recorded item survives the resume**, and this is the one place the ledger's freeze yields. A
+`blocked` row per repo carries the items forward; on the next invocation that row demotes the repo's
+ledgered-PASSED gates from **frozen to re-visit** so the loop runs at all, and hands each item to the
+first fix pass as a must-fix. Re-visit is still a re-check, never a second first review — §1 holds.
+What the run must NOT do is re-assert the item on sight: a person may have fixed it between runs, so
+the developer is told to check whether it still stands, with evidence, before working it. Closed ⇒
+the repo proceeds; still open ⇒ recorded again on this run's own evidence. A run that ends clean
+rewrites the row empty, which is how one gets cleared (a workflow script cannot delete a file).
+Without this the guarantee held for exactly one invocation: the gates a blocking item coexists with
+are all PASSED, so the next run skipped review and merged what the last one recorded.

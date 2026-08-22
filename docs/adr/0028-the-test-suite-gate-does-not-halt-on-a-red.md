@@ -109,6 +109,13 @@ because that is the merge block doing its job: after the gate there is only Merg
 both are exactly what a recorded item exists to prevent. The suites themselves already fan out in
 parallel, so a sibling suite's gate is never abandoned for another one's finding.
 
+## Across invocations
+
+A recorded item here survives a resume by the same mechanism 0027 describes: a `blocked` row per
+repo, written by the closing agent, which vetoes `tsSkippable` — so a `test_suite` row that got
+written anyway cannot let the gate be skipped over a standing record. The brief telling the agent not
+to write that row is still there; it is now the belt, not the whole trousers.
+
 ## The cost, stated plainly
 
 **A red run now spends more.** Three red kinds route where one did, an unrunnable gate buys developer

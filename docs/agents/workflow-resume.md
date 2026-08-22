@@ -58,6 +58,23 @@ old base — `planned`, `built`, `pr_open`, `reviewed` and the gate rows — bec
 made against a different branch prove nothing about this one. Expect that repo to re-plan and
 rebuild; that is the flag working, not a fault.
 
+## One row is not a proof of progress
+
+`blocked` is the exception to everything above. Every other row says *this milestone is proven, skip
+it*; a `blocked` row says *a previous invocation recorded something it could not close*, and its job
+is the opposite of a skip — it **vetoes** the review skip and the suite-gate skip for that repo,
+demotes its ledgered-PASSED gates to re-visit, and hands each item to the first fix pass as a
+must-fix. Without it the guarantee "a recorded item keeps its repo out of `ready`" held for one
+invocation only: the gates such an item coexists with are all PASSED, so the next run skipped review
+and merged what the last one recorded.
+
+A carried item is re-worked, not re-asserted — a person may have fixed it between runs, and an item
+that re-records on sight makes the repo permanently unready. A run that ends clean rewrites the row
+with an empty list, and that is how one gets cleared: a workflow script cannot delete a file, so
+"cleared" has to be a rewrite. Deleting the file by hand works too, and unlike the case below that is
+a legitimate recovery — it says *I have dealt with this myself*.
+→ [ADR 0027](../adr/0027-the-review-loop-does-not-halt-on-a-finding.md) §Across invocations.
+
 The same "proof must still hold" rule applies one link down: a `built` row records the fingerprint of
 the plan it was built **from**, and a re-plan that changes the plan invalidates it. Without that, a
 re-plan could not force a rebuild — a re-plan does not move the branch head, which was `built`'s only

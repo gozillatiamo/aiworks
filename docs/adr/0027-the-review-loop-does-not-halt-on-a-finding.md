@@ -93,6 +93,48 @@ This is the same discipline
 of this gate's bounds", and for the same measured reason: that exact escape hatch, asserted once
 without a second read, held a wrong diagnosis in place for two rounds.
 
+## Across invocations
+
+The claim at the top — *a recorded blocking item keeps its repo out of `ready`* — was true for one
+invocation and false for the next, and that is worse than either.
+
+A repo that ends `review-unresolved` has every gate ledgered PASSED. The gates *did* pass; the
+recorded item was never a gate finding. So on the next run the review ledger rehydrated, the early
+`ready` return fired ("every gate is ledgered PASSED"), and the repo went to the merge gate carrying
+exactly what the previous run had recorded as unclosable. The record did not survive the thing it
+exists to survive. Reachable via any item that can coexist with all gates passing: a second open
+PR/MR, a cross-repo escalation whose budget ran out, a regression the reviewer stopped reporting, an
+accepted `cannot_fix` whose thread got resolved.
+
+So a blocking item is now **state**. A `blocked` row per repo, written by the closing summary agent —
+the workflow itself has no filesystem, so the row rides an agent that already writes files — and
+because a workflow cannot delete a file either, a run that ends clean rewrites the same row
+`in-progress` with an empty list. That is the clear. A row nobody rewrites would be a blocker nobody
+could ever lift.
+
+What a carried item does on the next run is deliberately not "assert itself again". A person may have
+fixed the thing between runs, and an item that re-records on sight makes the repo permanently
+unready. Instead:
+
+- the gates it coexisted with are demoted **FROZEN → re-visit**, so the loop runs at all. This is not
+  re-deriving a finding set, so [ADR 0021](0021-a-passed-gate-is-recorded-not-re-derived.md) still
+  holds: a re-visit is a gate re-checking, never a second first review
+- the item goes to the **first fix pass** as a must-fix, told to check whether it still stands before
+  working it, with the same `cannot_fix` bar as any other condition. That is what re-works it — a
+  re-visiting reviewer may only raise a fix-caused regression, so the reviewer was never going to be
+  the one that re-finds a carried cross-repo gap
+- whether it still stands is something this run derives. Closed ⇒ the repo proceeds. Still open ⇒ it
+  is recorded again, on this run's own evidence
+
+Building it surfaced the same bug one layer down: the loop's converge check (`every reviewer has
+passed ⇒ break`) fired **before** the fix pass, so a carried item on an otherwise-clean repo
+evaporated underneath the veto meant to save it. The loop now never converges with a must-fix still
+undelivered.
+
+The suite side of [ADR 0028](0028-the-test-suite-gate-does-not-halt-on-a-red.md) gets the same veto,
+and needed it for the same reason: its gate brief tells the agent not to write a `test_suite` row
+while a blocking item stands, and an instruction is not a mechanism.
+
 ## What is NOT converted, and why
 
 Four states still stop a repo, because there is no loop to continue into:

@@ -113,6 +113,10 @@ const gatePassedRow = (repo, key) => ({ ...runStateRow(repo, `gate_${key}`), fir
 const gateFirstPassRow = (repo, key) => ({ ...runStateRow(repo, `gate_${key}`), status: 'in-progress', first_pass: true, head_sha: `sha-${repo}` })
 // A repo that should return 'ready' with ZERO agent spawns this run — fully resumed.
 const readyRows = (repo, n) => [builtRow(repo), prRow(repo, n), reviewedRow(repo)]
+// ADR-0027 §Across invocations. Items with status 'done' are CARRIED; the same row rewritten
+// 'in-progress' with an empty list is how a clean run clears it (a workflow cannot delete a file).
+const blockedRow = (repo, items) => ({ ...runStateRow(repo, 'blocked'), blocking: items })
+const blockedClearedRow = (repo) => ({ ...runStateRow(repo, 'blocked'), status: 'in-progress', blocking: [] })
 
 async function runOnce(argsStr, canned, opts = {}) {
   const spendJumpAfterPhase = opts.spendJumpAfterPhase || null
@@ -1257,6 +1261,84 @@ const BASE = {
       // specific reason — one condition, one row.
       report('G25_no_pointless_rerun', !SPAWNED.includes('test-suite:FM-12:e2e#r1') && LINES.some((l) => l.includes('routed no fix at all')))
       report('G25_records_exactly_once', items.length === 1, `got=${JSON.stringify(items.map((i) => i.kind))}`)
+    } else if (SCENARIO === 'G26' || SCENARIO === 'G27') {
+      // ADR-0027 §Across invocations — the cross-invocation fail-open. A repo that ended
+      // `review-unresolved` has every gate ledgered PASSED (the gates DID pass; the blocking item
+      // was not a gate finding), so the next invocation skipped review at the early `ready` return
+      // and merged exactly what the previous run recorded as unclosable. G26: the item is carried,
+      // so review runs and the item reaches the developer. G27: the same row rewritten CLEARED is
+      // ignored, so a repo whose blocker was resolved still resumes for free.
+      const carried = SCENARIO === 'G26'
+      const item = { kind: 'cross-repo', detail: 'the root fix for the totals finding belongs in billing, which this ticket does not carry', human_action: 'widen FM-12 to billing, or waive the finding' }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [
+          ...readyRows('app', 7),
+          gatePassedRow('app', 'review'), gatePassedRow('app', 'guard'), gatePassedRow('app', 'perf'),
+          carried ? blockedRow('app', [item]) : blockedClearedRow('app'),
+        ] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'notify:FM-12': { sent: true },
+      }
+      // Reviewers pass on sight: the point is that the loop RUNS at all and the carried item lands
+      // in the fix batch — not that a reviewer re-derives it (a re-visit may only raise a
+      // fix-caused regression, so the reviewer was never going to be the one that re-finds it).
+      for (let n = 1; n <= 3; n++) {
+        canned[`review:FM-12:app#${n}`] = { approved: true, tests_green: true, comments: [], conclusion: 'clean', receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } }
+        canned[`guard:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'the billing gap was closed by hand last week; verified', status: 'complete', fixed: ['app/src/x.ts'], commits: 1 }
+      }
+      const result = await runOnce(ARGS, canned)
+      const skipped = LINES.some((l) => l.includes('review SKIPPED'))
+      if (carried) {
+        report('G26_review_is_not_skipped_over_a_carried_item', !skipped, `lines=${JSON.stringify(LINES.filter((l) => l.includes('SKIPPED')))}`)
+        report('G26_carried_item_is_logged_loudly', LINES.some((l) => l.includes('blocking item(s) CARRIED from a previous invocation') && l.includes('cross-repo')))
+        // The proof the freeze was lifted is that the reviewers RAN at all: with `gate_*: done`
+        // rows and no carried item, every one of them would have been frozen. (No `guard` here —
+        // this fixture sets QUALITY_GATE="none", so guard is never in the reviewer set at all.)
+        report('G26_frozen_gates_are_re_opened', SPAWNED.includes('review:FM-12:app#1') && SPAWNED.includes('perf:FM-12:app#1'),
+          `spawned=${JSON.stringify(SPAWNED.filter((l) => /^(review|guard|perf):/.test(l)))}`)
+        report('G26_item_reaches_the_developer', (PROMPTS['pr-fix:FM-12:app#1'] || '').includes('CARRIED FROM AN EARLIER RUN')
+          && (PROMPTS['pr-fix:FM-12:app#1'] || '').includes('belongs in billing'))
+        report('G26_developer_told_to_check_it_still_stands', (PROMPTS['pr-fix:FM-12:app#1'] || '').includes('FIRST, CHECK WHETHER IT STILL STANDS'))
+        // NOT permanently blocking: re-worked, and a run that closes it proceeds.
+        report('G26_a_closed_item_lets_the_run_proceed', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+        report('G26_summary_is_told_to_clear_the_row', (PROMPTS['summary:FM-12'] || '').includes('app-blocked.json') && (PROMPTS['summary:FM-12'] || '').includes('"status":"in-progress"'))
+      } else {
+        report('G27_a_cleared_row_is_ignored', skipped)
+        report('G27_no_carry_logged', !LINES.some((l) => l.includes('CARRIED from a previous invocation')))
+        report('G27_no_fix_pass_invented', !SPAWNED.some((l) => l.startsWith('pr-fix:')))
+        report('G27_resumes_for_free', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+      }
+    } else if (SCENARIO === 'G28') {
+      // The same veto on the suite side. The gate brief tells the agent not to write a `test_suite`
+      // row while a blocking item stands — but an instruction is not a mechanism, so a row that got
+      // written anyway must not let the gate be skipped.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [
+          ...readyRows('app', 1), ...readyRows('e2e', 3),
+          runStateRow('e2e', 'test_suite'),
+          blockedRow('e2e', [{ kind: 'loadtest-regression', detail: 'p95 +38% vs base after 3 fix round(s)', human_action: 'decide whether FM-12 ships at this cost' }]),
+        ] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'notify:FM-12': { sent: true },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G28_gate_is_not_skipped_over_a_carried_item', SPAWNED.includes('test-suite:FM-12:e2e'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
+      report('G28_not_reported_as_resumed', !LINES.some((l) => l.includes('SKIPPED — run state says this suite already passed')))
+      report('G28_a_genuinely_green_rerun_proceeds', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
     } else if (SCENARIO === 'G17') {
       // R12 — writeSummary used to write ONE fixed path with Write, so every invocation destroyed
       // the previous round's summary. That is why one postmortem's timeline had to be rebuilt from
@@ -1455,6 +1537,15 @@ out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G24)"; [[ "$VERBOSE" -eq 1 ]] &&
 
 echo "── G25 — an app red naming an out-of-scope repo is recorded, never misrouted"
 out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G25)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G26 — a carried blocking item survives the resume and reaches the developer"
+out="$(run_scenario G26)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G27 — a CLEARED blocked row is ignored, so a resolved repo still resumes for free"
+out="$(run_scenario G27)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G28 — a carried item vetoes the suite-gate skip too, whatever the test_suite row says"
+out="$(run_scenario G28)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
 out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

@@ -159,7 +159,11 @@ gate**: a red whose fix its scoped check never cleared, a gate that could not be
 round budget, a standing load regression, reds already red on base, a red no repo in scope owns. The
 loop keeps working every other finding; a repo cannot reach `ready` while one stands and a GREEN
 suite cannot read as passed, so nothing is approved and nothing merges. Not a halt, and not a pass.
-Both producers write into ONE list, so a run has one "Blocking — needs a person" section.
+Both producers write into ONE list, so a run has one "Blocking — needs a person" section. It is also
+**state**: a `blocked` run-state row carries it to the next invocation, where it demotes that repo's
+ledgered-PASSED gates to re-visit and goes to the first fix pass as a must-fix — re-worked, never
+re-asserted on sight, since a person may have fixed it between runs. A run that ends clean rewrites
+the row empty, which is how one is cleared.
 → [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md),
 [ADR 0028](docs/adr/0028-the-test-suite-gate-does-not-halt-on-a-red.md).
 *Avoid*: halt, blocker (both suggest the loop stopped, which it does not).

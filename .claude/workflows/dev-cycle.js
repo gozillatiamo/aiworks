@@ -282,7 +282,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-22.2'
+const DEVCYCLE_VERSION = '2026-08-22.3'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -1142,6 +1142,31 @@ const bannerBlocking = (rows, worked) => {
 }
 const DM_PLACEHOLDER = /^U0{6,}/
 const dmTarget = NOTIFY && NOTIFY_DM && !DM_PLACEHOLDER.test(NOTIFY_DM) ? NOTIFY_DM : null
+// ADR-0027 §Across invocations — a recorded blocking item has to OUTLIVE its run, or "a recorded
+// item keeps its repo out of ready" is true for one invocation and false for the next: the gates it
+// coexists with are ledgered PASSED, so the resumed run skips review, returns `ready`, and merges
+// the very thing that was recorded. The workflow has no filesystem, so the row rides the closing
+// agent that already writes files. Written for EVERY repo the run touched — with items, or cleared —
+// because a row nobody rewrites is a blocker nobody can ever clear.
+const blockedRowClause = (runResult) => {
+  const rows = runResult?.blockingByRepo || []
+  const ids = [...new Set([
+    ...Object.keys(runResult?.repoResults || {}),
+    ...(runResult?.testSuite?.suites || []).map((s) => s?.suite).filter(Boolean),
+    ...rows.map((r) => r.id),
+  ])]
+  if (!ids.length) return ''
+  const byId = new Map(rows.map((r) => [r.id, r.items]))
+  return `
+6. CARRY THE BLOCKING ITEMS FORWARD — with the Write tool, one file per repo, into \`agent_logs/${ticket}-dev-cycle-state/\` at the WORKSPACE ROOT, named \`<repo>-blocked.json\`. This is not bookkeeping: it is what stops the NEXT invocation from skipping a review whose gates all passed and merging what this run recorded as unclosable. Write ALL of these, exactly as given — a repo with nothing is written CLEARED, because a row nobody rewrites is a blocker nobody can clear:
+${ids.map((id) => {
+    const items = byId.get(id)
+    return items && items.length
+      ? `   • \`${id}-blocked.json\` ⇒ {"repo":"${id}","milestone":"blocked","status":"done","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>","blocking":${JSON.stringify(items)}}`
+      : `   • \`${id}-blocked.json\` ⇒ {"repo":"${id}","milestone":"blocked","status":"in-progress","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>","blocking":[]}`
+  }).join('\n')}
+   Copy the \`blocking\` arrays VERBATIM — do not summarise, re-word or drop a field. The next run reads \`detail\` back to the developer as the must-fix, so a paraphrase is a changed instruction.`
+}
 async function writeSummary(runStatus, runResult, deferredScopeRun = []) {
   phase('Summary')
   const s = await safeAgent(
@@ -1151,6 +1176,7 @@ ${(runResult?.blockingByRepo || []).length ? `1a. ⛔ BLOCKING ITEMS — this ru
 ${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}${budgetStopped ? `2e. 🛑 BUDGET STOP — put this as the FIRST line of the file, as a prominent banner: "${budgetStopped}" Say plainly which phases did NOT run, so nobody reads this summary as a completed cycle.\n` : ''}3. WRITE that narrative with the Write tool TWICE, to two paths at the WORKSPACE (org) ROOT: agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r${RUN_SEQ}.md (this invocation's own record, which NOTHING may overwrite — it is how a later reader reconstructs what each round of a hard ticket actually did, and its absence is why one postmortem had to be rebuilt from a chat log) and agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md (the LATEST pointer every other tool reads) — the workspace (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write BOTH files AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. Under that heading also state, in one line each: this invocation is r${RUN_SEQ} of ${ticket}; it spent ${budget.spent()} OUTPUT tokens against a ceiling of ${TOKEN_BUDGET} (dev_cycle.token_budget counts OUTPUT tokens only — total run tokens have measured roughly 29x that, so do not present the ceiling as a total-token budget); and the per-ticket running total, which you get by adding this invocation's output tokens to the same figure in the newest agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md that already exists (grep it out with \`grep -h 'output tokens this invocation' agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md\`), so a reader can see what the WHOLE ticket has cost across every round rather than just the last one. Write the line as: "<n> output tokens this invocation · <total> across r1..r${RUN_SEQ}". If nothing earlier exists, this invocation IS the total. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 5. ARM THE ORCHESTRATOR GUARD — the run is over, so this session's job from here is to orchestrate, not to implement (docs/adr/0019). Read the session id with \`printf '%s\\n' "$CLAUDE_CODE_SESSION_ID"\`, then with the Write tool REPLACE \`agent_logs/${ticket}-dev-cycle-state/orchestrator-guard.json\` with exactly {"session_id":"<what that printed>","ticket":"${ticket}","armed":true,"run_state":"ended","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. Write it whatever the run's status is. If the env var printed nothing, write "session_id":"" — the guard stays inert rather than arming against an unknown session.
+${blockedRowClause(runResult)}
 Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.` + LANGUAGE_DIRECTIVE,
     { agentType: 'documentor', phase: 'Summary', label: `summary:${ticket}`, schema: SUMMARY_SCHEMA },
   )
@@ -1631,6 +1657,25 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
     else if (stateRows.some((r) => r.repo === R && r.milestone === m && r.first_pass === true)) { didFirstReview[rv.key] = true; resumedFirstPass[rv.key] = true }
   })
   if (reviewers.some((rv) => resumedFirstPass[rv.key])) log(`[${R}] review ledger: ${reviewers.filter((rv) => resumedFirstPass[rv.key]).map((rv) => `${rv.key} ${done[rv.key] ? 'PASSED (frozen, never re-reviewed)' : 'first pass done → re-visit only'}`).join(', ')}.`)
+  // ADR-0027 §Across invocations — what a previous invocation RECORDED and could not close. Two
+  // separate jobs here, and they are not interchangeable:
+  //   (1) the gates it coexisted with are ledgered PASSED, which is what let the resumed run skip
+  //       review entirely and return `ready`. Demoted FROZEN → re-visit, so the loop actually runs.
+  //       This is not re-deriving a finding set (ADR-0021 still holds): a re-visit is the gate
+  //       re-checking, never a second first review.
+  //   (2) the item itself goes to the first fix pass as a must-fix. THAT is what re-works it — a
+  //       re-visiting reviewer may only raise a fix-caused regression, so the reviewer is not the
+  //       one who re-derives a carried cross-repo gap or an unrunnable suite.
+  // Deliberately NOT re-recorded on sight: a human may have fixed the thing between runs, and an
+  // item this run merely repeats would make the repo permanently unready.
+  const carried = carriedBlocking(R)
+  if (carried.length) {
+    log(`⚠️ [${R}] ${carried.length} blocking item(s) CARRIED from a previous invocation (${carried.map((b) => b.kind).join(', ')}) — every ledgered gate is demoted to re-visit and each item goes to the first fix pass. Not re-recorded on sight: this run derives whether they still stand.`)
+    reviewers.forEach((rv) => { if (done[rv.key] === true) { done[rv.key] = false; didFirstReview[rv.key] = true; resumedFirstPass[rv.key] = true } })
+    extraMustFix.push(...carried.map((b) => `⛔ CARRIED FROM AN EARLIER RUN OF ${ticket} — a previous invocation worked this to its budget, could not close it, and RECORDED it. It comes first in this batch. Kind "${b.kind}": ${b.detail}${b.human_action ? ` · what it was waiting on a person for: ${b.human_action}` : ''}
+FIRST, CHECK WHETHER IT STILL STANDS — a person may have fixed it between runs, or another repo's change may have removed it. If it is already gone, say so in your summary with the evidence you read (the command and its exit code, the resolved thread, the closed PR/MR) and do NOT invent work for it.
+IF IT STILL STANDS, fix it. If it genuinely cannot be fixed here, \`cannot_fix\` with kind "${b.kind}", the evidence and what you ruled out first — same bar as any other condition. Repeating "still blocked" with nothing read is not an answer: that is how a recorded item becomes permanent.`))
+  }
   // FORGE APPROVAL — the third record of the same "this review is settled" fact, and the only
   // one a HUMAN can write. A tick on the PR/MR says the review passed; re-deriving a review
   // above it is the wasted round this reads to prevent (docs/agents/review-ledger.md §5).
@@ -1661,7 +1706,10 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
   // green and only the merge phase never got far enough to write that row. Deliberately
   // head-agnostic: a passed gate stays passed (docs/adr/0021), so a commit landing afterwards does
   // not reopen a settled review. That is the trade-off the ADR records, not an oversight.
-  if ((doneAt(R, 'reviewed') || (reviewers.length > 0 && reviewers.every((rv) => done[rv.key] === true))) && pr) {
+  // `!carried.length` is the veto that closes ADR-0027's cross-invocation fail-open: this early
+  // `ready` is the exact return that used to un-know a recorded item. A repo carrying one must go
+  // through the loop, whatever the ledger says about the gates it passed.
+  if (!carried.length && (doneAt(R, 'reviewed') || (reviewers.length > 0 && reviewers.every((rv) => done[rv.key] === true))) && pr) {
     log(`[${R}] review SKIPPED — ${doneAt(R, 'reviewed') ? "run state says reviewed" : "every gate is ledgered PASSED"}. PR ${pr.pr_number ?? '?'}.`)
     return { repo: R, status: 'ready', plan: rp, pr, reviewRound: 0, verdict: {}, gatesUnavailable: {}, deferred: deferredScope, met_acceptance: dev.met_acceptance || [], build: { summary: dev.summary, fixed: [] } }
   }
@@ -1905,7 +1953,13 @@ Keep ${desc.green}. If the regression and the original finding are genuinely in 
     // Converge ONLY when EVERY reviewer has an explicit pass/approve (freeze-once-passed).
     // A recorded blocking item is NOT a pass, and the final return below is what enforces that —
     // converging here with `blocking` non-empty still ends the repo unresolved.
-    if (reviewers.every((rv) => done[rv.key])) break
+    // `&& !extraMustFix.length` — never converge with must-fixes still undelivered. Every other
+    // producer of one keeps its reviewer open, so this only ever fires for a carried item
+    // (ADR-0027 §Across invocations): all three gates ledgered PASSED, one recorded condition, and
+    // this break used to end the round before the fix pass below could hand it over — the carried
+    // item evaporating one layer under the veto that was meant to save it. `extraMustFix` is
+    // cleared by that pass, so the next round converges normally.
+    if (reviewers.every((rv) => done[rv.key]) && !extraMustFix.length) break
     if (reviewRound >= MAX_REVIEW_ROUNDS) {
       const why = crashed.length ? `${crashed.join('+')} reviewer ERRORED (inconclusive)` : 'open findings'
       log(`⚠️ [${R}] hit MAX_REVIEW_ROUNDS (${MAX_REVIEW_ROUNDS}) with ${why}${blocking.length ? ` + ${blocking.length} recorded blocking item(s)` : ''} — NOT merge-ready; PR left open for human review.`)
@@ -2125,7 +2179,9 @@ const RUN_STATE_SCHEMA = {
           repo: { type: 'string' },                // a REPOS key, or "all" for a run-level row
           // gate_review | gate_guard | gate_perf are the REVIEW LEDGER rows (docs/adr/0021):
           // one per repo per gate, carrying first_pass and whether that gate passed.
-          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'gate_review', 'gate_guard', 'gate_perf', 'reviewed', 'test_suite', 'merged', 'distributed', 'artifact_published', 'notified', 'dm_sent'] },
+          // `blocked` is the ONE row that is not a proof of progress but a proof of the opposite:
+          // what a previous invocation recorded and could not close (ADR-0027 §Across invocations).
+          milestone: { type: 'string', enum: ['planned', 'built', 'pr_open', 'gate_review', 'gate_guard', 'gate_perf', 'reviewed', 'test_suite', 'blocked', 'merged', 'distributed', 'artifact_published', 'notified', 'dm_sent'] },
           status: { type: 'string', enum: ['done', 'in-progress'] },
           work_branch: { type: ['string', 'null'] },
           head_sha: { type: ['string', 'null'] },   // the sha recorded WHEN the milestone landed
@@ -2149,6 +2205,16 @@ const RUN_STATE_SCHEMA = {
           degraded: { type: 'boolean' },            // proof no longer holds → NOT skippable
           first_pass: { type: ['boolean', 'null'] }, // gate_* rows — this gate completed its ONE full review
           run_status: { type: ['string', 'null'] }, // dm_sent rows — the runStatus this DM already covered
+          // `blocked` rows — the items a previous invocation recorded. A row with items and
+          // status 'done' is what makes a blocking item OUTLIVE its run; the same file rewritten
+          // with status 'in-progress' and an empty list is how a later clean run clears it, since
+          // a workflow script cannot delete a file.
+          blocking: {
+            type: 'array', items: {
+              type: 'object', additionalProperties: false,
+              properties: { kind: { type: 'string' }, detail: { type: 'string' }, human_action: { type: ['string', 'null'] } },
+            },
+          },
         },
       },
     },
@@ -2171,6 +2237,10 @@ const RUN_SEQ = Math.max(1, Number(runState?.invocations_before || 0) + 1)
 // The ONE predicate every gate below reads. A degraded row is not done.
 const doneAt = (repo, milestone) => stateRows.some((r) => r.repo === repo && r.milestone === milestone && r.status === 'done' && r.degraded !== true)
 const rowAt = (repo, milestone) => stateRows.find((r) => r.repo === repo && r.milestone === milestone && r.status === 'done' && r.degraded !== true)
+// ADR-0027 §Across invocations. A `blocked` row rewritten with status 'in-progress' and an empty
+// list is how a clean run CLEARS one — `rowAt` already ignores it, which is the whole reason the
+// clear is a rewrite rather than a delete a workflow script could not perform.
+const carriedBlocking = (repo) => (rowAt(repo, 'blocked')?.blocking || []).filter((b) => b && b.kind)
 if (stateRows.length) log(`[run-state] ${stateRows.length} row(s) loaded${runState?.found === false ? '' : ` from ${runState?.path || `agent_logs/${ticket}-dev-cycle-state.json`}`}; skippable: ${stateRows.filter((r) => r.status === 'done' && r.degraded !== true).map((r) => `${r.repo}:${r.milestone}`).join(', ') || 'none'}; degraded: ${stateRows.filter((r) => r.degraded).map((r) => `${r.repo}:${r.milestone}`).join(', ') || 'none'}.`)
 
 // 1. SCOPE — which repos does this ticket touch, and in what dependency order?
@@ -2751,7 +2821,10 @@ let testSuite = null
 // AND no work branch has moved (degraded) since. A pre-existing 'all-test_suite.json' row (from a
 // run before this per-suite split) matches no suite repo, so the first resume after this change
 // simply runs each gate once more — the safe direction, never a false skip.
-const tsSkippable = (id) => doneAt(id, 'test_suite') && !stateRows.some((r) => r.milestone === 'built' && r.degraded === true)
+// `!carriedBlocking(id).length` — the same veto as the review skip (ADR-0027 §Across invocations).
+// The gate brief already tells the agent not to write a `test_suite` row while a blocking item
+// stands, but an instruction is not a mechanism: this is the code that holds if one gets written.
+const tsSkippable = (id) => doneAt(id, 'test_suite') && !carriedBlocking(id).length && !stateRows.some((r) => r.milestone === 'built' && r.degraded === true)
 
 // One suite's gate: initial run → receipt/ticket audit → C4's bounded red-triage loop → (load
 // suites only) the base-branch comparison. Returns { suite, verdict, blocking, unverified?, why? }.
