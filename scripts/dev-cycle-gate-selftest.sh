@@ -119,6 +119,19 @@ async function runOnce(argsStr, canned, opts = {}) {
   const agent = async (prompt, opts2) => {
     const label = opts2 && opts2.label
     if (label) { SPAWNED.push(label); PROMPTS[label] = prompt }
+    // The target-branch gate (docs/adr/0025) runs on EVERY repo that opens or resumes a PR/MR, so
+    // stubbing it per scenario would mean adding a row to twenty canned tables to say "yes, the
+    // MR points where it should". Default it to agreement, derived from the base the prompt itself
+    // states — the same field a real agent reads off the forge — and let a scenario override the
+    // label to exercise a mismatch. Absent this, every scenario halts on an unstubbed label and
+    // the suite tests nothing but the gate.
+    if (label && label.startsWith('target-gate:') && !(label in canned)) {
+      const num = (prompt.match(/PR\/MR (\d+), read what it actually targets/) || [])[1] || 1
+      const base = (prompt.match(/IS `([^`]+)`\. It is a fact of the run/) || [])[1] || 'develop'
+      const repo = label.split(':').pop()
+      return { repo, target_branch: base, matches: true, retargeted: false, detail: null,
+               open_prs: [{ number: Number(num), target_branch: base, source_branch: 'feature/FM-12', url: `https://x/${num}` }] }
+    }
     if (!label || !(label in canned)) throw new Error('selftest: unstubbed agent label ' + label)
     return canned[label]
   }
@@ -796,6 +809,131 @@ const BASE = {
         report('G11_pending_suite_gate_ran', SPAWNED.includes('test-suite:FM-12:e2e'))
         report('G11_reaches_the_merge_gate', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
       }
+    } else if (SCENARIO === 'G16a' || SCENARIO === 'G16b' || SCENARIO === 'G16c' || SCENARIO === 'G16d') {
+      // TARGET-BRANCH GATE (docs/adr/0025) — the postmortem's most serious miss. The pipeline was
+      // thorough about the base right up to PR/MR creation and blind afterwards, so a four-repo
+      // ticket reached its designed clean finish ("reviewed + validated", merge-skipped) with
+      // every MR pointed at a branch nobody had asked for. A human caught it after the fact.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+      }
+      const oneMr = (t) => [{ number: 7, target_branch: t, source_branch: 'feature/FM-12', url: 'https://x/7' }]
+      if (SCENARIO === 'G16a') {
+        // Mismatch the run could not repair (the base is not on the remote): halt, loudly, and
+        // never tick an approval on it.
+        canned['target-gate:FM-12:db'] = { repo: 'db', target_branch: 'main', matches: false, retargeted: false,
+          detail: 'git ls-remote --exit-code --heads origin develop exited 2', open_prs: oneMr('main') }
+      } else if (SCENARIO === 'G16b') {
+        // TWO open MRs for one repo. `pr_open` proof is a head sha, not an MR identity, so a
+        // resume could open another — and one measured repo really did carry two, targeting
+        // different branches. Closing an MR stays a human call, so this halts rather than repairs.
+        canned['target-gate:FM-12:db'] = { repo: 'db', target_branch: 'develop', matches: true, retargeted: false, detail: null,
+          open_prs: [...oneMr('develop'), { number: 4, target_branch: 'main', source_branch: 'feature/FM-12', url: 'https://x/4' }] }
+      } else if (SCENARIO === 'G16c') {
+        // Repaired in place and re-read back: the run continues, and says so.
+        canned['target-gate:FM-12:db'] = { repo: 'db', target_branch: 'develop', matches: true, retargeted: true, detail: null,
+          open_prs: oneMr('develop') }
+      } else {
+        // NEVER FAIL OPEN: an assert that did not converge is not a pass. Same rule as the
+        // test-suite audit — "nobody checked" was the previous state, and it is what shipped.
+        canned['target-gate:FM-12:db'] = null
+      }
+      const result = await runOnce(ARGS, canned)
+      const status = result && result.status
+      if (SCENARIO === 'G16c') {
+        report('G16c_repaired_run_continues', status !== 'target-branch-halt', `got=${status}`)
+        report('G16c_repair_is_logged', LINES.some((l) => l.includes('target branch REPAIRED') && l.includes('approvals are unaffected')))
+      } else {
+        const why = { G16a: 'mismatch', G16b: 'two open MRs', G16d: 'non-convergent assert' }[SCENARIO]
+        report(`G16_${SCENARIO}_halts_on_${why.replace(/\W+/g, '_')}`, status === 'target-branch-halt', `got=${status}`)
+        report(`G16_${SCENARIO}_nothing_approved`, !SPAWNED.some((l) => l.startsWith('approve:')))
+        report(`G16_${SCENARIO}_banner_names_the_target_branch`, LINES.some((l) => l.includes('TARGET BRANCH')))
+      }
+      if (SCENARIO === 'G16a') {
+        report('G16a_offers_the_retarget_command', LINES.some((l) => l.includes('retarget-pr.sh') && l.includes('--base develop')))
+        report('G16a_before_any_reviewer_is_paid', !SPAWNED.some((l) => l.startsWith('review:') || l.startsWith('guard') || l.startsWith('perf')))
+      }
+      if (SCENARIO === 'G16b') report('G16b_offers_close_not_an_auto_close', LINES.some((l) => l.includes('close-pr.sh') && l.includes('human call')))
+    } else if (SCENARIO === 'G18a' || SCENARIO === 'G18b') {
+      // A ROUND BOUNDS ATTEMPTS, NOT HYPOTHESES. Measured: a wrong diagnosis ("a defect in the test
+      // runner, fixable only by a repo-wide version bump") survived two rounds because round two
+      // re-ran the same spec, got a byte-identical failure, and recorded it as confirmation —
+      // "No new fix attempted". The real cause was one fixture line, derivable from screenshots
+      // round one had already captured. So an UNCHANGED failure signature must change the brief.
+      const red = (caseName) => ({
+        passed: false,
+        receipt: { command: 'scripts/dev.sh test x', exit_code: 1, summary_line: 'red' },
+        triage: [{ case: caseName, kind: 'app', repo: 'db', spec: 'x', evidence: 'same TypeError' }],
+        failures: [caseName],
+      })
+      // G18a: the signature REPEATS across rounds. G18b: it moves (a different case fails next).
+      const second = SCENARIO === 'G18a' ? red('deposit.cy.js') : red('withdraw.cy.js')
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [...readyRows('db', 1)] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'automated', status: 'complete', fixed: [] },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/5', pr_number: 5 },
+        'test-suite:FM-12:e2e': red('deposit.cy.js'),
+        'test-suite:FM-12:e2e#r1': second,
+        'test-suite:FM-12:e2e#r2': second,
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'fix:FM-12:db': { work_branch: 'feature/FM-12', summary: 'fixed', status: 'complete', fixed: ['db/x'] },
+        'dm:FM-12:test-suite-failed': { sent: true },
+      }
+      await runOnce(ARGS, canned)
+      // The re-run brief is the artifact under test: find whichever re-run prompt was issued.
+      const rerun = Object.keys(PROMPTS).filter((k) => k.startsWith('test-suite:FM-12:e2e#')).map((k) => PROMPTS[k]).join('\n')
+      if (SCENARIO === 'G18a') {
+        report('G18a_repeat_is_briefed_to_re-derive', rerun.includes('SAME FAILURE SIGNATURE AS THE PREVIOUS ROUND'))
+        report('G18a_prior_conclusion_is_a_hypothesis', rerun.includes('HYPOTHESIS TO DISPROVE'))
+        report('G18a_must_name_the_evidence_re-read', rerun.includes('WHICH prior evidence you re-read'))
+        report('G18a_warns_the_error_may_be_a_mask', rerun.includes('is a mask, not the fault'))
+        report('G18a_logged_for_the_operator', LINES.some((l) => l.includes('briefed to RE-DERIVE, not re-confirm')))
+      } else {
+        // A MOVING signature is progress: the fix landed and something else is red now. Demanding
+        // a re-derivation there would be noise, so the directive must NOT fire.
+        report('G18b_a_new_signature_is_not_briefed_to_re-derive', !rerun.includes('SAME FAILURE SIGNATURE'))
+        report('G18b_and_nothing_is_logged_about_it', !LINES.some((l) => l.includes('briefed to RE-DERIVE')))
+      }
+      // Holds on every round, not just a repeat: the two inference errors that produced the wrong
+      // diagnosis in the first place.
+      const gate = PROMPTS['test-suite:FM-12:e2e'] || ''
+      report(`${SCENARIO}_identical_control_means_shared_cause`, gate.includes('confirms a SHARED cause'))
+      report(`${SCENARIO}_out_of_bounds_needs_a_second_read`, gate.includes('out_of_gate_bounds_second_read'))
+    } else if (SCENARIO === 'G17') {
+      // R12 — writeSummary used to write ONE fixed path with Write, so every invocation destroyed
+      // the previous round's summary. That is why one postmortem's timeline had to be rebuilt from
+      // a chat log instead of the repo. Each invocation now also keeps its own numbered file.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'notify:FM-12': { sent: true },
+      }
+      await runOnce(ARGS, canned)
+      const sp = PROMPTS['summary:FM-12'] || ''
+      report('G17_per_invocation_summary_written', sp.includes('FM-12-DEV-CYCLE-SUMMARY-r1.md'))
+      report('G17_latest_pointer_still_written', sp.includes('FM-12-DEV-CYCLE-SUMMARY.md'))
+      report('G17_budget_unit_stated_as_output_tokens', sp.includes('OUTPUT tokens') && sp.includes('29x'))
+      report('G17_per_ticket_total_reported', sp.includes('across r1..r1'))
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
@@ -910,6 +1048,27 @@ if [[ -n "$G11_FP_VALUE" ]]; then pass "G11_fingerprint_scraped (fp=$G11_FP_VALU
 
 echo "── G11 — resumed multi-repo run: nothing re-spawned, the in-flight loop fires, escalation re-gated"
 out="$(ARGS="$G11_ARGS" FP="$G11_FP_VALUE" run_scenario G11)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16a — a PR/MR targeting the wrong branch halts the repo (ADR 0025)"
+out="$(run_scenario G16a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16b — two open PR/MRs for one repo halts too; closing one stays human"
+out="$(run_scenario G16b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16c — a repaired target is re-read and the run continues"
+out="$(run_scenario G16c)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G16d — an assert that did not converge is not a pass"
+out="$(run_scenario G16d)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G18a — an unchanged failure signature is briefed to re-derive, not re-confirm"
+out="$(run_scenario G18a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G18b — a signature that MOVED is progress, and gets no such directive"
+out="$(run_scenario G18b)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
+out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi
