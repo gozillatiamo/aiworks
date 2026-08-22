@@ -282,7 +282,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-22.5'
+const DEVCYCLE_VERSION = '2026-08-23.1'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -435,7 +435,8 @@ const prTitle = (rp) => `${ccType(rp.work_branch)}(${ticket}): ${rp.title ?? '<T
 // away (a build aborted 3× without ever handing off): always hand off, never
 // a repo-wide formatter, and a bounded red-test triage that tells a flaky harness from a real bug.
 const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory):
-• ALWAYS HAND OFF. Ending WITHOUT calling StructuredOutput is a FAILURE. Even if the work is incomplete or the suite is red, you MUST end by returning the DEV_SCHEMA result with "status" set: "complete" (Definition of Done met — for the test-suite repo a red caused only by reported app bugs / expected pre-merge reds still counts as complete), "partial" (some slices landed, work OF YOUR OWN remains), "deferred" (see below), or "blocked" (cannot proceed). For "partial"/"blocked" put exactly WHAT REMAINS and WHY in "remaining". Never withhold the handoff to keep investigating.
+• ALWAYS HAND OFF. Ending WITHOUT calling StructuredOutput is a FAILURE. Even if the work is incomplete or the suite is red, you MUST end by returning the DEV_SCHEMA result with "status" set: "complete" (Definition of Done met — for the test-suite repo a red caused only by reported app bugs / expected pre-merge reds still counts as complete), "partial" (some slices landed, work OF YOUR OWN remains), "deferred" (see below), "already-satisfied" (see below), or "blocked" (cannot proceed). For "partial"/"blocked" put exactly WHAT REMAINS and WHY in "remaining". Never withhold the handoff to keep investigating.
+• "ALREADY-SATISFIED" — THIS REPO NEEDS NO CHANGE, because the code that meets the ticket here SHIPPED ALREADY, under earlier work. Not "the work is small", not "the work is elsewhere" (that is deferred) — the behaviour the ticket asks of THIS repo is in this repo's source right now, and the honest diff is empty. A generic, flag-driven design that absorbs a new case without new code is the intended outcome of that design, not a corner to be argued into, and manufacturing a no-op commit to have "a diff" is the wrong answer: say so instead. The bar is a CITATION, not a claim. Fill \`satisfied_by[]\` with ONE ENTRY PER acceptance criterion this repo owns — the criterion quoted, the \`commit\` that shipped it (find it: \`git log -S'<the mechanism>' --oneline\`), the \`path_line\` where the behaviour lives now, and the \`quote\` — the actual source line(s), copied. A verifier re-opens every citation and checks the list COVERS every criterion assigned here; a criterion you leave uncited is one nobody checked, and it sinks the whole claim to "partial", which stops your repo. What the verifier will NOT do is count your commits — an empty branch is the expected shape of this answer, and it is the one status where that is true. Do NOT branch, do NOT commit, do NOT open a PR/MR.
 • "DEFERRED" — YOUR WORK IS DONE, THE REST IS SOMEONE ELSE'S. Use it when everything this repo owns is implemented and green, and what the ticket still wants belongs to another owner: a repo this workspace does not hold, or an access only a person has. That is a different claim from "partial", and it is the one the run acts on most generously — it proceeds to PR, review and the test gate — so it costs more to make. Fill BOTH \`deferred[]\` (per criterion: the criterion quoted, why, the owner who CAN do it, and \`evidence\` — what you actually OBSERVED, a file:line you read, a config value, a command and its refusal) and \`met_acceptance[]\` (the criteria your diff DOES meet). A separate verifier reads any deferral the scope stage did not already declare out of reach, and downgrades an unevidenced one to "partial" — which stops your repo. So: never reach for "deferred" to get out of hard work you own, and never guess an owner. If the remaining work is yours but unfinished, "partial" is the honest answer and costs you nothing.
 • NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
 • BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.
@@ -623,6 +624,21 @@ const REPO_PLAN_SCHEMA = {
     // it against the `built` row's plan_sha: equal ⇒ the existing build really was made from THIS
     // plan and may be resumed; different ⇒ a re-plan has superseded it and the build is re-run.
     plan_sha: { type: ['string', 'null'] },
+    // Which OTHER scoped repos this one vendors as a git submodule, read off `.gitmodules` — not
+    // guessed, and not the same thing as depends_on. A declared dependency is a contract between
+    // two repos; a submodule pin is a build-time fact about THIS repo's harness, and it is the one
+    // dependency a parallel build genuinely cannot ignore: a suite that rebuilds its schema from a
+    // vendored checkout can only see commits the pin can reach.
+    submodule_pins: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['repo', 'path'],
+        properties: {
+          repo: { type: 'string' },  // the scoped repo id this one vendors
+          path: { type: 'string' },  // the submodule path inside THIS repo, exactly as .gitmodules spells it
+        },
+      },
+    },
     plan_html: { type: ['string', 'null'] }, // set when RESOLVED_PLAN_TO_HTML rendered the plan to interactive HTML
     needs_artifact_publish: { type: ['boolean', 'null'] }, // plan_html rendered but Artifact publish is caller-only (no Artifact tool in a subagent)
     summary: { type: 'string' }, acceptance: { type: 'array', items: { type: 'string' } },
@@ -692,7 +708,7 @@ const DEV_SCHEMA = {
     // `met_acceptance[]` are both REQUIRED, every deferred entry needs `evidence`, and a deferral
     // scope did not already declare out of reach is adjudicated by a separate verifier that can
     // downgrade it to `partial`.
-    status: { type: 'string', enum: ['complete', 'partial', 'blocked', 'deferred'] },
+    status: { type: 'string', enum: ['complete', 'partial', 'blocked', 'deferred', 'already-satisfied'] },
     // ADR-0027 — the sanctioned way to say "this particular condition cannot be fixed here", so an
     // immovable one stops consuming attempts instead of being ground at until a budget runs out.
     // It ends that condition's attempts ONLY; the loop carries on with every other finding, and the
@@ -729,6 +745,22 @@ const DEV_SCHEMA = {
     // REQUIRED when status === 'deferred': the acceptance criteria this repo's diff DOES meet.
     // The run's floor reads it — a ticket where no repo met anything delivers nothing, and stops.
     met_acceptance: { type: 'array', items: { type: 'string' } },
+    // REQUIRED when status === 'already-satisfied'. One entry per acceptance criterion this repo
+    // owns, each pointing at the code that ALREADY meets it — shipped by earlier work, not by this
+    // ticket. The citation is the whole claim: a verifier re-opens every one of them, and a
+    // criterion with no entry is a criterion nobody checked, which sinks the claim outright.
+    satisfied_by: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['criterion', 'commit', 'path_line', 'quote'],
+        properties: {
+          criterion: { type: 'string' },  // the acceptance criterion, quoted from the ticket
+          commit: { type: 'string' },     // the sha that shipped it — `git log` it, do not guess
+          path_line: { type: 'string' },  // file:line, or file:start-end, where the behaviour lives NOW
+          quote: { type: 'string' },      // the source line(s) themselves, copied — the verifier matches on this
+        },
+      },
+    },
     remaining: { type: 'string' }, // what remains / why — required reading when status != complete
     // A handoff that says only "needs human triage" costs the next run a full re-investigation:
     // one later round found the real cause (a misplaced `#[async_trait]`) in a single pass. So a
@@ -1096,7 +1128,15 @@ async function moveTicket(keys, why, phaseName, extraClause = '') {
 function toWaves(plans) {
   const ids = new Set(plans.map((p) => p.repo))
   const deps = {}
-  plans.forEach((p) => { deps[p.repo] = (p.depends_on || []).filter((d) => ids.has(d) && d !== p.repo) })
+  // A submodule pin is an edge whether or not Scope declared one. `depends_on` is a judgement call
+  // the scoping agent makes about contracts; a pin is a fact about the downstream's own harness, and
+  // it binds harder — the downstream cannot even compile against code the pin cannot reach. Folding
+  // pins in here means the waves order them correctly without a second graph to keep in step.
+  plans.forEach((p) => {
+    const declared = (p.depends_on || []).filter((d) => ids.has(d) && d !== p.repo)
+    const pinned = (p.submodule_pins || []).map((s) => s?.repo).filter((d) => d && ids.has(d) && d !== p.repo)
+    deps[p.repo] = [...new Set([...declared, ...pinned])]
+  })
   const done = new Set(); const out = []
   while (done.size < plans.length) {
     const wave = plans.filter((p) => !done.has(p.repo) && deps[p.repo].every((d) => done.has(d))).map((p) => p.repo)
@@ -1167,12 +1207,12 @@ ${ids.map((id) => {
   }).join('\n')}
    Copy the \`blocking\` arrays VERBATIM — do not summarise, re-word or drop a field. The next run reads \`detail\` back to the developer as the must-fix, so a paraphrase is a changed instruction.`
 }
-async function writeSummary(runStatus, runResult, deferredScopeRun = []) {
+async function writeSummary(runStatus, runResult, deferredScopeRun = [], satisfiedRun = []) {
   phase('Summary')
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.${['repo-unresolved', 'review-unresolved', 'target-branch-halt', 'review-blocked-on'].includes(runStatus) ? ' Also state plainly, near the top, whether the cross-repo test-suite gate ran: on a stopped run it did NOT, so the change set is UNVALIDATED end-to-end and the run summary must not read as though it were.' : ''}
-${(runResult?.blockingByRepo || []).length ? `1a. ⛔ BLOCKING ITEMS — this run WORKED these and could not close them (the review loop per code repo, or the cross-repo test-suite gate per suite repo), which is why it did not finish. Give them their own "## Blocking — needs a person" section ABOVE the narrative, one row per item: the repo, the kind, what it says, and the human action named. Do NOT soften them into "minor issues" and do NOT bury them in the per-repo narrative: each one is the reason a repo could not reach ready — or the reason a GREEN suite is still not a pass — and a reader who misses them will think the run merely ran out of rounds. Items: ${JSON.stringify(runResult.blockingByRepo).slice(0, 2000)}\n` : ''}${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}
+${(runResult?.blockingByRepo || []).length ? `1a. ⛔ BLOCKING ITEMS — this run WORKED these and could not close them (the review loop per code repo, or the cross-repo test-suite gate per suite repo), which is why it did not finish. Give them their own "## Blocking — needs a person" section ABOVE the narrative, one row per item: the repo, the kind, what it says, and the human action named. Do NOT soften them into "minor issues" and do NOT bury them in the per-repo narrative: each one is the reason a repo could not reach ready — or the reason a GREEN suite is still not a pass — and a reader who misses them will think the run merely ran out of rounds. Items: ${JSON.stringify(runResult.blockingByRepo).slice(0, 2000)}\n` : ''}${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}${satisfiedRun.length ? `1c. ✅ ALREADY SATISFIED — ${satisfiedRun.length} acceptance criterion/criteria needed NO code change: they are met by code that shipped before this ticket, and each citation was independently re-opened and confirmed. Give this its own "## Already satisfied — no change needed" section, one row per item: the criterion, the repo, the commit that shipped it and the file:line. Write it as a FINDING, not an apology: an empty diff here is the correct answer, and the repos involved opened no branch and no PR/MR by design — say that explicitly so nobody reads a missing MR as a missing step. Items: ${JSON.stringify(satisfiedRun).slice(0, 2000)}\n` : ''}
 ${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}${budgetStopped ? `2e. 🛑 BUDGET STOP — put this as the FIRST line of the file, as a prominent banner: "${budgetStopped}" Say plainly which phases did NOT run, so nobody reads this summary as a completed cycle.\n` : ''}3. WRITE that narrative with the Write tool TWICE, to two paths at the WORKSPACE (org) ROOT: agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r${RUN_SEQ}.md (this invocation's own record, which NOTHING may overwrite — it is how a later reader reconstructs what each round of a hard ticket actually did, and its absence is why one postmortem had to be rebuilt from a chat log) and agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md (the LATEST pointer every other tool reads) — the workspace (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write BOTH files AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. Under that heading also state, in one line each: this invocation is r${RUN_SEQ} of ${ticket}; it spent ${budget.spent()} OUTPUT tokens against a ceiling of ${TOKEN_BUDGET} (dev_cycle.token_budget counts OUTPUT tokens only — total run tokens have measured roughly 29x that, so do not present the ceiling as a total-token budget); and the per-ticket running total, which you get by adding this invocation's output tokens to the same figure in the newest agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md that already exists (grep it out with \`grep -h 'output tokens this invocation' agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md\`), so a reader can see what the WHOLE ticket has cost across every round rather than just the last one. Write the line as: "<n> output tokens this invocation · <total> across r1..r${RUN_SEQ}". If nothing earlier exists, this invocation IS the total. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 5. ARM THE ORCHESTRATOR GUARD — the run is over, so this session's job from here is to orchestrate, not to implement (docs/adr/0019). Read the session id with \`printf '%s\\n' "$CLAUDE_CODE_SESSION_ID"\`, then with the Write tool REPLACE \`agent_logs/${ticket}-dev-cycle-state/orchestrator-guard.json\` with exactly {"session_id":"<what that printed>","ticket":"${ticket}","armed":true,"run_state":"ended","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. Write it whatever the run's status is. If the env var printed nothing, write "session_id":"" — the guard stays inert rather than arming against an unknown session.
@@ -1211,10 +1251,10 @@ On success it prints \`ok=1\`. Return sent:true ONLY if it exited 0, with the pe
 // C9 — the run's own budget-stop checkpoint. Called at each phase boundary; writes the same
 // summary + returns the same result shape every other terminal path does, so a budget stop is
 // just another handoff — resumable, never a crash.
-const budgetStop = async (nextPhase, payload, deferredScopeRun = []) => {
+const budgetStop = async (nextPhase, payload, deferredScopeRun = [], satisfiedRun = []) => {
   budgetStopped = `Run stopped on its own token budget before the ${nextPhase} phase: ${budget.spent()} > ${TOKEN_BUDGET} OUTPUT tokens (workspace.config.yaml dev_cycle.token_budget — it counts OUTPUT tokens only, and total run tokens have measured roughly 29x that, so this ceiling is far smaller than it looks). Nothing failed — the run ran out of the budget it was given. Re-run \`/dev-cycle ${ticket}\` (run state resumes every milestone already proven) or raise the ceiling with \`--token-budget <n>\`.`
   log(`⛔ BUDGET STOP — ${budgetStopped}`)
-  const summary = await writeSummary('budget-stopped', { ticket, stopped_before: nextPhase, spent: budget.spent(), token_budget: TOKEN_BUDGET, ...payload }, deferredScopeRun)
+  const summary = await writeSummary('budget-stopped', { ticket, stopped_before: nextPhase, spent: budget.spent(), token_budget: TOKEN_BUDGET, ...payload }, deferredScopeRun, satisfiedRun)
   return { ticket, status: 'budget-stopped', stopped_before: nextPhase, spent: budget.spent(), token_budget: TOKEN_BUDGET, budgetStopped, summary, spend, ...payload }
 }
 
@@ -1431,15 +1471,35 @@ async function runRepoPipeline(rp, desc, branchKind) {
   // .gitmodules actually declares the path, and only as far forward as we can justify. This does
   // NOT reintroduce build-order serialization: nothing here waits on another repo — the target is
   // either "already built this run" (doneAt, C2) or "as far merged as the upstream's own base".
-  const pinUpstreams = (rp.depends_on || []).filter((u) => REPOS[u])
-  const pinTargets = pinUpstreams.map((u) => ({
-    repo: u, path: REPOS[u].path,
-    target: doneAt(u, 'built')
-      ? `the tip of ${rowAt(u, 'built')?.work_branch || `${branchKind}/${ticket}`} on origin (run state: already built for this ticket)`
-      : `origin/${REPOS[u].base[branchKind]} (not yet built this run — its merged base is as far as you may go)`,
-  }))
+  // The pins Kickoff actually READ off .gitmodules come first; a bare `depends_on` is still honored
+  // so a repo whose planner did not answer keeps the old, conservative behaviour.
+  const declaredPins = (rp.submodule_pins || []).filter((s) => s?.repo && s?.path && REPOS[s.repo])
+  const pinUpstreams = [...new Set([...declaredPins.map((s) => s.repo), ...(rp.depends_on || []).filter((u) => REPOS[u])])]
+  const pinTargets = pinUpstreams.map((u) => {
+    // Built EARLIER IN THIS RUN: a declared pin puts its upstream in an earlier build wave, and that
+    // upstream's last act was to push. So the target is a commit that EXISTS ON THE REMOTE and is
+    // not merged — which is all a submodule pointer has ever needed, and the difference between
+    // this repo starting now and starting a whole invocation later.
+    const upstream = repoResults[u]
+    const pushedBranch = upstream && upstream.status !== 'already-satisfied' ? upstream.plan?.work_branch : null
+    return {
+      repo: u,
+      path: declaredPins.find((s) => s.repo === u)?.path || REPOS[u].path,
+      target: pushedBranch
+        ? `origin/${pushedBranch} — ${u}'s branch for THIS ticket, built and PUSHED earlier in this run. It is not merged, and does not need to be: fetch it (\`git -C <path> fetch origin\`) and pin to that tip. The workflow re-points this pin at the merged sha as a ship step before anything lands, so an unmerged pin here is correct, not a loose end`
+        : doneAt(u, 'built')
+          ? `the tip of ${rowAt(u, 'built')?.work_branch || `${branchKind}/${ticket}`} on origin (run state: already built for this ticket)`
+          : `origin/${REPOS[u].base[branchKind]} (not built this run — its merged base is as far as you may go)`,
+    }
+  })
+  // The other end of the same edge: if somebody pins THIS repo, its commits have to reach the remote
+  // or the wave ordering bought nothing.
+  const pinnedBy = plans.filter((p) => (p.submodule_pins || []).some((s) => s?.repo === R)).map((p) => p.repo)
+  const pushForPinClause = pinnedBy.length
+    ? ` PUSH BEFORE YOU HAND OFF — ${pinnedBy.join(', ')} vendor${pinnedBy.length === 1 ? 's' : ''} this repo as a git submodule and will pin to whatever commit of yours is on the remote. They are being built AFTER you for exactly that reason, so your last act is \`git -C ${absR} push -u origin ${rp.work_branch}\`. An unpushed commit is invisible to them, and a wave spent waiting on nothing is the round this ordering exists to save.`
+    : ''
   const submodulePinClause = pinTargets.length
-    ? ` SUBMODULE PIN (check before you run the suite): this repo declares ${pinTargets.map((p) => `${p.repo} (path "${p.path}")`).join(', ')} as an upstream for ${ticket}. ⚠️ If your harness builds its schema, migrations or fixtures from a vendored checkout of one of those, a stale pin makes your suite prove nothing. For EACH of them: (1) detect, do not guess — \`git -C ${absR} config -f .gitmodules --get-regexp path\`. If .gitmodules does not declare that path, do NOTHING and say so; that is the normal answer. (2) If it IS declared, bring the pin forward to: ${pinTargets.map((p) => `${p.repo} → ${p.target}`).join('; ')}. Commit the pointer move on its own, every command anchored (a standalone \`cd\` does not carry into your next call): \`git -C ${absR}/<path> fetch origin && git -C ${absR}/<path> checkout <the sha> && git -C ${absR} add <path> && git -C ${absR} commit -m "chore(<path>): bump submodule pin for ${ticket}"\`. (3) NEVER edit files INSIDE the submodule checkout — a guard blocks it, and that repo's primary clone is at the workspace root. If the pin is already at or ahead of the target, leave it and say so.`
+    ? ` SUBMODULE PIN (check before you run the suite): this repo declares ${pinTargets.map((p) => `${p.repo} (path "${p.path}")`).join(', ')} as an upstream for ${ticket}. ⚠️ If your harness builds its schema, migrations or fixtures from a vendored checkout of one of those, a stale pin makes your suite prove nothing. For EACH of them: (1) detect, do not guess — \`git -C ${absR} config -f .gitmodules --get-regexp path\`. If .gitmodules does not declare that path, do NOTHING and say so; that is the normal answer. (2) If it IS declared, bring the pin forward to: ${pinTargets.map((p) => `${p.repo} (at "${p.path}") → ${p.target}`).join('; ')}. Commit the pointer move on its own, every command anchored (a standalone \`cd\` does not carry into your next call): \`git -C ${absR}/<path> fetch origin && git -C ${absR}/<path> checkout <the sha> && git -C ${absR} add <path> && git -C ${absR} commit -m "chore(<path>): bump submodule pin for ${ticket}"\`. (3) NEVER edit files INSIDE the submodule checkout — a guard blocks it, and that repo's primary clone is at the workspace root. If the pin is already at or ahead of the target, leave it and say so.`
     : ''
   const buildPrompt = desc.kind === 'test-suite'
     ? `${tag(R, desc.build, 'build', 0)} Build the test-suite automation for ${ticket} in the ${R} repo from the plan at ${rp.plan_path} (behaviour reference: agent_logs/${ticket}-testcases.md). ${inRepo}
@@ -1448,8 +1508,9 @@ async function runRepoPipeline(rp, desc, branchKind) {
 3. NO SUITE EXECUTION AT BUILD — this phase AUTHORS the automation; it does not run it. Do NOT run \`scripts/dev.sh test\` (scoped or full), do not stand any app repo up, and do not chase a red: the suite runs ONCE, in the Test-suite phase, against the REVIEWED candidate. A run here exercises a half-built candidate and goes red for reasons that are not automation, which is exactly the cost this split removes.
 4. STATIC CHECK instead — run this repo's own static/compile step and get it clean: \`scripts/dev.sh analyze\` (plus \`scripts/dev.sh gen\` when this repo's layout needs a codegen/format pass). A spec that does not compile, an unresolved import, an unused Page Object — those are caught here, cheaply. Never a raw toolchain, never \`npm test\`.
 5. WIRING PROOF before handoff — the specs you added must be REACHABLE by the runner the gate will invoke. Show how you know: the runner config/spec-glob you edited, and the runner's own list/dry-run mode if this repo has one. A spec the runner cannot see makes the gate green while proving nothing. "${desc.green}" is the GATE's bar, not this phase's: it is judged in the Test-suite phase against the reviewed candidate. Your bar here is: specs authored per the plan, static check clean, runner wiring proven.
-6. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of what you authored, commit count, status="complete" when the specs are authored, the static check is clean and the wiring is proven (NO suite was run — that is by design, not an omission) else "partial"/"blocked" with what's left in "remaining", and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. Never withhold the structured result to investigate further.`
-    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} THIS REPO'S BASE IS ${rp.base_branch}, resolved once by this run from its own arguments.${baseIsSettled(rp.base_branch)} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. ${rp.reused ? `BRANCH FIRST — this repo's Kickoff was SKIPPED this invocation (its plan was reused from run state), so nothing has checked out your branch yet: run \`git -C ${absR} fetch origin\` then \`git -C ${absR} switch ${rp.work_branch}\` before anything else, and report the sha \`git -C ${absR} rev-parse HEAD\` prints. If that branch does not exist, create it from the run's base — \`git -C ${absR} switch -c ${rp.work_branch} origin/${rp.base_branch}\` — and say so in your summary.${baseIsSettled(rp.base_branch)} ` : ''}If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /coding-feature (it loads this repo's CLAUDE.md + coding_standards AND the workspace coding-style — storytelling code, NO body comments — "read before your first edit", and its Step 4 drives the build test-first through /tdd's red-green-refactor loop) and /karpathy-guidelines, committing each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.${outOfReachBrief}${submodulePinClause}${durableRecord('dev-status', R, 'ONE line naming the work branch and the PR/MR, then — only if you are handing back a `deferred` criterion — one line per criterion naming it and its owner, because the ticket should record what this run did not deliver and no separate ticket is filed for it. Nothing else: not what you built, not which tests you ran, not a commit list.')}${durableRecord('regression', R, 'the regression scope, as a bullet list: which EXISTING features QA must re-test and one line on why each (shared components/modules, touched shared code, repository/API-contract or migration changes, altered routing or state). You changed the code, so you are the only one who knows this — QA does NOT guess it, and this record is the SOLE source of its regression scope. If genuinely nothing existing is touched, say so in one line with the reason. No prose beyond that.')}`
+6. PUSH — ${pinnedBy.length ? 'REQUIRED: ' : 'not needed here (nobody vendors this repo as a submodule); the PR/MR step pushes for you. '}${pushForPinClause || ''}
+7. RETURN CONTRACT (mandatory) — /handoff, then END by calling StructuredOutput with the DEV_SCHEMA result: work_branch=${rp.work_branch}, a one-line summary of what you authored, commit count, status="complete" when the specs are authored, the static check is clean and the wiring is proven (NO suite was run — that is by design, not an omission) else "partial"/"blocked" with what's left in "remaining", and in "fixed" the spec/Page Object files you touched. Do NOT move the ticket status — the workflow does that. Never withhold the structured result to investigate further.`
+    : `${tag(R, desc.build, 'build', 0)} Implement ${ticket} in the ${R} repo on branch ${rp.work_branch} from the plan at ${rp.plan_path}. ${inRepo} THIS REPO'S BASE IS ${rp.base_branch}, resolved once by this run from its own arguments.${baseIsSettled(rp.base_branch)} Treat this repo's docs/adr/* and CONTEXT.md as AUTHORITATIVE context the plan defers to: read them FIRST, and where the plan text and an ADR disagree, the ADR wins. ${rp.reused ? `BRANCH FIRST — this repo's Kickoff was SKIPPED this invocation (its plan was reused from run state), so nothing has checked out your branch yet: run \`git -C ${absR} fetch origin\` then \`git -C ${absR} switch ${rp.work_branch}\` before anything else, and report the sha \`git -C ${absR} rev-parse HEAD\` prints. If that branch does not exist, create it from the run's base — \`git -C ${absR} switch -c ${rp.work_branch} origin/${rp.base_branch}\` — and say so in your summary.${baseIsSettled(rp.base_branch)} ` : ''}If ${rp.work_branch} ALREADY exists with prior work (an approved re-run over an existing branch), RECONCILE existing code that contradicts the updated ADRs/plan — reshape it to the canonical schema/shape (e.g. a stale snake_case seed → the canonical kebab/Section schema) rather than only appending new code on top of the old shape. Run /coding-feature (it loads this repo's CLAUDE.md + coding_standards AND the workspace coding-style — storytelling code, NO body comments — "read before your first edit", and its Step 4 drives the build test-first through /tdd's red-green-refactor loop) and /karpathy-guidelines, committing each slice conventionally (Refs ${ticket}), keep ${desc.green}. When the Definition of Done is met, /handoff. Do NOT move the ticket status — the workflow owns it.${outOfReachBrief}${submodulePinClause}${pushForPinClause}${durableRecord('dev-status', R, 'ONE line naming the work branch and the PR/MR, then — only if you are handing back a `deferred` criterion — one line per criterion naming it and its owner, because the ticket should record what this run did not deliver and no separate ticket is filed for it. If instead this repo needed NO change (`already-satisfied`), that ONE line says so and there is no branch or PR/MR to name: follow it with one line per criterion giving the commit and file:line that already meets it. Nothing else: not what you built, not which tests you ran, not a commit list.')}${durableRecord('regression', R, 'the regression scope, as a bullet list: which EXISTING features QA must re-test and one line on why each (shared components/modules, touched shared code, repository/API-contract or migration changes, altered routing or state). You changed the code, so you are the only one who knows this — QA does NOT guess it, and this record is the SOLE source of its regression scope. If genuinely nothing existing is touched, say so in one line with the reason. No prose beyond that.')}`
   // RESUME: a 'built' row whose recorded head still matches the live branch means this repo's
   // build already landed on an earlier invocation — skip re-paying for it (docs/adr/0018).
   // C2 + ADR-0025 — a `built` row is proof only while BOTH its inputs still hold: the branch head
@@ -1467,7 +1528,7 @@ async function runRepoPipeline(rp, desc, branchKind) {
     ? { work_branch: builtRow.work_branch || rp.work_branch, summary: `resumed from run state (head ${String(builtRow.head_sha).slice(0, 8)} unchanged)`, status: 'complete', fixed: [] }
     : await safeAgent(
         buildPrompt + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE
-          + stateWrite(R, 'built', `,"plan_sha":"<run 'shasum -a 256 ${rp.plan_path} | cut -c1-16' and put its output here — the fingerprint of the plan you BUILT FROM, so a later re-plan can tell this build is stale>"`) + ` If your handoff status is "deferred", write that RUN-STATE file with "status":"in-progress" instead of "done" — a deferred build is deliberately NOT checkpointed as built, because the deferral itself (deferred[]/met_acceptance[]) does not fit in a state row and must be re-derived by the next invocation.`,
+          + stateWrite(R, 'built', `,"plan_sha":"<run 'shasum -a 256 ${rp.plan_path} | cut -c1-16' and put its output here — the fingerprint of the plan you BUILT FROM, so a later re-plan can tell this build is stale>"`) + ` If your handoff status is "deferred" or "already-satisfied", write that RUN-STATE file with "status":"in-progress" instead of "done" — neither is checkpointed as built, because what makes the claim (deferred[]/met_acceptance[], or satisfied_by[]) does not fit in a state row and must be re-derived and re-audited by the next invocation.`,
         { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
       )
   if (builtRow) log(`[${R}] build SKIPPED — run state says built at ${String(builtRow.head_sha).slice(0, 8)} and the branch has not moved.`)
@@ -1495,6 +1556,59 @@ async function runRepoPipeline(rp, desc, branchKind) {
   //      adjudication, so a run pays for a verifier only on a deferral nobody foresaw;
   //   3. by a verifier — one agent reads the diff, the branch state and the evidence, and downgrades
   //      an unevidenced deferral to `partial`, which stops the repo exactly as before.
+  // ALREADY-SATISFIED — this repo's acceptance criteria are met by code that shipped before this
+  // ticket, so the honest diff is empty and there is nothing here to review or merge.
+  //
+  // The run had no terminal state for this, and the gap cost a whole repo on a measured run. Its
+  // build agent verified, with file:line citations, that every ticket-visible requirement was
+  // already live in generic flag-driven code; it declined to manufacture a no-op commit and said so.
+  // The claim was rejected on ONE mechanical rule — "the branch has zero commits" — applied on top
+  // of evidence the same verifier had just confirmed true. Commit count is a proxy for "was work
+  // done", not for "is the criterion met", and those two diverge in exactly this case. Worse, this
+  // case is the DESIGNED outcome of a registry/flag architecture: a new provider needing no UI
+  // change is the goal, not an edge.
+  //
+  // So the empty branch stops being the test and the CITATIONS become it — but the bar goes UP, not
+  // down, because "it's all already done" is the cheapest sentence an agent can write to avoid work:
+  //   1. structurally — every entry needs a commit, a file:line and the source quoted;
+  //   2. by coverage — the entries must cover EVERY criterion this repo owns, or the uncited ones
+  //      are simply work nobody looked at;
+  //   3. by a verifier that re-opens each citation and greps for the mechanism itself, and whose
+  //      one forbidden move is rejecting on commit count.
+  // Anything short of all three downgrades to `partial`, which stops the repo exactly as before.
+  if (dev.status === 'already-satisfied') {
+    const cited = (dev.satisfied_by || []).filter((s) =>
+      s?.criterion && /^[0-9a-f]{7,40}$/i.test((s.commit || '').trim()) && (s.path_line || '').includes(':') && (s.quote || '').trim().length >= 20)
+    if (!cited.length) {
+      log(`⚠️ [${R}] handoff claimed status=already-satisfied but carried no usable citation — treating it as PARTIAL (the repo stops). Every criterion needs a commit, a file:line and the source quoted.`)
+      dev.status = 'partial'
+      dev.remaining = `${dev.remaining || ''} [workflow: an 'already-satisfied' handoff was downgraded to 'partial' because ${(dev.satisfied_by || []).length ? 'its citations were unusable (a commit sha, a file:line and the quoted source are all required)' : 'it cited nothing'}.]`.trim()
+    } else {
+      const verdict = await safeAgent(
+        `${tag(R, 'general-purpose', 'verify-satisfied')} ADJUDICATE an "already satisfied" claim for ${ticket} in the ${R} repo — read-only, no edits, no commits, no branch, no tracker or PR writes. ${inRepo}
+The build agent reports that this repo needs NO CHANGE for ${ticket}: the behaviour the ticket asks of it shipped under EARLIER work, so the correct diff is empty. Your job is to decide whether that is true of the CODE — and whether it is true of ALL of it.
+THE CITATIONS: ${cited.map((s, i) => `(${i + 1}) criterion "${s.criterion}" — satisfied by commit ${s.commit} at ${s.path_line} — quoted source: ${JSON.stringify(s.quote).slice(0, 400)}`).join(' ')}
+CHECK, in this order, and quote what you find:
+1. EVERY CITATION IS REAL. For each: \`git -C ${absR} show --stat --oneline <commit> | head\` proves the commit exists and is an ancestor of ${rp.base_branch} (\`git -C ${absR} merge-base --is-ancestor <commit> origin/${rp.base_branch}\`), and the file at the cited line CONTAINS the quoted source today. A citation you cannot open, a sha that is not on the base, or a quote that is not there fails the claim.
+2. THE CITED CODE ACTUALLY SATISFIES THE CRITERION. Read around the line, not just at it. Code that merely mentions the right words is not code that meets the criterion — follow it far enough to see the behaviour the criterion describes, and say what you followed.
+3. THE LIST IS COMPLETE. Read the ticket (\`scripts/tracker/get-ticket-details.sh ${ticket}\`) and the plan at ${rp.plan_path}, and list every acceptance criterion assigned to THIS repo. Any criterion with no citation is work nobody has checked — the claim fails. This is the check that separates "the design already covers it" from "I would rather not do this".
+4. NOTHING TICKET-SPECIFIC IS MISSING. The claim rests on existing code being general enough to cover this ticket's new case. Grep this repo for the ticket's own distinguishing identifiers (the new provider/flag/entity name the ticket introduces). If they appear nowhere AND the generic path genuinely covers the case, that supports the claim; if the generic path has a gap the new case falls through, the claim is false and you must name the file where the change belongs.
+⚠️ DO NOT REJECT ON COMMIT COUNT. An empty branch, no new commits and no PR/MR are the EXPECTED shape of a true claim here — that is the whole reason this status exists, and rejecting on it re-creates the bug this check replaced. Judge the citations, the coverage and the code. A dirty working tree IS still a problem: \`git -C ${absR} status --porcelain\` must be clean, because uncommitted work contradicts "nothing was needed".
+Return upheld:true only when all four hold. Otherwise upheld:false naming the criterion that is not in fact satisfied and the file where the work belongs.`,
+        { agentType: 'general-purpose', model: 'sonnet', phase: 'Build', label: `verify-satisfied:${ticket}:${R}`, schema: DEFERRAL_VERDICT_SCHEMA },
+      )
+      if (!verdict || verdict.upheld === false) {
+        const why = !verdict ? 'the verifier did not converge, and an unaudited "nothing to do" is not trusted' : (verdict.reason || 'the verifier rejected the citations')
+        log(`⚠️ [${R}] ALREADY-SATISFIED REJECTED — ${why}. Treating as PARTIAL: the repo stops rather than skipping work it owns.`)
+        dev.status = 'partial'
+        dev.remaining = `${dev.remaining || ''} [workflow: an 'already-satisfied' handoff was downgraded to 'partial' — ${why}.]`.trim()
+      } else {
+        log(`[] ALREADY SATISFIED — verified: ${cited.length} acceptance criterion/criteria are already met by shipped code, so this repo leaves the run with no branch, no PR/MR and nothing to merge.`)
+        return { repo: R, status: 'already-satisfied', plan: rp, satisfied_by: cited, met_acceptance: cited.map((s) => `${s.criterion} (already shipped: ${s.commit} ${s.path_line})`), build: { summary: dev.summary } }
+      }
+    }
+  }
+
   let deferredScope = []
   if (dev.status === 'deferred') {
     const claimed = (dev.deferred || []).filter((d) => d?.criterion && d?.owner && (d?.evidence || '').trim().length > 20)
@@ -1773,6 +1887,12 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     // it cannot open, and the agent falls back to inferring the bar from commit messages. The
     // planner already returned the acceptance criteria, so they travel WITH the prompt: deterministic,
     // one network call fewer, and identical on every round.
+    // A pin at an UNMERGED upstream commit is the intended state of this diff, not an oversight —
+    // it is what let this repo be built at all this round. Say so, or every reviewer raises it, and
+    // the honest fix for it ("wait for the merge") is the round the ordering exists to remove.
+    const pinBar = pinTargets.some((p) => p.target.startsWith('origin/') && p.target.includes('PUSHED earlier in this run'))
+      ? ` SUBMODULE PIN, already decided — this diff moves a submodule pointer to an UPSTREAM BRANCH COMMIT that is not merged yet (${pinTargets.filter((p) => p.target.includes('PUSHED earlier in this run')).map((p) => `${p.path} → ${p.repo}`).join(', ')}). That is deliberate and it is how this repo could be built in the same round as its upstream: a pointer needs a commit on the remote, not a merged one, and the workflow re-points it at the merged sha as a ship step before anything lands. Do NOT raise it as a must-fix and do NOT ask for the merge first. What you MAY check is that the pin points at THIS ticket's upstream branch and not at some unrelated commit.`
+      : ''
     const deferredBar = deferredScope.length
       ? ` DEFERRED, already decided — do NOT raise these as must-fixes and do NOT ask for them in this PR/MR: ${deferredScope.map((d) => `"${d.criterion}" (owned by ${d.owner})`).join(', ')}. They are recorded on the MR and in the run summary. What you MAY do is check the diff does not silently half-implement one; say so if it does.`
       : ''
@@ -1782,7 +1902,7 @@ THE ONE EXCEPTION — a fix-caused regression: if the developer's fix DIRECTLY c
     const onPr = `the OPEN PR/MR ${pr.pr_url} (number ${pr.pr_number ?? '?'}; ${rp.work_branch} → ${rp.base_branch}). ${inRepo} ${scopeNote} Post each must-fix as a comment ON THE PR/MR at the specific file:line via \`scripts/vcs/pr-comment.sh ${pr.pr_number ?? '<number>'} --path <file> --line <n> --body "<comment>"\` — NEVER on the tracker.`
     const firstReviewPrompt = (rv) =>
       rv.key === 'review'
-        ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Review ${onPr}${theBar}${deferredBar} Run /review (standards + spec) against the target — for its "identify the spec source" step, the bar above IS the spec source, already resolved for you. ${greenGate} Return approved:true ONLY when the diff meets the bar, tests_green is true, and every ${STRICT ? 'must-fix' : 'must-fix AND nice-to-have'} comment is resolved; otherwise approved:false with the open comments.${NO_SELF_APPROVE}`
+        ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Review ${onPr}${theBar}${deferredBar}${pinBar} Run /review (standards + spec) against the target — for its "identify the spec source" step, the bar above IS the spec source, already resolved for you. ${greenGate} Return approved:true ONLY when the diff meets the bar, tests_green is true, and every ${STRICT ? 'must-fix' : 'must-fix AND nice-to-have'} comment is resolved; otherwise approved:false with the open comments.${NO_SELF_APPROVE}`
         : rv.key === 'guard'
           ? `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} You are the REPORTER for this repo's configured static-analysis tool on ${ticket} in ${R}, on ${onPr} You do not audit the code yourself and you do not write a security assessment: you run the configured scanner, relay what IT reported, and triage those findings. Every judgement below belongs to the tool; your job is to fetch it, classify it and post it. The workspace's configured quality-gate provider is quality_gate.provider="${QUALITY_GATE}" (mirrored from workspace.config.yaml — do NOT re-read the file). If it is 'none', skip the scan and pass cleanly. Otherwise (SonarQube) run the gate by whichever channel is LIVE in THIS run-context: FIRST try the SonarQube MCP — if the mcp__sonarqube tools are not already in your toolset, load them with ToolSearch (e.g. \`select:mcp__sonarqube__get_project_quality_gate_status,mcp__sonarqube__search_sonar_issues_in_projects,mcp__sonarqube__search_security_hotspots\`) and read the quality-gate status, the issue list and the hotspot list the tool reports for the PR SHA; if the MCP is NOT reachable, FALL BACK to the installed \`sonar\` CLI over Bash (\`sonar analyze\` / \`sonar verify --file <changed-file>\`). GATE-UNAVAILABLE: if NEITHER channel can actually run the scan (no MCP AND no working CLI/auth), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason naming both channels you tried and why each failed, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the configured SonarQube gate could NOT run in this run-context; never fabricate a green status. For each finding the tool marks BLOCKING, post a PR/MR comment carrying the tool's own rule id, file:line and suggested remediation, and list it under "blocking" — quote the tool, do not restate it as your own conclusion. As a light secondary pass, check whether its output happens to touch this repo's declared sensitive areas (${desc.guardianFocus}) and say so if it does; finding nothing there is the normal result, not a gap in your work. Triage every NON-blocking finding into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR fix (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the exact remediation and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have hardening (needs its own design, touches multiple layers, changes a contract/permission model, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. Return passed:false while ANY blocking OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY obtained a green quality-gate result (or the provider is 'none') AND no fold_in item is left unresolved — NEVER passed:true for a scan you could not run (use gate_unavailable for that). Return the structured gate result.`
           : `${tag(R, rv.role, 'review', reviewRound)} ${levelDirective} Performance review of ${ticket} in ${R} on ${onPr} Profile the changed flows with this repo's profiling tooling (e.g. for a Flutter app every profiling command goes through scripts/perf.sh, never raw flutter/dart: perf.sh build --profile, perf.sh run --profile + perf.sh devtools); measure jank, startup, memory, rebuild storms, unbounded lists, costly/unindexed queries; mandatory animations stay 60fps. For each CRITICAL regression post a PR/MR comment WITH the measurement as evidence and list it under "blocking". Triage every NON-blocking optimization into ONE of two tiers — do NOT file a ticket for every finding: (a) MINOR optimization (small, local, low-risk — a few lines, mechanical, no new design/contract/QA scope; e.g. MediaQuery.of(context).size → MediaQuery.sizeOf(context), or an O(n²) lookup → a Set) → post a PR/MR comment at file:line prefixed "[minor / fold-in]" with the measurement/mechanism + exact fix direction and list it under "fold_in"; the developer applies it in THIS PR, NO ticket. (b) MAJOR, nice-to-have optimization (needs its own design, touches multiple layers, changes a query/index/schema, or carries a documented trade-off — AND is genuinely optional for this ticket, not must-have; e.g. a composite (status, createdAt) index) → file ONE Improvement ticket YOURSELF by invoking /clarifying-ticket (Mode A — pass the finding + "source ${ticket}"), and put the REAL <KEY> it returns (with the title) into improvements_filed — NEVER a placeholder like "<PREFIX>-pending". /clarifying-ticket DEDUPS against the board first (scripts/tracker/find-tickets.sh): if the finding (same scope + root cause) is already tracked it returns that EXISTING <KEY> — record that one instead and NEVER file a second ticket for it; also don't re-file findings you already filed earlier in this same run, and never file a ticket for a MINOR fold-in. If a "minor" fold-in turns out non-trivial mid-loop, reclassify it as (b) rather than looping on it. Whoever reports the topic owns the ticket; do not defer it to a human. If the tracker is unreachable, note that in the entry instead of a fake number. Filing tickets and posting fold-ins are both non-blocking for the gate — neither holds up the merge, and an empty improvements_filed is the normal, healthy outcome. GATE-UNAVAILABLE: if your profiling tooling cannot actually run in this run-context (e.g. scripts/perf.sh / the profiler is unavailable so you could measure nothing), you MUST NOT pass — set passed:false AND gate_unavailable:true with unavailable_reason explaining what you tried and why it couldn't run, and post ONE loud PR/MR comment via scripts/vcs/pr-comment.sh that the performance gate could NOT run; never fabricate a clean profile. Return passed:false while ANY blocking regression OR unresolved fold_in item remains (so the developer folds the minor ones into this PR); passed:true ONLY when you ACTUALLY profiled the changed flows AND found zero blocking regressions AND no fold_in item is left unresolved — NEVER passed:true for a profile you could not run (use gate_unavailable for that). Return the structured gate result.`
@@ -2552,9 +2672,18 @@ const plans = (await parallel(scoped.map((r) => () => {
   // the orchestrator holds those grants and can close the gap. Without this, "the local DB was
   // down" reads as a finished answer and an inferred claim ships as a finding.
   const groundingClause = ` GROUNDING (mandatory): every claim in the plan is either MEASURED (you ran the query/EXPLAIN/test and quote the real numbers) or returned in unverified_claims — each with why_blocked and the exact unblock_command that would settle it (e.g. \`aiworks run ${r.repo}\` then an EXPLAIN, or \`scripts/dev.sh test\`). unverified_claims is REQUIRED; [] is a valid answer and means you measured everything you assert. Never present an inferred claim as a finding, and never end at "the service was down" — name the command.${RESOLVED_PLAN_TO_HTML ? ' Since you rendered an interactive HTML, set needs_artifact_publish=true: publishing a shareable Artifact needs the Artifact tool, which you do not have — the caller does it.' : ''} Plan paths, naming, and the never-commit rule: docs/agents/plan-artifacts.md — do not commit, stage, push, or open a PR/MR for anything you wrote.`
+  // SUBMODULE PIN DETECTION. Cheap here (the planner already has the checkout open) and expensive
+  // anywhere else: it decides the BUILD ORDER. A repo whose harness rebuilds its schema or fixtures
+  // from a vendored checkout of another scoped repo can only see commits its pin can reach, so
+  // building it beside that repo instead of after it costs the ticket a whole extra round — the
+  // downstream stalls, and no in-round reordering after the fact can save it.
+  const otherScoped = scoped.map((s) => s.repo).filter((id) => id !== r.repo)
+  const pinDetectClause = otherScoped.length
+    ? ` SUBMODULE PINS (read-only, and REQUIRED in your answer): run \`git -C ${repoRoot || repoDir} config -f .gitmodules --get-regexp path\`. No .gitmodules, or no output, means \`submodule_pins: []\` — the normal answer, and a perfectly good one. For each path it DOES print, decide whether that checkout is one of the other repos this ticket touches (${otherScoped.join(', ')}) by comparing \`git -C ${repoRoot || repoDir}/<path> remote get-url origin\` with that repo's own origin — match on the REMOTE, never on the directory name. Return one entry per match: the repo id, and the path spelled exactly as .gitmodules spells it. Do not add a submodule, do not move a pin, do not commit.`
+    : ''
   const prompt = desc.kind === 'test-suite'
-    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), publish it as this repo's DURABLE QA-PLAN RECORD (below) — the BDD plan ONLY, and do NOT move the ticket status; the workflow owns it — then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). The AUTOMATION plan is NOT published: it stays in agent_logs/ for the runner.${durableRecord('qa-plan', r.repo, 'the BDD plan from agent_logs/' + ticket + '-testcases.md verbatim — the scenarios a human reads to know what will be tested. It REPLACES the previous revision rather than adding a round below it. Then, as the last section, a `_Plan revisions_` list rendered MECHANICALLY from this repo\'s ledger, never re-typed from the old record: append one line first — `printf \'r%s\\t%s\\t%s\\n\' \'' + RUN_SEQ + '\' "$(date -u +%Y-%m-%dT%H:%MZ)" \'<n cases, or what changed this revision>\' >> agent_logs/' + ticket + '-qa-plan-history.tsv` — then render the whole file with `awk -F\'\\t\' \'{printf "- %s · %s · %s\\n", $1, $2, $3}\' agent_logs/' + ticket + '-qa-plan-history.tsv`. Carrying revision history by hand is what made an earlier report contradict its own run three times; the ledger file is the history, and you only ever append one line to it.')} Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${htmlClause}`
-    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO from base ${baseBranch} — THIS RUN says so: pass it to /ticket-kickoff and do NOT let the branch model re-derive it from the branch prefix or origin/HEAD.${baseIsSettled(baseBranch)}${basePresentClause(baseBranch, repoRoot || repoDir)} The workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${htmlClause}`
+    ? `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/) — the test-suite (QA) repo.${anchor}${preserveTest} Run your planning chain: /plan-testcases ${ticket} (user-voice BDD Given/When/Then for this ticket), publish it as this repo's DURABLE QA-PLAN RECORD (below) — the BDD plan ONLY, and do NOT move the ticket status; the workflow owns it — then /plan-automate ${ticket} (map it to this repo's Page Object Model — Page Objects/specs to add or reuse, selectors, automatable vs manual). The AUTOMATION plan is NOT published: it stays in agent_logs/ for the runner.${durableRecord('qa-plan', r.repo, 'the BDD plan from agent_logs/' + ticket + '-testcases.md verbatim — the scenarios a human reads to know what will be tested. It REPLACES the previous revision rather than adding a round below it. Then, as the last section, a `_Plan revisions_` list rendered MECHANICALLY from this repo\'s ledger, never re-typed from the old record: append one line first — `printf \'r%s\\t%s\\t%s\\n\' \'' + RUN_SEQ + '\' "$(date -u +%Y-%m-%dT%H:%MZ)" \'<n cases, or what changed this revision>\' >> agent_logs/' + ticket + '-qa-plan-history.tsv` — then render the whole file with `awk -F\'\\t\' \'{printf "- %s · %s · %s\\n", $1, $2, $3}\' agent_logs/' + ticket + '-qa-plan-history.tsv`. Carrying revision history by hand is what made an earlier report contradict its own run three times; the ledger file is the history, and you only ever append one line to it.')} Do NOT create a git branch — the qa-runner branches at build time. Return the structured repo plan with repo=${r.repo}, type=${scope.type}, base_branch=${baseBranch}, work_branch=${workBranch} (the branch the runner will create), plan_path=${planPath}, and the acceptance/summary for this slice (${slice}).${pinDetectClause}${htmlClause}`
+    : `${tag(r.repo, planner, 'kickoff')} Kickoff ${ticket} for the ${r.repo} repo (cwd ${desc.path}/).${anchor}${preserveCode} Run /ticket-kickoff ${ticket} to fetch + classify the ticket and create the work branch IN THIS REPO from base ${baseBranch} — THIS RUN says so: pass it to /ticket-kickoff and do NOT let the branch model re-derive it from the branch prefix or origin/HEAD.${baseIsSettled(baseBranch)}${basePresentClause(baseBranch, repoRoot || repoDir)} The workflow has already moved the ticket to in_progress, so you don't need to. Comprehend the ticket for this repo's slice (${slice}), verify the design screen if any, and write the implementation plan to ${planPath} (git-ignored). Return the structured repo plan with plan_path=${planPath}.${pinDetectClause}${htmlClause}`
   const plannedExtra = `,"ticket_fp":"${TICKET_FP}","plan_path":"${planPath}","base_branch":"${baseBranch}","plan_sha":"<the plan_sha you return, identical>","title":"<the ticket title, verbatim, JSON-escaped>","acceptance":["<one acceptance criterion for THIS repo's slice per element, JSON-escaped>"]`
   return agent(prompt + groundingClause + PONYTAIL_DIRECTIVE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + codegraphClause(desc.path) + stateWrite(r.repo, 'planned', plannedExtra)
     + ` Those four extra fields are what lets the NEXT invocation reuse this plan instead of paying for it again: ticket_fp and plan_path exactly as given above, and title/acceptance identical to what you return in your structured result (a reviewer later judges the diff against that acceptance list and has no other source for it). Write valid JSON — escape any quote or backslash inside a criterion, and if you have no acceptance criteria for this slice write \`"acceptance":[]\`. ALSO return plan_sha in your structured result and write the SAME value into the row: run \`shasum -a 256 ${planPath} | cut -c1-16\` after the plan file is final. It is what tells the Build phase whether an existing build was made from THIS plan or from one you have just superseded — a re-plan that leaves it stale is how a corrected plan gets written and then never built.`,
@@ -2676,9 +2805,54 @@ if (overBudget()) return await budgetStop('Build', { ticket, repos: plans.map((p
 phase('Build')
 const repoResults = {}
 const buildIds = waveList.flat() // every scoped repo, in dependency (merge) order
-const buildRes = await parallel(buildIds.map((id) => () => runRepoPipeline(plans.find((p) => p.repo === id), REPOS[id], branchKind)))
-buildRes.forEach((r, i) => { if (r) repoResults[buildIds[i]] = r })
-const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
+// FULL PARALLELISM IS THE DEFAULT, and stays the default: a build needs the agreed contract, not a
+// merged upstream, so `depends_on` alone never serializes anything.
+//
+// A SUBMODULE PIN is the one exception, and it is not a preference — it is arithmetic. A repo whose
+// harness rebuilds its schema or fixtures from a vendored checkout can only see commits its pin can
+// reach. Build it beside its upstream and the upstream's commits do not exist yet, so the pin can
+// only point at the merged base, so the downstream cannot write a single test against the change it
+// is supposed to prove. That is a guaranteed extra round, and no reordering AFTER the fact recovers
+// it: a measured run built the upstream first, approved its MR, and the downstream still could not
+// start, because "built" was not what the pin needed — a PUSHED COMMIT was.
+//
+// Which is the whole fix. A submodule pointer needs a commit that exists on the remote; it does not
+// need a merge. So the upstream builds and pushes in an earlier wave, the downstream pins to that
+// branch tip, and the ticket's merge boundary is untouched — the run still merges nothing, and the
+// existing `submodule-bump` ship step already re-points the pin at the merged sha before the
+// downstream lands, which is what keeps a squashed-and-deleted branch from stranding the pointer.
+const pinEdges = plans.flatMap((p) => (p.submodule_pins || [])
+  .filter((s) => s?.repo && s?.path && REPOS[s.repo] && buildIds.includes(s.repo) && s.repo !== p.repo)
+  .map((s) => ({ downstream: p.repo, upstream: s.repo, path: s.path })))
+const buildWaves = pinEdges.length ? waveList : [buildIds]
+if (pinEdges.length) {
+  log(`🔗 SUBMODULE PIN — ${pinEdges.map((e) => `${e.downstream} vendors ${e.upstream} at ${e.path}`).join('; ')}. Building in ${buildWaves.length} wave(s) (${buildWaves.map((w) => w.join('+')).join(' → ')}) so each pinned upstream has PUSHED before the repo that vendors it starts; the downstream pins to that branch tip, unmerged, which is all a submodule pointer needs.`)
+}
+const repoOf = (id) => runRepoPipeline(plans.find((p) => p.repo === id), REPOS[id], branchKind)
+for (const wave of buildWaves) {
+  const res = await parallel(wave.map((id) => () => repoOf(id)))
+  res.forEach((r, i) => { if (r) repoResults[wave[i]] = r })
+}
+// A repo whose acceptance criteria were ALREADY satisfied by shipped code is FINISHED, not stalled:
+// it has no branch, no PR/MR and nothing to merge. It leaves the run's live set right here, so no
+// downstream phase — the approval tick, the gate's candidate list, the merge order, the per-repo
+// narrative — has to learn a status meaning "not applicable". One filter instead of a new case in
+// each of them.
+const satisfiedIds = buildIds.filter((id) => repoResults[id]?.status === 'already-satisfied')
+const satisfiedRows = satisfiedIds.flatMap((id) => (repoResults[id].satisfied_by || []).map((s) => ({ repo: id, ...s })))
+if (satisfiedIds.length) {
+  log(`✅ ALREADY SATISFIED — ${satisfiedIds.join(', ')} need no change for ${ticket}: ${satisfiedRows.length} criterion/criteria are met by code that shipped earlier, verified citation by citation. No branch, no PR/MR, nothing to merge — they leave the run here.`)
+}
+const liveIds = buildIds.filter((id) => !satisfiedIds.includes(id))
+// EVERY scoped repo already satisfied is a real, clean ending — the ticket is done and was done
+// before the run started. It is NOT `nothing-delivered` (docs/adr/0011), which is the opposite
+// finding: that one means nobody met anything. Saying so plainly is the point, because the answer a
+// person needs here is "close the ticket", not "re-scope it".
+if (!liveIds.length) {
+  const summary = await writeSummary('already-satisfied', { ticket, satisfied: satisfiedRows, repos: buildIds, repoResults, testSuiteRequested, testSuiteGateUnavailable }, [], satisfiedRows)
+  return { ticket, status: 'already-satisfied', satisfied: satisfiedRows, decision_needed: `${ticket} required no code change: every acceptance criterion in every scoped repo (${buildIds.join(', ')}) is already met by shipped code, each verified against its commit and file:line. Nothing was branched, opened or merged. Close the ticket, or say what the citations miss.`, repoResults, summary, spend }
+}
+const aborted = liveIds.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
 // ADR-0029 — a repo short of `ready` used to end the run BEFORE the cross-repo gate, so a run with
 // two ready repos and one carrying a recorded blocking item never learned whether the change set
 // breaks the suite. That answer arrived a whole invocation later, which is the round-trip ADR-0027
@@ -2754,7 +2928,7 @@ if (aborted.length) {
   // request here. The Summary written below is what a human needs to pick this back up.
   abortPayload = { runStatus, aborted, handoffs, blockingByRepo, targetHalts, blocked }
   if (!advisoryGate) {
-    const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+    const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable }, [], satisfiedRows)
     return { ticket, status: runStatus, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
   }
   log(`▶️ ADVISORY GATE — ${aborted.join(', ')} did not reach 'ready', but every one of them is 'review-unresolved': built, PR/MR open, reviewed, fixed to budget. So the cross-repo gate RUNS against this candidate rather than deferring the answer to the next invocation — it will triage and fix what it can. It cannot advance the run: this invocation still ends '${runStatus}', nothing is approved and nothing merges.`)
@@ -2765,7 +2939,7 @@ if (aborted.length) {
 // carries a recorded blocking item, so everything below runs up to and including the gate and then
 // stops at `abortPayload`'s ending. Nothing past the gate is reachable in that mode.
 // Repo order (upstream → downstream) for the test-suite, distribute, and final merge phases.
-const mergeOrder = waveList.flat()
+const mergeOrder = waveList.flat().filter((id) => !satisfiedIds.includes(id))
 // Did any repo's guardian/perf gate fail to RUN (gate_unavailable)? Fail-open: we still
 // proceed, but record it loudly so the run is never described as quality-gate-validated.
 const gateUnavailRows = mergeOrder.flatMap((id) =>
@@ -2777,14 +2951,14 @@ if (gateUnavailRows.length) {
 // DEFERRED SCOPE, run-wide. Collected here so the gate, the merge handoff and the summary all read
 // one list rather than each walking repoResults.
 const runDeferred = mergeOrder.flatMap((id) => (repoResults[id]?.deferred || []).map((d) => ({ repo: id, ...d })))
-const runMet = mergeOrder.flatMap((id) => repoResults[id]?.met_acceptance || [])
+const runMet = [...mergeOrder.flatMap((id) => repoResults[id]?.met_acceptance || []), ...satisfiedRows.map((s) => s.criterion)]
 if (runDeferred.length) log(`⚠️  DEFERRED SCOPE — ${runDeferred.length} acceptance criterion/criteria are NOT met by this change set, owned elsewhere: ${runDeferred.map((d) => `${d.repo}: ${d.owner}`).join(' | ')}. The run continues; the deferral rides the MR, the ticket and the summary.`)
 // THE FLOOR (docs/adr/0011): every repo deferred and not one acceptance criterion met means the
 // change set delivers nothing the ticket asked for. Reviewed, green and pointless is still pointless
 // — stop and let a human re-scope rather than hand over a merge command for it.
 if (runDeferred.length && !runMet.length) {
   log(`⛔ NOTHING DELIVERED — every scoped repo deferred its criteria and none reported one met for ${ticket}. NOT advancing the ticket, NOT running the gate, NOTHING merged; PR/MR left OPEN for human decision.`)
-  const summary = await writeSummary('nothing-delivered', { ticket, deferred: runDeferred, repos: mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable, ...abortFields() }, runDeferred)
+  const summary = await writeSummary('nothing-delivered', { ticket, deferred: runDeferred, repos: mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable, ...abortFields() }, runDeferred, satisfiedRows)
   return { ticket, status: 'nothing-delivered', deferred: runDeferred, decision_needed: `${ticket}'s change set meets none of its acceptance criteria — every one is owned elsewhere (${[...new Set(runDeferred.map((d) => d.owner))].join(', ')}). The branches and their PR/MR are open and reviewed; decide whether to re-scope the ticket, route it to those owners, or merge the groundwork deliberately.`, repoResults, ...abortFields(), summary, spend }
 }
 // THE APPROVAL TICK — orchestrator-owned, and the review phase's last act.
@@ -2857,7 +3031,7 @@ else await moveTicket(['ready_to_merge', 'ready_to_test'], runDeferred.length ? 
 // run BEFORE the final merge so we validate the candidate, not after committing it. Runs
 // when a test-suite gate is needed, a test-suite repo is in scope, and at least one
 // non-test-suite (app/service) repo is present for the suite to run against.
-if (overBudget()) return await budgetStop('Test suite', { ticket, mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable, ...abortFields() }, runDeferred)
+if (overBudget()) return await budgetStop('Test suite', { ticket, mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable, ...abortFields() }, runDeferred, satisfiedRows)
 const testSuiteRepos = mergeOrder.filter((id) => REPOS[id].testSuite)
 let testSuite = null
 // RESUME, per suite (C5): the gate never fails open (docs/agents/loadtest-gate.md), so a skip is
@@ -3347,7 +3521,7 @@ if (scope.test_suite?.needed && testSuiteRepos.length && mergeOrder.some((id) =>
       abortPayload.suiteBlocking = blockingByRepo
       abortPayload.suiteWhy = why
     } else {
-      const summary = await writeSummary(runStatus, { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why }, runDeferred)
+      const summary = await writeSummary(runStatus, { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why }, runDeferred, satisfiedRows)
       return { ticket, status: runStatus, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why, summary, spend }
     }
   }
@@ -3383,7 +3557,7 @@ if (abortPayload) {
     ? `the cross-repo test-suite gate RAN against this candidate (advisory — it approved nothing and moved nothing): ${testSuite.passed ? 'it passed, so the change set does not break the suite as it stands' : abortPayload.suiteWhy || 'it did not pass'}`
     : `the cross-repo test-suite gate did not run (not in this ticket's scope, or no suite repo reached the build set)`
   log(`⚠️ ADVISORY RUN ENDS '${abortPayload.runStatus}' — ${advisoryNote}. ${merged.reduce((n, b) => n + b.items.length, 0)} blocking item(s) carried forward.`)
-  const summary = await writeSummary(abortPayload.runStatus, { ticket, ...abortPayload, blockingByRepo: merged, advisory_gate: advisoryNote, repoResults, testSuite, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
+  const summary = await writeSummary(abortPayload.runStatus, { ticket, ...abortPayload, blockingByRepo: merged, advisory_gate: advisoryNote, repoResults, testSuite, testSuiteRequested, testSuiteGateUnavailable }, runDeferred, satisfiedRows)
   return { ticket, status: abortPayload.runStatus, ...abortPayload, blockingByRepo: merged, advisory_gate: advisoryNote, repoResults, testSuite, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
@@ -3391,7 +3565,7 @@ if (abortPayload) {
 // outward/irreversible steps (Merge, then Distribute): no squash-merge, no distribution.
 if (dryRun) {
   log(`🧪 DRY RUN — all repos 'ready'${testSuite ? ` + test-suite ${testSuite.passed ? 'PASS' : 'n/a'}` : ''}; stopping before Merge + Distribute (no merge, no distribution). Per-repo: ${mergeOrder.map((id) => `${id}=${repoResults[id]?.status}`).join(', ')}.`)
-  const summary = await writeSummary('dry-run', { ticket, repos: mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
+  const summary = await writeSummary('dry-run', { ticket, repos: mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable }, runDeferred, satisfiedRows)
   return { ticket, status: 'dry-run', dryRun: true, repoResults, testSuite, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
@@ -3401,7 +3575,7 @@ if (dryRun) {
 // when a repo opts OUT, its reviewed + validated PR/MR is left OPEN for a human and the run stops
 // here — NOTHING is merged or distributed (review + the test-suite gate still ran, so the human
 // merges a fully-validated candidate). Exactly like a dry-run, but with real, reviewed PRs.
-if (overBudget()) return await budgetStop('Merge', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
+if (overBudget()) return await budgetStop('Merge', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable }, runDeferred, satisfiedRows)
 phase('Merge')
 // The `!` hand-off (auto-merge ON). The squash-merge — and everything downstream (distribute,
 // close) — is outward + irreversible. Under auto-mode the permission classifier clears these ONLY
@@ -3416,7 +3590,7 @@ for (const id of mergeOrder) {
   if ((desc.autoMerge ?? AUTO_MERGE) === false) {
     merges[id] = { merged: false, base: rp.base_branch, note: 'auto-merge disabled — PR/MR left open for a human', pr: rr.pr?.pr_url }
     log(`⏸️ [${id}] auto-merge disabled — reviewed + validated PR/MR left OPEN for human merge: ${rr.pr?.pr_url ?? '(see run)'}. Nothing merged or distributed this run.`)
-    const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable, merges }, runDeferred)
+    const summary = await writeSummary('merge-skipped', { ticket, mergeOrder, repoResults, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable, merges }, runDeferred, satisfiedRows)
     // NOTIFY (final phase) — auto-merge is off, so the validated PR/MR are awaiting a human:
     // ping the configured chat channel to review them. No-op unless notify.enabled.
     const notify = await notifyReview(mergeOrder)
@@ -3481,7 +3655,7 @@ for (const id of mergeOrder) {
 const nMerge = shipSteps.filter((s) => s.kind === 'merge').length
 const nDist = shipSteps.filter((s) => s.kind === 'distribute').length
 log(`⏭️  ${ticket}: review + test-suite validated; ${nMerge} merge + ${nDist} distribute step(s) handed off as \`!\` commands (only a human clears the auto-mode ship guard). After you run them, the main session closes ${ticket} → ${STATUS.done}.`)
-const summary = await writeSummary('awaiting-human-ship', { ticket, mergeOrder, repoResults, merges, shipSteps, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
+const summary = await writeSummary('awaiting-human-ship', { ticket, mergeOrder, repoResults, merges, shipSteps, testSuite: testSuite ? { passed: testSuite.passed } : null, testSuiteRequested, testSuiteGateUnavailable }, runDeferred, satisfiedRows)
 
 return {
   ticket, status: 'awaiting-human-ship',

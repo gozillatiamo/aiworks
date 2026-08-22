@@ -1399,6 +1399,119 @@ const BASE = {
         report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
         report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
       }
+    } else if (SCENARIO === 'G36' || SCENARIO === 'G37') {
+      // SUBMODULE PIN ORDERING. G36: `svc` vendors `db` at "vendor/db", so db must build (and push)
+      // in an EARLIER wave, and svc's pin target must be db's pushed BRANCH, not db's merged base —
+      // the difference between svc doing its work this round and stalling until the next one.
+      // G37: the same two repos with NO pin declared keep today's single fully-parallel wave, so the
+      // ordering costs nothing on the tickets that do not need it.
+      const pinned = SCENARIO === 'G36'
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': { ...REPO_PLAN('svc', 'develop'), ...(pinned ? { submodule_pins: [{ repo: 'db', path: 'vendor/db' }] } : {}) },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'migration', status: 'complete', fixed: [] },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      const svcBuild = PROMPTS['build:FM-12:svc'] || ''
+      const dbBuild = PROMPTS['build:FM-12:db'] || ''
+      if (pinned) {
+        // The upstream's whole build must be finished before the downstream's is even spawned —
+        // "started first" is not enough, the commit has to be on the remote.
+        report('G36_upstream_builds_before_downstream', SPAWNED.indexOf('build:FM-12:db') < SPAWNED.indexOf('build:FM-12:svc'))
+        report('G36_upstream_told_to_push', /PUSH BEFORE YOU HAND OFF/.test(dbBuild) && dbBuild.includes('push -u origin feature/FM-12'))
+        report('G36_pin_targets_the_pushed_branch', svcBuild.includes('origin/feature/FM-12') && svcBuild.includes('PUSHED earlier in this run'))
+        report('G36_pin_not_capped_at_the_merged_base', !/db → origin\/develop \(not built this run/.test(svcBuild))
+        report('G36_pin_names_the_real_submodule_path', svcBuild.includes('db (at "vendor/db")'))
+        report('G36_downstream_not_told_to_push_for_a_pin', !/PUSH BEFORE YOU HAND OFF/.test(svcBuild))
+        report('G36_reviewer_told_the_unmerged_pin_is_intended', /SUBMODULE PIN, already decided/.test(PROMPTS['review:FM-12:svc#1'] || ''))
+      } else {
+        report('G37_no_pin_no_push_obligation', !/PUSH BEFORE YOU HAND OFF/.test(dbBuild))
+        report('G37_pin_stays_capped_at_the_merged_base', /db.*→ origin\/develop \(not built this run/.test(svcBuild))
+        report('G37_reviewer_gets_no_pin_note', !/SUBMODULE PIN, already decided/.test(PROMPTS['review:FM-12:svc#1'] || ''))
+      }
+    } else if (SCENARIO === 'G32' || SCENARIO === 'G33') {
+      // ALREADY-SATISFIED — a repo whose criteria are met by code that shipped before this ticket.
+      // G32: the verifier upholds it, so `db` leaves the run with no branch, no PR/MR and nothing to
+      // merge, while `svc` proceeds normally — the run must NOT stop, and must NOT try to open a PR
+      // or review the repo that has no diff. G33: the same handoff, refused by the verifier, must
+      // land back on the old road — 'partial', which stops the repo.
+      const CITED = [
+        { criterion: 'A1: the warning renders for a flagged provider', commit: 'a1b2c3d', path_line: 'db/src/warn.ts:42', quote: 'if (provider.timeout_ban_warning) return <Warning/>  // generic, flag-driven' },
+      ]
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: CITED },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'verify-satisfied:FM-12:db': { upheld: SCENARIO === 'G32', reason: SCENARIO === 'G32' ? 'all four checks hold' : 'A2 is uncited and the generic path does not cover it — db/src/route.ts', checked: ['git show a1b2c3d'] },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      if (SCENARIO === 'G32') {
+        report('G32_verifier_adjudicated_the_claim', SPAWNED.includes('verify-satisfied:FM-12:db'))
+        report('G32_no_pr_opened_for_the_satisfied_repo', !SPAWNED.includes('open-pr:FM-12:db'))
+        report('G32_no_review_for_the_satisfied_repo', !SPAWNED.some((l) => l.startsWith('review:FM-12:db')))
+        report('G32_run_does_not_stop', !!result && result.status !== 'repo-unresolved' && result.status !== 'nothing-delivered')
+        report('G32_other_repo_proceeds', SPAWNED.includes('open-pr:FM-12:svc'))
+        // The verifier is told the one thing that broke this before: an empty branch is the
+        // EXPECTED shape here, so commit count must not be the test.
+        report('G32_brief_forbids_the_commit_count_test', /DO NOT REJECT ON COMMIT COUNT/.test(PROMPTS['verify-satisfied:FM-12:db'] || ''))
+        report('G32_brief_demands_full_coverage', /THE LIST IS COMPLETE/.test(PROMPTS['verify-satisfied:FM-12:db'] || ''))
+      } else {
+        report('G33_rejected_claim_stops_the_repo', !!result && result.status === 'repo-unresolved')
+        report('G33_still_no_pr_for_it', !SPAWNED.includes('open-pr:FM-12:db'))
+        report('G33_reason_reaches_the_handoff', JSON.stringify(result?.handoffs || result || '').includes('downgraded to'))
+      }
+    } else if (SCENARIO === 'G34' || SCENARIO === 'G35') {
+      // G34 — EVERY scoped repo already satisfied. That is a clean ending of its own: the ticket was
+      // done before the run started. It must NOT be reported as `nothing-delivered` (ADR 0011),
+      // which is the opposite finding, and it must not fall through to a merge phase with no repos.
+      // G35 — the structural bar, before any agent is paid for: a claim with no usable citation is
+      // refused outright, and the verifier is never spawned.
+      const GOOD = [{ criterion: 'A1', commit: 'a1b2c3d', path_line: 'db/src/warn.ts:42', quote: 'if (provider.timeout_ban_warning) return <Warning/>' }]
+      const JUNK = [{ criterion: 'A1', commit: 'the last release', path_line: 'somewhere in the UI', quote: 'it works' }]
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: SCENARIO === 'G34' ? GOOD : JUNK },
+        'verify-satisfied:FM-12:db': { upheld: true, reason: 'holds', checked: [] },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      if (SCENARIO === 'G34') {
+        report('G34_its_own_ending', !!result && result.status === 'already-satisfied')
+        report('G34_not_reported_as_nothing_delivered', !!result && result.status !== 'nothing-delivered')
+        report('G34_carries_the_citations_out', JSON.stringify(result?.satisfied || []).includes('a1b2c3d'))
+        report('G34_names_the_decision', /Close the ticket/.test(result?.decision_needed || ''))
+        report('G34_nothing_merged_or_opened', !SPAWNED.some((l) => l.startsWith('open-pr:') || l.startsWith('approve:')))
+      } else {
+        report('G35_unusable_citation_costs_no_verifier', !SPAWNED.includes('verify-satisfied:FM-12:db'))
+        report('G35_repo_stops', !!result && result.status === 'repo-unresolved')
+      }
     } else if (SCENARIO === 'G31') {
       // ADR-0029 — the SIBLINGS of the near-miss. Removing the abort `return` promoted every return
       // below it into a new reachable state, and those were written when "a repo was not ready"
@@ -1655,6 +1768,24 @@ out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G30)"; [[ "$VERBOSE" -eq 1 ]] && pri
 
 echo "── G31 — a return newly reachable past the abort point still carries the records out"
 out="$(FIXTURE_TS_MAX_REPAIR=1 FIXTURE_TOKEN_BUDGET=1000000 run_scenario G31)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G36 — a submodule-pinned upstream builds and pushes first; the downstream pins to that tip"
+out="$(run_scenario G36)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G37 — and with no pin declared, the build stays one fully-parallel wave"
+out="$(run_scenario G37)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G32 — a verified already-satisfied repo leaves the run; the rest of the change set proceeds"
+out="$(run_scenario G32)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G33 — and a refused claim lands back on 'partial', which stops the repo"
+out="$(run_scenario G33)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G34 — every repo already satisfied is its own ending, not 'nothing delivered'"
+out="$(run_scenario G34)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G35 — an unusable citation is refused before a verifier is ever paid for"
+out="$(run_scenario G35)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
 out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

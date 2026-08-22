@@ -43,6 +43,7 @@ vcs/
 ├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
 ├── retarget-pr.sh     find-prs.sh  list-prs.sh  close-pr.sh
 ├── approve-selftest.sh       # offline regression for the approval read + write (stubbed CLI)
+├── repo-target-selftest.sh   # offline regression: every native glab/gh subcommand names its repo
 ├── target-branch-selftest.sh # offline regression for reading + changing a target branch
 └── .env.example       # optional VCS_PROVIDER override
 ```
