@@ -1480,8 +1480,15 @@ async function runRepoPipeline(rp, desc, branchKind) {
     // upstream's last act was to push. So the target is a commit that EXISTS ON THE REMOTE and is
     // not merged — which is all a submodule pointer has ever needed, and the difference between
     // this repo starting now and starting a whole invocation later.
+    // An earlier wave having RUN is not the same as it having pushed anything. A `build-unresolved`
+    // upstream handed back no complete state, so its branch may hold nothing or may never have
+    // reached the remote; an `already-satisfied` one has no branch at all. Pinning to either would
+    // aim the pointer at a commit that does not exist — worse than the conservative target, because
+    // it fails deep inside the downstream's harness instead of here. Both fall back to the merged
+    // base, which is exactly what this repo would have got before any of this.
     const upstream = repoResults[u]
-    const pushedBranch = upstream && upstream.status !== 'already-satisfied' ? upstream.plan?.work_branch : null
+    const upstreamPushed = upstream && upstream.status !== 'build-unresolved' && upstream.status !== 'already-satisfied'
+    const pushedBranch = upstreamPushed ? upstream.plan?.work_branch : null
     return {
       repo: u,
       path: declaredPins.find((s) => s.repo === u)?.path || REPOS[u].path,

@@ -1399,6 +1399,30 @@ const BASE = {
         report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
         report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
       }
+    } else if (SCENARIO === 'G38') {
+      // The wave ran is NOT the same as the wave pushed. A `build-unresolved` upstream handed back
+      // no complete state, so its branch may hold nothing and may never have reached the remote —
+      // pinning to it aims the pointer at a commit that does not exist, and fails deep inside the
+      // downstream's harness instead of here. It must fall back to the merged base.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': { ...REPO_PLAN('svc', 'develop'), submodule_pins: [{ repo: 'db', path: 'vendor/db' }] },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'stuck', status: 'blocked', remaining: 'liquibase would not run' },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      const svcBuild = PROMPTS['build:FM-12:svc'] || ''
+      report('G38_downstream_still_builds', SPAWNED.includes('build:FM-12:svc'))
+      report('G38_does_not_pin_to_an_unpushed_branch', !svcBuild.includes('PUSHED earlier in this run'))
+      report('G38_falls_back_to_the_merged_base', /db.*→ origin\/develop \(not built this run/.test(svcBuild))
     } else if (SCENARIO === 'G36' || SCENARIO === 'G37') {
       // SUBMODULE PIN ORDERING. G36: `svc` vendors `db` at "vendor/db", so db must build (and push)
       // in an EARLIER wave, and svc's pin target must be db's pushed BRANCH, not db's merged base —
@@ -1768,6 +1792,9 @@ out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G30)"; [[ "$VERBOSE" -eq 1 ]] && pri
 
 echo "── G31 — a return newly reachable past the abort point still carries the records out"
 out="$(FIXTURE_TS_MAX_REPAIR=1 FIXTURE_TOKEN_BUDGET=1000000 run_scenario G31)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G38 — a wave that RAN is not a wave that pushed: an unresolved upstream keeps the safe pin"
+out="$(run_scenario G38)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G36 — a submodule-pinned upstream builds and pushes first; the downstream pins to that tip"
 out="$(run_scenario G36)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
