@@ -282,7 +282,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-22.4'
+const DEVCYCLE_VERSION = '2026-08-22.5'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -2699,6 +2699,15 @@ const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].stat
 // the repos that were not ready.
 const advisoryGate = aborted.length > 0 && aborted.every((id) => repoResults[id]?.status === 'review-unresolved')
 let abortPayload = null
+// EVERY return between the abort point and the advisory ending has to carry these. Removing an early
+// `return` promotes whatever sits below it into a new reachable state, and the returns down there
+// were written when "a repo was not ready" could not be true — so each one would otherwise end the
+// run having dropped the recorded blocking items, and dropping them means no `blocked` rows, which
+// re-opens the cross-invocation fail-open ADR-0027 §Across invocations closed. `runStatus` is
+// deliberately NOT spread: those endings keep their own, more specific status.
+const abortFields = () => abortPayload
+  ? { aborted: abortPayload.aborted, handoffs: abortPayload.handoffs, blockingByRepo: abortPayload.blockingByRepo, targetHalts: abortPayload.targetHalts, blocked: abortPayload.blocked }
+  : {}
 if (aborted.length) {
   // Surface each unresolved repo's partial/blocked HANDOFF (status + what remains) instead of a
   // bare "aborted" — the run stops at the merge gate (the whole change set must be ready before any
@@ -2775,8 +2784,8 @@ if (runDeferred.length) log(`⚠️  DEFERRED SCOPE — ${runDeferred.length} ac
 // — stop and let a human re-scope rather than hand over a merge command for it.
 if (runDeferred.length && !runMet.length) {
   log(`⛔ NOTHING DELIVERED — every scoped repo deferred its criteria and none reported one met for ${ticket}. NOT advancing the ticket, NOT running the gate, NOTHING merged; PR/MR left OPEN for human decision.`)
-  const summary = await writeSummary('nothing-delivered', { ticket, deferred: runDeferred, repos: mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
-  return { ticket, status: 'nothing-delivered', deferred: runDeferred, decision_needed: `${ticket}'s change set meets none of its acceptance criteria — every one is owned elsewhere (${[...new Set(runDeferred.map((d) => d.owner))].join(', ')}). The branches and their PR/MR are open and reviewed; decide whether to re-scope the ticket, route it to those owners, or merge the groundwork deliberately.`, repoResults, summary, spend }
+  const summary = await writeSummary('nothing-delivered', { ticket, deferred: runDeferred, repos: mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable, ...abortFields() }, runDeferred)
+  return { ticket, status: 'nothing-delivered', deferred: runDeferred, decision_needed: `${ticket}'s change set meets none of its acceptance criteria — every one is owned elsewhere (${[...new Set(runDeferred.map((d) => d.owner))].join(', ')}). The branches and their PR/MR are open and reviewed; decide whether to re-scope the ticket, route it to those owners, or merge the groundwork deliberately.`, repoResults, ...abortFields(), summary, spend }
 }
 // THE APPROVAL TICK — orchestrator-owned, and the review phase's last act.
 //
@@ -2848,7 +2857,7 @@ else await moveTicket(['ready_to_merge', 'ready_to_test'], runDeferred.length ? 
 // run BEFORE the final merge so we validate the candidate, not after committing it. Runs
 // when a test-suite gate is needed, a test-suite repo is in scope, and at least one
 // non-test-suite (app/service) repo is present for the suite to run against.
-if (overBudget()) return await budgetStop('Test suite', { ticket, mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
+if (overBudget()) return await budgetStop('Test suite', { ticket, mergeOrder, repoResults, testSuiteRequested, testSuiteGateUnavailable, ...abortFields() }, runDeferred)
 const testSuiteRepos = mergeOrder.filter((id) => REPOS[id].testSuite)
 let testSuite = null
 // RESUME, per suite (C5): the gate never fails open (docs/agents/loadtest-gate.md), so a skip is

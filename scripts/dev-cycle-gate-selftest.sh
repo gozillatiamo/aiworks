@@ -1399,6 +1399,46 @@ const BASE = {
         report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
         report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
       }
+    } else if (SCENARIO === 'G31') {
+      // ADR-0029 — the SIBLINGS of the near-miss. Removing the abort `return` promoted every return
+      // below it into a new reachable state, and those were written when "a repo was not ready"
+      // could not be true — so each would end the run having DROPPED the recorded blocking items.
+      // Dropped items means no `blocked` rows, which re-opens the cross-invocation fail-open
+      // ADR-0027 §Across invocations closed. This drives the budget-stop one (both it and
+      // `nothing-delivered` thread the same `abortFields()`); the assertion that matters is that the
+      // rows still get written on the way out.
+      const SUITE_DOWN = { approved: false, tests_green: false, gate_unavailable: true, unavailable_reason: 'docker daemon unreachable', comments: [], conclusion: 'suite did not run' }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/11', pr_number: 11 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/13', pr_number: 13 },
+        'summary:FM-12': { summary_path: '/tmp/x.md', token_table_appended: true, note: 'ok' },
+        'dm:FM-12:budget-stopped': { sent: true },
+      }
+      for (let n = 1; n <= 4; n++) {
+        canned[`review:FM-12:app#${n}`] = SUITE_DOWN
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'tried', status: 'complete', fixed: ['app/x'], commits: 1 }
+      }
+      // Spend jumps once phase('Build') has fired ⇒ the Test-suite boundary is the first check to
+      // trip, which is exactly the newly reachable return.
+      const result = await runOnce(ARGS, canned, { spendJumpAfterPhase: 'Build' })
+      const sp = PROMPTS['summary:FM-12'] || ''
+      report('G31_stops_on_the_budget_not_the_repo', !!result && result.status === 'budget-stopped' && result.stopped_before === 'Test suite', `got=${result && result.status}/${result && result.stopped_before}`)
+      report('G31_records_are_not_dropped_on_the_way_out', ((result && result.blockingByRepo) || []).flatMap((b) => b.items).some((i) => i.kind === 'suite-unverified'),
+        `got=${JSON.stringify(((result && result.blockingByRepo) || []).flatMap((b) => b.items.map((i) => i.kind)))}`)
+      report('G31_blocked_row_is_still_written', sp.includes('app-blocked.json') && sp.includes('"status":"done"') && sp.includes('suite-unverified'))
+      report('G31_gate_never_ran', !SPAWNED.some((l) => l.startsWith('test-suite:')))
+      report('G31_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
     } else if (SCENARIO === 'G17') {
       // R12 — writeSummary used to write ONE fixed path with Write, so every invocation destroyed
       // the previous round's summary. That is why one postmortem's timeline had to be rebuilt from
@@ -1612,6 +1652,9 @@ out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G29)"; [[ "$VERBOSE" -eq 1 ]] && pri
 
 echo "── G30 — and does NOT run when the candidate is unfit to measure"
 out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G30)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G31 — a return newly reachable past the abort point still carries the records out"
+out="$(FIXTURE_TS_MAX_REPAIR=1 FIXTURE_TOKEN_BUDGET=1000000 run_scenario G31)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
 out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

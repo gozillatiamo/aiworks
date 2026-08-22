@@ -73,6 +73,18 @@ false approval reaching a ticket.
 The ready repos lose nothing they need from the skipped move. Their reviewers wrote their own
 `gate_*` ledger rows, so a resumed run still skips their review on "every gate is ledgered PASSED".
 
+**And it had siblings.** Auditing the rest of that newly reachable span found two more returns written
+under the same dead assumption — the `nothing-delivered` floor (ADR 0011) and the Test-suite budget
+stop. Neither approves anything, so neither is dangerous the way the tick was, but both would have
+ended the run having **dropped the recorded blocking items** — and dropped items mean no `blocked`
+rows, which re-opens the cross-invocation fail-open ADR 0027 §Across invocations closed. Both now
+carry them. `runStatus` is deliberately not carried with them: those endings are more specific than
+"a repo was not ready" and keep their own.
+
+The general shape, worth stating because it will happen again: **deleting an early `return` promotes
+everything below it into a state it was never written for.** The risk in that change was never the
+gate being added — it was the code that had silently depended on being unreachable.
+
 ## The cost, stated plainly
 
 **A blocked run now costs a gate it used to skip.** That is the trade being made deliberately: the
