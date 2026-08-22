@@ -908,7 +908,7 @@
         "dev-script/retry-amb-callback/**",
         "dev-script/get-amb-raw-request/**"
       ],
-      "sha256": "0aa98835a2c6bbc6ea0d6513cefa81cbc3cf1500c8e5504a9734d3d68a5205c1",
+      "sha256": "47df761ebb33ab0763fdb5e18f246b7f130258456a59db03e08ef2267afe978b",
       "source": "dev-script/.claude/rules/retry-amb-callback.md"
     }
   ]

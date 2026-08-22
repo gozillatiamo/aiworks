@@ -113,11 +113,11 @@ const LOADTEST = {   // from workspace.config.yaml loadtest.*; read by the base-
   tolerancePct: 10,            // a metric may degrade this much before it counts as a regression
   noiseRuns: 2,                // base-vs-base runs used to measure the env's own run-to-run spread
   noiseCeilingMultiple: 2,     // noise floor above tolerancePct × this ⇒ verdict 'unavailable' (env too coarse to judge)
-  maxFixRounds: 2,             // attributed-regression → developer fix → re-run loops before halting
+  maxFixRounds: 3,             // attributed-regression → developer fix → re-run loops before halting
   baselineCache: '~/.cache/aiworks/loadtest-baselines',
 }
 const TEST_SUITE = {   // from workspace.config.yaml test_suite.*; read by the Test-suite phase red-gate triage loop
-  maxFixRounds: 2,             // classified-red → fix → scoped quality check → re-run loops
+  maxFixRounds: 3,             // classified-red → fix → scoped quality check → re-run loops
   maxSuiteRepairAttempts: 3,   // a suite that COULD NOT RUN: repair attempts before it is RECORDED unverified (docs/adr/0027)
 }
 const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bounds (docs/adr/0027)
@@ -127,7 +127,7 @@ const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bou
   maxEscalationAttempts: 3,// cross-repo fix + scoped re-gate, per (repo, finding)
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
-  tokenBudget: 2000000,        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
+  tokenBudget: 6000000,        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
 }
 const STATUS = {
   to_do: 'TO DO',
@@ -141,7 +141,7 @@ const STATUS = {
 const REPOS = {
   'agent-ofb-cypress': {
     path: 'agent-ofb-cypress', kind: 'test-suite',
-    base: { feature: 'develop', fix: 'main' },
+    base: { feature: 'develop', fix: 'develop' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
     green: 'tests via cypress passed successfully',
@@ -205,7 +205,7 @@ const REPOS = {
   },
   'agent-paotung-cypress': {
     path: 'agent-paotung-cypress', kind: 'test-suite',
-    base: { feature: 'develop', fix: 'main' },
+    base: { feature: 'develop', fix: 'develop' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
     green: 'tests via cypress passed successfully',
@@ -223,7 +223,7 @@ const REPOS = {
   },
   'ofb-backoffice-cypress': {
     path: 'ofb-backoffice-cypress', kind: 'test-suite',
-    base: { feature: 'develop', fix: 'main' },
+    base: { feature: 'develop', fix: 'develop' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
     green: 'tests via cypress and newman passed successfully',
@@ -313,7 +313,7 @@ const REPOS = {
   },
   'ofb-k6-loadtests': {
     path: 'ofb-k6-loadtests', kind: 'test-suite',
-    base: { feature: 'develop', fix: 'main' },
+    base: { feature: 'main', fix: 'main' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
     green: 'tests via k6 passed successfully, and no tracked metric degraded against the base branch',
