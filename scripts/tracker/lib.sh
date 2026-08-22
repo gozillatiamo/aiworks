@@ -16,8 +16,16 @@
 #   tracker_find          OPTS             — OPTS = JSON {query,open,limit,as_json,types:[...]};
 #                                             print matching tickets newest-first (the dedup search)
 #   tracker_add_comment   KEY DRY TEXT      — add one comment
+#   tracker_add_marked    KEY DRY TEXT      — add a DURABLE MARKED RECORD for the first time (the
+#                                             thing tracker_find_comment must be able to find
+#                                             again). Defaults to tracker_add_comment, because on
+#                                             a provider that can rewrite a comment the record IS
+#                                             a comment; Notion overrides it, since there the
+#                                             record is a page block (its comments cannot be
+#                                             updated at all). Only upsert-ticket-comment.sh
+#                                             calls this — a one-off note stays add_comment.
 #   tracker_edit_comment  KEY COMMENT_ID DRY TEXT
-#                                           — replace an existing comment's body (Jira; Notion/Linear die loud)
+#                                           — replace an existing comment's body in place
 #   tracker_get_attachments KEY             — list a ticket's attachments/images (filename, id, size) —
 #                                             CORE input, fetch before treating a ticket as understood
 #   tracker_download_attachment KEY REF DEST — download one attachment (REF = filename, id, or URL
@@ -96,4 +104,10 @@ IMPL="$TRACKER_DIR/$TRACKER_PROVIDER/impl.sh"
 
 # shellcheck disable=SC1090
 . "$IMPL"
+
+# Default for the one interface function most providers do not need to think about: where a
+# comment can be rewritten, a durable marked record simply IS a comment. Declared AFTER the impl
+# so a provider that defines its own wins.
+declare -F tracker_add_marked >/dev/null || tracker_add_marked() { tracker_add_comment "$@"; }
+
 tracker_require_config

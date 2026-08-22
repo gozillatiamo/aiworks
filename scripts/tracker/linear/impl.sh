@@ -449,18 +449,44 @@ tracker_add_comment() {
   printf 'Added comment to %s (id %s)\n' "$ident" "${cid:-?}"
 }
 
-# tracker_find_comment TICKET MARKER -> nothing, always. Finding the comment would be easy
-# enough here; EDITING it is what this provider can't do (Linear's commentUpdate mutation isn't wired up here),
-# so reporting a hit would only send the caller to a tracker_edit_comment that dies. Printing
-# nothing makes an upsert degrade the way it should: WARN, and post a fresh comment. The words
-# are the deliverable; updating in place is the nicety.
+# tracker_find_comment TICKET MARKER -> "<comment-id>\n<body>" of the newest comment carrying the
+# marker, or nothing. Linear's comment bodies are Markdown-native, so the marker is matched against
+# the body verbatim — no rich-text conversion in between.
+#
+# This used to print nothing unconditionally, because commentUpdate "isn't wired up here". The
+# consequence was larger than a missing nicety: dev-cycle proves its cross-repo test-suite gate
+# really ran by finding this run's result on the ticket through this very call, so a find that
+# always answers "nothing" meant that gate could never be verified on this provider. It is wired
+# up now — the mutation was always there.
 tracker_find_comment() {
-  echo "WARN: TRACKER_PROVIDER=linear cannot update a comment in place — posting a new one instead of updating the marked one" >&2
-  return 0
+  local ticket="$1" marker="$2" ident resp hit
+  ident="$(linear_identifier "$ticket")"
+  resp="$(linear_gql 'query($id:String!){issue(id:$id){comments(first:100){nodes{id body createdAt}}}}' \
+    "$(jq -n --arg id "$ident" '{id:$id}')")"
+  hit="$(printf '%s' "$resp" | jq -r --arg m "$marker" '
+    [ (.issue.comments.nodes // [])[] | select((.body // "") | contains($m)) ]
+    | sort_by(.createdAt) | last
+    | if . == null then empty else "\(.id)\n\(.body)" end')"
+  [[ -n "$hit" ]] || return 0
+  printf '%s\n' "$hit"
 }
 
+# tracker_edit_comment TICKET COMMENT_ID DRY TEXT [MARKER] — replace a comment's body in place.
+# MARKER is accepted and ignored: on this provider the record IS a comment, so the marker inside
+# the body is already what identifies it.
 tracker_edit_comment() {
-  die "edit-ticket-comment.sh is not implemented for TRACKER_PROVIDER=linear yet (Linear's GraphQL API exposes a commentUpdate mutation, but it isn't wired up here) — edit the comment manually for now"
+  local ticket="$1" comment_id="$2" dry="$3" text="$4" ident resp ok
+  ident="$(linear_identifier "$ticket")"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — commentUpdate %s on %s\n%s\n' "$comment_id" "$ident" \
+      "$(jq -n --arg t "$text" '{input:{body:$t}}')"
+    return 0
+  fi
+  resp="$(linear_gql 'mutation($id:String!,$input:CommentUpdateInput!){commentUpdate(id:$id,input:$input){success comment{id url}}}' \
+    "$(jq -n --arg id "$comment_id" --arg body "$text" '{id:$id, input:{body:$body}}')")"
+  ok="$(printf '%s' "$resp" | jq -r '.commentUpdate.success // false')"
+  [[ "$ok" == true ]] || die "commentUpdate failed for $comment_id on $ident: $(printf '%s' "$resp" | jq -c '.')"
+  printf 'Updated comment %s on %s\n' "$comment_id" "$ident"
 }
 
 # tracker_find OPTS_JSON — OPTS = {query, open, done, estimated, limit, as_json, types:[...]}.
