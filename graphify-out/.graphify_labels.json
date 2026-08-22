@@ -1,6 +1,6 @@
 {
   "0": "Agent Roster and Dev Harness",
-  "1": "hcat",
+  "1": "bluePi Workspace CLAUDE.md",
   "2": "Prod PII Vault (HMAC digests only)",
   "3": "speak.sh",
   "4": "scripts/notify/send.sh",
@@ -65,10 +65,10 @@
   "63": "Obsidian — shared vault settings for the workspace meta-repo",
   "64": "hrun",
   "65": "Decision",
-  "66": "Codegraph Keeps The Code, Graphify Maps The Prose",
+  "66": "2. Root causes, and which are fixed",
   "67": "dev-cycle keeps its own run state",
   "68": "OFB-2141 BRD: Paotung Customizable Category Preview Widget",
-  "69": "bluePi Workspace CLAUDE.md",
+  "69": "The test-suite gate does not halt on a red",
   "70": "Diagnosing Bugs",
   "71": "Agent harnesses",
   "72": "brd/SKILL.md",
@@ -76,5 +76,15 @@
   "74": "grill-me/SKILL.md",
   "75": "grill-with-docs/SKILL.md",
   "76": "grilling/SKILL.md",
-  "77": "prd/SKILL.md"
+  "77": "prd/SKILL.md",
+  "78": "The review loop does not halt on a finding",
+  "79": "0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md",
+  "80": "0021-a-passed-gate-is-recorded-not-re-derived.md",
+  "81": "The review ledger — a finding is raised once, and resolved visibly",
+  "82": "A reviewed-but-unresolved repo still gets the gate",
+  "83": "A cross-repo finding escalates instead of looping",
+  "84": "A ticket is a record, not a transcript",
+  "85": "A QA-attributed fix is quality-checked, not re-reviewed",
+  "86": "A passed gate is recorded, not re-derived",
+  "87": "The run ticks its own approval; the merge stays human"
 }

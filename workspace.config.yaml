@@ -55,7 +55,7 @@ loadtest:
   tolerance_pct: 10
   noise_runs: 2
   noise_ceiling_multiple: 2
-  max_fix_rounds: 2
+  max_fix_rounds: 3
   baseline_cache: ~/.cache/aiworks/loadtest-baselines
 
 planning:
@@ -157,11 +157,11 @@ monitoring:
     onegame/prod: onegame-427115
 
 test_suite:
-  max_fix_rounds: 2
+  max_fix_rounds: 3
   max_suite_repair_attempts: 3
 
 dev_cycle:
-  token_budget: 2000000
+  token_budget: 6000000
 
 products:
   - id: ofb-platform
@@ -171,6 +171,8 @@ products:
         desc: "The cross-repo QA suite for the front-end repo. It's contains the E2E UI tests for the front-end (OHANABET skin)."
         lang: cypress
         green: "tests via cypress passed successfully"
+        feature_base: develop
+        fix_base: develop
 
       - url: git@gitlab.com:bluepicode/ofb/turnover-commission-batch.git
         kind: backend
@@ -222,6 +224,8 @@ products:
         desc: The cross-repo QA suite for the paotung-template repo. It's contains the E2E UI tests for the paotung-template.
         lang: cypress
         green: "tests via cypress passed successfully"
+        feature_base: develop
+        fix_base: develop
 
       - url: git@gitlab.com:bluepicode/ofb/backoffice.git
         kind: web-app
@@ -235,6 +239,8 @@ products:
         desc: The cross-repo QA suite for the backoffice repo. It's contains the E2E UI tests for the backoffice. Including the Newman API tests for the platform.
         lang: cypress, newman
         green: "tests via cypress and newman passed successfully"
+        feature_base: develop
+        fix_base: develop
 
       - url: git@gitlab.com:bluepicode/ofb/mock-agency-api.git
         kind: mock
@@ -305,6 +311,8 @@ products:
         desc: K6 load tests for the platform, mostly for the backend services.
         lang: javascript
         green: "tests via k6 passed successfully, and no tracked metric degraded against the base branch"
+        feature_base: main
+        fix_base: main
 
       - url: git@gitlab.com:bluepicode/ofb/lotto-service.git
         kind: backend
