@@ -282,7 +282,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-22.3'
+const DEVCYCLE_VERSION = '2026-08-22.4'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -2679,6 +2679,26 @@ const buildIds = waveList.flat() // every scoped repo, in dependency (merge) ord
 const buildRes = await parallel(buildIds.map((id) => () => runRepoPipeline(plans.find((p) => p.repo === id), REPOS[id], branchKind)))
 buildRes.forEach((r, i) => { if (r) repoResults[buildIds[i]] = r })
 const aborted = buildIds.filter((id) => !repoResults[id] || repoResults[id].status !== 'ready')
+// ADR-0029 — a repo short of `ready` used to end the run BEFORE the cross-repo gate, so a run with
+// two ready repos and one carrying a recorded blocking item never learned whether the change set
+// breaks the suite. That answer arrived a whole invocation later, which is the round-trip ADR-0027
+// exists to remove.
+//
+// `review-unresolved` is the ONE status where running the gate anyway is honest work: that repo is
+// built, its PR/MR is open, its review ran and its fixes landed to their budgets — the branch is in
+// the final state THIS run can put it in. Every other status leaves the candidate unfit to measure:
+// `build-unresolved` has no complete handoff (the branch may be half-implemented), `pr-unresolved`
+// has no PR/MR number for the gate to post its result on, `review-blocked-on` never reached review
+// at all, and `target-branch-halt` cannot even compute its own diff (ADR-0025). A repo with NO
+// result is in that second group too, which is also what keeps `runSuiteGate` from reading a plan
+// off `undefined`.
+//
+// ADVISORY means full work, no authority: the gate triages, routes fixes and records what it cannot
+// close — but it does not move the ticket, does not tick an approval, writes no run-state row (the
+// candidate it measured is about to change), and cannot make the run proceed. The run still ends on
+// the repos that were not ready.
+const advisoryGate = aborted.length > 0 && aborted.every((id) => repoResults[id]?.status === 'review-unresolved')
+let abortPayload = null
 if (aborted.length) {
   // Surface each unresolved repo's partial/blocked HANDOFF (status + what remains) instead of a
   // bare "aborted" — the run stops at the merge gate (the whole change set must be ready before any
@@ -2723,11 +2743,18 @@ if (aborted.length) {
   // C10 — this is NOT a complete ending (the change set is not merge-ready), so the channel
   // Notify digest is superseded by writeSummary's own incomplete-run DM: no separate review
   // request here. The Summary written below is what a human needs to pick this back up.
-  const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable })
-  return { ticket, status: runStatus, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+  abortPayload = { runStatus, aborted, handoffs, blockingByRepo, targetHalts, blocked }
+  if (!advisoryGate) {
+    const summary = await writeSummary(runStatus, { ticket, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable })
+    return { ticket, status: runStatus, aborted, handoffs, blockingByRepo, targetHalts, blocked, repoResults, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+  }
+  log(`▶️ ADVISORY GATE — ${aborted.join(', ')} did not reach 'ready', but every one of them is 'review-unresolved': built, PR/MR open, reviewed, fixed to budget. So the cross-repo gate RUNS against this candidate rather than deferring the answer to the next invocation — it will triage and fix what it can. It cannot advance the run: this invocation still ends '${runStatus}', nothing is approved and nothing merges.`)
 }
 
-// All scoped repos are built, reviewed, and approved — the WHOLE change set is ready.
+// Every scoped repo is built, reviewed and approved — the WHOLE change set is ready. The one
+// exception is an ADVISORY run (`abortPayload` set): repos are built and reviewed but at least one
+// carries a recorded blocking item, so everything below runs up to and including the gate and then
+// stops at `abortPayload`'s ending. Nothing past the gate is reachable in that mode.
 // Repo order (upstream → downstream) for the test-suite, distribute, and final merge phases.
 const mergeOrder = waveList.flat()
 // Did any repo's guardian/perf gate fail to RUN (gate_unavailable)? Fail-open: we still
@@ -2800,12 +2827,20 @@ const approvalTick = async (ids, phaseName, receipt) => {
 // The test-suite repos are not: they have no reviewers at all, so their verdict is the
 // cross-repo suite gate below, and they are ticked when it passes (§4).
 const codeRepos = mergeOrder.filter((id) => !REPOS[id].testSuite)
-const reviewApproval = await approvalTick(codeRepos, 'Review',
+// NEITHER of these happens on an advisory run (ADR-0029). Both were unreachable while a non-ready
+// repo returned above, and letting them fire would have been the worst bug in that change: the tick
+// is ticket-wide (ADR-0022), so it would announce the whole ticket approved while a repo carries a
+// recorded blocking item, and the move would land it on ready_to_merge AND write a `reviewed` row
+// for that repo — which the NEXT invocation would read as "review already done".
+// The ready repos lose nothing they need: their reviewers wrote their own `gate_*` ledger rows, so
+// the resumed run still skips their review on "every gate is ledgered PASSED".
+if (!abortPayload) await approvalTick(codeRepos, 'Review',
   'each repo\'s own code gate ran the repo suite on the PR/MR head and returned a green receipt — quote that repo\'s receipt')
 
 // The workflow advances the ticket ONCE here (decoupled from the per-repo agents): a rich
 // board lands on ready_to_merge; the minimal board on ready_to_test.
-await moveTicket(['ready_to_merge', 'ready_to_test'], runDeferred.length ? `all repos built & reviewed; ${runDeferred.length} criterion/criteria deferred to other owners` : 'all repos built, reviewed & approved', 'Review',
+if (abortPayload) log(`[approve] SKIPPED and the ticket is NOT advanced — advisory run: ${abortPayload.aborted.join(', ')} did not reach 'ready'. The approval tick is ticket-wide, so it is all or nothing.`)
+else await moveTicket(['ready_to_merge', 'ready_to_test'], runDeferred.length ? `all repos built & reviewed; ${runDeferred.length} criterion/criteria deferred to other owners` : 'all repos built, reviewed & approved', 'Review',
   mergeOrder.map((id) => stateWrite(id, 'reviewed')).join(' '))
 
 // 4. TEST-SUITE GATE — the cross-repo QA suite (E2E / API / load) against the CANDIDATE
@@ -2824,7 +2859,10 @@ let testSuite = null
 // `!carriedBlocking(id).length` — the same veto as the review skip (ADR-0027 §Across invocations).
 // The gate brief already tells the agent not to write a `test_suite` row while a blocking item
 // stands, but an instruction is not a mechanism: this is the code that holds if one gets written.
-const tsSkippable = (id) => doneAt(id, 'test_suite') && !carriedBlocking(id).length && !stateRows.some((r) => r.milestone === 'built' && r.degraded === true)
+// `!abortPayload` (ADR-0029): on an advisory run the review loop just pushed fixes onto a repo that
+// still did not reach `ready`, so the candidate has moved since any earlier pass and a `test_suite`
+// row from that pass describes a candidate that no longer exists.
+const tsSkippable = (id) => doneAt(id, 'test_suite') && !abortPayload && !carriedBlocking(id).length && !stateRows.some((r) => r.milestone === 'built' && r.degraded === true)
 
 // One suite's gate: initial run → receipt/ticket audit → C4's bounded red-triage loop → (load
 // suites only) the base-branch comparison. Returns { suite, verdict, blocking, unverified?, why? }.
@@ -2871,7 +2909,7 @@ async function runSuiteGate(testSuiteRepo) {
   // C4 — the gate CLASSIFIES its own red instead of just reporting it, so the workflow knows who
   // fixes it: the suite repo itself (automation/prereq) or the named app repo (app), and can hand
   // it to a bounded fix→re-review→re-run loop below rather than halting on the first red.
-  const gatePrompt = (extra) => `${tag(testSuiteRepo, 'qa-runner', 'test-suite')} CROSS-REPO TEST-SUITE gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite. ${extra ? `${extra} ` : ''}Validate the CANDIDATE (the ticket's work branches, NOT yet merged — ${candidates.join(', ')}).${candidateStackClause(mergeOrder.filter((id) => !REPOS[id].testSuite).map((id) => repoResults[id].plan))} Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/, already on its work branch ${repoResults[testSuiteRepo].plan.work_branch}).${runDeferred.length ? ` COVERAGE BOUNDARY — this change set deliberately does NOT meet every acceptance criterion: ${runDeferred.map((d) => `"${d.criterion}" (owned by ${d.owner})`).join(', ')}. No spec can cover those, and their absence is NOT a failure. State the boundary in your verdict — which criteria you covered, and which you could not because they are deferred — so your pass reads as scoped to what you actually exercised. Do NOT fail the gate over a deferred criterion, and do NOT quietly report a clean pass as though the whole ticket were validated.` : ''} Then run ONLY this ticket's scope:
+  const gatePrompt = (extra) => `${tag(testSuiteRepo, 'qa-runner', 'test-suite')} CROSS-REPO TEST-SUITE gate for ${ticket} — SCOPED to THIS ticket, NOT the full suite.${advisoryClause} ${extra ? `${extra} ` : ''}Validate the CANDIDATE (the ticket's work branches, NOT yet merged — ${candidates.join(', ')}).${candidateStackClause(mergeOrder.filter((id) => !REPOS[id].testSuite).map((id) => repoResults[id].plan))} Work in the ${testSuiteRepo} repo (cwd ${REPOS[testSuiteRepo].path}/, already on its work branch ${repoResults[testSuiteRepo].plan.work_branch}).${runDeferred.length ? ` COVERAGE BOUNDARY — this change set deliberately does NOT meet every acceptance criterion: ${runDeferred.map((d) => `"${d.criterion}" (owned by ${d.owner})`).join(', ')}. No spec can cover those, and their absence is NOT a failure. State the boundary in your verdict — which criteria you covered, and which you could not because they are deferred — so your pass reads as scoped to what you actually exercised. Do NOT fail the gate over a deferred criterion, and do NOT quietly report a clean pass as though the whole ticket were validated.` : ''} Then run ONLY this ticket's scope:
 1. SCOPE = (a) the ticket's own spec(s) automated for ${ticket} + (b) the ticket's regression spec(s). Derive (a) from the spec map in agent_logs/${ticket}-automation-plan.md${specHint} Derive (b) from the "**Regressions**" block at the bottom of agent_logs/${ticket}-testcases.md (the dev's "⚠️ Regression request" recap — the SOLE source of regression scope; if that block is absent there is NO regression scope, so run just the ticket's spec(s)).
 2. RUN SCOPED — \`scripts/dev.sh test <this repo's own spec-scoping args>\` covering exactly the ticket + regression spec(s). Never \`npm test\` (a stub that exits 1 in several repos here), and never \`scripts/dev.sh test\` with no scoping args: the FULL-suite run is ON-DEMAND (the user triggers it separately) and is NOT part of this gate.
 3. REPORT WITH EVIDENCE — /report-test-results ${ticket}. THIS RUN IS r${RUN_SEQ}: use that ordinal in the report's run stamp verbatim — do not count rounds yourself and do not guess. The stamp is the only thing separating this run's result from the last one's, and step 4's audit records the gate as NOT RUN when it does not match. It reads \`scripts/dev.sh why test\` + \`scripts/dev.sh artifacts\` and posts the per-TC results table to the ticket with the run's OWN screenshots embedded in the comment (failures full-width, passes as a thumbnail strip). A green run that captured no artifacts is reported as unevidenced — say so, never dress it up as proven. THE REPORT IS ONE DURABLE COMMENT PER SUITE REPO, UPDATED IN PLACE: it carries the marker line \`[test-report · ${testSuiteRepo}]\` and goes up via \`scripts/tracker/upsert-ticket-comment.sh ${ticket} --marker "[test-report · ${testSuiteRepo}]"\`, never \`add-ticket-comment.sh\` — this ticket is re-run (fix rounds, resumed invocations, a second dev-cycle) and a fresh report each time buries which numbers are current. Stamp it \`run r<n> · <UTC> · candidate ${candidates.join(', ')}\` and append this run's line to its Run history, carrying every earlier line forward: with the body rewritten in place, that stamp is the ONLY thing that identifies this run's result, and step 4's audit reads it.
@@ -2881,8 +2919,15 @@ On a red — CLASSIFY, do not guess and do not fix app code yourself. Re-run jus
 • "prereq" — the case cannot run because required seed/fixture data is absent (no matching entity, an unreachable transition). You own this too: prepare it through this repo's own sanctioned seeding path, then re-run that case.
 CONTROL RUN before you blame the candidate: for any "app" red, run the same case against the ticket's BASE branch build once. If it is red there too, COMPARE THE TWO FAILURES before you conclude anything: a control that fails IDENTICALLY — same error, same frame — confirms a SHARED cause, which is a reason to go find that shared cause, NOT evidence the red is out of scope. Set pre_existing_on_base:true only when the control's failure is genuinely a DIFFERENT one that happens to also be red, and say which two failures you compared. Getting this backwards is what let one fixture value masquerade as a pre-existing defect for two rounds. A genuinely pre-existing red is recorded and handed off, never fixed inside this gate. And if you conclude the fix lies outside this gate's bounds at all — a dependency bump, a repo-wide change — that conclusion permanently ends investigation, so fill out_of_gate_bounds_second_read with the SECOND, independent read that reached the same answer, or do not draw it.
 Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures and triage.${loadClause}${RECEIPT_CLAUSE}
-RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row, or a later resume would treat a gate that never passed as already proven): if and ONLY IF you are returning passed:true${isLoadSuite ? ' AND loadtest.verdict is exactly "pass"' : ''}${blocking.length ? ' — WHICH YOU MUST NOT DO IN THIS ATTEMPT: this run already carries ' + blocking.length + ' recorded blocking item(s) for this suite (' + blocking.map((b) => b.kind).join(', ') + '), so this gate cannot be a proven pass whatever your verdict is. Write NO row' : ''}, as your LAST action before the structured result, with the Write tool (the directory already exists, created at Kickoff): Write \`agent_logs/${ticket}-dev-cycle-state/${testSuiteRepo}-test_suite.json\` at the WORKSPACE ROOT (the dir holding .claude/, NOT this repo) — ONE FILE for this checkpoint, so nothing else you write can collide with it — content exactly {"repo":"${testSuiteRepo}","milestone":"test_suite","status":"done","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. If your verdict is passed:false or the gate could not run, write NOTHING there.${isLoadSuite ? ' ⚠️ A LOAD SUITE THAT MET ITS OWN THRESHOLDS BUT LOST TO ITS BASE IS NOT GREEN — a row written there tells the next invocation this gate is already proven, so it skips the whole comparison and merges a candidate nobody measured. passed:true + loadtest.verdict "fail" or "unavailable" ⇒ no row.' : ''}`
+RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row, or a later resume would treat a gate that never passed as already proven): if and ONLY IF you are returning passed:true${isLoadSuite ? ' AND loadtest.verdict is exactly "pass"' : ''}${abortPayload ? ' — WHICH YOU MUST NOT DO IN THIS RUN: this is an ADVISORY gate. Another repo in this ticket is still carrying a recorded blocking item, so the candidate you are measuring is about to change when that item is fixed, and a row saying this gate is proven would make the next invocation skip a gate that never saw the final candidate. Write NO row, whatever your verdict' : ''}${blocking.length ? ' — WHICH YOU MUST NOT DO IN THIS ATTEMPT: this run already carries ' + blocking.length + ' recorded blocking item(s) for this suite (' + blocking.map((b) => b.kind).join(', ') + '), so this gate cannot be a proven pass whatever your verdict is. Write NO row' : ''}, as your LAST action before the structured result, with the Write tool (the directory already exists, created at Kickoff): Write \`agent_logs/${ticket}-dev-cycle-state/${testSuiteRepo}-test_suite.json\` at the WORKSPACE ROOT (the dir holding .claude/, NOT this repo) — ONE FILE for this checkpoint, so nothing else you write can collide with it — content exactly {"repo":"${testSuiteRepo}","milestone":"test_suite","status":"done","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. If your verdict is passed:false or the gate could not run, write NOTHING there.${isLoadSuite ? ' ⚠️ A LOAD SUITE THAT MET ITS OWN THRESHOLDS BUT LOST TO ITS BASE IS NOT GREEN — a row written there tells the next invocation this gate is already proven, so it skips the whole comparison and merges a candidate nobody measured. passed:true + loadtest.verdict "fail" or "unavailable" ⇒ no row.' : ''}`
   const gateOpts = (round) => ({ agentType: 'qa-runner', phase: 'Test suite', label: round ? `test-suite:${ticket}:${testSuiteRepo}#r${round}` : `test-suite:${ticket}:${testSuiteRepo}`, schema: TEST_SUITE_SCHEMA })
+  // ADR-0029 — the qa-runner is told it is advisory, and WHICH repo is unresolved, because that is
+  // real triage information: a red on a flow that repo owns is more likely explained by the item it
+  // could not close than by anything new. It changes nothing about the bar — run the scope, report
+  // honestly, receipt included.
+  const advisoryClause = abortPayload
+    ? ` ⚠️ ADVISORY RUN: ${abortPayload.aborted.join(', ')} did not reach 'ready' — reviewed, but carrying blocking item(s) a person has to settle: ${(abortPayload.blockingByRepo || []).flatMap((b) => b.items.map((i) => `${b.id}/${i.kind}: ${i.detail}`)).join(' | ') || 'see the run summary'}. Nothing merges out of this run whatever you find, and your verdict approves nothing. Run the scope anyway and report it exactly as you would otherwise: the point is that the answer exists NOW instead of an invocation later. If a red lands on a flow one of those repos owns, weigh its recorded item as a candidate cause before anything new.`
+    : ''
 
   // A DECLARED "CANNOT" (ADR-0027, now here too). Accepted only with evidence AND what was ruled
   // out first: this is the one field an agent could reach for to escape hard work. Accepted, it
@@ -3256,7 +3301,9 @@ IF THE COST IS INHERENT to the behaviour ${ticket} requires — the change adds 
 
 if (scope.test_suite?.needed && testSuiteRepos.length && mergeOrder.some((id) => !REPOS[id].testSuite)) {
   phase('Test suite')
-  await moveTicket(['testing'], 'cross-repo test-suite gate running', 'Test suite')
+  // No status move on an advisory run: "Testing" tells the team the change set is ready to be
+  // tested, and it is not — a repo is carrying a recorded blocking item. The gate still runs.
+  if (!abortPayload) await moveTicket(['testing'], 'cross-repo test-suite gate running', 'Test suite')
   const tsRunNow = testSuiteRepos.filter((id) => !tsSkippable(id))
   const tsResumed = testSuiteRepos.filter((id) => tsSkippable(id))
   tsResumed.forEach((id) => log(`[test-suite] ${id} SKIPPED — run state says this suite already passed and no work branch has moved since.`))
@@ -3284,20 +3331,51 @@ if (scope.test_suite?.needed && testSuiteRepos.length && mergeOrder.some((id) =>
     const runStatus = anyUnverified ? 'test-suite-unverified' : anyRed ? 'test-suite-failed' : 'test-suite-unresolved'
     const why = suiteFailed.map((s) => `${s.suite}: ${s.unverified ? (s.why || 'unverified') : s.verdict?.passed ? `green, but ${s.blocking.length} recorded blocking item(s): ${s.blocking.map((b) => b.kind).join(', ')}` : `gate red${s.blocking?.length ? ` + ${s.blocking.length} recorded blocking item(s)` : ''}`}`).join(' | ')
     log(`⛔ TEST-SUITE GATE — ${why}. NOTHING merged; PR/MR left OPEN.`)
-    const summary = await writeSummary(runStatus, { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why }, runDeferred)
-    return { ticket, status: runStatus, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why, summary, spend }
+    // ADR-0029 — on an advisory run this is NOT the ending. The repos were already unresolved before
+    // the gate ran, so `repo-unresolved` is the honest headline and `test-suite-*` would bury it.
+    // Carry the gate's records into the abort payload and let it return below.
+    if (abortPayload) {
+      abortPayload.suiteBlocking = blockingByRepo
+      abortPayload.suiteWhy = why
+    } else {
+      const summary = await writeSummary(runStatus, { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why }, runDeferred)
+      return { ticket, status: runStatus, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why, summary, spend }
+    }
   }
-  log(`Test-suite gate: ALL ${testSuiteRepos.length} suite(s) PASS (${testSuiteRepos.join(', ')}).`)
+  log(`Test-suite gate: ALL ${testSuiteRepos.length} suite(s) PASS (${testSuiteRepos.join(', ')}).${abortPayload ? ' ADVISORY — this says the candidate does not break the suite; it does NOT approve anything, because a repo in this run is still carrying a recorded blocking item.' : ''}`)
   // The suite repos' own approval tick. They have no code reviewer — `review: null` by kind — so
   // the Review phase never judged their PR/MR at all, and nothing above would ever tick it.
   // Their gate is THIS one, with a receipt, so this is the moment their bar is cleared. Leaving
   // them permanently unapproved beside their ticked siblings would read as "these were rejected".
-  await approvalTick(testSuiteRepos, 'Test suite',
+  //
+  // NOT on an advisory run (ADR-0029): the tick is ticket-wide (ADR-0022), so ticking it here would
+  // announce the whole ticket approved while another repo is carrying a recorded blocking item —
+  // the precise thing that tick's ticket-wide scope exists to prevent.
+  if (!abortPayload) await approvalTick(testSuiteRepos, 'Test suite',
     'the cross-repo test-suite gate ran this ticket\'s scope (its own spec(s) + the regression scope) against the pre-merge candidate and passed — quote that suite\'s receipt: command, exit code, summary line')
 } else if (scope.test_suite?.needed && !testSuiteRepos.length) {
   testSuiteGateUnavailable = testSuiteGateUnavailable
     || `test-suite gate was requested but no test-suite repo reached the build set — gate did NOT run.`
   log(`⚠️  ${testSuiteGateUnavailable} The ticket is shipping WITHOUT the requested E2E validation.`)
+}
+
+// ADR-0029 — the advisory ending. The gate has done everything it could against this candidate;
+// the run now ends on the repos that were never ready. Both producers' records go out in ONE list,
+// so the reader gets a single "Blocking — needs a person" section covering the review loop AND the
+// gate, and the next invocation carries every one of them (ADR-0027 §Across invocations).
+if (abortPayload) {
+  const merged = [...abortPayload.blockingByRepo]
+  for (const row of (abortPayload.suiteBlocking || [])) {
+    const hit = merged.find((m) => m.id === row.id)
+    if (hit) hit.items = [...hit.items, ...row.items]
+    else merged.push(row)
+  }
+  const advisoryNote = testSuite
+    ? `the cross-repo test-suite gate RAN against this candidate (advisory — it approved nothing and moved nothing): ${testSuite.passed ? 'it passed, so the change set does not break the suite as it stands' : abortPayload.suiteWhy || 'it did not pass'}`
+    : `the cross-repo test-suite gate did not run (not in this ticket's scope, or no suite repo reached the build set)`
+  log(`⚠️ ADVISORY RUN ENDS '${abortPayload.runStatus}' — ${advisoryNote}. ${merged.reduce((n, b) => n + b.items.length, 0)} blocking item(s) carried forward.`)
+  const summary = await writeSummary(abortPayload.runStatus, { ticket, ...abortPayload, blockingByRepo: merged, advisory_gate: advisoryNote, repoResults, testSuite, testSuiteRequested, testSuiteGateUnavailable }, runDeferred)
+  return { ticket, status: abortPayload.runStatus, ...abortPayload, blockingByRepo: merged, advisory_gate: advisoryNote, repoResults, testSuite, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // DRY RUN stop — repos built/reviewed and the test-suite gate passed. Stop BEFORE the

@@ -183,5 +183,7 @@ than a repeat.
 - [ADR 0028](0028-the-test-suite-gate-does-not-halt-on-a-red.md) — the same conversion for the
   cross-repo test-suite gate, which this ADR deliberately left alone. The two together mean no phase
   in the workflow ends on a finding.
+- [ADR 0029](0029-a-reviewed-but-unresolved-repo-still-gets-the-gate.md) — the same argument one
+  level up: a repo left `review-unresolved` here no longer stops the RUN from gating the rest.
 - `docs/agents/review-ledger.md` — a finding is raised once; this document is about what happens
   when it cannot be closed.

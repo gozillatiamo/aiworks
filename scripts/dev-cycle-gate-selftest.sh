@@ -1339,6 +1339,66 @@ const BASE = {
       report('G28_gate_is_not_skipped_over_a_carried_item', SPAWNED.includes('test-suite:FM-12:e2e'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
       report('G28_not_reported_as_resumed', !LINES.some((l) => l.includes('SKIPPED — run state says this suite already passed')))
       report('G28_a_genuinely_green_rerun_proceeds', !!result && result.status === 'merge-skipped', `got=${result && result.status}`)
+    } else if (SCENARIO === 'G29' || SCENARIO === 'G30') {
+      // ADR-0029 — a repo short of `ready` used to end the run BEFORE the cross-repo gate, so a run
+      // with a ready repo and one carrying a recorded blocking item never learned whether the change
+      // set breaks the suite; that answer cost a whole extra invocation. G29: every unresolved repo
+      // is `review-unresolved` (reviewed, fixed to budget — the final state this run can reach), so
+      // the gate RUNS, advisory. G30: one repo has no build result at all, so the candidate is unfit
+      // to measure and the run returns exactly as it always did.
+      const advisory = SCENARIO === 'G29'
+      const SUITE_DOWN = { approved: false, tests_green: false, gate_unavailable: true, unavailable_reason: 'docker daemon unreachable', comments: [], conclusion: 'suite did not run' }
+      const PASSES = { approved: true, tests_green: true, comments: [], conclusion: 'clean', receipt: { command: 'x', exit_code: 0, summary_line: 'ok' } }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'app' }, { repo: 'svc' }, { repo: 'e2e', depends_on: ['app', 'svc'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['app', 'svc', 'e2e']),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        // G30's unfit candidate: no structured handoff at all ⇒ `build-unresolved`.
+        'build:FM-12:svc': advisory ? { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] } : null,
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/11', pr_number: 11 },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/12', pr_number: 12 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/13', pr_number: 13 },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '6 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'result posted' },
+        'dm:FM-12:repo-unresolved': { sent: true },
+      }
+      // `app` records `suite-unverified` (FIXTURE_TS_MAX_REPAIR=1 ⇒ one must-fix, then the record)
+      // and ends `review-unresolved`. `svc` passes on sight.
+      for (let n = 1; n <= 4; n++) {
+        canned[`review:FM-12:app#${n}`] = SUITE_DOWN
+        canned[`perf:FM-12:app#${n}`] = { passed: true, blocking: [] }
+        canned[`pr-fix:FM-12:app#${n}`] = { work_branch: 'feature/FM-12', summary: 'tried the stack', status: 'complete', fixed: ['app/x'], commits: 1 }
+        canned[`review:FM-12:svc#${n}`] = PASSES
+      }
+      const result = await runOnce(ARGS, canned)
+      const gp = PROMPTS['test-suite:FM-12:e2e'] || ''
+      if (advisory) {
+        report('G29_gate_runs_instead_of_deferring_the_answer', SPAWNED.includes('test-suite:FM-12:e2e'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
+        report('G29_gate_is_told_it_is_advisory', gp.includes('ADVISORY RUN') && gp.includes('suite-unverified'))
+        report('G29_gate_is_told_to_write_no_state_row', gp.includes('Write NO row, whatever your verdict'))
+        report('G29_logged_for_the_operator', LINES.some((l) => l.includes('ADVISORY GATE')))
+        // Authority: none. The tick is ticket-wide (ADR-0022), so it is all or nothing.
+        report('G29_nothing_is_approved', !SPAWNED.some((l) => l.startsWith('approve:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('approve:')))}`)
+        report('G29_ticket_is_not_advanced', !SPAWNED.includes('status:FM-12:ready_to_merge') && !SPAWNED.includes('status:FM-12:ready_to_test') && !SPAWNED.includes('status:FM-12:testing'))
+        report('G29_never_reaches_merge', !PHASES.includes('Merge'))
+        // The ending is about the repos, not the gate: a green advisory gate must not relabel the run.
+        report('G29_ends_on_the_unresolved_repo', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
+        report('G29_records_that_the_gate_ran', String((result || {}).advisory_gate || '').includes('advisory') && String(result.advisory_gate).includes('does not break the suite'))
+        report('G29_review_records_still_carried', ((result && result.blockingByRepo) || []).flatMap((b) => b.items).some((i) => i.kind === 'suite-unverified'))
+      } else {
+        report('G30_gate_does_not_run_on_an_unfit_candidate', !SPAWNED.some((l) => l.startsWith('test-suite:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
+        report('G30_no_advisory_log', !LINES.some((l) => l.includes('ADVISORY GATE')))
+        report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
+        report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
+      }
     } else if (SCENARIO === 'G17') {
       // R12 — writeSummary used to write ONE fixed path with Write, so every invocation destroyed
       // the previous round's summary. That is why one postmortem's timeline had to be rebuilt from
@@ -1546,6 +1606,12 @@ out="$(run_scenario G27)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 
 
 echo "── G28 — a carried item vetoes the suite-gate skip too, whatever the test_suite row says"
 out="$(run_scenario G28)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G29 — the gate runs advisory when every unresolved repo is review-unresolved"
+out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G29)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G30 — and does NOT run when the candidate is unfit to measure"
+out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G30)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
 out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

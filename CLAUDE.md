@@ -15,7 +15,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so already in context. Keys documented in
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
-  `docs/adr/` — why the workspace is shaped this way (`0001`–`0028`).
+  `docs/adr/` — why the workspace is shaped this way (`0001`–`0029`).
 - `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
   (Hermes is next) · `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`): author on
   the Claude side, never hand-edit `.cursor/`, open the `.code-workspace` **file**, not the folder · `language.md` ·
@@ -36,7 +36,9 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 - `docs/agents/loadtest-gate.md` — a green load suite is only **half** a verdict: a `suite_kind: load` repo must also beat
   its base branch against a measured noise floor. Home of the rule binding EVERY test-suite gate — it **never fails
   open**: no receipt (command + exit code + summary) and no result comment ⇒ *not run* — worked to a budget, then
-  RECORDED, and `passed:true` + a lost baseline writes NO run-state row · `pii-provenance.md` — egress
+  RECORDED, and `passed:true` + a lost baseline writes NO run-state row. It also runs when a repo is only
+  `review-unresolved` (`0029`): ADVISORY — full triage and fixes, but no approve tick, no ticket move, no state row,
+  and the run still ends on the unresolved repo · `pii-provenance.md` — egress
   masks personal data only when a sanctioned PRODUCTION read returned it (keyed hash, never shape).
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace root ·
   `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·

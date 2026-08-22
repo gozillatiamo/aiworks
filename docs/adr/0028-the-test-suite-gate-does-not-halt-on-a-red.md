@@ -104,6 +104,10 @@ has to be in the brief, and it is in every one that can still be reached.
 
 ## What is NOT converted
 
+[ADR 0029](0029-a-reviewed-but-unresolved-repo-still-gets-the-gate.md) later removed the other half
+of this: the gate now also runs when a repo is `review-unresolved`, advisory, so a recorded item in
+one repo no longer costs an invocation to learn the gate's verdict on the rest.
+
 Nothing inside the gate halts any more. The **phase** still ends the run when any suite fails,
 because that is the merge block doing its job: after the gate there is only Merge and Distribute, and
 both are exactly what a recorded item exists to prevent. The suites themselves already fan out in

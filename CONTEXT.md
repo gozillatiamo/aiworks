@@ -96,7 +96,10 @@ Since [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md) th
 not stop on a finding, so **`review-unresolved` is the one review outcome that is not `ready`**: the
 loop worked to `review.max_rounds` and hands back whatever it could not close as **blocking items**
 (an unrunnable suite, a regression it could not undo, a stall, a cross-repo gap, a second open
-PR/MR). The remaining statuses are the states with no loop to continue into: `build-unresolved` (the
+PR/MR). It is also the only non-`ready` status whose branch is still worth measuring, so it is what
+lets the run reach an **Advisory gate** instead of ending before it. The remaining statuses are the
+states with no loop to continue into — and, for the same reason, no candidate fit to gate:
+`build-unresolved` (the
 build handed back no complete state, so there is no diff to review), `pr-unresolved` (no PR/MR
 number, which every reviewer prompt needs) and `target-branch-halt` (the base is missing from the
 remote, so `git diff base...head` cannot be computed at all).
@@ -167,6 +170,15 @@ the row empty, which is how one is cleared.
 → [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md),
 [ADR 0028](docs/adr/0028-the-test-suite-gate-does-not-halt-on-a-red.md).
 *Avoid*: halt, blocker (both suggest the loop stopped, which it does not).
+
+**Advisory gate**:
+The cross-repo test-suite gate running on a run that CANNOT merge — every repo short of `ready` is
+`review-unresolved`, so each branch is in the final state this run can reach and is worth measuring.
+Full work, no authority: it triages, routes fixes and records, but posts no approval tick (which is
+ticket-wide), moves no ticket, writes no run-state row, and does not relabel the ending — the run
+still finishes on the unresolved repo. Exists so the gate's verdict is not deferred a whole
+invocation. → [ADR 0029](docs/adr/0029-a-reviewed-but-unresolved-repo-still-gets-the-gate.md)
+*Avoid*: dry run (that is a full green run stopped before the outward steps — a different thing).
 
 **Suite gate status** (dev-cycle):
 Three endings mean *the gate did not pass*, and reading only for one of them mis-reads the other two.
