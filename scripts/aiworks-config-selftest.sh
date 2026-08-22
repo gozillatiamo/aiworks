@@ -169,6 +169,53 @@ ck "a local auto_approve:true never reaches the committed mirror" \
 ck "…and the run says why the local file was not used for it" \
    "regenerated from workspace.config.yaml (shared) only" "$out"
 
+printf '\nBASE PROJECTION (docs/adr/0025)\n'
+
+# The regression this section exists for: a `test-suite` repo used to be projected with
+# base.feature = fix_base, so a ticket's suite branch was cut off the FIX trunk while every app
+# repo branched off the feature one. Measured, that trunk was 99 and 157 commits behind, and one
+# was a 16-file scaffold — a whole round went into discovering it, twice.
+cat > "$T/bases.yaml" <<'YAML'
+language: en
+branch_model:
+  feature_base: develop
+  fix_base: main
+products:
+  - id: p1
+    repos:
+      - url: git@github.com:acme/svc.git
+        kind: backend
+      - url: git@github.com:acme/e2e-suite.git
+        kind: test-suite
+      - url: git@github.com:acme/odd-svc.git
+        kind: backend
+        feature_base: release/7.10
+        fix_base: staging
+YAML
+out="$(full "$T/bases.yaml" "$T/no-local.yaml")"
+
+# Read back the projected base for one repo out of the generated REPOS block — same shape the
+# doctor check parses, so a drift in the generated layout fails here too.
+proj() { # proj <repo> → its base.feature
+  printf '%s' "$out" | awk -v want="  '$1':" '
+    index($0, want)==1 { inr=1; next }
+    inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 2) printf "%s", q[2]; exit }
+    inr && index($0, "\047")==3 { exit }'
+}
+projfix() { # projfix <repo> → its base.fix
+  printf '%s' "$out" | awk -v want="  '$1':" '
+    index($0, want)==1 { inr=1; next }
+    inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 4) printf "%s", q[4]; exit }
+    inr && index($0, "\047")==3 { exit }'
+}
+
+ck "a code repo takes branch_model.feature_base"                 "develop"      "$(proj svc)"
+ck "a TEST-SUITE repo takes it too — not fix_base"               "develop"      "$(proj e2e-suite)"
+ck "…and its fix base is still fix_base"                         "main"         "$(projfix e2e-suite)"
+ck "a repo's own feature_base overrides branch_model"            "release/7.10" "$(proj odd-svc)"
+ck "…and so does its own fix_base"                              "staging"      "$(projfix odd-svc)"
+ck "an overriding repo does not leak its base to its neighbours" "develop"      "$(proj svc)"
+
 # 7. Nothing was written. If the script ever grows a write that ignores DRY, this notices.
 # `git diff` also exits non-zero when there is no repo AT ALL — an extracted tarball, which is how
 # a person first meets this framework. That is a check that could not run, not a failed assertion,

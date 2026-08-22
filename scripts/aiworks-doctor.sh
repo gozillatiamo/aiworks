@@ -680,6 +680,15 @@ check_per_repo() {
   local g=per-repo r n
   local no_dev="" noexec_dev="" no_claude="" over="" no_cg="" no_link="" no_lock="" bad_rules=""
   local checked=0
+  # ADR-0025 — the base a run cuts a feature branch from is a CONSTANT in the generated workflow
+  # mirror, and nothing used to validate it. Measured: suite repos projected onto a base that was
+  # 99 and 157 commits behind their real trunk, one of them a 16-file scaffold last touched a year
+  # earlier, so a ticket's branch was cut off a dead branch and a whole round went into finding out.
+  # This is the check that would have said so before the run: what the mirror will use, against what
+  # the remote itself says its default is.
+  local base_drift="" base_gone="" base_checked=0
+  local cfg_feature_base
+  cfg_feature_base="$(cfg branch_model.feature_base)"
 
   for r in $SELECTED; do
     repo_ready "$r" || continue          # group 2 already owns "not cloned"
@@ -699,6 +708,36 @@ check_per_repo() {
     fi
     [[ -d "$d/.codegraph" ]] || no_cg="${no_cg:+$no_cg }$r"
     [[ -f "$d/skills-lock.json" ]] || no_lock="${no_lock:+$no_lock }$r"
+
+    # BASE DRIFT (ADR-0025). Read the base the workflow mirror will actually use — the generated
+    # REPOS block is the authority, so parse THAT rather than re-deriving the projection here and
+    # risking a second opinion. Then ask the clone what its remote calls its default.
+    local proj_base remote_head
+    # The generated line is exactly `    base: { feature: 'x', fix: 'y' },` so the first quoted
+    # token after it is the feature base. Splitting on the quote beats a regex here — and the
+    # `index(...)==3` guard stops at the NEXT repo key, so a repo with no base line yields nothing
+    # rather than the following repo's answer.
+    proj_base="$(awk -v want="  '$r':" '
+        index($0, want)==1 { inr=1; next }
+        inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 2) printf "%s", q[2]; exit }
+        inr && index($0, "\047")==3 { exit }
+      ' "$ROOT/.claude/workflows/dev-cycle.js" 2>/dev/null)"
+    if [[ -n "$proj_base" ]]; then
+      base_checked=$((base_checked+1))
+      if ! git -C "$d" show-ref --verify --quiet "refs/remotes/origin/$proj_base" 2>/dev/null; then
+        # Not a style question: the open-PR precondition hard-stops on a base that is not on the
+        # remote, so this repo cannot finish a ticket at all until it is corrected.
+        base_gone="${base_gone:+$base_gone }$r(→$proj_base)"
+      else
+        remote_head="$(git -C "$d" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)"
+        remote_head="${remote_head#refs/remotes/origin/}"
+        if [[ -n "$remote_head" && "$remote_head" != "$proj_base" ]]; then
+          local behind
+          behind="$(git -C "$d" rev-list --count "origin/$proj_base..origin/$remote_head" 2>/dev/null || printf '?')"
+          base_drift="${base_drift:+$base_drift }$r(uses $proj_base, origin/HEAD→$remote_head, $behind commits ahead)"
+        fi
+      fi
+    fi
 
     # `aiworks add` links exactly two adapters into a repo (scripts/aiworks-add.sh: `for a in
     # tracker vcs`). notify and observability are called from the workspace root only — do not
@@ -752,6 +791,17 @@ check_per_repo() {
                                 "$bad_rules — the rule loads and matches nothing" \
                                 "\$EDITOR <the files above>" \
                         || pass $g "rules frontmatter" "$checked repos"
+  # ADR-0025. A base that is not on the remote FAILS: the run cannot open a PR/MR against it, so
+  # the ticket stops there. A base that merely disagrees with origin/HEAD WARNS: it is legitimate
+  # for a repo to run its own branch policy — it just has to say so in the config rather than
+  # inheriting a workspace default that does not fit it.
+  [[ -n "$base_gone" ]] && fail $g "feature base does not exist on the remote" \
+                                "$base_gone — open-PR hard-stops on this, so no ticket can finish in that repo. Set branch_model.feature_base, or the repo's own feature_base:, to a branch that exists, then re-project." \
+                                "./aiworks config" \
+                        || { [[ $base_checked -gt 0 && -z "$base_drift" ]] && pass $g "feature base vs origin/HEAD" "$base_checked repos agree${cfg_feature_base:+ (branch_model.feature_base: $cfg_feature_base)}"; }
+  [[ -n "$base_drift" ]] && warn $g "feature base disagrees with origin/HEAD" \
+                                "$base_drift — a ticket's branch is cut from the base on the left. If that is deliberate, declare it as this repo's own feature_base: under products[].repos[]; if not, fix branch_model.feature_base. Either way re-project so the mirror agrees with the config." \
+                                "./aiworks config"
   return 0
 }
 

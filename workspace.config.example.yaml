@@ -174,7 +174,11 @@ tracker:
     testing:       "Testing"
     done:          "Done"
 
-# ── Branch model (defaults; a repo may override under products[].repos[].base) ─
+# ── Branch model ───────────────────────────────────────────────────────────────
+# The workspace-wide default, applied to EVERY repo kind including test suites. A repo whose
+# own policy differs overrides it with `feature_base:` / `fix_base:` on its products[].repos[]
+# entry — that is the only supported way to say so, and it keeps the base in the config rather
+# than in generated code (docs/adr/0025).
 branch_model:
   feature_base: develop            # base branch for feature/* work
   fix_base:     main               # base branch for fix/* work
@@ -250,6 +254,13 @@ dev_cycle:
                                    #   notification and stops with status budget-stopped. Fully
                                    #   resumable — re-run and the run state replays every milestone
                                    #   already proven. 0 = no cap.
+                                   # ⚠️ READ THE UNIT TWICE. It is OUTPUT tokens, and PER INVOCATION.
+                                   #   Measured on a four-repo ticket: 232k output against 6.7M total
+                                   #   run tokens in ONE invocation — a ~29x ratio — so this number is
+                                   #   not a total-token ceiling and is far smaller than it reads. A
+                                   #   hard multi-repo ticket spanning several invocations pays it
+                                   #   each time; the run summary reports the per-ticket running
+                                   #   total across rounds so the real cost is visible somewhere.
 
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:
@@ -795,6 +806,14 @@ products:
         app_id: com.example.app                     # mobile apps only — the app/bundle id the QA suite drives (matches config/capabilities.js)
         distribute: firebase                        # firebase | none | custom  (default: none)
         # auto_merge: false                         # optional — override vcs.auto_merge for this repo
+        # feature_base: develop                     # optional — THIS repo's own branch policy,
+        # fix_base: staging                         #   overriding branch_model above. Set these when
+                                                    #   the repo does not follow the workspace default
+                                                    #   (a service on `develop → staging → main`, a
+                                                    #   suite repo whose trunk really is `main`). The
+                                                    #   run then carries that base as state and asserts
+                                                    #   its PR/MR against it; nothing downstream may
+                                                    #   re-derive it. docs/adr/0025
         # path: your-app                            # optional — clone dir (default: the repo name)
         # green: "<keep-it-green check, e.g. lint + unit tests>"   # optional override (else from kind)
         # guardian_focus: "<secrets, data-protection, perms…>"     # optional override (else from kind)

@@ -47,14 +47,17 @@
 #   image_generation.enabled         → const IMAGE_GEN_ENABLED          (prd.js only)
 #   image_generation.quality         → const IMAGE_GEN_QUALITY          (prd.js only)
 #   image_generation.max_per_request → const IMAGE_GEN_MAX_PER_REQUEST  (prd.js only)
-#   branch_model.{feature,fix}_base  → each repo's base.{feature,fix} (kind may override)
+#   branch_model.{feature,fix}_base  → each repo's base.{feature,fix}, for EVERY kind
 #   products[].repos[]               → const REPOS  (one entry per repo)
 #       url               → the REPOS key (repo name) + path default
 #       kind              → the role/gate DEFAULTS below (plan/build/review/guard/perf/
-#                           testSuite/green/guardianFocus/base) — the single source of truth
+#                           testSuite/green/guardianFocus) — the single source of truth
 #                           for what each kind means in the workflow
 #       suite_kind        → which flavour of test-suite ('load' arms the base-branch
 #                           non-degradation gate — docs/agents/loadtest-gate.md)
+#       feature_base / fix_base → this repo's OWN branch policy, overriding branch_model.
+#                           The only way a repo on `develop → staging → main` states that
+#                           without editing generated code (docs/adr/0025).
 #       path / distribute / auto_merge / green / guardian_focus → optional per-repo overrides
 #
 # ALSO GENERATES — the multi-root <workspace>.code-workspace file (one folder root per repo)
@@ -470,6 +473,16 @@ fi
 # ── 2. kind → role/gate DEFAULTS (the one authoritative table) ────────────────────
 # `kind` is a FREE-FORM, tech-agnostic development-context label (frontend, backend,
 # web-app, service, migration, generic, …) — the tech is captured by `lang`, NOT the kind.
+#
+# EVERY archetype takes its bases from `branch_model` — feature/* → feature_base, fix/* →
+# fix_base. A test-suite repo used to be the exception, given fix_base for BOTH kinds on the
+# reasoning that a suite repo has no develop flow. Measured, that was simply false: suite repos
+# had `origin/HEAD` on the feature base with the fix base 99 and 157 commits behind, one of them
+# a 16-file scaffold last touched a year earlier. A ticket's suite branch was therefore cut off a
+# dead trunk, and since `workspace.config.yaml` carried no per-repo base at all, the only way to
+# say otherwise was to edit generated code. The exception is gone; a repo that genuinely differs
+# says so with `feature_base:` / `fix_base:` on its own `repos[]` entry (docs/adr/0025).
+#
 # Behaviour is decided by ARCHETYPE, and there are exactly three:
 #   test-suite → QA pipeline: qa-planner/qa-runner build the suite, no code review, and this
 #                repo PROVIDES the cross-repo test-suite gate. The ONE behaviourally-special kind.
@@ -489,7 +502,7 @@ kind_defaults() {
   case "$kind" in
     test-suite)
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
-        qa-planner qa-runner null false false true "$FIX_BASE" "$FIX_BASE" \
+        qa-planner qa-runner null false false true "$FEATURE_BASE" "$FIX_BASE" \
         'the ticket + regression specs (scoped `npm test -- <specs>`, POM) green on every target platform the suite covers — the full-suite run is on-demand' \
         '' ;;
     document|documentation|fixture|mock|mocks)
@@ -510,7 +523,7 @@ repos_body=""
 repo_count=0
 folders_tsv=""   # accumulates "<folder name>\t<folder path>\n" per repo, in declared order,
                  # for the multi-root <name>.code-workspace `folders` array (built in step 6).
-while IFS=$'\037' read -r url kind path dist green gf am sk kfr; do   # \037 (US): empty fields preserved
+while IFS=$'\037' read -r url kind path dist green gf am sk kfr bf bx; do   # \037 (US): empty fields preserved
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
@@ -526,6 +539,10 @@ while IFS=$'\037' read -r url kind path dist green gf am sk kfr; do   # \037 (US
   # per-repo overrides (else the kind default)
   [[ -n "$green" ]] && d_green="$green"
   [[ -n "$gf" ]]    && d_gf="$gf"
+  # A repo whose branch policy is not the workspace's own says so here, and the config —
+  # not generated code — is then the source of truth for it (docs/adr/0025).
+  [[ -n "$bf" ]]    && d_basef="$bf"
+  [[ -n "$bx" ]]    && d_basex="$bx"
 
   # distribute: none/empty → null, else 'value'
   local_dist='null'
@@ -565,9 +582,10 @@ done < <(
       else if(k~/^path:/) path=val(k); else if(k~/^distribute:/) dist=val(k)
       else if(k~/^green:/) green=val(k); else if(k~/^guardian_focus:/) gf=val(k)
       else if(k~/^auto_merge:/) am=val(k); else if(k~/^suite_kind:/) sk=val(k)
-      else if(k~/^known_false_reds:/) kfr=val(k) }
-    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk,kfr }
-      url="";kind="";path="";dist="";green="";gf="";am="";sk="";kfr="" }
+      else if(k~/^known_false_reds:/) kfr=val(k)
+      else if(k~/^feature_base:/) bf=val(k); else if(k~/^fix_base:/) bx=val(k) }
+    function flush(){ if(url!=""){ printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", url,kind,path,dist,green,gf,am,sk,kfr,bf,bx }
+      url="";kind="";path="";dist="";green="";gf="";am="";sk="";kfr="";bf="";bx="" }
     /^products:[ \t]*$/ { inp=1; next }
     inp && /^  - id:/ { flush(); inrepos=0; next }
     inp && /^    repos:[ \t]*$/ { inrepos=1; next }
