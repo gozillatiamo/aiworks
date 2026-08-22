@@ -150,3 +150,20 @@ answered thread is a real outcome, silence reads as a stall.
 There is one sanctioned way to end a condition's attempts early: `cannot_fix[]`, refused unless it
 carries both the evidence (a command and its exit code, or the number) and what was ruled out first.
 It closes that one condition, records it, and leaves every other finding still being worked.
+
+**The cross-repo test-suite gate works the same way** since
+[ADR 0028](../adr/0028-the-test-suite-gate-does-not-halt-on-a-red.md), which is the other half of the
+rule: a red whose fix its scoped check never cleared, a gate that could not run, the round budget, a
+standing load regression, reds that are already red on base — each is worked to a budget, then
+recorded, and the gate keeps going on its other reds. Two things to know when reading such a run:
+
+- Blocking items from the gate land in the **same** list as the review loop's, so a run has one
+  "Blocking — needs a person" section, not two.
+- `test-suite-unresolved` is a real ending: the suite is **green** and the run is still blocked by
+  what the gate recorded. Together with `test-suite-failed` (red) and `test-suite-unverified` (no
+  verifiable result), that is three statuses meaning *the gate did not pass* — a reader checking only
+  for `failed` will mis-read two of them.
+
+One retraction exists, and only one: a per-case "the fix was never cleared" record is dropped if a
+later round's fix for that same case clears the same check. Every other record is a budget that ran
+out, and a budget does not un-run.

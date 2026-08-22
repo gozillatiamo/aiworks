@@ -103,8 +103,21 @@ nothing merges (`test-suite-unverified`).
 
 This is not hypothetical. A run reported `passed: true` having executed nothing, and no result
 ever reached the ticket — the failure is invisible precisely because a self-report cannot audit
-itself. It mirrors the rule the code reviewer already lives under: a gate that could not run
-halts the repo rather than passing.
+itself. It mirrors the rule the code reviewer already lives under: a gate that could not run is
+never a pass.
+
+**What "not run" does, since [ADR 0028](../adr/0028-the-test-suite-gate-does-not-halt-on-a-red.md):**
+it is worked before it is recorded. Re-briefing the runner is only the first repair — every attempt
+after that sends a **developer** at the harness, the candidate stack or a missing data precondition,
+on the four-class ladder, because re-asking a runner does not make a stack listen. What the repair
+budget cannot fix is recorded as a blocking item, and a recorded item is what blocks the merge — the
+gate never stops working the rest of its reds to hold that line, and a suite carrying one cannot read
+as passed however green its own verdict is.
+
+⚠️ **A load suite is green only when both halves are.** `passed: true` with
+`loadtest.verdict: fail` is NOT a pass, and in particular writes **no** run-state row: a row there
+tells the next invocation this gate is already proven, so it skips the whole comparison and merges a
+candidate nobody measured. That happened, and closing it is part of ADR 0028.
 
 ## Reading the result
 

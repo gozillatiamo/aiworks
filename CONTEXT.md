@@ -153,17 +153,38 @@ after the PR/MR is opened and again before approval.
 *Avoid*: base branch, default branch (both name the repo's habit, not this run's decision).
 
 **Blocking item**:
-A condition the review loop worked on, could not close, and RECORDED — a regression it could not
-undo, an unrunnable suite, a cross-repo gap, a second open PR/MR. The loop keeps working every other
-finding; the repo cannot reach `ready` while one stands, so nothing is approved and nothing merges.
-Not a halt, and not a pass.
-→ [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md).
+A condition a loop worked on, could not close, and RECORDED. From the **review loop**: a regression
+it could not undo, an unrunnable suite, a cross-repo gap, a second open PR/MR. From the **test-suite
+gate**: a red whose fix its scoped check never cleared, a gate that could not be made to run, the
+round budget, a standing load regression, reds already red on base, a red no repo in scope owns. The
+loop keeps working every other finding; a repo cannot reach `ready` while one stands and a GREEN
+suite cannot read as passed, so nothing is approved and nothing merges. Not a halt, and not a pass.
+Both producers write into ONE list, so a run has one "Blocking — needs a person" section.
+→ [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md),
+[ADR 0028](docs/adr/0028-the-test-suite-gate-does-not-halt-on-a-red.md).
 *Avoid*: halt, blocker (both suggest the loop stopped, which it does not).
+
+**Suite gate status** (dev-cycle):
+Three endings mean *the gate did not pass*, and reading only for one of them mis-reads the other two.
+`test-suite-failed` — the suite is red. `test-suite-unverified` — no verifiable result exists (no
+receipt, or no result comment for this run), which is never a pass however green the claim.
+`test-suite-unresolved` — the suite is **GREEN** and the run is blocked anyway, by what the gate
+recorded. → [ADR 0028](docs/adr/0028-the-test-suite-gate-does-not-halt-on-a-red.md)
+
+**Red kind**:
+The gate's own classification of each failure, which decides who is sent at it: `app` (a product
+defect, to the repo the gate attributed it to), `automation` (the spec, Page Object or fixture is
+wrong, to the suite repo), `prereq` (the suite never reached an assertion — harness, candidate stack,
+or a missing migration/seed — to a code repo). All three are routed; before ADR 0028 only `app` was,
+so the other two ticked a round away without any agent being asked to fix them. *Avoid*: flaky,
+environmental (that is a verdict about a red, not a classification of it).
 
 **Declared cannot**:
 `cannot_fix[]` — the one sanctioned way an agent ends a single condition's attempts early, refused
 unless it carries the evidence (a command + exit code, or the number) AND what was ruled out first.
-It closes that condition, records it, and leaves the rest of the repo's findings being worked.
+It closes that condition, records it, and leaves the rest of the repo's findings — or the gate's
+other reds — being worked. Read in both loops: `suite-unverified`, `regression`, `gate-red`,
+`gate-unrunnable`, `loadtest-regression`.
 
 **Durable record**:
 One marker-keyed comment per (kind, scope) that a run REWRITES on every later invocation, rather

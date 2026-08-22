@@ -138,5 +138,8 @@ than a repeat.
   whole ticket from being approved.
 - [ADR 0024](0024-a-qa-attributed-fix-is-quality-checked-not-re-reviewed.md) — the scoped quality
   check on an attributed fix, whose per-attempt bound is the pattern the budgets here follow.
+- [ADR 0028](0028-the-test-suite-gate-does-not-halt-on-a-red.md) — the same conversion for the
+  cross-repo test-suite gate, which this ADR deliberately left alone. The two together mean no phase
+  in the workflow ends on a finding.
 - `docs/agents/review-ledger.md` — a finding is raised once; this document is about what happens
   when it cannot be closed.

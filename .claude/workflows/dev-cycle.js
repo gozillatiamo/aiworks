@@ -282,7 +282,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-22.1'
+const DEVCYCLE_VERSION = '2026-08-22.2'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -1132,6 +1132,14 @@ const stallFp = (rows) => JSON.stringify(rows.map(([key, v]) => [
 // blocked, halted, stalled, unverified, budget-stopped, plan-missing, dry-run, awaiting approval —
 // is a private matter for the person who started it, and gets a DM instead of team-wide noise.
 const COMPLETE_ENDINGS = ['merge-skipped', 'awaiting-human-ship']
+// ADR-0027/0028 loudness, in ONE place because there are now two producers of blocking items (the
+// review loop, per code repo; the test-suite gate, per suite repo) and a banner improved for one
+// and not the other is exactly the drift these records exist to prevent.
+const bannerBlocking = (rows, worked) => {
+  if (!rows.length) return
+  log(`⛔⛔ ${rows.reduce((n, b) => n + b.items.length, 0)} BLOCKING ITEM(S) the ${worked} worked and could NOT close — these are why the run did not finish, and each needs a person:`)
+  rows.forEach((b) => b.items.forEach((it) => log(`   [${b.id}] ${it.kind}: ${it.detail}${it.human_action ? ` → ${it.human_action}` : ''}`)))
+}
 const DM_PLACEHOLDER = /^U0{6,}/
 const dmTarget = NOTIFY && NOTIFY_DM && !DM_PLACEHOLDER.test(NOTIFY_DM) ? NOTIFY_DM : null
 async function writeSummary(runStatus, runResult, deferredScopeRun = []) {
@@ -1139,7 +1147,7 @@ async function writeSummary(runStatus, runResult, deferredScopeRun = []) {
   const s = await safeAgent(
     `Run-recorder for the development-cycle workflow on ${ticket} (final status: ${runStatus}). You HAVE the Write tool + a narrow Bash perm for the usage parser — actually PRODUCE the file, do not just describe it.
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.${['repo-unresolved', 'review-unresolved', 'target-branch-halt', 'review-blocked-on'].includes(runStatus) ? ' Also state plainly, near the top, whether the cross-repo test-suite gate ran: on a stopped run it did NOT, so the change set is UNVALIDATED end-to-end and the run summary must not read as though it were.' : ''}
-${(runResult?.blockingByRepo || []).length ? `1a. ⛔ BLOCKING ITEMS — the review loop WORKED these and could not close them, which is why this run did not finish. Give them their own "## Blocking — needs a person" section ABOVE the narrative, one row per item: the repo, the kind, what it says, and the human action named. Do NOT soften them into "minor issues" and do NOT bury them in the per-repo narrative: each one is the reason a repo could not reach ready, and a reader who misses them will think the run merely ran out of rounds. Items: ${JSON.stringify(runResult.blockingByRepo).slice(0, 2000)}\n` : ''}${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}
+${(runResult?.blockingByRepo || []).length ? `1a. ⛔ BLOCKING ITEMS — this run WORKED these and could not close them (the review loop per code repo, or the cross-repo test-suite gate per suite repo), which is why it did not finish. Give them their own "## Blocking — needs a person" section ABOVE the narrative, one row per item: the repo, the kind, what it says, and the human action named. Do NOT soften them into "minor issues" and do NOT bury them in the per-repo narrative: each one is the reason a repo could not reach ready — or the reason a GREEN suite is still not a pass — and a reader who misses them will think the run merely ran out of rounds. Items: ${JSON.stringify(runResult.blockingByRepo).slice(0, 2000)}\n` : ''}${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}
 ${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}${budgetStopped ? `2e. 🛑 BUDGET STOP — put this as the FIRST line of the file, as a prominent banner: "${budgetStopped}" Say plainly which phases did NOT run, so nobody reads this summary as a completed cycle.\n` : ''}3. WRITE that narrative with the Write tool TWICE, to two paths at the WORKSPACE (org) ROOT: agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r${RUN_SEQ}.md (this invocation's own record, which NOTHING may overwrite — it is how a later reader reconstructs what each round of a hard ticket actually did, and its absence is why one postmortem had to be rebuilt from a chat log) and agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md (the LATEST pointer every other tool reads) — the workspace (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
 4. RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write BOTH files AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. Under that heading also state, in one line each: this invocation is r${RUN_SEQ} of ${ticket}; it spent ${budget.spent()} OUTPUT tokens against a ceiling of ${TOKEN_BUDGET} (dev_cycle.token_budget counts OUTPUT tokens only — total run tokens have measured roughly 29x that, so do not present the ceiling as a total-token budget); and the per-ticket running total, which you get by adding this invocation's output tokens to the same figure in the newest agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md that already exists (grep it out with \`grep -h 'output tokens this invocation' agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md\`), so a reader can see what the WHOLE ticket has cost across every round rather than just the last one. Write the line as: "<n> output tokens this invocation · <total> across r1..r${RUN_SEQ}". If nothing earlier exists, this invocation IS the total. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
 5. ARM THE ORCHESTRATOR GUARD — the run is over, so this session's job from here is to orchestrate, not to implement (docs/adr/0019). Read the session id with \`printf '%s\\n' "$CLAUDE_CODE_SESSION_ID"\`, then with the Write tool REPLACE \`agent_logs/${ticket}-dev-cycle-state/orchestrator-guard.json\` with exactly {"session_id":"<what that printed>","ticket":"${ticket}","armed":true,"run_state":"ended","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. Write it whatever the run's status is. If the env var printed nothing, write "session_id":"" — the guard stays inert rather than arming against an unknown session.
@@ -2638,10 +2646,7 @@ if (aborted.length) {
   const blockingByRepo = buildIds
     .map((id) => ({ id, items: repoResults[id]?.blocking || [] }))
     .filter((b) => b.items.length)
-  if (blockingByRepo.length) {
-    log(`⛔⛔ ${blockingByRepo.reduce((n, b) => n + b.items.length, 0)} BLOCKING ITEM(S) the review loop worked and could NOT close — these are why the run did not finish, and each needs a person:`)
-    blockingByRepo.forEach((b) => b.items.forEach((it) => log(`   [${b.id}] ${it.kind}: ${it.detail}${it.human_action ? ` → ${it.human_action}` : ''}`)))
-  }
+  bannerBlocking(blockingByRepo, 'review loop')
   const blocked = aborted.filter((id) => repoResults[id]?.status === 'review-blocked-on')
   if (blocked.length) log(`⛔⛔ BLOCKED ON ANOTHER REPO — ${blocked.map((id) => `${id} → ${(repoResults[id]?.blockedOn || []).join('+')}`).join(' | ')}. Land the upstream, then re-run; the run state resumes each repo from its own milestone.`)
   const runStatus = targetHalts.length ? 'target-branch-halt' : blocked.length ? 'review-blocked-on' : 'repo-unresolved'
@@ -2749,9 +2754,34 @@ let testSuite = null
 const tsSkippable = (id) => doneAt(id, 'test_suite') && !stateRows.some((r) => r.milestone === 'built' && r.degraded === true)
 
 // One suite's gate: initial run → receipt/ticket audit → C4's bounded red-triage loop → (load
-// suites only) the base-branch comparison. Returns { suite, verdict, unverified?, halted? }.
+// suites only) the base-branch comparison. Returns { suite, verdict, blocking, unverified?, why? }.
+// ADR-0028: nothing in here returns early on a finding any more. `blocking` is what keeps a suite
+// out of a pass, so a red it could not close never reads as green and never stops it working the
+// rest — and a suite whose own verdict is `passed` still fails the gate while it carries one.
 // Never calls phase() (this runs inside the fan-out below, alongside its siblings).
 async function runSuiteGate(testSuiteRepo) {
+  // ADR-0028 — the same spine ADR-0027 gave the review loop, for the gate. A red, an un-cleared
+  // fix, an unrunnable gate or a load regression is a must-fix with a budget; what a budget cannot
+  // close is RECORDED and the gate keeps working its other reds. `blocking` is what blocks the
+  // merge, and it is the ONLY thing that does — no early return decides that any more.
+  const blocking = []
+  const record = (kind, detail, human, key) => {
+    if (blocking.some((b) => b.kind === kind && (key ? b.key === key : b.detail === detail))) return
+    blocking.push({ kind, detail, human_action: human || null, key: key || null })
+    log(`⚠️ [test-suite/${testSuiteRepo}] BLOCKING RECORDED (${kind}) — ${String(detail).slice(0, 200)}. The gate continues on its other reds; this suite cannot read as passed.`)
+  }
+  // The ONE retraction, and it is narrow on purpose: a per-case `gate-fix-unchecked` record is a
+  // statement that THIS gate rejected THIS case's fix diff, and the same gate clearing the same
+  // case in a later round is a fresher statement of the same judgement — by the same reviewer, over
+  // a superset of the same diff. Nothing else is retractable: every other record is a budget that
+  // ran out, and a budget does not un-run.
+  const unrecord = (kind, key) => {
+    const i = blocking.findIndex((b) => b.kind === kind && b.key === key)
+    if (i < 0) return
+    blocking.splice(i, 1)
+    log(`↩️ [test-suite/${testSuiteRepo}] blocking item RETRACTED (${kind} · ${key}) — the same scoped check has now cleared this case's fix.`)
+  }
+  const suiteResult = (extra = {}) => ({ suite: testSuiteRepo, verdict: ts, blocking, ...extra })
   const candidates = mergeOrder.filter((id) => !REPOS[id].testSuite).map((id) => `${id}@${repoResults[id].plan.work_branch}`)
   const testSuiteFixed = repoResults[testSuiteRepo]?.build?.fixed || []
   const specHint = testSuiteFixed.length
@@ -2778,8 +2808,55 @@ On a red — CLASSIFY, do not guess and do not fix app code yourself. Re-run jus
 • "prereq" — the case cannot run because required seed/fixture data is absent (no matching entity, an unreachable transition). You own this too: prepare it through this repo's own sanctioned seeding path, then re-run that case.
 CONTROL RUN before you blame the candidate: for any "app" red, run the same case against the ticket's BASE branch build once. If it is red there too, COMPARE THE TWO FAILURES before you conclude anything: a control that fails IDENTICALLY — same error, same frame — confirms a SHARED cause, which is a reason to go find that shared cause, NOT evidence the red is out of scope. Set pre_existing_on_base:true only when the control's failure is genuinely a DIFFERENT one that happens to also be red, and say which two failures you compared. Getting this backwards is what let one fixture value masquerade as a pre-existing defect for two rounds. A genuinely pre-existing red is recorded and handed off, never fixed inside this gate. And if you conclude the fix lies outside this gate's bounds at all — a dependency bump, a repo-wide change — that conclusion permanently ends investigation, so fill out_of_gate_bounds_second_read with the SECOND, independent read that reached the same answer, or do not draw it.
 Return passed:true only if the scoped run (ticket + regression spec(s)) is green; otherwise passed:false with the failures and triage.${loadClause}${RECEIPT_CLAUSE}
-RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row, or a later resume would treat a gate that never passed as already proven): if and ONLY IF you are returning passed:true, as your LAST action before the structured result, with the Write tool (the directory already exists, created at Kickoff): Write \`agent_logs/${ticket}-dev-cycle-state/${testSuiteRepo}-test_suite.json\` at the WORKSPACE ROOT (the dir holding .claude/, NOT this repo) — ONE FILE for this checkpoint, so nothing else you write can collide with it — content exactly {"repo":"${testSuiteRepo}","milestone":"test_suite","status":"done","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. If your verdict is passed:false or the gate could not run, write NOTHING there.`
+RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row, or a later resume would treat a gate that never passed as already proven): if and ONLY IF you are returning passed:true${isLoadSuite ? ' AND loadtest.verdict is exactly "pass"' : ''}${blocking.length ? ' — WHICH YOU MUST NOT DO IN THIS ATTEMPT: this run already carries ' + blocking.length + ' recorded blocking item(s) for this suite (' + blocking.map((b) => b.kind).join(', ') + '), so this gate cannot be a proven pass whatever your verdict is. Write NO row' : ''}, as your LAST action before the structured result, with the Write tool (the directory already exists, created at Kickoff): Write \`agent_logs/${ticket}-dev-cycle-state/${testSuiteRepo}-test_suite.json\` at the WORKSPACE ROOT (the dir holding .claude/, NOT this repo) — ONE FILE for this checkpoint, so nothing else you write can collide with it — content exactly {"repo":"${testSuiteRepo}","milestone":"test_suite","status":"done","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. If your verdict is passed:false or the gate could not run, write NOTHING there.${isLoadSuite ? ' ⚠️ A LOAD SUITE THAT MET ITS OWN THRESHOLDS BUT LOST TO ITS BASE IS NOT GREEN — a row written there tells the next invocation this gate is already proven, so it skips the whole comparison and merges a candidate nobody measured. passed:true + loadtest.verdict "fail" or "unavailable" ⇒ no row.' : ''}`
   const gateOpts = (round) => ({ agentType: 'qa-runner', phase: 'Test suite', label: round ? `test-suite:${ticket}:${testSuiteRepo}#r${round}` : `test-suite:${ticket}:${testSuiteRepo}`, schema: TEST_SUITE_SCHEMA })
+
+  // A DECLARED "CANNOT" (ADR-0027, now here too). Accepted only with evidence AND what was ruled
+  // out first: this is the one field an agent could reach for to escape hard work. Accepted, it
+  // records the condition and ends ITS attempts; the gate keeps working its other reds.
+  const cannotFix = (res, what, human) => {
+    const kinds = []
+    for (const cf of (Array.isArray(res?.cannot_fix) ? res.cannot_fix : [])) {
+      if (!cf?.kind || String(cf.evidence || '').trim().length < 12 || String(cf.tried || '').trim().length < 12) {
+        log(`[test-suite/${testSuiteRepo}] a cannot_fix claim for "${cf?.kind ?? '?'}" was DROPPED — it carried no usable evidence/tried. Attempts on it continue.`)
+        continue
+      }
+      record(String(cf.kind), `${what} — ${cf.why}; evidence: ${cf.evidence}; already ruled out: ${cf.tried}`, human)
+      kinds.push(String(cf.kind))
+    }
+    return kinds
+  }
+  // THE GATE COULD NOT RUN is not a red, and re-briefing the qa-runner a third time does not make a
+  // stack listen or a migration exist. The only agent that can fix the harness, the candidate stack
+  // or a missing precondition is a developer — so an unrunnable gate routes to one, on the same
+  // four-class ladder ADR-0027 gave the review loop, and with the same demand for a receipt.
+  const firstCodeRepo = mergeOrder.find((id) => !REPOS[id].testSuite)
+  let unrunnableDeclined = false
+  const unblockGate = async (why, rc, target, label) => {
+    const T = REPOS[target] && mergeOrder.includes(target) ? target : firstCodeRepo
+    if (!T) return null
+    const tPlan = repoResults[T]?.plan
+    const dev = await safeAgent(
+      `${tag(T, REPOS[T].build, 'gate-unblock', label)} ⛔ THE CROSS-REPO TEST-SUITE GATE DID NOT RUN for ${ticket}, and that outranks every other piece of work right now: there is no verdict at all, so nothing in this run can say this change set does not break the suite, and no amount of reading the diff substitutes for a receipt. ${shellClauseFor(T)} Work on ${tPlan?.work_branch}.
+WHAT THE GATE GOT, verbatim: ${why}${rc?.command ? ` · command: \`${rc.command}\`${Number.isInteger(rc.exit_code) ? ` · exit ${rc.exit_code}` : ''}` : ' · (it reported no command)'}${rc?.summary_line ? ` · summary: "${String(rc.summary_line).slice(0, 200)}"` : ''}
+THE CANDIDATE IS UNMERGED, so it is the ticket's OWN work branches that have to be up and answering, not the default branches: ${candidates.join(', ')}.
+THIS REPO'S DECLARED KNOWN FALSE REDS: ${REPOS[T].knownFalseReds || '(none declared)'} — check these FIRST: if what the gate hit matches one, it is an environment failure, so reproduce it in isolation against ${tPlan?.base_branch || 'the base branch'} before treating it as real.
+CLASSIFY IT, then fix that class — in this order, because each is cheaper to rule out than the next:
+  (a) THE HARNESS ITSELF — the runner missing, or dependencies unresolved after a manifest change. Run the repo's install/resolve step, then re-run the check.
+  (b) THE CANDIDATE STACK IS NOT UP — the suite needs a service that is not listening. Bring each one up FROM ITS OWN TICKET WORK BRANCH and PROVE it answers by probing the port. ⚠️ a harness \`run\` that probes and then tears its server down has not given you a stack: it prints an UP verdict while nothing listens — start it in the background and re-probe.
+  (c) A DATA PRECONDITION — a migration or seed the suite assumes and nobody applied to the local store.
+  (d) GENUINELY ABSENT FROM THIS ENVIRONMENT — no container runtime, no credential, no such service. THE ONLY CLASS NOTHING CAN FIX.
+Keep ${REPOS[T].green}. Commit (fix(…) Refs ${ticket}) and push anything you changed — the gate re-runs against what is pushed, so an unpushed repair is not a repair.
+YOU MUST END WITH A RECEIPT: the exact command you ran to prove the gate can now run, its exit code, and the runner's own summary line quoted verbatim. No receipt means the gate still cannot run, whatever you changed.
+IF IT IS CLASS (d): say so in \`cannot_fix\` with kind "gate-unrunnable", the command + exit code that proves it, and what you ruled out first. That ends these attempts and is a legitimate result for a person to decide. Do NOT claim (d) to avoid (a)–(c) — the classes above are ordered by how cheap they are to rule out, so rule them out.`
+        + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
+      { agentType: REPOS[T].build, phase: 'Test suite', label: `gate-unblock:${ticket}:${T}#${label}`, schema: DEV_SCHEMA },
+    )
+    log(`[test-suite/${testSuiteRepo}] unblock pass ${label} in ${T}: ${dev?.summary?.slice(0, 100) ?? 'no summary'}`)
+    if (cannotFix(dev, `the cross-repo gate could not be made to run in ${T}`,
+      `unblock the gate by hand (or accept that this environment cannot run it), then re-run the dev-cycle — no receipt exists for this change set`).includes('gate-unrunnable')) unrunnableDeclined = true
+    return dev
+  }
 
   let ts = await safeAgent(gatePrompt(), gateOpts())
   log(`Test-suite gate [${testSuiteRepo}] (scoped: ticket + regression): ${ts?.passed ? 'PASS' : `${ts?.failures?.length ?? '?'} failure(s)`}`)
@@ -2810,17 +2887,30 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
       : `an independent read of the ticket found no result comment for this run (${audit?.detail || 'no detail'})`
     if (repair >= TEST_SUITE.maxSuiteRepairAttempts) {
       log(`⛔ TEST-SUITE GATE UNVERIFIED [${testSuiteRepo}] after ${repair} repair attempt(s) — ${verifyFail}. Treating the verdict as NOT RUN, never as a pass.`)
-      return { suite: testSuiteRepo, verdict: ts, unverified: true, why: verifyFail }
+      // Not when a developer already declared the environment cannot run it: that record carries
+      // the class and the proof, and this one would be a second row for the same condition.
+      if (!unrunnableDeclined) record('gate-unverified', `the cross-repo gate could not be made to report a verifiable result in ${repair} attempt(s): ${verifyFail}`,
+        `run this suite's scope by hand against the candidate branches and post the receipt, then re-run the dev-cycle — no verified result exists for this change set`)
+      return suiteResult({ unverified: true, why: verifyFail })
     }
     repair++
     log(`⚠️ [test-suite] ${testSuiteRepo} verdict UNVERIFIABLE (${verifyFail}) — repair attempt ${repair}/${TEST_SUITE.maxSuiteRepairAttempts}.`)
+    // A MISSING RECEIPT after one honest attempt is rarely a reporting problem: the qa-runner is
+    // usually telling us the suite would not run. So every attempt after the first sends a
+    // developer at the stack FIRST, and the qa-runner then re-runs against a repaired one. A
+    // missing REPORT is different — that is genuinely the runner's own to re-post, no dev needed.
+    if (!receiptOk && repair > 1 && !unrunnableDeclined) await unblockGate(verifyFail, ts?.receipt, firstCodeRepo, `verify${repair}`)
     const redo = await safeAgent(
       gatePrompt(`⛔ YOUR PREVIOUS VERDICT COULD NOT BE VERIFIED, so it does not count — ${verifyFail}. ${receiptOk
         ? `The RUN is not the problem: your result never reached the ticket where an independent reader can find it. Re-post it with /report-test-results ${ticket}, as r${RUN_SEQ}, and make sure the marker line \`[test-report · ${testSuiteRepo}]\` is the body's FIRST line and the stamp begins \`run r${RUN_SEQ}\` — a stamp that does not match is exactly what made this unverifiable. Then re-state the same receipt; do NOT re-run the suite just to satisfy this.`
         : `You must ACTUALLY RUN the scoped suite and quote its own output: the exact command line, its integer exit code, and the runner's own summary line verbatim. A verdict with no receipt is indistinguishable from a suite that never ran, and is treated as such.`}`),
       gateOpts(`verify${repair}`),
     )
-    if (!redo) break
+    if (!redo) {
+      record('gate-agent-crashed', `the gate agent returned no structured verdict on repair attempt ${repair} — the last thing known is: ${verifyFail}`,
+        `re-run the dev-cycle; if the gate agent dies again, run this suite's scope by hand and post the receipt`)
+      break
+    }
     ts = redo
     const rc2 = ts?.receipt
     receiptOk = !!(rc2?.command && Number.isInteger(rc2.exit_code) && rc2.summary_line)
@@ -2831,13 +2921,17 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
   }
   if (!receiptOk || !audit?.posted) {
     log(`⛔ TEST-SUITE GATE UNVERIFIED [${testSuiteRepo}] — ${verifyFail || 'the verdict could not be verified'}. Treating the verdict as NOT RUN, never as a pass.`)
-    return { suite: testSuiteRepo, verdict: ts, unverified: true, why: verifyFail || 'the verdict could not be verified' }
+    if (!blocking.length) record('gate-unverified', `the gate's verdict could not be verified: ${verifyFail || 'no reason reported'}`,
+      `run this suite's scope by hand against the candidate branches and post the receipt, then re-run the dev-cycle`)
+    return suiteResult({ unverified: true, why: verifyFail || 'the verdict could not be verified' })
   }
   if (repair) log(`✅ [test-suite] ${testSuiteRepo} verdict verified after ${repair} repair attempt(s).`)
 
-  // C4 — bounded red-triage loop. Halts, all with evidence, never fails open: rounds exhausted,
-  // an unclassified red, every red pre_existing_on_base, or a fix whose scoped quality check
-  // (docs/adr/0024) never clears inside its own attempt bound.
+  // C4 — bounded red-triage loop. Every ending is RECORDED with its evidence and never fails open
+  // (ADR-0028): rounds exhausted, an unclassified red, every red pre_existing_on_base, a fix whose
+  // scoped quality check (docs/adr/0024) never clears inside its own attempt bound, or a developer's
+  // evidenced `cannot_fix` on one red. None of them stops the loop — a recorded item stops the
+  // MERGE, which is the only thing a halt here was ever load-bearing for.
   // A ROUND BOUNDS ATTEMPTS, NOT HYPOTHESES — and that is how a wrong diagnosis survives one.
   // Measured: a spec-aborting error was diagnosed as a defect in the test runner, "fixable only by
   // a repo-wide version bump". The next round re-ran the same spec, got a byte-identical failure,
@@ -2852,11 +2946,47 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
   while (!ts?.passed && tsRound < MAX_TEST_SUITE_FIX_ROUNDS) {
     const triage = (ts?.triage || []).filter((t) => t?.case && t?.kind)
     const preExisting = triage.filter((t) => t.pre_existing_on_base === true)
-    if (!triage.length) break                       // an unclassified red is not repairable — hand off
-    if (preExisting.length === triage.length) break  // every red pre-exists on base — record + hand off
-    const appReds = triage.filter((t) => t.kind === 'app' && !t.pre_existing_on_base && REPOS[t.repo] && mergeOrder.includes(t.repo))
+    if (!triage.length) {
+      record('gate-red-unclassified', `the gate reported ${ts?.failures?.length ?? 'some'} failure(s) and classified none of them, so no red names an owner and none can be routed: ${(ts?.failures || []).map((f) => f?.case).filter(Boolean).join(', ') || ts?.conclusion || 'no detail returned'}`,
+        `triage these red(s) by hand — an unclassified red names no repo, so there is no agent to send at it`)
+      break
+    }
+    if (preExisting.length === triage.length) {
+      record('reds-pre-existing-on-base', `every red in this run is ALREADY red on the base branch, so this ticket's change set is not what broke them — and a candidate cannot be validated against a base that is red: ${preExisting.map((t) => `${t.case} (${t.evidence || 'no evidence reported'})`).join(' | ')}`,
+        `fix the base branch, or waive these cases for this ticket — nothing ${ticket} does can turn this gate green`)
+      break
+    }
+    // ADR-0028 — ALL THREE RED KINDS route now. Only `app` ever did, so a `prereq` or an
+    // `automation` red got no agent at all: the round counter ticked, the suite re-ran
+    // byte-identically, and the gate "did not converge" having never once been asked to fix what it
+    // found. Converting the halt to a record without routing these would be the worst of both — a
+    // loop that does not halt and does not work either.
+    const reds = triage.filter((t) => t.pre_existing_on_base !== true && ['app', 'prereq', 'automation'].includes(t.kind))
     tsRound++
-    for (const red of appReds) {
+    // Reds this round actually landed a fix for. A round that routed NOTHING — every red unowned,
+    // or every one declined with evidence — must not re-run the gate: nothing on any branch moved,
+    // so the verdict would be byte-identical, and paying for a re-run to learn that is the exact
+    // "you already know it reproduces" waste the re-derive brief below exists to stop.
+    let workedThisRound = 0
+    for (const t of reds) {
+      // WHO OWNS THIS RED. `app` lands in the repo the gate attributed it to. `automation` is the
+      // suite's own spec, so it lands in the suite repo. `prereq` is a stack or data failure that
+      // usually names no repo at all — it lands in the attributed one if there is one, else the
+      // first code repo, the same fallback the load-test attribution uses.
+      // The fallback is for `prereq` ONLY. An `app` red names a repo because the gate could see
+      // which one it was, so a name this run cannot resolve is a finding about SCOPE — sending its
+      // fix to an unrelated repo would be a confident wrong answer, which is worse than a record.
+      const owner = t.kind === 'automation' ? testSuiteRepo
+        : (REPOS[t.repo] && mergeOrder.includes(t.repo)) ? t.repo
+        : t.kind === 'prereq' ? firstCodeRepo
+        : null
+      if (!owner) {
+        record('gate-red-unowned', `the gate attributed the red "${t.case}" to ${t.repo || '(no repo named)'}, which is not in this run's scope, so no agent here owns it: ${t.evidence || 'no evidence reported'}`,
+          `widen ${ticket} to the repo that carries this red, or fix it there by hand`)
+        continue
+      }
+      // Normalized so every reference below reads `red.repo` whatever the kind resolved to.
+      const red = { ...t, repo: owner }
       const rDesc = REPOS[red.repo]
       const rBranch = repoResults[red.repo]?.plan?.work_branch
       const rPr = repoResults[red.repo]?.pr
@@ -2874,17 +3004,35 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
       // one classify → fix every red → re-run cycle, and a rejected check sends THAT red's fix back
       // to the developer inside the current cycle, BEFORE the suite is re-run. That ordering is the
       // point — a fix whose QA-visible symptom happens to go green must never ship un-checked.
+      // One brief per red KIND. The three failures look nothing alike — a product defect, a stack
+      // or data precondition, and the suite's own spec being wrong — and the fix for each is in a
+      // different place, so a single brief would have to be vague about all three.
+      const redBrief = red.kind === 'automation'
+        ? `A cross-repo test-suite red for ${ticket} is the SUITE'S OWN: the gate classified "${red.case}" as an automation failure, so the spec, its Page Object or its fixture is what is wrong, not the product. EVIDENCE (what the gate observed): ${red.evidence}. ${shellClauseFor(red.repo)} Work on ${rBranch}. Fix the spec/fixture so it asserts the behaviour ${ticket} actually specifies — and be sure of that before you touch it: a spec bent to match whatever the app currently does is exactly how a real defect ships green. If what you find is that the APP is wrong after all, do NOT change the spec: say so in your summary and name the repo that carries it, and the gate re-classifies it on the next round.`
+        : red.kind === 'prereq'
+          ? `A cross-repo test-suite red for ${ticket} is a PRECONDITION failure: the gate never got "${red.case}" as far as an assertion, because something the suite assumes was not there. EVIDENCE (what the gate observed): ${red.evidence}. ${shellClauseFor(red.repo)} Work on ${rBranch}. THE CANDIDATE IS UNMERGED, so it is the ticket's own work branches that have to be up and answering, not the default branches: ${candidates.join(', ')}. CLASSIFY IT, then fix that class, cheapest to rule out first: (a) the harness itself — the runner missing or dependencies unresolved after a manifest change · (b) a service in the candidate stack not listening (⚠️ a harness \`run\` that probes and then tears its server down has not given you a stack: it prints an UP verdict while nothing listens — start it in the background and re-probe) · (c) a migration or seed nobody applied to the local store · (d) genuinely absent from this environment — no container runtime, no credential, no such service — THE ONLY CLASS NOTHING CAN FIX. Do NOT touch the test-suite repo or its specs: a precondition is not a spec bug.`
+          : `A cross-repo test-suite red for ${ticket} was attributed to ${red.repo} by the gate. FAILING CASE: ${red.case}. EVIDENCE (what the gate observed): ${red.evidence}. ${shellClauseFor(red.repo)} Work on ${rBranch}. The failing spec IS the acceptance criterion: reproduce it with a failing test of THIS repo's own suite first (/tdd), then fix the cause. Do NOT touch the test-suite repo, its specs or its thresholds: changing the spec to match the behaviour is not fixing the bug.`
+      // ADR-0028's sanctioned exit for ONE red, so an immovable one stops eating attempts instead
+      // of being ground at until the round budget is gone. Priced to be expensive: no evidence and
+      // no `tried`, no claim.
+      const cannotClause = ` IF THIS RED GENUINELY CANNOT BE FIXED HERE — this environment cannot provide what it needs, or the behaviour the spec demands is not what ${ticket} asks for — say so in \`cannot_fix\` with kind "${red.kind === 'prereq' ? 'gate-unrunnable' : red.kind === 'automation' ? 'gate-red-automation' : 'gate-red'}", the command + exit code (or the assertion) that PROVES it, and what you ruled out first. That ends the attempts on THIS red only: every other red in this run keeps being worked, and the condition goes to a person. It is NOT a pass, and without evidence and \`tried\` it is refused and the attempts continue.`
       let cleared = false
+      let declined = false
       let attempt = 0
       let rejection = ''
       while (attempt < MAX_GATE_FIX_ATTEMPTS) {
         attempt++
         const fx = await safeAgent(
-          `${tag(red.repo, rDesc.build, 'gate-fix', tsRound)} A cross-repo test-suite red for ${ticket} was attributed to ${red.repo} by the gate. FAILING CASE: ${red.case}. EVIDENCE (what the gate observed): ${red.evidence}. ${shellClauseFor(red.repo)} Work on ${rBranch}. The failing spec IS the acceptance criterion: reproduce it with a failing test of THIS repo's own suite first (/tdd), fix the cause, keep ${rDesc.green}, commit (fix(…) Refs ${ticket}) and PUSH (\`git -C ${absOf(red.repo)} push\`) — the gate re-runs against the pushed candidate, so an unpushed fix cannot be measured. Do NOT touch the test-suite repo, its specs or its thresholds: changing the spec to match the behaviour is not fixing the bug.${checks.length ? ` YOUR FIX IS CHECKED ON ${checks.map((c) => c.key.toUpperCase()).join(' + ')}, over the diff you leave behind — green is necessary, not sufficient: no smell, no debt, no slower path introduced to get there.` : ''}${rejection}`
+          `${tag(red.repo, rDesc.build, 'gate-fix', tsRound)} ${redBrief} Keep ${rDesc.green}, commit (fix(…) Refs ${ticket}) and PUSH (\`git -C ${absOf(red.repo)} push\`) — the gate re-runs against the pushed candidate, so an unpushed fix cannot be measured.${checks.length ? ` YOUR FIX IS CHECKED ON ${checks.map((c) => c.key.toUpperCase()).join(' + ')}, over the diff you leave behind — green is necessary, not sufficient: no smell, no debt, no slower path introduced to get there.` : ''}${cannotClause}${rejection}`
             + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
           { agentType: rDesc.build, phase: 'Test suite', label: `gate-fix:${ticket}:${red.repo}#${tsRound}.${attempt}`, schema: DEV_SCHEMA },
         )
         log(`[test-suite] round ${tsRound}, attempt ${attempt}: ${red.repo} fix for ${red.case} — ${fx?.summary?.slice(0, 80) ?? 'no summary'}`)
+        if (cannotFix(fx, `the red "${red.case}" (${red.kind}, ${red.repo}) cannot be fixed inside this gate`,
+          `decide whether ${ticket} can ship with this case red, or the ticket/the environment has to change — the gate worked it and it did not move`).length) {
+          declined = true
+          break
+        }
         if (!checks.length) { cleared = true; break }
         const fixedFiles = (Array.isArray(fx?.fixed) ? fx.fixed : []).join(', ') || `unreported — locate them from the latest fix(${ticket}) commits on ${rBranch}`
         const verdicts = await parallel(checks.map((chk) => () => safeAgent(
@@ -2896,6 +3044,7 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
         if (!rejected.length) {
           cleared = true
           log(`✅ [test-suite] ${red.repo} fix for ${red.case} cleared its scoped ${checks.map((c) => c.key).join('+')} check on attempt ${attempt}.`)
+          unrecord('gate-fix-unchecked', red.case)
           break
         }
         const detail = rejected.map((chk, i) => {
@@ -2906,13 +3055,23 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
         rejection = ` PRIOR ATTEMPT REJECTED (attempt ${attempt} of ${MAX_GATE_FIX_ATTEMPTS}) — the scoped quality check on your last fix did not clear: ${detail}. Address exactly that, on the same failing case, without widening the change.`
         log(`⚠️ [test-suite] scoped ${rejected.map((c) => c.key).join('+')} check REJECTED the ${red.repo} fix for ${red.case} (attempt ${attempt}/${MAX_GATE_FIX_ATTEMPTS}) — ${detail.slice(0, 200)}. ${attempt < MAX_GATE_FIX_ATTEMPTS ? 'Back to the developer, inside this round; the suite is NOT re-run yet.' : 'No attempts left.'}`)
       }
-      // NEVER FALL THROUGH TO THE RE-RUN with a red's fix still unchecked: the suite going green
-      // would then read as the whole verdict, and the un-cleared diff would ride the merge train.
-      if (!cleared) {
-        const why = `quality check for ${red.case} did not clear within ${MAX_GATE_FIX_ATTEMPTS} attempt(s)`
-        log(`⛔ [test-suite] ${why} (${red.repo}) — halting this suite; the suite is not re-run and nothing merges. Address it, then re-run \`/dev-cycle ${ticket}\`.`)
-        return { suite: testSuiteRepo, verdict: ts, halted: why }
+      // AN UNCHECKED FIX MUST NEVER READ AS A PASS: the suite going green afterwards would
+      // otherwise be the whole verdict, and the un-cleared diff would ride the merge train. What
+      // changed in ADR-0028 is only WHICH mechanism holds that line. It used to be this early
+      // return, which also threw away every red after this one in the same round — measured, one
+      // repo's un-cleared fix abandoned two sibling reds that were closable. Now the RECORD holds
+      // it: this suite cannot read as passed while it stands, and the loop keeps working the rest.
+      if (!declined) workedThisRound++
+      if (!cleared && !declined) {
+        log(`⛔ [test-suite] quality check for ${red.case} (${red.repo}) did not clear within ${MAX_GATE_FIX_ATTEMPTS} attempt(s) — recorded; this suite cannot read as passed, and the gate continues on its other reds.`)
+        record('gate-fix-unchecked', `the fix for the red "${red.case}" in ${red.repo} was rejected by its own scoped ${checks.map((c) => c.key).join('+')} check ${MAX_GATE_FIX_ATTEMPTS} time(s) (round ${tsRound}) and is still on ${rBranch} un-cleared`,
+          `read the [gate:*] thread(s) on ${rPr?.pr_url || `the ${red.repo} PR/MR`} and either land an acceptable fix by hand or accept the one that is there`,
+          red.case)
       }
+    }
+    if (!workedThisRound) {
+      log(`[test-suite] round ${tsRound} routed no fix at all (${reds.length} red(s), all unowned or declined) — not re-running a gate whose inputs did not change.`)
+      break
     }
     const sigBefore = tsSignature(ts)
     const repeated = prevSignature !== null && sigBefore === prevSignature
@@ -2921,15 +3080,24 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
       : ''
     prevSignature = sigBefore
     const again = await safeAgent(gatePrompt(`RE-RUN after round ${tsRound}: run ONLY the previously failing case(s) plus the ticket's own spec scope.${rederive}`), gateOpts(tsRound))
-    if (!again) break
+    if (!again) {
+      record('gate-agent-crashed', `the gate agent returned no structured verdict on the round-${tsRound} re-run, so this run holds no verdict for the fixes it just landed`,
+        `re-run the dev-cycle; if the gate agent dies again, run this suite's scope by hand and post the receipt`)
+      break
+    }
     if (repeated) log(`[test-suite] round ${tsRound + 1} briefed to RE-DERIVE, not re-confirm — the failure signature did not change (${sigBefore || 'unclassified'}).`)
     ts = again
     tick(`test-suite:${testSuiteRepo}:round-${tsRound}`)
   }
 
-  if (!ts?.passed) {
-    log(`⚠️ Test-suite gate [${testSuiteRepo}] failed — did not converge within ${MAX_TEST_SUITE_FIX_ROUNDS} triage round(s). Stopping before Distribute + Merge.`)
-    return { suite: testSuiteRepo, verdict: ts, halted: `gate did not converge within ${MAX_TEST_SUITE_FIX_ROUNDS} triage round(s)` }
+  // The generic record is for the ROUND BUDGET running out. Every early break above already
+  // recorded its own, more specific reason, and adding this on top would give the reader two rows
+  // for one condition — with a round count that never happened. `|| !blocking.length` is the
+  // never-fail-open backstop: a red suite always leaves at least one record behind.
+  if (!ts?.passed && (tsRound >= MAX_TEST_SUITE_FIX_ROUNDS || !blocking.length)) {
+    log(`⚠️ Test-suite gate [${testSuiteRepo}] still red after ${tsRound} triage round(s) of ${MAX_TEST_SUITE_FIX_ROUNDS} — recorded. Nothing merges.`)
+    record('gate-red', `the suite did not go green within ${tsRound} triage round(s) (budget ${MAX_TEST_SUITE_FIX_ROUNDS}): ${(ts?.triage || []).map((t) => `${t?.case} (${t?.kind}${t?.repo ? ` · ${t.repo}` : ''})`).join(' | ') || ts?.conclusion || 'no triage returned'}`,
+      `triage the remaining red(s) by hand — every routed fix this run could attempt has been attempted`)
   }
 
   // 4b. LOAD SUITE — green is only half the bar. A load suite exists to measure NUMBERS, so
@@ -2937,9 +3105,17 @@ RUN-STATE (only on a GREEN verdict — a red/unavailable gate must leave no row,
   // branch. Three verdicts, and `unavailable` is a real one: when the environment's own
   // run-to-run noise floor is wider than the effect, no honest call exists, so the gate
   // loud-skips instead of inventing one in either direction.
-  if (isLoadSuite) {
+  // ADR-0028 — gated on the FUNCTIONAL verdict, which used to be implicit in the early return above.
+  // A comparison measured on a candidate whose own specs are red is not a measurement of anything,
+  // and attribution + a fix + a re-run against it is the "expensive garbage is still garbage" case
+  // ADR-0027 named: the red is already recorded, so nothing is lost by not paying for it.
+  if (isLoadSuite && ts?.passed) {
     let lt = ts?.loadtest
     let ltRound = 0
+    // Set when the developer's own evidenced `cannot_fix` already recorded this regression: its
+    // record carries the number AND what was ruled out, so the generic one below would be a second
+    // row for one condition — and a reader counting blocking items would double-count it.
+    let ltDeclared = false
     while (lt?.verdict === 'fail' && ltRound < MAX_LOADTEST_FIX_ROUNDS) {
       ltRound++
       // Attribute BEFORE fixing. A percentile that moved on a laptop is not yet a regression,
@@ -2971,6 +3147,15 @@ IF THE COST IS INHERENT to the behaviour ${ticket} requires — the change adds 
         { agentType: 'developer', phase: 'Test suite', label: `lt-fix:${ticket}:${ltRound}`, schema: DEV_SCHEMA },
       )
       log(`[loadtest] round ${ltRound} fix: ${fix?.summary?.slice(0, 80) ?? 'no summary'}`)
+      // The brief has ALWAYS ended with "if the cost is inherent, say so in cannot_fix" — and until
+      // ADR-0028 nothing read the field, so an honest, evidenced answer bought another round of the
+      // same work. Read it: an accepted claim ends the load rounds and records the number.
+      if (cannotFix(fix, `the measured load regression in ${fixRepo} is inherent to what ${ticket} requires`,
+        `decide whether ${ticket} is worth this cost — the number is real and no cheaper implementation was found`).length) {
+        log(`[loadtest] round ${ltRound}: developer declared the cost inherent, with evidence — no further rounds.`)
+        ltDeclared = true
+        break
+      }
       const reRun = await safeAgent(
         `${tag(testSuiteRepo, 'qa-runner', 'test-suite', ltRound)} RE-RUN the load-test gate for ${ticket} after a fix in ${fixRepo} (round ${ltRound}). Rebuild the candidate from the ticket work branches — ${candidates.join(', ')} — then invoke /loadtest-baseline-gate ${ticket} again. The baseline is UNCHANGED (same base SHA), so reuse the cached base runs and measure the candidate only. Post the fresh comparison to the ticket and the PR/MR, and return the same structured result as before — receipt included.${RECEIPT_CLAUSE}`,
         { agentType: 'qa-runner', phase: 'Test suite', label: `test-suite:${ticket}:${testSuiteRepo}:r${ltRound}`, schema: TEST_SUITE_SCHEMA },
@@ -2980,10 +3165,12 @@ IF THE COST IS INHERENT to the behaviour ${ticket} requires — the change adds 
     }
     ts = { ...ts, loadtest: lt }
     if (lt?.verdict === 'fail') {
-      log(`⛔ LOAD-TEST REGRESSION stands after ${ltRound} fix round(s) [${testSuiteRepo}] — ${(lt.regressed || []).join('; ')}. The candidate is slower than ${lt.base_sha || 'base'} by more than the environment's own noise.`)
-      return { suite: testSuiteRepo, verdict: ts, halted: `load-test regression stands after ${ltRound} fix round(s)` }
-    }
-    if (lt?.verdict === 'unavailable' || !lt?.verdict) {
+      log(`⛔ LOAD-TEST REGRESSION stands after ${ltRound} fix round(s) [${testSuiteRepo}] — ${(lt.regressed || []).join('; ')}. The candidate is slower than ${lt.base_sha || 'base'} by more than the environment's own noise. Recorded; nothing merges.`)
+      if (!ltDeclared) record('loadtest-regression', `the candidate is measurably slower than ${lt.base_sha || 'base'} after ${ltRound} fix round(s), by more than this environment's own noise floor: ${(lt.regressed || []).join('; ') || 'see the comparison table on the PR/MR'}`,
+        `decide whether ${ticket} ships at this cost, or the regression is fixed by hand first — the suite is GREEN, so nothing but this number is holding it`)
+    // `else if`, not `if`: the 'fail' branch above no longer returns, so a plain `if` would fall
+    // through to the ✅ line below and log a passed baseline for a measured regression.
+    } else if (lt?.verdict === 'unavailable' || !lt?.verdict) {
       loadtestGateUnavailable = `The load-test gate could not judge ${ticket} (${testSuiteRepo}) against its base branch: ${(lt?.too_noisy || []).join('; ') || 'no baseline comparison was returned'}. The suite is GREEN, but "equal-or-better than base" is UNPROVEN — do NOT describe this run as performance-validated.`
       log(`⚠️  LOAD-TEST BASELINE UNAVAILABLE [${testSuiteRepo}] — ${loadtestGateUnavailable}`)
     } else {
@@ -2991,7 +3178,7 @@ IF THE COST IS INHERENT to the behaviour ${ticket} requires — the change adds 
     }
   }
 
-  return { suite: testSuiteRepo, verdict: ts }
+  return suiteResult()
 }
 
 if (scope.test_suite?.needed && testSuiteRepos.length && mergeOrder.some((id) => !REPOS[id].testSuite)) {
@@ -3006,15 +3193,26 @@ if (scope.test_suite?.needed && testSuiteRepos.length && mergeOrder.some((id) =>
     ...tsResumed.map((id) => ({ suite: id, verdict: { passed: true } })),
     ...(await parallel(tsRunNow.map((id) => () => runSuiteGate(id)))),
   ]
-  const suiteFailed = suiteVerdicts.filter((s) => s && (s.halted || s.unverified || !s.verdict?.passed))
-  testSuite = { suites: suiteVerdicts.map((s) => ({ suite: s.suite, passed: !!s.verdict?.passed, receipt: s.verdict?.receipt, loadtest: s.verdict?.loadtest })), passed: !suiteFailed.length }
+  // ADR-0028's fail-open guard, and the one line that makes the whole conversion safe: a suite that
+  // returned passed:true but RECORDED something the gate could not close is not a pass. Without
+  // `s.blocking?.length` here, an un-cleared fix or a standing load regression would ride the merge
+  // train the moment the next re-run happened to go green — the exact silent degradation trading a
+  // halt for a record risks.
+  const suiteFailed = suiteVerdicts.filter((s) => s && (s.unverified || s.blocking?.length || !s.verdict?.passed))
+  testSuite = { suites: suiteVerdicts.map((s) => ({ suite: s.suite, passed: !!s.verdict?.passed && !s.blocking?.length, receipt: s.verdict?.receipt, loadtest: s.verdict?.loadtest, blocking: s.blocking || [] })), passed: !suiteFailed.length }
   if (suiteFailed.length) {
+    // Same shape the review loop's aggregation produces, on purpose: writeSummary's blocking
+    // section, the incomplete-run DM and the banner all read `blockingByRepo`, and a suite repo is
+    // a repo. One mechanism, one "Blocking — needs a person" section for the reader.
+    const blockingByRepo = suiteVerdicts.filter((s) => s?.blocking?.length).map((s) => ({ id: s.suite, items: s.blocking }))
+    bannerBlocking(blockingByRepo, 'test-suite gate')
     const anyUnverified = suiteFailed.some((s) => s.unverified)
-    const runStatus = anyUnverified ? 'test-suite-unverified' : 'test-suite-failed'
-    const why = suiteFailed.map((s) => `${s.suite}: ${s.unverified ? (s.why || 'unverified') : (s.halted || 'gate failed')}`).join(' | ')
-    log(`⛔ TEST-SUITE GATE — ${why}. NOTHING merged; PR/MR left OPEN. Re-run the dev-cycle once every suite genuinely runs and reports.`)
-    const summary = await writeSummary(runStatus, { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, why }, runDeferred)
-    return { ticket, status: runStatus, mergeOrder, repoResults, testSuite, testSuiteRequested, why, summary, spend }
+    const anyRed = suiteFailed.some((s) => !s.unverified && !s.verdict?.passed)
+    const runStatus = anyUnverified ? 'test-suite-unverified' : anyRed ? 'test-suite-failed' : 'test-suite-unresolved'
+    const why = suiteFailed.map((s) => `${s.suite}: ${s.unverified ? (s.why || 'unverified') : s.verdict?.passed ? `green, but ${s.blocking.length} recorded blocking item(s): ${s.blocking.map((b) => b.kind).join(', ')}` : `gate red${s.blocking?.length ? ` + ${s.blocking.length} recorded blocking item(s)` : ''}`}`).join(' | ')
+    log(`⛔ TEST-SUITE GATE — ${why}. NOTHING merged; PR/MR left OPEN.`)
+    const summary = await writeSummary(runStatus, { ticket, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why }, runDeferred)
+    return { ticket, status: runStatus, mergeOrder, repoResults, testSuite, testSuiteRequested, blockingByRepo, why, summary, spend }
   }
   log(`Test-suite gate: ALL ${testSuiteRepos.length} suite(s) PASS (${testSuiteRepos.join(', ')}).`)
   // The suite repos' own approval tick. They have no code reviewer — `review: null` by kind — so
