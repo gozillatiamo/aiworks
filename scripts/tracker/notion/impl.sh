@@ -402,18 +402,114 @@ tracker_download_attachment() {
   printf 'Downloaded %s -> %s\n' "$ref" "$dest"
 }
 
-# tracker_find_comment TICKET MARKER -> nothing, always. Finding the comment would be easy
-# enough here; EDITING it is what this provider can't do (Notion's comment API has no update endpoint),
-# so reporting a hit would only send the caller to a tracker_edit_comment that dies. Printing
-# nothing makes an upsert degrade the way it should: WARN, and post a fresh comment. The words
-# are the deliverable; updating in place is the nicety.
-tracker_find_comment() {
-  echo "WARN: TRACKER_PROVIDER=notion cannot update a comment in place — posting a new one instead of updating the marked one" >&2
-  return 0
+# ── durable marked records, as page BLOCKS ────────────────────────────────────────
+#
+# Notion's comment API has no update endpoint — it can create and read, never rewrite. That used
+# to make every marked record on this provider append instead of update, which is bad enough on
+# its own (a ticket becomes a stack of near-identical reports and nobody can tell which is
+# current). It also broke something louder: dev-cycle proves its cross-repo test-suite gate really
+# ran by having a second agent FIND this run's result on the ticket, through exactly this call. A
+# find that always answers "nothing" meant that gate could never be verified — it was recorded as
+# NOT RUN on every ticket, forever, on this workspace's default provider.
+#
+# Notion cannot rewrite a comment, but it can rewrite the PAGE. So a marked record lives as one
+# top-level `callout` block whose first line carries the marker and whose children are the record
+# body: to update it, archive that one block and append a fresh one. Exactly one block per marker
+# exists at any time, the marker is still what identifies it, and the record ends up on the page
+# body where a reader meets it — rather than several rounds deep in a comment feed.
+#
+# The comment feed is left to humans, which is the right split: their conversation is a
+# conversation, and these records are not.
+
+# notion_find_marked_block <page-id> <marker> -> the callout's block id, or nothing.
+# The marker lives in the CALLOUT'S OWN rich_text, deliberately: a block payload from
+# /blocks/{id}/children does not carry its children, so a marker only in the body would be
+# invisible here. The callout is the header; the record is its children.
+# Only TOP-LEVEL children are searched — a record is always appended at the top level, and a
+# marker that happens to appear inside a human's nested note must not be mistaken for one.
+notion_find_marked_block() {
+  local pid="$1" marker="$2" blocks
+  blocks="$(notion_collect_pages GET "/blocks/$pid/children")" || return 0
+  printf '%s' "$blocks" | jq -r --arg m "$marker" '
+    [ .[] | select(.type == "callout")
+          | select([ (.callout.rich_text // [])[] | .plain_text // "" ] | join("") | contains($m))
+          | .id ]
+    | last // empty' 2>/dev/null || true
 }
 
+# tracker_find_comment TICKET MARKER -> "<id>\n<text>" of the marked record, or nothing.
+# Same contract as the other providers (first line is the id tracker_edit_comment takes), so
+# upsert-ticket-comment.sh and every caller that reads a marked record back are unchanged.
+tracker_find_comment() {
+  local ticket="$1" marker="$2" page_id bid text
+  page_id="$(notion_resolve_page_id "$ticket")"
+  bid="$(notion_find_marked_block "$page_id" "$marker")"
+  [[ -n "$bid" ]] || return 0
+  # The body is the callout's children. Callers read this back for real — the dev-cycle
+  # test-suite audit decides whether a gate ran from these very words — so return the record,
+  # not just its id.
+  text="$(notion_collect_pages GET "/blocks/$bid/children" \
+    | jq -r -L "$NOTION_IMPL_DIR" 'include "notion"; render_blocks_text' 2>/dev/null || true)"
+  printf '%s\n%s\n' "$bid" "$text"
+}
+
+# tracker_edit_comment TICKET BLOCK_ID DRY TEXT — replace a marked record in place.
+# "In place" means the marker keeps identifying exactly one block: the old one is archived and a
+# new one appended. The record therefore moves to the bottom of the page on each update, which is
+# the honest ordering — most recently written, last.
 tracker_edit_comment() {
-  die "edit-ticket-comment.sh is not implemented for TRACKER_PROVIDER=notion yet (Notion's comment API has no update endpoint) — edit the comment manually for now"
+  local ticket="$1" block_id="$2" dry="$3" text="$4" marker="${5:-}" page_id children
+  # A record with no header text is invisible to the next run, which would then write a second
+  # one — the exact failure this whole path exists to remove. Fall back to the body's first line
+  # (the documented marker convention) and refuse outright if even that is empty.
+  [[ -n "$marker" ]] || marker="$(printf '%s' "$text" | sed -n '1{s/[[:space:]]*$//;p;}')"
+  [[ -n "$marker" ]] || die "a marked record needs a marker: pass it, or put it on the body's first line"
+  page_id="$(notion_resolve_page_id "$ticket")"
+  children="$(printf '%s' "$text" | jq -R -s -L "$NOTION_IMPL_DIR" 'include "notion"; md_to_blocks')"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — DELETE /blocks/%s then PATCH /blocks/%s/children (%s block(s) in one callout marked "%s")\n' \
+      "$block_id" "$page_id" "$(printf '%s' "$children" | jq 'length')" "$marker"
+    return 0
+  fi
+  notion_api DELETE "/blocks/$block_id" '' >/dev/null
+  notion_append_marked_callout "$page_id" "$marker" "$children"
+  printf 'Updated the marked record on %s (replaced block %s)\n' "$ticket" "$block_id"
+}
+
+# tracker_add_marked TICKET DRY TEXT — the FIRST write of a marked record on this provider.
+# It goes to the page body, not the comment feed, so tracker_find_comment can find it again;
+# storing it as a comment would make the very next run post a second one.
+tracker_add_marked() {
+  local ticket="$1" dry="$2" text="$3" marker="${4:-}" page_id children
+  [[ -n "$marker" ]] || marker="$(printf '%s' "$text" | sed -n '1{s/[[:space:]]*$//;p;}')"
+  [[ -n "$marker" ]] || die "a marked record needs a marker: pass it, or put it on the body's first line"
+  page_id="$(notion_resolve_page_id "$ticket")"
+  children="$(printf '%s' "$text" | jq -R -s -L "$NOTION_IMPL_DIR" 'include "notion"; md_to_blocks')"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — PATCH /blocks/%s/children (%s block(s) in one callout marked "%s")\n' \
+      "$page_id" "$(printf '%s' "$children" | jq 'length')" "$marker"
+    return 0
+  fi
+  notion_append_marked_callout "$page_id" "$marker" "$children"
+  printf 'Added a marked record to %s (page block)\n' "$ticket"
+}
+
+# notion_append_marked_callout <page-id> <marker> <children-json> — wrap a rendered body in ONE
+# callout block so the whole record is a single addressable unit, with the marker as the callout's
+# own text so notion_find_marked_block can see it without fetching children. Notion caps a create
+# at 100 children and the callout's children share that cap, so anything longer is appended to the
+# callout afterwards — the container still holds it all, which keeps the marker one-to-one.
+notion_append_marked_callout() {
+  local pid="$1" marker="$2" children="$3" head rest cid
+  head="$(printf '%s' "$children" | jq '.[0:100]')"
+  rest="$(printf '%s' "$children" | jq '.[100:]')"
+  cid="$(notion_api PATCH "/blocks/$pid/children" "$(jq -n --argjson c "$head" --arg m "$marker" '
+      {children: [ { object: "block", type: "callout",
+                     callout: { rich_text: [ {type: "text", text: {content: $m}} ],
+                                icon: {emoji: "📝"}, children: $c } } ]}')" \
+    | jq -r '.results[0].id // empty')"
+  [[ -n "$cid" && "$(printf '%s' "$rest" | jq 'length')" -gt 0 ]] && notion_append_blocks "$cid" "$rest"
+  return 0
 }
 
 # tracker_find OPTS_JSON — OPTS = {query, open, limit, as_json, types:[...]}.

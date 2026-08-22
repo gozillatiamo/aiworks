@@ -62,13 +62,27 @@ Legend: ✅ pass · ❌ fail · — not automated (manual-only / partial)
 
 ![run report](attachment:{{ id }})
 
+**Run video**
+
+<!-- EVERY video the run produced, green or red: failing specs first, then the rest, then the
+     run-wide one, each ALONE on its own line, while the running total stays under 25 MB.
+     Delete this whole block only when `scripts/dev.sh artifacts` listed no `video` row at all —
+     and say "no video captured" under Coverage instead, so a reader knows it was absent rather
+     than withheld. -->
+
+![{{ spec or TC the video covers }}](attachment:{{ id }})
+
+<!-- One line per video you did NOT attach, with its real size and path. Never drop one in
+     silence: a report that omits evidence without saying so reads like a report that had none. -->
+_Not attached_ — `{{ file }}` ({{ n }} MB, over the 25 MB budget): {{ path }}
+
 ## Run history
 
-<!-- One line per EARLIER run of this suite on this ticket, oldest first, carried forward
-     verbatim from the comment being replaced — then this run's line appended. This is the
-     whole audit trail that survives an in-place update: the body above is only ever the
-     latest run. Never rewrite an older line, and never drop one to keep the comment short.
-     On the FIRST run this section holds only that run's own line. -->
+<!-- RENDERED FROM THE LEDGER, never re-typed from the record being replaced. Append this run's
+     one line to agent_logs/<KEY>-test-report-history.tsv, then render the whole file:
+       awk -F'\t' '{printf "- %s · %s · %s\n", $1, $2, $3}' agent_logs/<KEY>-test-report-history.tsv
+     Re-merging history by hand is what produced three reports that contradicted their own runs.
+     On the FIRST run the ledger holds exactly one line — this run's. -->
 
 - `r1` · {{ UTC }} · {{ PASS | FAIL }} {{ n/total }} · candidate {{ repo@sha }}
 - `r2` · {{ UTC }} · {{ PASS | FAIL }} {{ n/total }} · candidate {{ repo@sha }}

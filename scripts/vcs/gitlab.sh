@@ -64,7 +64,7 @@ vcs_find_prs() {
 }
 
 # vcs_list_prs -> one TSV line per OPEN MR in the repo of the current directory:
-#   iid <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> title <TAB> url
+#   iid <TAB> draft(yes|no) <TAB> author <TAB> updated(YYYY-MM-DD) <TAB> target <TAB> title <TAB> url
 # Read-only. The key-filtered vcs_find_prs answers "where is ticket X?"; this answers "what is
 # waiting?", which needs the whole open set and the fields a reviewer triages on.
 vcs_list_prs() {
@@ -73,18 +73,27 @@ vcs_list_prs() {
                      (if .draft then "yes" else "no" end),
                      (.author.username // "-"),
                      ((.updated_at // "")[0:10]),
+                     (.target_branch // "-"),
                      (.title // ""),
                      (.web_url // "") ] | @tsv' 2>/dev/null || true
 }
 
-# vcs_pr_view NUMBER -> "state=<MERGED|OPEN|CLOSED>" + "merge_sha=<sha>".
+# vcs_pr_view NUMBER -> "state=", "merge_sha=", "approved=", "target_branch=", "source_branch=".
+#
+# target_branch/source_branch are printed because a gate cannot assert what the sanctioned tool
+# refuses to show. This function always fetched the whole MR object — target_branch included — and
+# threw the field away, so "does this MR target the branch the run said?" had no answer through the
+# adapter, and one measured run reported its clean terminal state with every MR pointed at a branch
+# nobody had asked for. The data was already on the wire.
 vcs_pr_view() {
-  local num="$1" json state sha up
+  local num="$1" json state sha up tgt src
   if ! json="$(glab api "projects/$(_gl_project)/merge_requests/$num" 2>/dev/null)"; then
-    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\n'; return 0
+    printf 'state=UNKNOWN\nmerge_sha=\napproved=unknown\ntarget_branch=\nsource_branch=\n'; return 0
   fi
   state="$(printf '%s' "$json" | jq -r '.state // "unknown"')"
   sha="$(printf '%s' "$json" | jq -r '.merge_commit_sha // .squash_commit_sha // ""')"
+  tgt="$(printf '%s' "$json" | jq -r '.target_branch // ""')"
+  src="$(printf '%s' "$json" | jq -r '.source_branch // ""')"
   # Normalize GitLab states to the interface's vocabulary.
   case "$state" in
     merged)        up=MERGED ;;
@@ -92,7 +101,23 @@ vcs_pr_view() {
     closed|locked) up=CLOSED ;;
     *)             up="$(printf '%s' "$state" | tr '[:lower:]' '[:upper:]')" ;;
   esac
-  printf 'state=%s\nmerge_sha=%s\napproved=%s\n' "$up" "$sha" "$(vcs_pr_approved "$num")"
+  printf 'state=%s\nmerge_sha=%s\napproved=%s\ntarget_branch=%s\nsource_branch=%s\n' \
+    "$up" "$sha" "$(vcs_pr_approved "$num")" "$tgt" "$src"
+}
+
+# vcs_pr_retarget NUMBER BASE -> repoint an OPEN MR at a different target branch.
+# GitLab keeps existing approvals across a retarget, which is why this exists at all: the only
+# route before was close + reopen against the right base, and GitLab does NOT carry approvals
+# across that — so repairing four mis-targeted MRs also destroyed four approvals that then had to
+# be rebuilt by hand. One PUT does it, and the field was supported all along.
+vcs_pr_retarget() {
+  local num="$1" base="$2" dry="${3:-0}" out
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — PUT merge_requests/%s target_branch=%s\n' "$num" "$base"; return 0
+  fi
+  out="$(glab api --method PUT "projects/$(_gl_project)/merge_requests/$num" \
+          -f "target_branch=$base" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+  printf 'target_branch=%s\n' "$(printf '%s' "$out" | jq -r '.target_branch // ""')"
 }
 
 # vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this

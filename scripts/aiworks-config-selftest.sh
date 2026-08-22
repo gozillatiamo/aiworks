@@ -169,6 +169,98 @@ ck "a local auto_approve:true never reaches the committed mirror" \
 ck "…and the run says why the local file was not used for it" \
    "regenerated from workspace.config.yaml (shared) only" "$out"
 
+printf '\nBASE PROJECTION (docs/adr/0025)\n'
+
+# The regression this section exists for: a `test-suite` repo used to be projected with
+# base.feature = fix_base, so a ticket's suite branch was cut off the FIX trunk while every app
+# repo branched off the feature one. Measured, that trunk was 99 and 157 commits behind, and one
+# was a 16-file scaffold — a whole round went into discovering it, twice.
+cat > "$T/bases.yaml" <<'YAML'
+language: en
+branch_model:
+  feature_base: develop
+  fix_base: main
+products:
+  - id: p1
+    repos:
+      - url: git@github.com:acme/svc.git
+        kind: backend
+      - url: git@github.com:acme/e2e-suite.git
+        kind: test-suite
+      - url: git@github.com:acme/odd-svc.git
+        kind: backend
+        feature_base: release/7.10
+        fix_base: staging
+YAML
+out="$(full "$T/bases.yaml" "$T/no-local.yaml")"
+
+# Read back the projected base for one repo out of the generated REPOS block — same shape the
+# doctor check parses, so a drift in the generated layout fails here too.
+proj() { # proj <repo> → its base.feature
+  printf '%s' "$out" | awk -v want="  '$1':" '
+    index($0, want)==1 { inr=1; next }
+    inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 2) printf "%s", q[2]; exit }
+    inr && index($0, "\047")==3 { exit }'
+}
+projfix() { # projfix <repo> → its base.fix
+  printf '%s' "$out" | awk -v want="  '$1':" '
+    index($0, want)==1 { inr=1; next }
+    inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 4) printf "%s", q[4]; exit }
+    inr && index($0, "\047")==3 { exit }'
+}
+
+ck "a code repo takes branch_model.feature_base"                 "develop"      "$(proj svc)"
+ck "a TEST-SUITE repo takes it too — not fix_base"               "develop"      "$(proj e2e-suite)"
+ck "…and its fix base is still fix_base"                         "main"         "$(projfix e2e-suite)"
+ck "a repo's own feature_base overrides branch_model"            "release/7.10" "$(proj odd-svc)"
+ck "…and so does its own fix_base"                              "staging"      "$(projfix odd-svc)"
+ck "an overriding repo does not leak its base to its neighbours" "develop"      "$(proj svc)"
+
+printf '\nREVIEW LOOP BOUNDS (docs/adr/0027)\n'
+
+# max_rounds is the ONLY terminal bound on the review loop now that every other condition is a
+# must-fix, so a 0 or a typo must not be able to disarm it.
+cat > "$T/bounds.yaml" <<'YAML'
+language: en
+review:
+  level: strict
+  max_rounds: 9
+  max_regression_fixes: 5
+  max_stall_reattempts: 4
+  max_escalation_attempts: 6
+test_suite:
+  max_fix_rounds: 2
+  max_suite_repair_attempts: 7
+products: []
+YAML
+out="$(full "$T/bounds.yaml" "$T/no-local.yaml")"
+ck "review.max_rounds projects"                "maxRounds: 9"               "$out"
+ck "max_regression_fixes projects"             "maxRegressionFixes: 5"      "$out"
+ck "max_stall_reattempts projects"             "maxStallReattempts: 4"      "$out"
+ck "max_escalation_attempts projects"          "maxEscalationAttempts: 6"   "$out"
+ck "max_suite_repair_attempts projects"        "maxSuiteRepairAttempts: 7"  "$out"
+ck "an explicit test_suite.max_fix_rounds wins" "maxFixRounds: 2"           "$out"
+
+cat > "$T/bounds-bad.yaml" <<'YAML'
+language: en
+review:
+  max_rounds: 0
+  max_regression_fixes: lots
+products: []
+YAML
+out="$(full "$T/bounds-bad.yaml" "$T/no-local.yaml")"
+# 0 rounds would mean the loop never runs and every repo returns unresolved without doing anything.
+ck "max_rounds: 0 is clamped, not honoured"    "maxRounds: 14"              "$out"
+ck "a non-numeric budget falls back"           "maxRegressionFixes: 3"      "$out"
+
+cat > "$T/bounds-absent.yaml" <<'YAML'
+language: en
+products: []
+YAML
+out="$(full "$T/bounds-absent.yaml" "$T/no-local.yaml")"
+ck "an absent review block still projects defaults" "maxRounds: 14"         "$out"
+ck "…including the suite-repair budget"             "maxSuiteRepairAttempts: 3" "$out"
+
 # 7. Nothing was written. If the script ever grows a write that ignores DRY, this notices.
 # `git diff` also exits non-zero when there is no repo AT ALL — an extracted tarball, which is how
 # a person first meets this framework. That is a check that could not run, not a failed assertion,

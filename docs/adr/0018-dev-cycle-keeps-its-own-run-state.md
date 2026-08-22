@@ -86,6 +86,14 @@ unreachable), so that one row is a known, accepted gap in a best-effort run.
 
 ## Addendum — the `planned` row now skips, guarded by a ticket fingerprint
 
+> Two fields were added to these rows later, by
+> [ADR 0025](0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md): `base_branch` on the
+> `planned` row (the base this repo was planned against, authoritative on resume), and `plan_sha` —
+> the live plan's fingerprint on a `planned` row, and on a `built` row the fingerprint of the plan
+> that build was made FROM. The second closes a deadlock this document's own rules create: `built`
+> is proven by a branch head, a re-plan does not move the head, so a corrected plan could be written
+> and then never built. Read that ADR before changing any degrade rule below.
+
 The original decision recorded that "a `planned` milestone is recorded but never used to skip anything",
 resting on two premises. A real multi-repo run disproved both. The kickoff planners were NOT inside the
 engine's cached prefix: the run was re-invoked with a fresh `Workflow()` call and no `resumeFromRunId`,
