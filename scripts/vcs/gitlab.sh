@@ -19,6 +19,21 @@ _gl_project() {
   if [[ -n "$r" ]]; then vcs_urlencode_path "$r"; else printf ':fullpath'; fi
 }
 
+# Every NATIVE `glab mr <verb>` goes through here. `glab api projects/<id>/…` is scoped by
+# _gl_project() above; `glab mr create|note|view|close|merge|approve` are NOT — they resolve the
+# project from the CURRENT WORKING DIRECTORY's git remote, which in a multi-repo run is the
+# workspace root and not the target repo. Those calls then acted on the wrong project or 404'd,
+# and under `set -e` the failing assignment killed the caller before the function reached its own
+# `die` — the caller saw a bare exit 1 with no output. One wrapper fixes the targeting in one
+# place, and names the resolved target on stderr so a recurrence is readable in the transcript
+# instead of requiring an adapter source read.
+_gl_mr() {
+  local verb="$1"; shift
+  local r; r="$(vcs_repo_ref)"
+  printf 'vcs[gitlab] mr %s → %s\n' "$verb" "${r:-<cwd git remote>}" >&2
+  if [[ -n "$r" ]]; then glab mr "$verb" -R "$r" "$@"; else glab mr "$verb" "$@"; fi
+}
+
 # vcs_open_pr BASE HEAD TITLE BODY [DRY] -> prints "<url>" then "number=<iid>".
 # Every MR is opened with "Squash commits when merge request is accepted" CHECKED
 # (--squash-before-merge=true). This guarantees a squash even when a human merges the
@@ -41,7 +56,7 @@ vcs_open_pr() {
   fi
   git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
   local out
-  out="$(glab mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)"
+  out="$(_gl_mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)"
   url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)"
   [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "could not parse the MR URL from glab output"; }
   iid="${url##*/}"
@@ -324,7 +339,7 @@ vcs_pr_comment() {
       fi
     fi
   fi
-  glab mr note "$num" --message "$full" >/dev/null || die "failed to post note on MR !$num"
+  _gl_mr note "$num" --message "$full" >/dev/null || die "failed to post note on MR !$num"
   if [[ -n "$path" && -n "$line" ]]; then
     printf 'Comment posted on MR !%s (NON-inline note — see WARN above for why %s:%s did not anchor)\n' "$num" "$path" "$line"
   else
@@ -335,7 +350,7 @@ vcs_pr_comment() {
 # vcs_pr_comments NUMBER -> prints the MR's notes as plain text.
 vcs_pr_comments() {
   local num="$1"
-  glab mr view "$num" --comments 2>/dev/null && return 0
+  _gl_mr view "$num" --comments 2>/dev/null && return 0
   # Fallback: render notes via the API.
   glab api "projects/$(_gl_project)/merge_requests/$num/notes" 2>/dev/null \
     | jq -r '.[] | select(.system==false) | "\(.author.name)  \(.created_at)\n  \(.body)\n"' 2>/dev/null \
@@ -413,7 +428,7 @@ vcs_close_pr() {
   if [[ "$dry" -eq 1 ]]; then
     printf 'DRY RUN — glab mr close %s\n' "$num"; return 0
   fi
-  glab mr close "$num"
+  _gl_mr close "$num"
   vcs_pr_view "$num"
 }
 
@@ -451,7 +466,7 @@ vcs_merge_pr() {
   # alternative, a network error does not. Naming it here keeps the knowledge in the adapter,
   # where the provider's quirks belong, instead of leaking into the workflow or the config.
   local err
-  if ! err=$(glab mr merge "$num" --squash --remove-source-branch --yes 2>&1); then
+  if ! err=$(_gl_mr merge "$num" --squash --remove-source-branch --yes 2>&1); then
     printf '%s\n' "$err" >&2
     case "$err" in
       *405*|*"Method Not Allowed"*|*"not allowed"*|*"Not allowed"*)
@@ -491,7 +506,7 @@ vcs_approve_pr() {
   # and `set -e` killed the whole approval before `glab mr approve` ever ran — which is exactly
   # the documented "approval only, no verdict note" call. An if/fi has no exit status to leak.
   if [[ -n "$body" ]]; then
-    glab mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"
+    _gl_mr note "$num" --message "$body" >/dev/null || die "failed to post verdict note on MR !$num"
     noted=1
   fi
   # A project can disable MR approvals outright (the API then answers 401/403). That is a
@@ -499,13 +514,13 @@ vcs_approve_pr() {
   # half state: the verdict note was already posted, yet the script exited 1 and the caller
   # recorded the whole gate as broken. Degrade the way vcs_pr_comment does: fall to the tier
   # that DOES work (the note is the durable record), say so on stdout, and let the run continue.
-  if err=$(glab mr approve "$num" 2>&1); then
+  if err=$(_gl_mr approve "$num" 2>&1); then
     printf 'Approved MR !%s%s\n' "$num" "${body:+ (verdict note posted)}"
     return 0
   fi
   printf 'WARN: host-level approval unavailable on MR !%s — %s\n' "$num" "${err##*$'\n'}" >&2
   if [[ "$noted" -eq 0 ]]; then
-    glab mr note "$num" --message "$VCS_APPROVAL_MARKER (host-level approval is unavailable on this project; recording the verdict as a note)." >/dev/null \
+    _gl_mr note "$num" --message "$VCS_APPROVAL_MARKER (host-level approval is unavailable on this project; recording the verdict as a note)." >/dev/null \
       || die "MR !$num: approval was refused AND the fallback verdict note failed — nothing records this review"
   fi
   printf 'Approved MR !%s (verdict recorded as a NOTE — host-level approval unavailable on this project)\n' "$num"
