@@ -4,7 +4,6 @@ description: Senior UX Architect / Design Lead (20 yrs). The planning stage of t
 model: opus
 permissionMode: plan
 effort: high
-maxTurns: 80
 skills:
   - caveman:caveman
   - ui-ux-pro-max

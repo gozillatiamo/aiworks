@@ -1007,8 +1007,8 @@ const RESULT_AUDIT_SCHEMA = {
   },
 }
 
-// Appended to every gate prompt. A gate has a finite turn budget (maxTurns in its agent
-// definition), and the structured verdict is the LAST thing it does — so a gate that investigates
+// Appended to every gate prompt. A gate still runs against the harness's own finite turn ceiling
+// (no per-role maxTurns override anymore), and the structured verdict is the LAST thing it does — so a gate that investigates
 // right up to the limit is cut off holding the one artifact the workflow needs, and the round is
 // scored as if it had never run. Measured: three rounds in a row ended at 100/101/100 tool calls
 // with the verdict never returned. Investigating less is the wrong lesson; returning EARLIER is

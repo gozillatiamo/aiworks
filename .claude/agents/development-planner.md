@@ -4,7 +4,6 @@ description: Senior planning specialist (20 yrs). Given a ticket number (e.g. FM
 model: opus
 permissionMode: plan
 effort: high
-maxTurns: 100
 skills:
   - caveman:caveman
   - ticket-kickoff
