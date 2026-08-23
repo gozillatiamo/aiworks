@@ -43,7 +43,7 @@ person still owes. **Raising the token budget does not change any of them** — 
 
 | Ending | The bound that was reached |
 |---|---|
-| `repo-unresolved` / `review-unresolved` | `review.max_rounds` (14), the one terminal bound on the review loop, or a per-condition budget inside it (ADR 0027). |
+| `repo-unresolved` / `review-unresolved` | `review.max_rounds` (14), the one terminal bound on the review loop, or a per-condition budget inside it (ADR 0027). Also: a `Human:` directive on the PR/MR that this run fixed, replied to, but could not get **resolved on the forge** — a blocking `human-review` item, because no gate passes above a person's open instruction ([`human-review.md`](human-review.md)). Answer or resolve the thread and re-run. |
 | `review-blocked-on` | A finding names an upstream whose own pipeline finished without reaching ready. Recorded, and the loop kept working everything else. |
 | `test-suite-failed` / `-unverified` / `-unresolved` | `test_suite.max_fix_rounds` / `max_suite_repair_attempts`, or a green suite that a blocking item keeps from counting as a pass (ADR 0028). |
 

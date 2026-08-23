@@ -125,6 +125,28 @@ left open, approved, and the merge is a human's separate, later decision — whi
 makes the run ticking its own work acceptable rather than a rubber stamp
 ([ADR 0022](../adr/0022-the-run-ticks-its-own-approval-the-merge-stays-human.md)).
 
+### The one thing a frozen gate does not outrank: a `Human:` directive
+
+Everything above freezes on a proof about a **commit** — a thread's state, a ledger row's
+`head_sha`, a tick on the forge. A person's `Human:` directive is none of those: it moves no head,
+so a frozen repo used to be re-entered by nothing and the directive was returned `ready` unread
+(the measured case is in [ADR 0018's](../adr/0018-dev-cycle-keeps-its-own-run-state.md) last
+addendum). An unresolved `Human:` thread is the **one** signal that re-opens a settled review, and
+only in this exact shape:
+
+- **It never thaws a gate into a re-review.** The frozen gates are demoted to **re-visit**, the
+  same demotion a carried blocking item performs — §1 and §4 hold, the closed finding set stays
+  closed, and the directive is the fix pass's FIRST must-fix (it outranks every agent finding —
+  [`human-review.md`](human-review.md) §Authority).
+- **No gate passes above one, even though no gate owns one.** A `Human:` thread belongs to the
+  person who opened it: the reviewers name it in `still_open` and withhold their pass; the
+  developer fixes, replies and resolves it. A `Human:` **reply inside a gate's own thread** is the
+  mirror image — a *disposition*, which **clears** that must-fix and never blocks.
+- **Unreadable is not resolved.** A run that cannot read the threads does not skip on the
+  assumption they are clean — the same rule as `unknown` above. And before the repo may return
+  `ready`, the threads are read back once: anything still unresolved is RECORDED (§6), which is
+  what keeps "the loop does not halt" from quietly meaning "a person's instruction was optional".
+
 ## 6. The loop does not halt on a finding — it records what it cannot close
 
 A finding never ends a repo's review. Every condition that used to stop one mid-loop — a

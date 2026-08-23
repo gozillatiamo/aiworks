@@ -24,10 +24,12 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   writes on a ticket is ONE durable record per (kind, repo), **upserted** — a ticket is a record, not a transcript, and
   never carries a "dev done" note the PR/MR already tells · `human-review.md` — a `Human:` review
   comment is a blocking directive the agents auto-route and resolve; a `Human:` **reply on an agent's own must-fix
-  CLEARS it** — approve and advance, never re-open it.
+  CLEARS it** — approve and advance, never re-open it. A plain `dev-cycle` re-run DOES pick one up on an
+  already-approved MR (resume probes the threads before skipping); a QA repo has no reviewers, so there it needs `/apply-human-review`.
 - `docs/agents/review-ledger.md` — a finding is raised ONCE: first pass IS the complete pass, `[gate:*]` threads are that
   closed set, no gate passes above an unresolved thread it owns, a re-run re-visits. A pass ENDS in the forge's approve
-  tick — orchestrator-posted, ticket-wide or not at all; ticked ⇒ FROZEN whole. **The loop does NOT halt on a finding**
+  tick — orchestrator-posted, ticket-wide or not at all; ticked ⇒ FROZEN whole, and an unresolved `Human:` directive is the ONE
+  thing re-opening it (a re-visit, never a re-review). **The loop does NOT halt on a finding**
   (`docs/adr/0027`) **and neither does the test-suite gate** (`0028`): a regression, a stall, an unrunnable suite, a
   cross-repo gap, a red whose fix its scoped check never cleared, a standing load regression are must-fixes with attempt
   budgets; what a budget cannot close is RECORDED — one shared blocking list — and a recorded item keeps its repo out of

@@ -43,12 +43,23 @@ _gl_mr() {
 # (--squash-before-merge=true). This guarantees a squash even when a human merges the
 # open MR from the web UI (the path taken when vcs.auto_merge is off) — mirroring the
 # server-side --squash in vcs_merge_pr below, so the parent branch always gets one commit.
+
+# The OPEN MR for a source branch, or empty. Asked TWICE, deliberately: once before creating one
+# (so a re-run reuses instead of duplicating), and again after a `glab mr create` that reported
+# failure — because "the CLI exited non-zero" and "the server created nothing" are different
+# facts, and only the forge knows the second one. A webhook that errors the response, a body glab
+# cannot parse, a connection dropped after the POST: the MR exists and the caller was told it does
+# not. Never a mutation, so asking twice costs one read.
+_gl_open_mr_url() {
+  glab api "projects/$(_gl_project)/merge_requests?source_branch=$1&state=opened" 2>/dev/null \
+    | jq -r '.[0].web_url // empty' 2>/dev/null || true
+}
+
 vcs_open_pr() {
   local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
   # Reuse an open MR for this source branch (avoid duplicates).
   local existing url iid
-  existing="$(glab api "projects/$(_gl_project)/merge_requests?source_branch=$head&state=opened" 2>/dev/null \
-              | jq -r '.[0].web_url // empty' 2>/dev/null || true)"
+  existing="$(_gl_open_mr_url "$head")"
   if [[ -n "$existing" ]]; then
     iid="${existing##*/}"
     printf '%s\nnumber=%s\n' "$existing" "$iid"
@@ -59,14 +70,30 @@ vcs_open_pr() {
     return 0
   fi
   git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
-  local out
-  # `|| true` is the other half of the fix in _gl_mr: without it a failing `glab mr create` makes
+  local out rc=0
+  # `|| rc=$?` is the other half of the fix in _gl_mr: without it a failing `glab mr create` makes
   # this assignment non-zero, `set -e` kills the function HERE, and the caller sees exit 1 with no
-  # output at all — the silent failure that took a source read to diagnose. Let it through and the
-  # URL parse below reports what glab actually said.
-  out="$(_gl_mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)" || true
-  url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)"
-  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "could not parse the MR URL from glab output"; }
+  # output at all — the silent failure that took a source read to diagnose. Keeping the STATUS as
+  # well as the output is what lets the diagnostic below name glab's own exit code, which is the
+  # single most useful fact about a create that failed and the one thing `|| true` threw away.
+  out="$(_gl_mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)" || rc=$?
+  # `|| true` HERE, and it is not decoration — it is the bug this line used to BE. `grep` exits 1
+  # when it matches nothing, `set -o pipefail` promotes that to the pipeline's status, and an
+  # assignment from a failing command substitution is a failing simple command, so `set -e` killed
+  # the function ON THIS LINE. The diagnostic on the next line — the whole reason the output was
+  # captured — never ran. What the caller saw was exit 1 and ZERO bytes, for every failing create:
+  # not a glab that printed nothing (it had printed its error into `out`), but an adapter that
+  # exited before it could pass it on. Nine reproductions across two runs were read as a broken
+  # `glab`; the missing two words were here. github.sh:40 has carried them since it was written.
+  url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)" || true
+  # A create that REPORTED failure may still have landed the MR (see _gl_open_mr_url). Ask the
+  # forge before telling the caller nothing exists: the run that follows this call is deciding
+  # whether to open one, and a false "nothing was created" is what makes it try forever.
+  if [[ -z "$url" ]]; then
+    url="$(_gl_open_mr_url "$head")"
+    [[ -z "$url" ]] || printf 'vcs[gitlab] mr create exited %s, but %s already has an open MR on the forge — reusing %s\n' "$rc" "$head" "$url" >&9
+  fi
+  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "glab mr create exited $rc and printed no MR URL — the MR was NOT created (project ${VCS_REPO:-<cwd git remote>}, $head -> $base). glab's own output is on the line above; an EMPTY line above means glab itself printed nothing."; }
   iid="${url##*/}"
   printf '%s\nnumber=%s\n' "$url" "$iid"
 }

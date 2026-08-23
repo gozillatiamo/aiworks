@@ -90,3 +90,31 @@ not turned into a thread the agents keep open.
 
 No special tooling — the adapter commands above already read, reply to, and resolve these
 threads; a `Human:` directive is found by grepping the thread body for the leading marker.
+
+## Who picks a directive up — including on a PR/MR that is already approved
+
+Three entry points, and the third is the one that used to be missing:
+
+1. **`/apply-human-review`** — invoke it directly against an MR, a ticket key, or a URL. Always
+   works, whatever any run's ledger says. Still the right tool when you want *only* the directives
+   applied and nothing else re-checked.
+2. **A `dev-cycle` repo still going through review this run** — the directive lands in the fix
+   batch like any other must-fix, ahead of the agent findings.
+3. **A `dev-cycle` re-run over a repo whose review is already SETTLED** — a `reviewed` row, three
+   ledgered gates, or an approve tick on the forge. This one is new. Such a repo is skipped without
+   re-paying for its review ([ADR 0018](../adr/0018-dev-cycle-keeps-its-own-run-state.md)), and
+   that skip's proofs — an unmoved branch head, a title+acceptance fingerprint — are both blind to
+   a comment. So a run now asks the forge one read-only question before skipping: *does this PR/MR
+   carry an unresolved `Human:` directive?* If yes, the skip is vetoed, the frozen gates drop to
+   **re-visit** (not a re-review — nothing is re-derived), and the directive goes to the fix pass
+   first. If the run cannot read the threads, it also does not skip: an unanswered question is not
+   a clean bill of health. Before the repo can be called ready the threads are read back, and any
+   still open is recorded as blocking — the run ends unresolved rather than reporting a settled
+   review above your open instruction.
+
+**What you have to do differently: nothing.** Leave the directive on the MR and re-run
+`dev-cycle`, or call `/apply-human-review` — either picks it up.
+
+**The one residual gap.** A repo with no reviewers — a test-suite/QA repo — has no review path at
+all, so nothing there probes for directives. A `Human:` directive on a QA MR needs
+`/apply-human-review`.
