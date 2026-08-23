@@ -58,8 +58,4 @@ The case file is the deliverable, and it is done when a human can act on it with
 ## Required startup skills
 
 Before doing role work, load and follow these projected skills: `caveman`, `telemetry-triage`, `pg-triage`, `redis-triage`, `k8s-triage`, `monitoring-triage`, `root-cause-deployed`, `case-report`. Missing or unreadable skill content is a hard failure.
-
-## Execution ceiling
-
-The canonical role ceiling is 150 agentic turns. Hand off a complete checkpoint before reaching it; never die mid-step.
 '''

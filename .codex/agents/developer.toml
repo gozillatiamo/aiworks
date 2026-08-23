@@ -148,8 +148,4 @@ Green `scripts/dev.sh analyze` + `scripts/dev.sh test`, standards honored, ADRs 
 ## Required startup skills
 
 Before doing role work, load and follow these projected skills: `caveman`, `karpathy-guidelines`, `open-pr`, `telemetry-triage`, `pg-triage`, `redis-triage`. Missing or unreadable skill content is a hard failure.
-
-## Execution ceiling
-
-The canonical role ceiling is 250 agentic turns. Hand off a complete checkpoint before reaching it; never die mid-step.
 '''
