@@ -162,3 +162,44 @@ title + acceptance criteria only. The accepted trade: a requirement change that 
 comment, never folded into the ticket's body or acceptance criteria, no longer invalidates a plan —
 that belongs in the body/acceptance in the first place, and the alternative (measured) invalidated
 every plan on every resume.
+
+## Addendum — an unresolved `Human:` directive is the one comment a resume must see
+
+The two addenda above leave this run state with two proofs, and both are statements about a
+**commit**: a milestone's proof is `head_sha` equality against the live branch, and the ticket
+fingerprint is title + acceptance criteria with comment text deliberately excluded (the section
+above says why — including it invalidated every plan on every resume). A **comment is not a
+commit.** It moves no head and it changes no acceptance criterion, so neither proof can see one,
+and that blindness was intended: the run's own status/gate comments are comments too.
+
+A measured run found where the intent overshoots. A person added `Human:`-prefixed review comments
+to a repo's already-approved MR and asked for `dev-cycle` to be re-run. Two consecutive
+invocations returned that repo `ready` with `reviewRound: 0` — its `reviewed` row was clean, its
+head had not moved, the fingerprint was unchanged, so the review↔fix loop was skipped **before**
+anything read the MR's threads. Nothing in the run was wrong by its own rules, and the directive
+sat unread. The only working path was to know that `/apply-human-review` had to be invoked by hand,
+which makes the framework's own "a `Human:` review comment is a blocking directive the agents
+auto-route and resolve" (`docs/agents/human-review.md`) true only for a first-pass repo.
+
+So the resume skip now takes ONE narrow exception, and its shape matters more than its existence:
+
+- **It is a probe, not a re-review.** One read-only agent runs `scripts/vcs/pr-threads.sh`, and
+  only for a repo that was about to skip its review entirely. Nothing else changes.
+- **A directive vetoes the skip; it does not thaw the ledger.** The frozen gates are demoted to
+  **re-visit** — the same demotion a carried blocking item performs (ADR-0027 §Across
+  invocations) — so ADR-0021 holds: no finding is re-derived, and no gate does a second first
+  review. The directive itself goes to the fix pass as the batch's FIRST must-fix.
+- **Blind is not clean.** A probe that cannot read the threads vetoes the skip too, exactly as the
+  approval probe's `unknown` is never `yes`. A re-visit that finds nothing costs a round; a
+  directive skipped on a fiction costs the person who wrote it.
+- **The forge, not the developer, closes it.** Before the repo may return `ready`, the threads are
+  read back once; anything still unresolved is RECORDED (ADR-0027), which keeps the repo out of
+  `ready` and leaves the run `repo-unresolved` rather than reporting a settled review above a
+  person's open instruction.
+
+**What this deliberately does not do.** The fingerprint still ignores comment TEXT, on the tracker
+and on the forge alike — this exception is keyed on the forge's own *unresolved thread* flag, which
+is a state a person sets and the run's own chatter cannot forge. And a repo with no reviewers (a
+test-suite/QA repo) returns `ready` before the review path exists at all, so a `Human:` directive
+on that MR still needs `/apply-human-review`; giving QA repos a review gate is a separate decision,
+not a bug fix.
