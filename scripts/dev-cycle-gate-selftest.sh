@@ -1473,6 +1473,65 @@ const BASE = {
       report('G40_gate_unavailable_is_stated', /no candidate build to run against/.test(result?.testSuiteGateUnavailable || ''))
       report('G40_says_the_suite_work_is_unvalidated', /unvalidated/.test(result?.decision_needed || ''))
       report('G40_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
+    } else if (SCENARIO.startsWith('G44')) {
+      // THE LAST NON-BUDGET STOPS. The goal behind this branch is that budget exhaustion should be
+      // close to the only thing that ends a run, so every remaining terminal path was swept. Three
+      // were one non-converging agent away from a stop that a single re-ask fixes:
+      //   G44_SCOPE   — the scope stage THREW. No summary, no run-state, no record, no DM: the
+      //                 operator got a stack trace and the next invocation started from nothing.
+      //   G44_PR      — open-PR had NO retry at all, so one flaky agent ended a repo whose branch
+      //                 was already built and pushed, and with it the whole change set.
+      //   G44_REPLAN  — a missing plan FILE ended the run for every repo, including the ones whose
+      //                 plans were fine, over the one artifact a re-ask reliably reproduces.
+      const base = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      if (SCENARIO === 'G44_SCOPE' || SCENARIO === 'G44_SCOPE_DEAD') {
+        const canned = { ...base, 'scope:FM-12': null }
+        if (SCENARIO === 'G44_SCOPE') canned['scope-retry:FM-12'] = base['scope:FM-12']
+        else canned['scope-retry:FM-12'] = null
+        const result = await runOnce(ARGS, canned)
+        if (SCENARIO === 'G44_SCOPE') {
+          report('G44_scope_is_retried_not_thrown', SPAWNED.includes('scope-retry:FM-12'))
+          report('G44_run_continues_after_the_retry', SPAWNED.includes('build:FM-12:db'))
+          report('G44_retry_brief_says_stop_investigating', /STOP investigating now/.test(PROMPTS['scope-retry:FM-12'] || ''))
+        } else {
+          report('G44_dead_scope_reports_instead_of_throwing', !!result && result.status === 'scope-unresolved')
+          report('G44_dead_scope_still_writes_a_summary', SPAWNED.includes('summary:FM-12'))
+          report('G44_dead_scope_names_the_decision', /could not be scoped/.test(result?.decision_needed || ''))
+          report('G44_dead_scope_branched_nothing', !SPAWNED.some((l) => l.startsWith('kickoff:') || l.startsWith('build:')))
+        }
+      } else if (SCENARIO === 'G44_PR') {
+        const result = await runOnce(ARGS, { ...base, 'open-pr:FM-12:db': null, 'open-pr-retry:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 } })
+        report('G44_open_pr_is_retried', SPAWNED.includes('open-pr-retry:FM-12:db'))
+        report('G44_repo_recovers_to_review', SPAWNED.some((l) => l.startsWith('review:FM-12:db')))
+        report('G44_run_is_not_pr_unresolved', !!result && result.status !== 'repo-unresolved')
+        report('G44_retry_brief_forbids_a_compound_writer', /run BARE/.test(PROMPTS['open-pr-retry:FM-12:db'] || ''))
+      } else {
+        const guardMissing = { repos: [{ repo: 'db', ok: [], relocated: [], missing: ['agent_logs/development-planner/FM-12-db-plan.md'] }] }
+        const canned = { ...base, 'plan-guard:FM-12': guardMissing }
+        if (SCENARIO === 'G44_REPLAN') canned['replan:FM-12:db'] = REPO_PLAN('db', 'develop')
+        else canned['replan:FM-12:db'] = null
+        const result = await runOnce(ARGS, canned)
+        if (SCENARIO === 'G44_REPLAN') {
+          report('G44_missing_plan_is_rewritten', SPAWNED.includes('replan:FM-12:db'))
+          report('G44_run_proceeds_to_build', SPAWNED.includes('build:FM-12:db'))
+          report('G44_replan_writes_no_code_and_no_branch', /Do NOT create or switch a branch/.test(PROMPTS['replan:FM-12:db'] || ''))
+        } else {
+          report('G44_unrecovered_plan_still_stops', !!result && result.status === 'plan-missing')
+          report('G44_but_only_after_trying', SPAWNED.includes('replan:FM-12:db'))
+        }
+      }
     } else if (SCENARIO.startsWith('G43')) {
       // ADR 0032 — a `partial` handoff is the most continuable condition in the run, and it used to
       // end the repo on attempt one. `partial` means "some slices landed, work OF MY OWN remains":
@@ -2018,6 +2077,11 @@ out="$(run_scenario G39B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed
 
 echo "── G40 — no code candidate means the requested gate does not run and is not reported as a pass"
 out="$(run_scenario G40)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G44 — the last non-budget stops: scope, open-PR and a missing plan all get one re-ask"
+for s in G44_SCOPE G44_SCOPE_DEAD G44_PR G44_REPLAN G44_REPLAN_DEAD; do
+  out="$(run_scenario $s)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+done
 
 echo "── G43 — a partial build is CONTINUED to a finish, not stopped at attempt one"
 out="$(run_scenario G43)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

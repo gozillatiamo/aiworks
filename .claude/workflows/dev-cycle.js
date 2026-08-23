@@ -285,7 +285,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-23.2'
+const DEVCYCLE_VERSION = '2026-08-23.3'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -1074,6 +1074,11 @@ let loadtestGateUnavailable = null
 // C9 — set when the run stops itself on its own token budget (see budgetStop below). writeSummary
 // reads this to put a prominent banner at the top of the summary before it is ever assigned.
 let budgetStopped = null
+// Declared HERE, not at the Scope stage where it is first set: writeSummary reads it, and the
+// scope stage can now END the run gracefully instead of throwing — a return that reached
+// writeSummary before this line hit the temporal dead zone and threw anyway, which is the exact
+// failure the graceful ending exists to replace.
+let testSuiteGateUnavailable = null
 const tick = (label) => { const now = budget.spent(); spend.push({ label, out: now - mark }); mark = now }
 // C9 — the run's own ceiling. Checked only at PHASE BOUNDARIES: mid-phase there is nothing to
 // stop cleanly, and every milestone is already checkpointed, so stopping here loses no work.
@@ -1755,16 +1760,29 @@ RETURN CONTRACT: end by calling StructuredOutput with the DEV_SCHEMA handoff. "c
   // falling through to the live call beats letting a placeholder reach a real adapter call.
   const prRow = rowAt(R, 'pr_open')
   const prRowUsable = !!(prRow && (prRow.pr_number || prRow.pr_url))
-  const pr = prRowUsable
+  const prFirst = prRowUsable
     ? { pr_url: prRow.pr_url || null, pr_number: prRow.pr_number ?? null }
     : await safeAgent(
         openPrPrompt + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE + stateWrite(R, 'pr_open', ',"pr_number":<the PR/MR number>,"pr_url":"<the PR/MR url>"'),
         { agentType: desc.build, phase: 'Open PR', label: `open-pr:${ticket}:${R}`, schema: PR_SCHEMA },
       )
-  if (!pr) {
-    log(`⚠️ [${R}] open-PR did not converge — left for human review.`)
-    return { repo: R, status: 'pr-unresolved', plan: rp }
+  // ONE BOUNDED RETRY. This step had none, so a single non-converging agent ended the repo — and
+  // with it the change set — on a branch that was already built and pushed. That is the cheapest
+  // stop in the run to remove: everything the retry needs is settled (branch, base, title), and the
+  // audited run lost three rounds on this step for a cause that was never the agent's fault.
+  let prResult = prFirst
+  if (!prResult) {
+    log(`⚠️ [${R}] open-PR did not converge — retrying ONCE, bounded: one adapter call, no investigation.`)
+    prResult = await safeAgent(
+      `${tag(R, desc.build, 'open-pr', 1)} Your last attempt to open the PR/MR for ${ticket} in ${R} returned no structured result. ${inRepo} Everything is already decided — do not re-derive any of it, do not investigate, do not touch the code: branch ${rp.work_branch}, base ${rp.base_branch}, title "${prTitle(rp)}".${baseIsSettled(rp.base_branch)} ONE command, run BARE (no \`cd X &&\`, no pipe — a compound form is denied silently by the workspace guard, which reads exactly like a broken adapter): first \`git -C ${absR} remote get-url origin\` to read the owner/repo, then \`VCS_REPO=<owner/repo from that URL, without the host prefix or a trailing .git> scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${prTitle(rp)}" --body "<what landed + the green evidence>"\`. If an open PR/MR for ${rp.work_branch} ALREADY exists, the adapter prints it and that is your answer — it is idempotent, so this is safe to run again. Return pr_url and pr_number (the adapter prints \`number=<n>\`). If the adapter itself fails, that IS the answer for this step: return the exact command, its exit code and its stderr rather than routing around it.${deferredNote}` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE + stateWrite(R, 'pr_open', ',"pr_number":<the PR/MR number>,"pr_url":"<the PR/MR url>"'),
+      { agentType: desc.build, model: 'opus', effort: 'high', phase: 'Open PR', label: `open-pr-retry:${ticket}:${R}`, schema: PR_SCHEMA },
+    )
   }
+  if (!prResult) {
+    log(`⚠️ [${R}] open-PR did not converge after 2 attempts — the branch is built and pushed but has no PR/MR, so no reviewer prompt can be formed; left for human review.`)
+    return { repo: R, status: 'pr-unresolved', plan: rp, handoff: { status: 'blocked', summary: 'the branch is built but no PR/MR was opened (2 attempts)', remaining: `open it by hand: \`git -C ${absR} remote get-url origin\`, then \`VCS_REPO=<owner/repo> scripts/vcs/open-pr.sh --base ${rp.base_branch} --head ${rp.work_branch} --title "${prTitle(rp)}" --body "<…>"\` — run the writer BARE.`, decision_needed: 'whether the adapter is failing for this repo (check the VCS_REPO the command resolves) or the agent simply did not converge' } }
+  }
+  const pr = prResult
   if (prRowUsable) log(`[${R}] open-PR SKIPPED — run state says pr_open at ${pr.pr_url || pr.pr_number}.`)
   log(`[${R}] opened PR: ${pr.pr_url}`)
   tick(`${R}:open-pr`)
@@ -2459,16 +2477,40 @@ phase('Scope')
 // The repo(s) that PROVIDE the cross-repo test-suite (QA) gate — injected into the scope
 // prompt so the cto knows which repo must be scoped for the gate to run at all.
 const testSuiteRepoIds = Object.keys(REPOS).filter((id) => REPOS[id].testSuite)
-const scope = await safeAgent(
+let scope = await safeAgent(
   `${tag('all', 'cto', 'scope')} You are the scoping stage for ${ticket}. Read the ticket via the tracker adapter (\`scripts/tracker/get-ticket-details.sh ${ticket}\`, + \`get-ticket-comments.sh\`) and decide which of the workspace's repos it requires changes in: ${Object.keys(REPOS).join(', ')} (only these are registered). For each touched repo return { repo, depends_on (other touched repo ids that must be built/merged first — typically a backend → app → test-suite order), summary (what that repo must change) }. The registered cross-repo test-suite (QA) repo(s) are: ${testSuiteRepoIds.length ? testSuiteRepoIds.join(', ') : 'none'}. When this change should be validated end-to-end by the cross-repo test suite (E2E / API / load) against the candidate build, set test_suite.needed:true AND include that test-suite repo in \`repos\`, with depends_on listing the app/service repos it validates (so it builds + merges LAST). The gate CANNOT run unless the test-suite repo is in \`repos\` — needed:true on its own does nothing. If no test-suite repo is registered, leave needed:false. Most tickets touch only the app repo; when they also need end-to-end validation, return the app repo PLUS the test-suite repo. Also set tracker_reachable: true ONLY if the adapter actually returned the live ticket this call — set it false if the tracker was unreachable and you proceeded from inline/contextual info (the run then loudly flags that Status moves, comments, and improvement tickets did NOT persist).
 OUT OF REACH — read the ticket's acceptance criteria one by one and ask of each: can ANY repo registered above satisfy it? List in \`out_of_reach\` only those that cannot be satisfied here BY CONSTRUCTION — the owner is a repo this workspace does not hold (gateway/infra config, a third party's system), or the work needs an access only a person has (a dashboard, a certificate, a production credential). Quote the criterion, say concretely why, and name who CAN do it. Judge reachability, NOT difficulty: a criterion that is merely hard, or whose real obstacle only appears once someone reads the code, is NOT out of reach — the build will discover those and hand back \`deferred\`, which gets adjudicated then. An empty list is the normal, healthy answer, and a criterion you are unsure about belongs OUT of the list. Then set \`deliverable_now\`: true if at least ONE acceptance criterion remains reachable here, false ONLY if the ticket asks for nothing this workspace can deliver — false STOPS the run immediately, before any branch or plan exists, so do not use it to express that a ticket is partly blocked. Also return, for the run's ticket-change fingerprint: \`title\` (the ticket's title verbatim) and \`acceptance\` (every acceptance criterion of the ticket, copied VERBATIM, one array element per criterion, in the order they appear — this is the same list you just walked for out_of_reach, so copy it rather than re-deriving it). Copy, do not paraphrase, summarize, re-order or renumber: a later invocation compares this text to decide whether the ticket changed, so a rewording you invent reads as a human edit and costs a full re-plan. Return the structured scope.`,
   { agentType: 'cto', phase: 'Scope', label: `scope:${ticket}`, schema: SCOPE_SCHEMA },
 )
-if (!scope) throw new Error(`dev-cycle: scope stage did not converge for ${ticket}`)
+// A THROW is the worst ending this workflow has: no summary, no run-state, no record, no DM — the
+// operator gets a stack trace and the next invocation starts from nothing. And the cause is usually
+// one non-converging agent, which is the cheapest thing in the run to ask twice. So: one bounded
+// retry that says what went wrong, then a graceful, reported stop.
+let scopeAttempt = scope
+if (!scopeAttempt) {
+  log('⚠️ [scope] the scoping stage did not return a structured result — retrying ONCE, bounded (decide from the ticket, do not investigate).')
+  scopeAttempt = await safeAgent(
+    `${tag('all', 'cto', 'scope', 1)} Your scoping pass for ${ticket} did not return a structured result — you likely kept investigating instead of answering. STOP investigating now. Read the ticket ONCE via \`scripts/tracker/get-ticket-details.sh ${ticket}\` and answer from it. The registered repos are: ${Object.keys(REPOS).join(', ')} — only these, and the registered cross-repo test-suite repo(s) are ${testSuiteRepoIds.length ? testSuiteRepoIds.join(', ') : 'none'}. Returning the structured scope IS the task: for each touched repo { repo, depends_on, summary }, plus test_suite.needed, tracker_reachable, out_of_reach (\`[]\` is the normal answer), deliverable_now, and \`title\` + \`acceptance\` copied VERBATIM from the ticket. If you genuinely cannot tell which repos a criterion touches, put the ticket's single most obvious repo in \`repos\` and say so in its \`summary\` — a scope that is roughly right is worth infinitely more to this run than no scope at all. Emit it immediately.`,
+    { agentType: 'cto', model: 'opus', effort: 'high', phase: 'Scope', label: `scope-retry:${ticket}`, schema: SCOPE_SCHEMA },
+  )
+}
+if (!scopeAttempt) {
+  log(`⛔ [scope] the scoping stage did not converge for ${ticket} after 2 attempts — nothing is known about which repos this ticket touches, so no branch, plan or build can be started. Stopping with a report rather than a stack trace.`)
+  const summary = await writeSummary('scope-unresolved', { ticket, attempts: 2, decision_needed: `which repos ${ticket} touches — the scoping stage returned no structured result twice. Name them (or narrow the ticket) and re-run; nothing was branched, planned or written.` })
+  return { ticket, status: 'scope-unresolved', decision_needed: `${ticket} could not be scoped: the scoping stage returned no structured result in 2 attempts, so the run does not know which repos it touches. Nothing was branched, planned, opened or written. Say which repos it touches — or split the ticket — and re-run.`, summary, spend }
+}
+scope = scopeAttempt
 trackerReachable = scope.tracker_reachable !== false
 if (!trackerReachable) log('⚠️ TRACKER UNREACHABLE — ticket Status moves, comments, and /clarifying-ticket improvement tickets will NOT persist this run; all ticket-tracking is best-effort. Flagged in the run result + summary.')
 const scoped = (scope.repos || []).filter((r) => REPOS[r.repo])
-if (!scoped.length) throw new Error(`Scope returned no known repos for ${ticket} (got: ${JSON.stringify(scope.repos)})`)
+if (!scoped.length) {
+  // Same reasoning as the retry above: a report beats a stack trace. This one is not worth a second
+  // agent, though — the scope CONVERGED, it just named repos this workspace does not register, which
+  // is a fact about the registry or the ticket that no re-ask changes.
+  log(`⛔ [scope] the scoping stage named no REGISTERED repo for ${ticket} (it returned: ${JSON.stringify(scope.repos)}; registered: ${Object.keys(REPOS).join(', ')}). Nothing can be branched or planned.`)
+  const summary = await writeSummary('scope-unresolved', { ticket, returned: scope.repos, registered: Object.keys(REPOS), decision_needed: 'whether the ticket belongs to a repo this workspace does not hold, or the repo registry is missing one' })
+  return { ticket, status: 'scope-unresolved', decision_needed: `${ticket} was scoped to repos this workspace does not register (${JSON.stringify(scope.repos)}); the registered set is ${Object.keys(REPOS).join(', ')}. Either the ticket belongs elsewhere, or a repo is missing from products[].repos[] in workspace.config.yaml. Nothing was branched, planned or written.`, summary, spend }
+}
 // OUT-OF-REACH criteria, settled once for the whole run. Every later phase reads THIS list rather
 // than re-deciding what is reachable: a build deferral that matches an entry here is already
 // adjudicated, and only a deferral scope did not foresee pays for a verifier.
@@ -2527,7 +2569,6 @@ const testSuiteRequested = scope.test_suite?.needed === true
 // (its qa-planner/qa-runner author + build the specs the gate runs). The scope agent can
 // flag needed without listing the repo — reconcile here so the gate can never be silently
 // requested-but-skipped.
-let testSuiteGateUnavailable = null
 if (scope.test_suite?.needed && !scoped.some((r) => REPOS[r.repo]?.testSuite)) {
   const tsRepo = Object.keys(REPOS).find((id) => REPOS[id].testSuite)
   if (tsRepo) {
@@ -2829,10 +2870,30 @@ const missingPlans = plans.filter((p) => {
   const rep = (guard?.repos || []).find((g) => g.repo === p.repo)
   return rep ? (rep.missing || []).includes(planMeta[p.repo].planRel) : false
 }).map((p) => p.repo)
-if (missingPlans.length) {
-  log(`⛔ [plan-guard] source-of-truth plan markdown missing for ${missingPlans.join(', ')} — these repos have no plan to build from; stopping for human attention.`)
-  const summary = await writeSummary('plan-missing', { ticket, repos: plans.map((p) => p.repo), plans, missingPlans, guard, testSuiteRequested, testSuiteGateUnavailable })
-  return { ticket, status: 'plan-missing', missingPlans, plans, guard, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
+// A missing plan file used to end the RUN — every repo, including the ones whose plans are fine.
+// But "the planner did not write its file" is a question with an obvious next move: ask it again.
+// The plan is the one artifact a re-ask reliably reproduces (the ticket has not changed, the branch
+// exists, the path is already decided), and stopping instead spent a whole invocation to get back
+// here. One bounded re-plan per missing repo, in parallel, then the guard's finding is re-asserted.
+let stillMissing = missingPlans
+if (stillMissing.length) {
+  log(`⚠️ [plan-guard] source-of-truth plan markdown missing for ${stillMissing.join(', ')} — RE-PLANNING those repos once (bounded: write the file, nothing else) rather than ending the run.`)
+  const repaired = await parallel(stillMissing.map((id) => async () => {
+    const m = planMeta[id]
+    const r = await safeAgent(
+      `${tag(id, REPOS[id].plan, 'replan')} The implementation plan for ${ticket} in the ${id} repo is MISSING from disk — a placement guard looked for ${m.planRel} under ${m.repoRoot || m.repoDir} and in the workspace root and found it in neither, so the build has nothing to read. ${scoped.find((s) => s.repo === id)?.summary ? `THIS REPO'S SLICE: ${scoped.find((s) => s.repo === id).summary}` : ''} Write it now with the Write tool, to the ABSOLUTE path ${m.planPath} — not a bare relative \`agent_logs/…\`, and NEVER to the workspace-root agent_logs/, which is what the guard is looking for a misfile of. Read the ticket (\`scripts/tracker/get-ticket-details.sh ${ticket}\`) and this repo's docs/adr/* and CONTEXT.md first, and where the ticket and an ADR disagree the ADR wins. THE BASE IS ${m.baseBranch} and the work branch is ${m.workBranch}, both settled by this run — do not re-derive either. Do NOT create or switch a branch, do NOT touch git, do NOT write code, do NOT move the ticket. Writing the plan file IS the task. Return the structured repo plan with plan_path=${m.planPath}, and confirm with Read that the file exists at that exact path before you return.` + PONYTAIL_DIRECTIVE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+      { agentType: REPOS[id].plan, phase: 'Kickoff', label: `replan:${ticket}:${id}`, schema: REPO_PLAN_SCHEMA },
+    )
+    return r ? id : null
+  }))
+  const rewritten = repaired.filter(Boolean)
+  if (rewritten.length) log(`[plan-guard] re-planned ${rewritten.join(', ')} — their plan files were rewritten at the recorded paths.`)
+  stillMissing = stillMissing.filter((id) => !rewritten.includes(id))
+}
+if (stillMissing.length) {
+  log(`⛔ [plan-guard] plan markdown STILL missing for ${stillMissing.join(', ')} after a re-plan — these repos have no plan to build from; stopping for human attention.`)
+  const summary = await writeSummary('plan-missing', { ticket, repos: plans.map((p) => p.repo), plans, missingPlans: stillMissing, replanned: missingPlans.filter((id) => !stillMissing.includes(id)), guard, testSuiteRequested, testSuiteGateUnavailable })
+  return { ticket, status: 'plan-missing', missingPlans: stillMissing, plans, guard, testSuiteRequested, testSuiteGateUnavailable, summary, spend }
 }
 
 // PUBLISH REQUEST (mid-run) — a rendered plan HTML is only shareable once it is PUBLISHED, and the

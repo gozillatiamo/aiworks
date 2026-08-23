@@ -32,7 +32,10 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   cross-repo gap, a red whose fix its scoped check never cleared, a standing load regression are must-fixes with attempt
   budgets; what a budget cannot close is RECORDED — one shared blocking list — and a recorded item keeps its repo out of
   `ready` and a GREEN suite out of a pass (`test-suite-unresolved`), so "does not halt" never means an un-run gate reads
-  green. `review.max_rounds` is the only terminal bound.
+  green. `review.max_rounds` is the only terminal bound · `run-endings.md` — the COMPLETE list of how
+  a run can end and which are stops: budget exhaustion is meant to be close to the only one, and every
+  other path either finishes, waits on a person's decision, or worked to a bound and RECORDED. Read it
+  before asking why a run stopped — raising the token budget fixes only the ending that names it.
 - `docs/agents/loadtest-gate.md` — a green load suite is only **half** a verdict: a `suite_kind: load` repo must also beat
   its base branch against a measured noise floor. Home of the rule binding EVERY test-suite gate — it **never fails
   open**: no receipt (command + exit code + summary) and no result comment ⇒ *not run* — worked to a budget, then
