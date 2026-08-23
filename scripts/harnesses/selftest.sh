@@ -72,4 +72,44 @@ AIWORKS_CURSOR_MCP_CONFIG="$FIXTURE/cursor-mcp.json" python3 "$FIXTURE/scripts/h
   --root "$FIXTURE" --action sync --want 0 >/dev/null
 test "$(jq -r '.mcpServers | keys | join(",")' "$FIXTURE/cursor-mcp.json")" = mine
 
+# A DEAD registration this script wrote from a workspace root that is gone — the shape a deleted
+# worktree leaves behind. It used to be read as a foreign command and left alone forever, so
+# `sync` no-opped and still exited 0. It is repointed; a genuinely foreign command under the same
+# name is still not touched.
+mcp() { AIWORKS_CURSOR_MCP_CONFIG="$FIXTURE/cursor-mcp.json" \
+        python3 "$FIXTURE/scripts/harnesses/triage_mcp.py" --root "$FIXTURE" "$@"; }
+printf '{"mcpServers":{"pg_triage":{"command":"uv","args":["run","--quiet","/gone/worktree/scripts/db/pg_triage_mcp.py"]},"k8s_triage":{"command":"python3","args":["/somebody/elses/k8s_triage_mcp.py"]}}}\n' \
+  > "$FIXTURE/cursor-mcp.json"
+mcp --action sync --want 1 >/dev/null
+test "$(jq -r '.mcpServers.pg_triage.args[2]' "$FIXTURE/cursor-mcp.json")" \
+   = "$(cd "$FIXTURE" && pwd -P)/scripts/db/pg_triage_mcp.py"
+test "$(jq -r '.mcpServers.k8s_triage.command' "$FIXTURE/cursor-mcp.json")" = python3
+# …and `status` says which of the two it is, in words the doctor can tell apart.
+printf '{"mcpServers":{"pg_triage":{"command":"uv","args":["run","--quiet","/gone/worktree/scripts/db/pg_triage_mcp.py"]}}}\n' \
+  > "$FIXTURE/cursor-mcp.json"
+mcp --action status --want 1 | grep -q 'cursor/pg_triage — STALE path'
+
+# THE SIBLING. Cursor's config is one machine-GLOBAL file and `codex mcp` has no scope, so a
+# second checkout on the same machine sees the identical shape pointing at a LIVE script. Shape
+# alone must therefore never mean "stale": repointing that takes a working server away from the
+# other root, and with `triage.enabled: false` here the deregister branch would delete it
+# outright — an entry this script never wrote from this root. Both must be no-ops.
+sib="$FIXTURE/sibling"; mkdir -p "$sib/scripts/db"
+printf '#!/usr/bin/env python3\n' > "$sib/scripts/db/pg_triage_mcp.py"
+live="$(cd "$sib" && pwd -P)/scripts/db/pg_triage_mcp.py"
+printf '{"mcpServers":{"pg_triage":{"command":"uv","args":["run","--quiet","%s"]}}}\n' "$live" \
+  > "$FIXTURE/cursor-mcp.json"
+mcp --action status --want 1 | grep -q 'cursor/pg_triage — not registered'
+mcp --action sync --want 1 >/dev/null
+test "$(jq -r '.mcpServers.pg_triage.args[2]' "$FIXTURE/cursor-mcp.json")" = "$live"
+mcp --action sync --want 0 >/dev/null
+test "$(jq -r '.mcpServers.pg_triage.args[2]' "$FIXTURE/cursor-mcp.json")" = "$live"
+
+# An extra flag makes it somebody's own command even when the path is this root's — the bash twin
+# globbed across spaces and would have stripped the flag on the way back.
+printf '{"mcpServers":{"pg_triage":{"command":"uv","args":["run","--quiet","--with","psycopg[binary]","%s"]}}}\n' \
+  "$(cd "$FIXTURE" && pwd -P)/scripts/db/pg_triage_mcp.py" > "$FIXTURE/cursor-mcp.json"
+mcp --action sync --want 0 >/dev/null
+test "$(jq -r '.mcpServers.pg_triage.args | length' "$FIXTURE/cursor-mcp.json")" -eq 5
+
 printf 'Harness registry selftest: ok\n'

@@ -87,6 +87,14 @@ Every non-canonical projector must accept:
 <projector> --dry-run              preview without writing or failing on expected drift
 ```
 
+`--check` is the only form that verdicts. A reconcile and a `--dry-run` exit 0 — they did
+everything they were allowed to do — and print what they could not do instead. A projector may
+split `--check`'s nonzero further, as `aiworks codex` does: **1** for drift a reconcile will
+close, **2** for drift it will not (a real path where the canonical link belongs, a generated
+file somebody edited, a source defect only its author can settle). The distinction is what lets
+`doctor --fix` hand the second kind to a person rather than register a command that will refuse
+identically on every run.
+
 Requirements:
 
 - With no repo, process the root and every cloned repo declared by `workspace.config.yaml`.

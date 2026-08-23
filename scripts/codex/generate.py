@@ -40,10 +40,22 @@ class Projection:
         self.dry_run = dry_run
         self.changed = 0
         self.drifts: list[str] = []
+        # Drift a WRITE pass cannot resolve: a real path where a link belongs, a generated file
+        # somebody has edited, a rules file whose scope only its author can decide. Kept apart
+        # from ordinary drift because the two need different callers — ordinary drift is closed by
+        # running this generator, and registering it as the fix for one of THESE gives a repair
+        # pass that runs forever and fails every time.
+        self.blocked: list[str] = []
+        # Which repo the current pass is projecting. A drift line reads `.agents/skills is
+        # missing or points somewhere else` — true for fourteen repos at once and actionable in
+        # none of them, so the blocked list carries the target that raised it.
+        self.target = ""
         self.notes: list[str] = []
 
-    def drift(self, message: str) -> None:
+    def drift(self, message: str, blocked: bool = False) -> None:
         self.drifts.append(message)
+        if blocked:
+            self.blocked.append(f"{self.target}: {message}" if self.target else message)
         print(f"  ! {message}")
 
     def note(self, message: str) -> None:
@@ -60,10 +72,11 @@ class Projection:
             self.ok(label)
             return
         if self.check:
-            self.drift(f"{label} is {'stale' if path.exists() else 'missing'}")
+            self.drift(f"{label} is {'stale' if path.exists() else 'missing'}",
+                       blocked=path.is_file() and not owned_file(path))
             return
         if path.exists() and path.is_file() and not owned_file(path):
-            self.drift(f"{label} is user-authored; leaving {path} unchanged")
+            self.drift(f"{label} is user-authored; leaving {path} unchanged", blocked=True)
             return
         if self.dry_run:
             self.note(f"would write {label}")
@@ -84,10 +97,11 @@ class Projection:
             self.ok(label)
             return
         if self.check:
-            self.drift(f"{label} is {'stale' if path.exists() else 'missing'}")
+            self.drift(f"{label} is {'stale' if path.exists() else 'missing'}",
+                       blocked=path.is_file() and not owned_file(path))
             return
         if path.exists() and path.is_file() and not owned_file(path):
-            self.drift(f"{label} is user-authored; leaving {path} unchanged")
+            self.drift(f"{label} is user-authored; leaving {path} unchanged", blocked=True)
             return
         if self.dry_run:
             self.note(f"would write {label}")
@@ -106,10 +120,18 @@ class Projection:
             self.ok(label)
             return
         if self.check:
-            self.drift(f"{label} is missing or points somewhere else")
+            self.drift(f"{label} is missing or points somewhere else",
+                       blocked=path.exists() or path.is_symlink())
             return
         if path.exists() or path.is_symlink():
-            self.drift(f"{label} conflicts with a real or differently-linked path; leaving it unchanged")
+            # NEVER deleted, and never "reconciled" by comparing contents either. Measured, the
+            # hard way: some repos carry the canonical skills IN `.agents/skills` with
+            # `.claude/skills/<skill>` symlinked back INTO it, so a byte-for-byte comparison of
+            # the two trees compares every file with ITSELF, calls the tree a redundant copy, and
+            # deleting it destroys the only copy on disk. Whatever is here, a person decides.
+            self.drift(f"{label} is a real path, not the expected link -> {target}; "
+                       "leaving it unchanged (its content, or where it is linked from, is a decision)",
+                       blocked=True)
             return
         if self.dry_run:
             self.note(f"would link {label} -> {target}")
@@ -320,7 +342,7 @@ def compatibility_json(settings_path: Path | None, projection: Projection) -> st
     }
     unknown = [event for event in source_events if event not in event_map]
     for event in unknown:
-        projection.drift(f"hooks: no Codex event mapping declared for {event}")
+        projection.drift(f"hooks: no Codex event mapping declared for {event}", blocked=True)
     return json_dump(
         {
             "_aiworks": JSON_MARKER,
@@ -346,7 +368,8 @@ def required_skills(base: Path, values: list[str], projection: Projection, label
     for value in values:
         name = value.split(":")[-1]
         if not (base / ".claude" / "skills" / name / "SKILL.md").is_file():
-            projection.drift(f"{label}: required skill {value!r} has no canonical .claude/skills/{name}/SKILL.md")
+            projection.drift(f"{label}: required skill {value!r} has no canonical .claude/skills/{name}/SKILL.md",
+                             blocked=True)
             continue
         if name not in result:
             result.append(name)
@@ -358,11 +381,11 @@ def agent_toml(base: Path, source: Path, projection: Projection) -> tuple[str, s
     name = str(frontmatter.get("name") or source.stem)
     description = str(frontmatter.get("description") or "")
     if not description:
-        projection.drift(f"agents/{source.name}: description is required")
+        projection.drift(f"agents/{source.name}: description is required", blocked=True)
     model = mapped_model(str(frontmatter.get("model") or ""))
     effort = str(frontmatter.get("effort") or "")
     if effort and effort not in SUPPORTED_EFFORTS:
-        projection.drift(f"agents/{source.name}: unsupported Codex effort {effort!r}")
+        projection.drift(f"agents/{source.name}: unsupported Codex effort {effort!r}", blocked=True)
         effort = ""
     skills = required_skills(base, [str(item) for item in frontmatter.get("skills", [])], projection, f"agents/{source.name}")
     tools = {str(item) for item in frontmatter.get("tools", [])}
@@ -382,7 +405,8 @@ def agent_toml(base: Path, source: Path, projection: Projection) -> tuple[str, s
         )
     instructions = body.rstrip() + ("\n\n" + "\n\n".join(additions) if additions else "") + "\n"
     if "'''" in instructions:
-        projection.drift(f"agents/{source.name}: developer instructions contain unsupported TOML literal delimiter")
+        projection.drift(f"agents/{source.name}: developer instructions contain unsupported TOML literal delimiter",
+                         blocked=True)
         instructions = instructions.replace("'''", "’”")
 
     lines = [TOML_MARKER, f"name = {toml_string(name)}", f"description = {toml_string(description)}"]
@@ -491,7 +515,7 @@ def rules_index(root: Path, base: Path, repo_dirs: list[str], is_root: bool, pro
             try:
                 scopes = rule_scopes(path)
             except ValueError as exc:
-                projection.drift(str(exc))
+                projection.drift(str(exc), blocked=True)
                 continue
             rel = path.relative_to(source_root).as_posix()
             prefixed = [f"{prefix}/{scope}" if prefix else scope for scope in scopes]
@@ -525,6 +549,7 @@ def prune_generated_agents(base: Path, expected: set[str], projection: Projectio
 
 def project_target(root: Path, base: Path, repo_dirs: list[str], is_root: bool, projection: Projection) -> None:
     label = "workspace root" if is_root else base.name
+    projection.target = label
     print(f"\n==> Codex projection: {label}")
     if (base / "CLAUDE.md").is_file():
         projection.link(base / "AGENTS.md", "CLAUDE.md", "AGENTS.md")
@@ -575,6 +600,7 @@ def project_target(root: Path, base: Path, repo_dirs: list[str], is_root: bool, 
 
 
 def remove_target(base: Path, projection: Projection) -> None:
+    projection.target = base.name
     print(f"\n==> Remove Codex projection: {base.name}")
     candidates = [
         base / ".codex" / "config.toml",
@@ -659,7 +685,7 @@ def main() -> int:
 
     for base, is_root in targets:
         if not base.is_dir():
-            projection.drift(f"target does not exist: {base}")
+            projection.drift(f"target does not exist: {base}", blocked=True)
             continue
         if args.remove:
             remove_target(base, projection)
@@ -667,7 +693,28 @@ def main() -> int:
             project_target(root, base, repo_dirs, is_root, projection)
 
     print(f"\nCodex projection: changed={projection.changed} drift={len(projection.drifts)} notes={len(projection.notes)}")
-    return 1 if args.check and projection.drifts else 0
+    for message in projection.blocked:
+        print(f"  needs a person: {message}")
+    # --check IS THE GATE, and only --check. A reconcile or a preview reports what it could not
+    # do and exits 0: it did everything it was allowed to do, and the projector interface
+    # (docs/agents/harnesses.md) promises a preview "without writing or failing on expected
+    # drift". Failing them instead made `aiworks sync` warn "could not reconcile Harness
+    # projections" on every run of a workspace holding one hand-written AGENTS.md, and made
+    # `doctor --fix` print `✗ failed` for a pass that had written every surface it was allowed
+    # to — the same "owner command that can never close its finding" this change exists to
+    # remove, just relocated.
+    #
+    # Under --check the exit code carries what the caller needs to route the finding:
+    #   0  in sync
+    #   1  drift a reconcile WILL close — run the generator
+    #   2  drift it will not: a real path where the canonical link belongs, a generated file
+    #      somebody edited, a rules file with no frontmatter, a source defect only its author
+    #      can settle. Whoever is repairing must hand these to a person, not to a command.
+    if not args.check:
+        return 0
+    if projection.blocked:
+        return 2
+    return 1 if projection.drifts else 0
 
 
 if __name__ == "__main__":

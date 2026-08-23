@@ -95,13 +95,61 @@ payload="${payload/SESSION/$session}"
 printf '%s' "$payload" | python3 "$FIXTURE/.codex/hooks/rule_context.py" | grep -q SCOPED_RULE_MARKER
 test -z "$(printf '%s' "$payload" | python3 "$FIXTURE/.codex/hooks/rule_context.py")"
 
-# A real user file is never overwritten or removed.
+# A REAL `.agents/skills` directory is refused and SURVIVES, and `--check` says so with exit 2.
+#
+# The shape below is the one that matters, and it is the reason this is not "reconciled" by
+# comparing the two trees: the canonical skills live in `.agents/skills`, and `.claude/skills/*`
+# symlinks INTO it. Compare the trees file by file and every file equals ITSELF, so a
+# content-based rule declares the directory a redundant copy and deleting it destroys the only
+# copy on disk. It happened, across 14 repos. The tree must survive this run untouched.
+rm "$FIXTURE/.agents/skills"
+mkdir -p "$FIXTURE/.agents/skills/legacy-skill"
+printf 'the only copy of this file\n' > "$FIXTURE/.agents/skills/legacy-skill/SKILL.md"
+ln -s ../../.agents/skills/legacy-skill "$FIXTURE/.claude/skills/legacy-skill"
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" >"$FIXTURE/refuse.log" 2>&1
+grep -q 'needs a person: workspace root: .agents/skills' "$FIXTURE/refuse.log"
+test -f "$FIXTURE/.agents/skills/legacy-skill/SKILL.md"
+grep -q 'the only copy' "$FIXTURE/.agents/skills/legacy-skill/SKILL.md"
+
+# EXIT CODES. --check is the gate, and only --check — the same rule aiworks-cursor.sh:875 keeps,
+# and the documented projector interface (docs/agents/harnesses.md) promises a --dry-run that
+# previews "without writing or failing on expected drift". A reconcile did everything it was
+# allowed to do, so it exits 0 and prints its `needs a person:` lines; failing it instead made
+# `aiworks sync` warn "could not reconcile Harness projections" forever on a workspace holding
+# one hand-written AGENTS.md, and made doctor --fix print `✗ failed` for a pass that had written
+# every surface it was permitted to write.
+#   2 = drift a reconcile will NOT close, so whoever is repairing must hand it to a person
+set +e
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --check >/dev/null 2>&1; check_rc=$?
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" >/dev/null 2>&1;         write_rc=$?
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" -n >/dev/null 2>&1;      dry_rc=$?
+set -e
+test "$check_rc" -eq 2
+test "$write_rc" -eq 0
+test "$dry_rc" -eq 0
+
+rm "$FIXTURE/.claude/skills/legacy-skill"
+rm -rf "$FIXTURE/.agents/skills"
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" >/dev/null
+test "$(readlink "$FIXTURE/.agents/skills")" = ../.claude/skills
+
+#   1 = ordinary drift, which a reconcile really does close
+rm "$FIXTURE/.codex/generated/rules.json"
+set +e
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --check >/dev/null 2>&1; check_rc=$?
+set -e
+test "$check_rc" -eq 1
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" >/dev/null
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --check >/dev/null
+
+# A real user file is never overwritten or removed, and --check reports it as a person's call.
 rm "$FIXTURE/.codex/hooks.json"
 printf '{"hooks":{}}\n' > "$FIXTURE/.codex/hooks.json"
-if python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" >/dev/null 2>&1; then
-  echo "expected unmanaged hooks.json conflict" >&2
-  exit 1
-fi
+set +e
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --check >/dev/null 2>&1; check_rc=$?
+set -e
+test "$check_rc" -eq 2
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" >/dev/null
 grep -q '^{"hooks":{}}$' "$FIXTURE/.codex/hooks.json"
 python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --remove >/dev/null
 test -f "$FIXTURE/.codex/hooks.json"
