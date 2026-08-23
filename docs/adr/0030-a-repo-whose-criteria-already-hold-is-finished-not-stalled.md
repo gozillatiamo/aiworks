@@ -68,6 +68,24 @@ Nothing is checkpointed to run state. The citations do not fit in a state row, a
 cheap to make should be re-audited by any invocation that acts on it — so a resume re-derives it,
 the same way a `deferred` build does.
 
+## Three places that read "finished" as "broken"
+
+An adversarial review of the first version found the same mistake in three separate consumers, all
+of them testing `status !== 'ready'` and meaning "something went wrong":
+
+- **A reviewer finding naming a satisfied upstream** recorded a `blocked-on` blocking item, which
+  kept the DOWNSTREAM out of `ready`. The new terminal state had become a way to fail a run.
+- **A cross-repo escalation aimed at one** was routed with no guard: a fix pass, commits and a fresh
+  PR/MR, all in a repo every ship phase had already filtered out — a merge that tells nobody. It is
+  refused now, and RECORDED, because a defect in shipped code is a real gap and a person's call.
+- **With every CODE repo satisfied**, the run walked on to the cross-repo gate with an EMPTY
+  candidate list and returned a green pass over nothing. A gate that validated nothing must never
+  read as a gate that passed, so the run ends at the satisfied ending and says which it was.
+
+The lesson is narrower than "add a status carefully": **a status enum where one value means finished
+and the rest mean broken has no room for a second kind of finished.** Every `!== 'ready'` is a place
+that assumption is written down.
+
 ## What is deliberately NOT changed
 
 `deferred` keeps its empty-branch rule. An empty branch plus "the rest belongs to another owner" is

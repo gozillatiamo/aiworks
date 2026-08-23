@@ -60,7 +60,11 @@ vcs_open_pr() {
   fi
   git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
   local out
-  out="$(_gl_mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)"
+  # `|| true` is the other half of the fix in _gl_mr: without it a failing `glab mr create` makes
+  # this assignment non-zero, `set -e` kills the function HERE, and the caller sees exit 1 with no
+  # output at all — the silent failure that took a source read to diagnose. Let it through and the
+  # URL parse below reports what glab actually said.
+  out="$(_gl_mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)" || true
   url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)"
   [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "could not parse the MR URL from glab output"; }
   iid="${url##*/}"

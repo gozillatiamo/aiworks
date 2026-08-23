@@ -19,7 +19,9 @@ vcs_open_pr() {
   # Name the repo explicitly. gh otherwise infers it from the cwd's `origin`, which is the WRONG
   # repo whenever VCS_REMOTE names an upstream (see _gh_nwo) — and inferring also fails outright
   # when the cwd is not inside a checkout of the target.
-  local nwo; nwo="$(_gh_nwo_once)"
+  local nwo
+  _gh_nwo_resolve || die "could not resolve the target repository (VCS_REPO=${VCS_REPO:-<unset>}, VCS_REMOTE=${VCS_REMOTE:-origin})"
+  nwo="$_GH_NWO"
   existing="$(_gh_pr list --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
   if [[ -n "$existing" ]]; then
     num="$(_gh_pr list --head "$head" --state open --json number -q '.[0].number' 2>/dev/null)"
@@ -32,7 +34,11 @@ vcs_open_pr() {
   fi
   git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
   local url
-  url="$(_gh_pr create --base "$base" --head "$head" --title "$title" --body "$body")"
+  # `|| true` + an explicit check, for the reason spelled out in gitlab.sh: a failing create must
+  # not kill this function before it can say what went wrong.
+  url="$(_gh_pr create --base "$base" --head "$head" --title "$title" --body "$body" 2>&1)" || true
+  url="$(printf '%s' "$url" | grep -oE 'https?://[^ ]+/pull/[0-9]+' | head -n1)" || true
+  [[ -n "$url" ]] || die "could not parse the PR URL from gh output — the PR was NOT created (repo $nwo, $head -> $base)"
   num="${url##*/}" # gh prints the PR URL; the number is the trailing path segment
   printf '%s\nnumber=%s\n' "$url" "$num"
 }
@@ -165,7 +171,7 @@ vcs_pr_comment() {
       local -a args=( -f body="$body" -f commit_id="$sha" -f path="$path" -f side=RIGHT )
       if [[ "$sline" != "$eline" ]]; then args+=( -F start_line="$sline" -f start_side=RIGHT -F line="$eline" )
       else                                 args+=( -F line="$eline" ); fi
-      if err="$(gh api "repos/$(_gh_nwo_once)/pulls/$num/comments" "${args[@]}" 2>&1)"; then
+      if err="$(gh api "repos/$_GH_NWO/pulls/$num/comments" "${args[@]}" 2>&1)"; then
         if [[ "$sline" != "$eline" ]]; then printf 'Inline comment posted on PR #%s at %s:%s-%s (range)\n' "$num" "$path" "$sline" "$eline"
         else                                printf 'Inline comment posted on PR #%s at %s:%s\n' "$num" "$path" "$eline"; fi
         return 0
@@ -173,7 +179,7 @@ vcs_pr_comment() {
         # Range rejected — retry a single-line anchor at the last line before giving up on inline.
         printf 'WARN: range anchor %s:%s-%s rejected on PR #%s — retrying single-line at %s.\n  GitHub said: %s\n' \
           "$path" "$sline" "$eline" "$num" "$eline" "$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-300)" >&2
-        if err="$(gh api "repos/$(_gh_nwo_once)/pulls/$num/comments" -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$eline" -f side=RIGHT 2>&1)"; then
+        if err="$(gh api "repos/$_GH_NWO/pulls/$num/comments" -f body="$body" -f commit_id="$sha" -f path="$path" -F line="$eline" -f side=RIGHT 2>&1)"; then
           printf 'Inline comment posted on PR #%s at %s:%s\n' "$num" "$path" "$eline"; return 0
         fi
         printf 'WARN: inline anchor failed for %s:%s on PR #%s — falling back to a NON-inline comment.\n  GitHub said: %s\n' \
@@ -308,10 +314,23 @@ _gh_nwo() {
   case "$url" in *github.com[:/]*) printf '%s' "${url#*github.com[:\/]}" ;; *) printf '%s' "$url" ;; esac
 }
 
-# _gh_nwo can shell out to `gh repo view` (a network call) on its last resort, and one adapter
-# process asks for the same answer several times. Resolve once per process.
+# Resolve the target repo ONCE per process into $_GH_NWO, and say whether it worked.
+#
+# Two traps, both load-bearing. (1) `_gh_nwo`'s `die` is an `exit 1` inside a command substitution,
+# so it kills only that subshell — the caller keeps going with an EMPTY value. An empty value means
+# resolution FAILED, which is not the same claim as "no explicit target was given", and a caller that
+# conflates them falls back to the current directory's remote: the exact wrong-repo write this file
+# exists to prevent, now with a success return over it. So this returns non-zero and the caller
+# refuses. (2) A memo assigned inside `$( )` is assigned in the subshell and gone on return, so
+# `nwo="$(_gh_nwo_once)"` would have re-run `gh repo view` — a network call — on every single call.
+# Setting the global here and reading it directly is what actually memoizes.
 _GH_NWO=''
-_gh_nwo_once() { [[ -n "$_GH_NWO" ]] || _GH_NWO="$(_gh_nwo)"; printf '%s' "$_GH_NWO"; }
+_gh_nwo_resolve() {
+  [[ -n "$_GH_NWO" ]] && return 0
+  _GH_NWO="$(_gh_nwo)" || return 1
+  [[ -n "$_GH_NWO" ]] || return 1
+  return 0
+}
 
 # Every `gh pr <verb>` goes through here. gh resolves the repository from the CURRENT WORKING
 # DIRECTORY's git remote unless told otherwise, so in a multi-repo run — where the cwd is the
@@ -321,13 +340,16 @@ _gh_nwo_once() { [[ -n "$_GH_NWO" ]] || _GH_NWO="$(_gh_nwo)"; printf '%s' "$_GH_
 # once by lib.sh, deliberately outside any stderr a call site captures and then pattern-matches.
 _gh_pr() {
   local verb="$1"; shift
-  local nwo; nwo="$(_gh_nwo_once)"
+  # FAIL CLOSED. An untargeted `gh pr review --approve` or `gh pr merge --squash` lands on the cwd
+  # repo's PR of that number — numbers collide across this workspace — and it is irreversible. There
+  # is no fallback: if the target cannot be resolved, nothing goes on the wire.
+  _gh_nwo_resolve || die "could not resolve the target repository for \`gh pr $verb\` (VCS_REPO=${VCS_REPO:-<unset>}, VCS_REMOTE=${VCS_REMOTE:-origin}) — refusing to run it against the current directory's remote instead"
   # Mutations only, and on fd 9 (see lib.sh): the reads are called from places that parse their
   # output, and a mutation is the call whose silent misfire cost a real run three rounds.
   case "$verb" in create|edit|comment|review|close|merge)
-    printf 'vcs[github] pr %s → %s\n' "$verb" "${nwo:-<cwd git remote>}" >&9 ;;
+    printf 'vcs[github] pr %s → %s\n' "$verb" "$_GH_NWO" >&9 ;;
   esac
-  if [[ -n "$nwo" ]]; then gh pr "$verb" --repo "$nwo" "$@"; else gh pr "$verb" "$@"; fi
+  gh pr "$verb" --repo "$_GH_NWO" "$@"
 }
 
 vcs_upload_media() {

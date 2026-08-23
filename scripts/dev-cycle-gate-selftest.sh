@@ -1399,6 +1399,172 @@ const BASE = {
         report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
         report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
       }
+    } else if (SCENARIO === 'G39' || SCENARIO === 'G39B') {
+      // An already-satisfied repo is FINISHED, and three places used to read it as broken:
+      //  (a) a reviewer finding naming it recorded a `blocked-on` item, keeping the DOWNSTREAM out of
+      //      `ready` over a repo with nothing wrong with it — the new state turned into a run failure;
+      //  (b) a cross-repo escalation routed a fix into it, opening commits and a PR/MR in a repo every
+      //      ship phase has already filtered out — a merge that tells nobody;
+      //  (c) with every CODE repo satisfied, the run walked on to the gate with an EMPTY candidate
+      //      list and a green pass over nothing.
+      // This drives (a) and (b): db is satisfied, app is live and its reviewer names db.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'app', depends_on: ['db'] }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'app']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        // app PINS db, so db finishes in wave 1 and app's review sees its verdict — which is what
+        // makes an `already-satisfied` upstream visible to the blocked-on check at all.
+        'kickoff:FM-12:app': { ...REPO_PLAN('app', 'develop'), submodule_pins: [{ repo: 'db', path: 'vendor/db' }] },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: [{ criterion: 'A1', commit: 'a1b2c3d', path_line: 'db/src/x.ts:9', quote: 'export const supportsFallback = (p) => p.flags.fallback' }] },
+        'verify-satisfied:FM-12:db': { upheld: true, reason: 'holds', checked: [] },
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:app#1': { approved: false, tests_green: true, tests_receipt: 'ok', comments: [{ path: 'app/src/a.ts', line: 3, body: 'the db repo returns the wrong shape here' }], resolved_threads: [], still_open: ['db shape'], upstream_fix_needed: [{ repo: 'db', finding: 'wrong shape', evidence: 'observed' }] },
+        'guard:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        'perf:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        // The escalation comes from the FIX agent's handoff, not the reviewer's — this is the ask
+        // that used to open commits and a PR/MR in a repo every ship phase had already filtered out.
+        'pr-fix:FM-12:app#1': { work_branch: 'feature/FM-12', summary: 'fixed here', status: 'complete', fixed: ['app/src/a.ts'], ...(SCENARIO === 'G39B' ? { upstream_fix_needed: [{ repo: 'db', finding: 'the shape is wrong at the source', evidence: 'observed: db/src/x.ts:9 returns a bare boolean where the caller reads an object' }] } : {}) },
+        'review:FM-12:app#2': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: ['db shape'], still_open: [] },
+        'guard:FM-12:app#2': { approved: true, tests_green: true, comments: [] },
+        'perf:FM-12:app#2': { approved: true, tests_green: true, comments: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      const blocked = JSON.stringify(result?.blockingByRepo || [])
+      if (SCENARIO === 'G39') {
+        report('G39a_satisfied_upstream_is_not_a_blocking_item', !blocked.includes('blocked-on'))
+        report('G39a_downstream_still_reaches_ready', !!result && result.status !== 'repo-unresolved' && result.status !== 'review-unresolved')
+        report('G39a_fix_pass_told_to_resolve_it_here', Object.entries(PROMPTS).some(([k, v]) => k.startsWith('pr-fix:FM-12:app') && /needed NO change for FM-12/.test(v)))
+      } else {
+        report('G39b_no_fix_routed_into_the_satisfied_repo', !SPAWNED.some((l) => l.startsWith('xrepo-fix:FM-12:db')))
+        report('G39b_no_pr_opened_in_the_satisfied_repo', !SPAWNED.includes('open-pr:FM-12:db'))
+        // Refusing to route it is not pretending the finding went away: it is a real gap in shipped
+        // code, so it is RECORDED and the repo stays out of ready.
+        report('G39b_refusal_is_recorded_not_swallowed', blocked.includes('cross-repo') && blocked.includes('left the run'))
+      }
+    } else if (SCENARIO === 'G40') {
+      // (c) — every CODE repo satisfied, a suite repo still live and the gate REQUESTED. There is no
+      // candidate, so the gate must not run and must not be reported as a pass; the run ends
+      // already-satisfied and says the suite work is unvalidated.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }], test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: [{ criterion: 'A1', commit: 'a1b2c3d', path_line: 'db/src/x.ts:9', quote: 'export const supportsFallback = (p) => p.flags.fallback' }] },
+        'verify-satisfied:FM-12:db': { upheld: true, reason: 'holds', checked: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/9', pr_number: 9 },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G40_gate_not_run_over_an_empty_candidate', !SPAWNED.some((l) => l.startsWith('test-suite:FM-12')))
+      report('G40_not_reported_as_a_pass', !!result && result.status === 'already-satisfied')
+      report('G40_gate_unavailable_is_stated', /no candidate build to run against/.test(result?.testSuiteGateUnavailable || ''))
+      report('G40_says_the_suite_work_is_unvalidated', /unvalidated/.test(result?.decision_needed || ''))
+      report('G40_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
+    } else if (SCENARIO === 'G42_FP') {
+      // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
+      // THIS run's fp, so the assertion run needs the value this one logs.
+      await runOnce(ARGS, {
+        ...BASE,
+        'resolve-runtime-config': { language: 'en', plan_to_html: false, auto_approve: false, artifacts_enabled: false },
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }], test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+      })
+      const fpLine = LINES.find((l) => /fp=([0-9a-f]+)/.test(l))
+      const fp = fpLine ? fpLine.match(/fp=([0-9a-f]+)/)[1] : null
+      report('G42_FP_fingerprint_logged', !!fp)
+      if (fp) console.log(`FP=${fp}`)
+      // The row must be TOLD to carry the pins, or there is nothing to read back on the resume.
+      report('G42_planned_row_records_the_pins', /"submodule_pins":/.test(PROMPTS['kickoff:FM-12:e2e'] || ''))
+    } else if (SCENARIO === 'G42') {
+      // A RESUMED invocation reuses each plan from its `planned` run-state row instead of re-planning.
+      // `submodule_pins` lives only on a live planner result, so the rehydrated plan dropped it and
+      // the whole wave ordering silently stopped firing from run 2 onward — the mechanism working
+      // exactly once per ticket, on the run least likely to need it. The row carries it now.
+      const scope42 = { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+        repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }], test_suite: { needed: true }, tracker_reachable: true }
+      const plannedRow = (repo, pins) => runStateRow(repo, 'planned', {
+        ticket_fp: FP, plan_path: `/tmp/ws/${repo}/plan.md`, plan_bytes: 4096, title: 'T', acceptance: ['A1'],
+        ...(pins ? { submodule_pins: pins } : {}),
+      })
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [plannedRow('db'), plannedRow('e2e', [{ repo: 'db', path: 'vendor/db' }])] },
+        'scope:FM-12': scope42,
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/1', pr_number: 1 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/2', pr_number: 2 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'posted' },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G42_no_planner_respawned', !SPAWNED.some((l) => l.startsWith('kickoff:')))
+      report('G42_pin_survives_the_resume', SPAWNED.indexOf('build:FM-12:db') < SPAWNED.indexOf('build:FM-12:e2e'))
+      report('G42_pin_targets_the_pushed_branch', (PROMPTS['build:FM-12:e2e'] || '').includes('PUSHED earlier in this run'))
+      report('G42_upstream_still_told_to_push', /PUSH BEFORE YOU HAND OFF/.test(PROMPTS['build:FM-12:db'] || ''))
+      report('G42_repin_ship_step_is_emitted', JSON.stringify(result?.shipSteps || []).includes('submodule-repin'))
+    } else if (SCENARIO === 'G41') {
+      // One pin must not serialize an unrelated depends_on chain. db+svc+app is a depends_on chain and
+      // e2e pins db; the merge waves would give three sequential build waves for one real edge. Only
+      // the pin graph orders the build, so this is TWO waves: everything, then e2e.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'app', depends_on: ['svc'] }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'app', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': { ...REPO_PLAN('e2e', 'main'), submodule_pins: [{ repo: 'db', path: 'vendor/db' }] },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/1', pr_number: 1 },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/2', pr_number: 2 },
+        'open-pr:FM-12:app': { pr_url: 'https://x/3', pr_number: 3 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/4', pr_number: 4 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'review:FM-12:app#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'guard:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        'perf:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        'approve:FM-12': { approved: true },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'posted' },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      // The three code repos share wave 1 despite a full depends_on chain; only the pinned edge waits.
+      const iDb = SPAWNED.indexOf('build:FM-12:db'), iSvc = SPAWNED.indexOf('build:FM-12:svc')
+      const iApp = SPAWNED.indexOf('build:FM-12:app'), iE2e = SPAWNED.indexOf('build:FM-12:e2e')
+      report('G41_depends_on_chain_is_not_serialized', iDb >= 0 && iSvc >= 0 && iApp >= 0 && Math.max(iDb, iSvc, iApp) < iE2e)
+      report('G41_pinned_repo_waits', iE2e > iDb)
+      report('G41_pin_still_targets_the_pushed_branch', (PROMPTS['build:FM-12:e2e'] || '').includes('PUSHED earlier in this run'))
     } else if (SCENARIO === 'G38') {
       // The wave ran is NOT the same as the wave pushed. A `build-unresolved` upstream handed back
       // no complete state, so its branch may hold nothing and may never have reached the remote —
@@ -1792,6 +1958,24 @@ out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G30)"; [[ "$VERBOSE" -eq 1 ]] && pri
 
 echo "── G31 — a return newly reachable past the abort point still carries the records out"
 out="$(FIXTURE_TS_MAX_REPAIR=1 FIXTURE_TOKEN_BUDGET=1000000 run_scenario G31)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G39 — a satisfied repo is finished: not a blocker, and never an escalation target"
+out="$(run_scenario G39)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G39B — …and an escalation aimed at it is refused and recorded, never routed"
+out="$(run_scenario G39B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G40 — no code candidate means the requested gate does not run and is not reported as a pass"
+out="$(run_scenario G40)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G42 — the pin survives a resume, and the required re-pin ships even with auto-merge off"
+outFp42="$(run_scenario G42_FP)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outFp42" | sed 's/^/      /'; ingest "$outFp42"
+FP42="$(grep -o 'FP=[0-9a-f]\+' <<<"$outFp42" | head -1 | cut -d= -f2)"
+if [[ -n "$FP42" ]]; then pass "G42_fingerprint_scraped (fp=$FP42)"; else fail "G42_fingerprint_scraped — could not scrape fp= from the probe run"; fi
+out="$(FP="$FP42" run_scenario G42)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G41 — one pin orders one edge, not a whole depends_on chain"
+out="$(run_scenario G41)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G38 — a wave that RAN is not a wave that pushed: an unresolved upstream keeps the safe pin"
 out="$(run_scenario G38)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

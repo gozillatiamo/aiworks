@@ -36,12 +36,18 @@ and the run's merge boundary is untouched. Nothing merges. The extra round disap
   the other scoped repos **by remote URL, never by directory name**. `submodule_pins: []` is the
   normal answer. Detection lives here because the planner already has the checkout open, and because
   the answer must be a fact rather than the scoping agent's judgement.
-- **A pin is a dependency edge.** It folds into the same graph `depends_on` feeds, so the existing
-  waves order it and there is no second graph to keep in step. `depends_on` remains a contract
-  between repos and still serializes nothing; a pin is a fact about the downstream's own harness and
-  binds harder.
-- **The build runs in waves only when a pin exists.** No pin, one wave, byte-identical to full
-  parallelism — the tickets that do not need this pay nothing for it.
+- **A pin is a dependency edge**, folded into the same graph `depends_on` feeds so the merge order
+  stays right with no second graph to keep in step. `depends_on` remains a contract between repos and
+  still serializes nothing at build time; a pin is a fact about the downstream's own harness and binds
+  harder.
+- **The build layers on the PIN graph alone.** Reusing the merge waves looked free and was not: one
+  unrelated submodule pair would have serialized a whole four-repo `depends_on` chain, paying three
+  sequential waves for one real edge. With no pins the same loop emits exactly one wave holding every
+  repo — the old fully-parallel build, with no special case to maintain.
+- **The pin is state.** It reaches the run only from a live planner result, so a resumed invocation —
+  which rehydrates each plan from its `planned` row instead of re-planning — dropped it and quietly
+  went back to the merged base. The mechanism would have worked exactly once per ticket, on run 1,
+  which is the run least likely to need it. The row carries it now.
 - **The pinned upstream must push.** Its build brief ends with `git push -u origin <branch>`, and
   says why: a repo is waiting on that commit reaching the remote. An unpushed commit makes the wave
   a wait for nothing.
@@ -53,10 +59,20 @@ and the run's merge boundary is untouched. Nothing merges. The extra round disap
 The hazard this creates is real and specific: the upstream squash-merges to a **new** sha and its
 branch is deleted, which would strand a pointer aimed at the branch commit.
 
-The Merge phase already emitted a `submodule-bump` ship step for exactly this — per downstream, run
-after the upstream's merge lands, guarded on `.gitmodules` actually declaring the path. It was
-written for the merged-base world and needs no change to cover this one; it is now load-bearing
-rather than precautionary, which is worth stating so nobody tidies it away as speculative.
+The first version of this change leaned on a `submodule-bump` ship step the Merge phase already
+emitted, and that was wrong in the way that matters. **With `auto_merge` off — the shipped default —
+the merge loop returns on its FIRST repo**, so every step below that return, bump included, was
+unreachable. The mitigation existed only on the path this workspace does not take. Meanwhile the
+change set had made the unmerged pointer part of the shipped diff *and* told the reviewer not to
+raise it: read together, the default configuration committed a gitlink at a branch commit and then
+squashed that branch away, with nothing anywhere instructing anyone to fix it.
+
+So the re-pin is now emitted **before** the merge loop, from the pins Kickoff actually read — a real
+edge rather than the speculative all-pairs guess — and it is carried out of both paths, marked
+REQUIRED, ordered explicitly after the upstream's merge and before the downstream's.
+
+The general shape, and the second time this ADR series has met it: **an early `return` decides which
+of the code below it exists.** ADR 0029 found it by deleting one; this found it by trusting one.
 
 ## The cost, stated plainly
 

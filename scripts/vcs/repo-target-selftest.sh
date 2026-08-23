@@ -63,7 +63,10 @@ cat > "$BIN/gh" <<'STUB'
 printf '%s\n' "$*" >> "$CALLS"
 case "$*" in
   *"pr create"*) printf 'https://github.com/group/target-repo/pull/42\n' ;;
-  *"pr list"*)   printf '[]\n' ;;
+  # `-q '.[0].url'` on an empty list prints an EMPTY LINE, not "[]". Answering "[]" made
+  # vcs_open_pr's `[[ -n "$existing" ]]` reuse guard true, so it returned early and `gh pr create`
+  # — the headline call of this whole regression — was never reached, while the count still read 2.
+  *"pr list"*)   : ;;
   *"--json reviews"*)  printf '{"reviews":[]}\n' ;;
   *"--json comments"*) printf '{"comments":[]}\n' ;;
   *"pr view"*)   printf '{"state":"OPEN","baseRefName":"main","headRefName":"feature/X"}\n' ;;
@@ -83,8 +86,10 @@ chmod +x "$BIN/git"
 run() {
   local provider="$1"; shift
   CALLS="$TMP/calls.$$"; : > "$CALLS"
+  # Whole-subshell stderr redirect, not just the call's: lib.sh dups stderr to fd 9 at SOURCE time,
+  # so anything narrower leaves the diagnostic channel pointed at this test's own output.
   ( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$CALLS" VCS_PROVIDER="$provider" VCS_REPO="$TARGET" \
-      bash -c '. "$1"/lib.sh; shift; "$@" >/dev/null 2>&1' _ "$DIR" "$@" )
+      bash -c '. "$1"/lib.sh; shift; "$@" >/dev/null 2>&1' _ "$DIR" "$@" ) 2>/dev/null
   cat "$CALLS" 2>/dev/null
 }
 
@@ -104,33 +109,47 @@ every_call_targeted() {
   else bad "$name" "every native call carries $flag $TARGET" "$untargeted"; fi
 }
 
-echo "── gitlab: every native \`glab mr <verb>\` targets VCS_REPO, not the cwd remote"
-for case in \
-  "vcs_open_pr main feature/X title body" \
-  "vcs_pr_comment 7 '' '' body" \
-  "vcs_pr_comments 7" \
-  "vcs_close_pr 7" \
-  "vcs_merge_pr 7 subject" \
-  "vcs_approve_pr 7 verdict"
-do
-  # shellcheck disable=SC2086
-  log="$(run gitlab $case)"
-  every_call_targeted "${case%% *}" "-R" '^mr ' "$log"
+# check PROVIDER NAME ARGS… — arguments are passed as real words, never re-split out of one string.
+# A case list of strings sent `vcs_pr_comment 7 '' '' body` through word-splitting, which delivered
+# two LITERAL two-apostrophe arguments: `path` and `line` were non-empty, so the inline-anchor branch
+# ran and the plain `pr comment` / `mr note` fallback — the one the audited 404s came from — was never
+# exercised. Real empty strings need real argument boundaries.
+check() {
+  local provider="$1" name="$2"; shift 2
+  local flag='-R' re='^mr '
+  [[ "$provider" == github ]] && { flag='--repo'; re='^pr '; }
+  every_call_targeted "$name" "$flag" "$re" "$(run "$provider" "$@")"
+}
+
+for provider in gitlab github; do
+  echo "── $provider: every native subcommand targets the resolved repo, not the cwd remote"
+  check "$provider" vcs_open_pr           vcs_open_pr main feature/X title body
+  check "$provider" vcs_pr_comment_plain  vcs_pr_comment 7 "" "" body
+  check "$provider" vcs_pr_comment_inline vcs_pr_comment 7 src/a.ts 12 body
+  check "$provider" vcs_pr_comments       vcs_pr_comments 7
+  check "$provider" vcs_close_pr          vcs_close_pr 7
+  check "$provider" vcs_merge_pr          vcs_merge_pr 7 subject
+  check "$provider" vcs_approve_pr        vcs_approve_pr 7 verdict
 done
 
-echo "── github: every native \`gh pr <verb>\` targets the resolved repo, not the cwd remote"
-for case in \
-  "vcs_open_pr main feature/X title body" \
-  "vcs_pr_comment 7 '' '' body" \
-  "vcs_pr_comments 7" \
-  "vcs_close_pr 7" \
-  "vcs_merge_pr 7 subject" \
-  "vcs_approve_pr 7 verdict"
-do
-  # shellcheck disable=SC2086
-  log="$(run github $case)"
-  every_call_targeted "${case%% *}" "--repo" '^pr ' "$log"
-done
+# The headline call, asserted by NAME rather than by a count — the count is what hid its absence.
+echo "── the create call itself is on the wire, targeted"
+has "gitlab: mr create ran, targeted"   "mr create -R $TARGET"   "$(run gitlab vcs_open_pr main feature/X title body)"
+has "github: pr create ran, targeted"   "pr create --repo $TARGET" "$(run github vcs_open_pr main feature/X title body)"
+
+# FAIL CLOSED when the target cannot be resolved. An untargeted `gh pr review --approve` or
+# `gh pr merge --squash` lands irreversibly on the cwd repo's PR of that number, and `_gh_nwo`'s
+# `die` cannot stop it: it is an `exit 1` inside a command substitution, so it kills only that
+# subshell and the caller continued with an empty value. Empty must mean REFUSE, not "use the cwd".
+echo "── an unresolvable target refuses instead of falling back to the cwd remote"
+CALLS="$TMP/calls.$$"; : > "$CALLS"
+out="$( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$CALLS" VCS_PROVIDER=github VCS_REMOTE=nonexistent-remote VCS_REPO="$TARGET" \
+    bash -c '. "$1"/lib.sh; vcs_approve_pr 7 verdict' _ "$DIR" 2>&1 || true )"
+case "$(cat "$CALLS")" in
+  *"pr review"*) bad "github: nothing untargeted went on the wire" "no pr review call at all" "$(cat "$CALLS")" ;;
+  *)             ok  "github: nothing untargeted went on the wire" ;;
+esac
+has "github: it says why it refused" "refusing to run it against" "$out"
 
 # The wrapper announces the resolved target on stderr BEFORE the call. Several call sites capture
 # stderr (`err=$(… 2>&1)`) or discard it (`2>/dev/null`) — that is the point rather than a gap: a
