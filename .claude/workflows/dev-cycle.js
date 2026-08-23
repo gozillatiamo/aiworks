@@ -5,7 +5,7 @@ export const meta = {
   phases: [
     { title: 'Scope', detail: 'cto: classify which repos the ticket touches + dependency order + whether the cross-repo test-suite (QA) gate applies', model: 'opus' },
     { title: 'Kickoff', detail: 'per repo: development-planner runs /ticket-kickoff (code) · qa-planner designs the test plan + automation plan (test-suite repo) → branch + plan. The WORKFLOW moves the ticket to in_progress (per-repo agents no longer touch status). If planning.to_html, each plan is also rendered to interactive HTML; if planning.auto_approve is off, the run STOPS here for human plan approval (re-run with --approve-plan).', model: 'opus' },
-    { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream. The one exception is a declared SUBMODULE PIN, which orders the build too: a vendored harness only sees commits its pointer can reach, so a pinned upstream builds and pushes in an earlier wave): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo AUTHORS its specs and runs static checks only — suite execution belongs to the Test-suite phase, against the reviewed candidate (gate-only verification).', model: 'sonnet/opus' },
+    { title: 'Build', detail: 'ALL scoped repos in parallel (build-order decoupled from merge-order — a build needs only the agreed contract, not a merged upstream; depends_on is still honored at Merge, upstream→downstream. The one exception is a declared SUBMODULE PIN, which orders the build too: a vendored harness only sees commits its pointer can reach, so a pinned upstream builds and pushes in an earlier wave): the build role implements (developer TDD / qa-runner POM). No pre-PR gate — guardian/perf review on the OPEN PR/MR (Review). The test-suite repo AUTHORS its specs and runs static checks only — suite execution belongs to the Test-suite phase, against the reviewed candidate (gate-only verification). A partial or blocked handoff is CONTINUED from the branch as it stands, up to build.max_continuation_passes, rather than ending the repo (docs/adr/0032).', model: 'sonnet/opus' },
     { title: 'Open PR', detail: 'build role opens the PR/MR right AFTER build, BEFORE review, via scripts/vcs/open-pr.sh, so every reviewer comments on the open PR/MR. Open only, never merge.', model: 'sonnet' },
     { title: 'Review', detail: 'on the OPEN PR/MR: code-reviewer (standards+spec, AND runs the repo suite — approval is gated on a green receipt; a suite that cannot run halts the repo rather than failing open) + guardian (quality gate) + performance ALL review, commenting via scripts/vcs/pr-comment.sh, FREEZE-once-passed; dev fixes the combined batch. A PR/MR that ALREADY carries an approval on the forge is frozen whole — its gates are not re-derived (docs/agents/review-ledger.md §5). First review is one COMPLETE pass per reviewer; every later round RE-VISITS only that reviewer\'s own findings (raise nothing new) — except a fix-CAUSED regression, which HALTS the repo loudly for human action; round cap. SKIPPED for the test-suite repo (no reviewers). When all repos pass, the WORKFLOW itself ticks the APPROVAL on every code repo\'s PR/MR (never a gate — NO_SELF_APPROVE) and moves the ticket to ready_to_merge (or ready_to_test). Ticket-wide: anything short of fully met ticks nothing anywhere.', model: 'sonnet' },
     { title: 'Test suite', detail: 'The ONLY place a suite executes. qa-runner: build the CANDIDATE (the ticket\'s work branches, PRE-merge) and run THIS ticket\'s scope — its spec(s) + regression scope (the dev\'s "⚠️ Regression request" recap), SCOPED via `scripts/dev.sh test <specs>`, NOT the full suite, then reports the per-TC results to the ticket WITH the run\'s own screenshots embedded — ONE durable comment per suite repo (marker `[test-report · <repo>]`), UPDATED in place on every re-run and stamped with the run + candidate shas, never a second comment. The cross-repo QA gate (E2E / API / load) that must pass BEFORE the merge. NEVER fails open: the verdict needs a receipt (real command + exit code + summary line) AND a second agent must find the result comment on the ticket — otherwise the gate is recorded as NOT RUN, not as a pass, and nothing merges. A repo declared `suite_kind: load` must additionally be equal-or-better than the same scenario on the ticket\'s base branch, judged against the environment\'s own measured noise floor, so its verdict is pass / fail / unavailable; a regression the developer ATTRIBUTES to the change loops back for a fix (attribute first, fix second) up to loadtest.max_fix_rounds. The WORKFLOW moves the ticket to testing, and ticks the APPROVAL on the suite repos\' own PR/MRs — they have no code reviewer, so this gate is their bar. Skipped when no test-suite gate applies.', model: 'sonnet' },
@@ -125,6 +125,9 @@ const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bou
   maxRegressionFixes: 3,       // a fix that caused a new blocking problem, handed straight back
   maxStallReattempts: 3,       // same finding set + no new commit ⇒ ESCALATE the brief, then retry
   maxEscalationAttempts: 3,    // cross-repo fix + scoped re-gate, per (repo, finding)
+}
+const BUILD = {   // from workspace.config.yaml build.*; the build phase's own bound (docs/adr/0032)
+  maxContinuationPasses: 3,    // a `partial`/`blocked` handoff is CONTINUED this many times before it is RECORDED
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: 2000000,        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
@@ -282,7 +285,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-23.1'
+const DEVCYCLE_VERSION = '2026-08-23.2'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -1668,6 +1671,65 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
   }
   // A converged-but-not-complete handoff (partial/blocked) is a CLEAN stop for THIS repo: the whole
   // change set must be ready before any merge, so we surface the handoff rather than pretend ready.
+  // THE BUILD DOES NOT STOP AT THE FIRST `partial` (docs/adr/0032).
+  //
+  // ADR-0027 converted every halt in the REVIEW loop into a must-fix with a budget, and named what it
+  // deliberately left alone — including "the build returned no structured handoff". But that is the
+  // `!dev` case above, which already retries. What actually stopped repos was the line below: a
+  // handoff of `partial` — whose own definition is "some slices landed, work OF MY OWN remains" —
+  // ended the repo on attempt one. That is the most continuable condition in the whole run being
+  // treated as the least, and it is what a measured round-1 audit hit: a repo that finished its prep
+  // slice, reported eleven remaining, and was stopped there. The next invocation then paid for Scope,
+  // Kickoff and a resume to reach the state this one was already standing in.
+  //
+  // So it is a budget, like every other condition since ADR-0027: continue from the branch as it
+  // stands, up to `build.max_continuation_passes`, and RECORD what the budget cannot close. `blocked`
+  // gets the same ladder with a different brief — most "blocked" is a named obstacle worth one honest
+  // attempt, and the ones that are not can say so through `cannot_fix`.
+  //
+  // A pass that does not move the work is not spent again on the same words: the same `remaining` twice
+  // escalates the brief exactly as a review stall does, because repeating an identical attempt is not
+  // progress and five no-commit rounds were measured ending in the same human call.
+  let buildPass = 0
+  let lastRemaining = null
+  while (dev && (dev.status === 'partial' || dev.status === 'blocked') && buildPass < BUILD.maxContinuationPasses) {
+    buildPass++
+    const wasBlocked = dev.status === 'blocked'
+    const fingerprint = String(dev.remaining || dev.summary || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300)
+    const stalled = fingerprint && fingerprint === lastRemaining
+    lastRemaining = fingerprint
+    log(`▶️ [${R}] build handoff status=${dev.status} — CONTINUING it (pass ${buildPass}/${BUILD.maxContinuationPasses}${stalled ? ', and the last pass moved nothing' : ''}): ${String(dev.remaining || dev.summary || '(no detail)').slice(0, 120)}`)
+    const cont = await safeAgent(
+      `${tag(R, desc.build, 'build-continue', buildPass)} CONTINUE your build of ${ticket} in the ${R} repo — this is pass ${buildPass} of at most ${BUILD.maxContinuationPasses}, and it is not a restart. ${inRepo} The branch is ${rp.work_branch} and the plan is at ${rp.plan_path}; THIS REPO'S BASE IS ${rp.base_branch}.${baseIsSettled(rp.base_branch)}
+WHAT YOU ALREADY DID, in your own words: ${String(dev.summary || '(no summary)').slice(0, 400)}
+WHAT YOU SAID REMAINS: ${String(dev.remaining || '(you named nothing)').slice(0, 700)}
+${dev.root_cause ? `THE CAUSE YOU MEASURED: ${String(dev.root_cause).slice(0, 400)}\n` : ''}${(dev.commands_run || []).length ? `WHAT YOU RAN: ${JSON.stringify(dev.commands_run).slice(0, 500)}\n` : ''}${dev.parked_at ? `WHERE YOU PARKED WORK: ${dev.parked_at} — recover it before you write anything new, so you do not implement it twice.\n` : ''}
+FIRST, RE-READ THE GROUND, not your memory of it: \`git -C ${absR} log --oneline origin/${rp.base_branch}..${rp.work_branch}\` for what actually landed, and \`git -C ${absR} status --porcelain\` for anything uncommitted. What is already committed is DONE — do not redo it, do not re-litigate it, and do not reshape it unless the plan says it is wrong.
+THEN FINISH THE REST. Same bar as before: /coding-feature test-first through /tdd, commit each slice conventionally (Refs ${ticket}), keep ${desc.green}.${wasBlocked ? ` YOU REPORTED BLOCKED, so the first question is whether the obstacle is real. Rule out the cheap classes before you accept it: the harness or toolchain itself · a dependency or service not standing up · a missing data precondition or fixture · a contract another repo owes that you can stub behind an interface for now and name in your handoff. Read this repo's declared known_false_reds before you call anything an environment problem. If it survives all of that, it is a real blocker and saying so IS the answer — but say it in \`cannot_fix\`, with the command and its exit code that proves it and what you ruled out first, because an unevidenced "blocked" is indistinguishable from not having tried.` : ''}${stalled ? ` ⚠️ YOUR LAST PASS MOVED NOTHING — the same "remaining" came back unchanged. Repeating it is not an option: treat your previous reading of the problem as a HYPOTHESIS TO DISPROVE, not as context. Re-derive it from the code and the commands, not from what you concluded last time, and if you still believe there is nothing to change then that is a claim about the WORK, so put it in \`cannot_fix\` with the evidence rather than returning the same sentence a third time.` : ''}
+RETURN CONTRACT: end by calling StructuredOutput with the DEV_SCHEMA handoff. "complete" when the Definition of Done is genuinely met; otherwise "partial"/"blocked" with what is LEFT in "remaining" — and make "remaining" describe the state as it is NOW, not as it was, because the next pass and a human both read it as the current truth.` + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
+      { agentType: desc.build, phase: 'Build', label: `build-continue:${ticket}:${R}#${buildPass}`, schema: DEV_SCHEMA },
+    )
+    if (!cont) {
+      log(`⚠️ [${R}] build continuation pass ${buildPass} returned no handoff — keeping the last real one and stopping the continuation here.`)
+      break
+    }
+    // An accepted `cannot_fix` ends the attempts on THIS condition, the same way it does in the review
+    // loop: refused without both the evidence and the cheaper classes ruled out first.
+    const declined = (cont.cannot_fix || []).filter((c) => c?.reason && String(c.evidence || '').trim().length >= 12 && String(c.tried || '').trim().length >= 12)
+    dev = cont
+    if (declined.length && cont.status !== 'complete') {
+      log(`⚠️ [${R}] build continuation stopped by an EVIDENCED cannot_fix: ${declined.map((c) => String(c.reason).slice(0, 90)).join(' | ')} — no further passes on this condition.`)
+      dev.remaining = `${dev.remaining || ''} [workflow: the build declined this with evidence after ${buildPass} continuation pass(es) — ${declined.map((c) => `${c.reason} (evidence: ${c.evidence})`).join('; ')}]`.trim()
+      break
+    }
+  }
+  if (buildPass > 0 && dev && dev.status === 'complete') {
+    log(`✅ [${R}] build COMPLETED on continuation pass ${buildPass} — a stop that used to cost a whole invocation.`)
+  }
+  if (buildPass >= BUILD.maxContinuationPasses && dev && dev.status !== 'complete' && dev.status !== 'deferred' && dev.status !== 'already-satisfied') {
+    log(`⚠️ [${R}] build still ${dev.status} after ${buildPass} continuation pass(es) (build.max_continuation_passes) — RECORDING it; the repo cannot reach ready.`)
+    dev.remaining = `${dev.remaining || ''} [workflow: ${buildPass} continuation pass(es) ran and could not finish it — the bound, not the first attempt, is what stopped this.]`.trim()
+  }
   if (dev.status && dev.status !== 'complete' && dev.status !== 'deferred') {
     log(`⚠️ [${R}] build handoff status=${dev.status}: ${(dev.remaining || dev.summary || '(no detail)').slice(0, 140)} — repo not build-complete; downstream skipped.`)
     return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining, root_cause: dev.root_cause, commands_run: dev.commands_run, decision_needed: dev.decision_needed, parked_at: dev.parked_at } }

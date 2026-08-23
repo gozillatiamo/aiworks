@@ -57,6 +57,7 @@ const TEST_SUITE = { maxFixRounds: Number(process.env.FIXTURE_TS_MAX_FIX_ROUNDS 
 // exhaust one in a single round instead of fourteen; real defaults live in workspace.config.yaml.
 // (No apostrophes in this block: CONFIG_FIXTURE is a single-quoted shell string.)
 const REVIEW = { maxRounds: Number(process.env.FIXTURE_RV_MAX_ROUNDS || 14), maxRegressionFixes: Number(process.env.FIXTURE_RV_MAX_REGRESSION || 1), maxStallReattempts: Number(process.env.FIXTURE_RV_MAX_STALL || 1), maxEscalationAttempts: Number(process.env.FIXTURE_RV_MAX_ESCALATION || 1) }
+const BUILD = { maxContinuationPasses: Number(process.env.FIXTURE_BUILD_MAX_CONT || 2) }
 const DEV_CYCLE = { tokenBudget: Number(process.env.FIXTURE_TOKEN_BUDGET || 0) }
 const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", testing: "Testing", done: "Done" }
 const REPOS = {
@@ -1472,6 +1473,56 @@ const BASE = {
       report('G40_gate_unavailable_is_stated', /no candidate build to run against/.test(result?.testSuiteGateUnavailable || ''))
       report('G40_says_the_suite_work_is_unvalidated', /unvalidated/.test(result?.decision_needed || ''))
       report('G40_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
+    } else if (SCENARIO.startsWith('G43')) {
+      // ADR 0032 — a `partial` handoff is the most continuable condition in the run, and it used to
+      // end the repo on attempt one. `partial` means "some slices landed, work OF MY OWN remains":
+      // the next invocation then paid for Scope, Kickoff and a resume to stand where this one already
+      // was. Four shapes: it finishes on continuation (G43), it never finishes and the BOUND is what
+      // stops it (G43_EXHAUST), an unmoved pass escalates the brief (G43_STALL), and an evidenced
+      // cannot_fix ends the passes early rather than burning the budget to reach the same answer
+      // (G43_DECLINE).
+      const PARTIAL = (n) => ({ work_branch: 'feature/FM-12', summary: `slice ${n} landed`, status: 'partial', remaining: SCENARIO === 'G43_STALL' ? 'the same thing, unchanged' : `slices ${n + 1}-11 remain`, root_cause: 'db/src/x.ts:9 needs the new column', commands_run: [{ command: 'cargo test', exit_code: 1 }] })
+      const DONE = { work_branch: 'feature/FM-12', summary: 'all slices landed', status: 'complete', fixed: ['db/src/x.ts'] }
+      const DECLINE = { work_branch: 'feature/FM-12', summary: 'cannot proceed', status: 'blocked', remaining: 'the vendor API is not in this environment', cannot_fix: [{ kind: 'environment', reason: 'the vendor sandbox is absent from this environment', evidence: 'curl -sS https://vendor.local/health -> exit 7 (could not connect)', tried: 'harness restart, docker compose up, fixture seed, VPN check' }] }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': SCENARIO === 'G43_DECLINE' ? { ...PARTIAL(1), status: 'blocked' } : PARTIAL(1),
+        'build-continue:FM-12:db#1': SCENARIO === 'G43' ? DONE : SCENARIO === 'G43_DECLINE' ? DECLINE : PARTIAL(2),
+        'build-continue:FM-12:db#2': PARTIAL(3),
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      const conts = SPAWNED.filter((l) => l.startsWith('build-continue:FM-12:db'))
+      if (SCENARIO === 'G43') {
+        report('G43_partial_is_continued_not_stopped', conts.length === 1)
+        report('G43_repo_reaches_ready', !!result && result.status !== 'repo-unresolved')
+        report('G43_pr_opened_after_the_continuation', SPAWNED.includes('open-pr:FM-12:db'))
+        const p = PROMPTS['build-continue:FM-12:db#1'] || ''
+        report('G43_brief_carries_what_remains', p.includes('slices 2-11 remain'))
+        report('G43_brief_forbids_a_restart', /it is not a restart/.test(p) && /What is already committed is DONE/.test(p))
+      } else if (SCENARIO === 'G43_EXHAUST') {
+        report('G43_bound_is_what_stops_it', conts.length === 2)
+        report('G43_no_pass_past_the_bound', !SPAWNED.includes('build-continue:FM-12:db#3'))
+        report('G43_repo_still_not_ready', !!result && result.status === 'repo-unresolved')
+        report('G43_record_says_the_bound_stopped_it', JSON.stringify(result?.handoffs || result?.repoResults || {}).includes('continuation pass(es) ran and could not finish it'))
+        report('G43_no_pr_on_an_unfinished_build', !SPAWNED.includes('open-pr:FM-12:db'))
+      } else if (SCENARIO === 'G43_STALL') {
+        report('G43_stall_escalates_the_brief', /YOUR LAST PASS MOVED NOTHING/.test(PROMPTS['build-continue:FM-12:db#2'] || ''))
+        report('G43_first_pass_is_not_accused_of_stalling', !/YOUR LAST PASS MOVED NOTHING/.test(PROMPTS['build-continue:FM-12:db#1'] || ''))
+      } else {
+        report('G43_evidenced_decline_ends_the_passes', conts.length === 1)
+        report('G43_decline_does_not_burn_the_budget', !SPAWNED.includes('build-continue:FM-12:db#2'))
+        report('G43_blocked_brief_rules_out_the_cheap_classes', /YOU REPORTED BLOCKED/.test(PROMPTS['build-continue:FM-12:db#1'] || ''))
+        report('G43_decline_reaches_the_handoff', JSON.stringify(result?.handoffs || result?.repoResults || {}).includes('declined this with evidence'))
+      }
     } else if (SCENARIO === 'G42_FP') {
       // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
       // THIS run's fp, so the assertion run needs the value this one logs.
@@ -1967,6 +2018,18 @@ out="$(run_scenario G39B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed
 
 echo "── G40 — no code candidate means the requested gate does not run and is not reported as a pass"
 out="$(run_scenario G40)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G43 — a partial build is CONTINUED to a finish, not stopped at attempt one"
+out="$(run_scenario G43)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G43_EXHAUST — and when it never finishes, the BOUND is what stops it, recorded"
+out="$(run_scenario G43_EXHAUST)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G43_STALL — a pass that moved nothing escalates the brief instead of repeating it"
+out="$(run_scenario G43_STALL)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G43_DECLINE — an evidenced cannot_fix ends the passes rather than burning the budget"
+out="$(run_scenario G43_DECLINE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G42 — the pin survives a resume, and the required re-pin ships even with auto-merge off"
 outFp42="$(run_scenario G42_FP)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outFp42" | sed 's/^/      /'; ingest "$outFp42"

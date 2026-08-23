@@ -232,6 +232,18 @@ re-parents, re-sprints or re-estimates one. Shipped work is a record, not a work
 A ticket an automated run may write to: any covering ticket that is not a **reference ticket**,
 plus a key a human named explicitly. The distinction is enforced in code, not by instruction.
 
+**Build continuation**:
+A bounded pass that resumes an unfinished build from the branch as it stands, rather than ending the
+repo. A `partial` handoff means "some slices landed, work of my own remains" — the best-informed
+continuation point in the run — and it used to stop the repo on attempt one, so the next invocation
+paid for Scope, Kickoff and a resume to reach the same place. The brief carries what landed, what
+remains, the measured cause and any parked WIP, and forbids a restart; `blocked` takes the same
+ladder with the cheap classes named first; an unchanged `remaining` escalates the brief rather than
+repeating it; an evidenced `cannot_fix` ends the passes early. Bounded by
+`build.max_continuation_passes`, and what the bound cannot close is a **blocking item** — it buys the
+passes, never a pass ([ADR 0032](docs/adr/0032-the-build-does-not-stop-at-the-first-partial.md)).
+*Avoid*: build retry (a retry re-runs the same attempt; this continues a different one).
+
 **Already satisfied**:
 A repo the ticket touches on paper but needs no change in: the behaviour asked of it shipped under
 earlier work, so the correct diff is empty. Distinct from **deferred scope** (someone else owes the

@@ -140,7 +140,12 @@ while a blocking item stands, and an instruction is not a mechanism.
 Four states still stop a repo, because there is no loop to continue into:
 
 - **the build returned no structured handoff** — nothing is known about what landed, so there is no
-  diff, no PR and nothing to review
+  diff, no PR and nothing to review. ⚠️ This entry was read for two changes as covering a `partial`
+  handoff too, and it never did:
+  [ADR 0032](0032-the-build-does-not-stop-at-the-first-partial.md) converts that one. A missing
+  handoff means nothing is known; a `partial` handoff means everything is known — what landed, what
+  remains, the measured cause, the commands run — which makes it the best-informed continuation point
+  in the run, not a terminal state. The two looked like one case because they sat on adjacent lines
 - **open-PR did not converge** — there is no PR/MR number, and every reviewer prompt needs one
 - **a target branch that cannot be made right** — `git diff <base>...<head>` cannot be computed
   without that ref on the remote, so reviewers would produce findings about the wrong comparison.

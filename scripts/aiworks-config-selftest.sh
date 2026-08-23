@@ -231,6 +231,8 @@ review:
 test_suite:
   max_fix_rounds: 2
   max_suite_repair_attempts: 7
+build:
+  max_continuation_passes: 8
 products: []
 YAML
 out="$(full "$T/bounds.yaml" "$T/no-local.yaml")"
@@ -240,6 +242,7 @@ ck "max_stall_reattempts projects"             "maxStallReattempts: 4"      "$ou
 ck "max_escalation_attempts projects"          "maxEscalationAttempts: 6"   "$out"
 ck "max_suite_repair_attempts projects"        "maxSuiteRepairAttempts: 7"  "$out"
 ck "an explicit test_suite.max_fix_rounds wins" "maxFixRounds: 2"           "$out"
+ck "build.max_continuation_passes projects"     "maxContinuationPasses: 8"   "$out"
 
 cat > "$T/bounds-bad.yaml" <<'YAML'
 language: en
