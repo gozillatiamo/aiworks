@@ -32,6 +32,27 @@ def expected(root: Path, relative: str) -> dict:
     return {"command": "uv", "args": ["run", "--quiet", str(root / relative)]}
 
 
+def ours(command: str, args: list[str], relative: str) -> bool:
+    """True for a DEAD registration this script wrote from a workspace root that is gone.
+
+    Two conditions, and the second is not optional. The shape
+    `uv run --quiet <anything>/<relative>` — exactly three args, no extra flags — is only ever
+    produced here, so an entry matching it is this script's own past output. But shape alone
+    does not make it stale: Codex has no per-project scope and Cursor's config
+    (`~/.cursor/mcp.json`) is a single machine-global file, so a SIBLING checkout on the same
+    machine sees a perfectly live registration in exactly this shape. Repointing that one takes
+    a working server away from the other root — and with `triage.enabled: false` here, the
+    deregister branch would delete it outright. So the path must also be GONE, which is the only
+    state where "this registration is dead and nothing else wants it" is actually true, and the
+    only claim the doctor's finding makes.
+
+    Without the shape test, somebody's hand-made command wins, as it should. Without the
+    existence test, a live sibling's registration loses. Both tests, or neither is safe.
+    """
+    return command == "uv" and args[:2] == ["run", "--quiet"] and len(args) == 3 \
+        and args[2].endswith(f"/{relative}") and not Path(args[2]).exists()
+
+
 def codex_list() -> dict[str, dict]:
     try:
         output = subprocess.run(["codex", "mcp", "list", "--json"], check=True, text=True, capture_output=True).stdout
@@ -52,21 +73,32 @@ def reconcile_codex(root: Path, action: str, want: bool, dry: bool) -> int:
         desired = expected(root, relative)
         item = current.get(name)
         matches = bool(item) and codex_args(item) == (desired["command"], desired["args"])
+        stale = bool(item) and not matches and ours(*codex_args(item), relative)
         if action == "status":
-            print(f"    {'✓' if matches else '-'} codex/{name} — {'registered' if matches else 'not registered'}")
+            # "not registered" and "registered at a path that no longer exists" need different
+            # words: they read the same in the doctor's output but only one of them is closed by
+            # registering something, and the other looks like a foreign entry nobody may touch.
+            state = "registered" if matches else ("STALE path; sync repoints it" if stale else "not registered")
+            print(f"    {'✓' if matches else '-'} codex/{name} — {state}")
             continue
         if want and matches or not want and not item:
             continue
-        if item and not matches:
+        if item and not matches and not stale:
             print(f"    ! codex/{name} has a command this script does not own; left unchanged")
             continue
         command = ["codex", "mcp", "add", name, "--", "uv", "run", "--quiet", str(root / relative)] if want else ["codex", "mcp", "remove", name]
         if dry:
-            print(f"    - would {'register' if want else 'remove'} codex/{name}")
+            verb = "repoint" if stale and want else ("register" if want else "remove")
+            print(f"    - would {verb} codex/{name}")
             continue
         try:
+            # `codex mcp add` will not overwrite a name that is already there, so a repoint is
+            # remove-then-add. The remove is best-effort: if it fails the add fails loudly next.
+            if stale and want:
+                subprocess.run(["codex", "mcp", "remove", name], check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"    ✓ codex/{name} {'registered' if want else 'removed'}")
+            print(f"    ✓ codex/{name} {'repointed at this root' if stale and want else ('registered' if want else 'removed')}")
         except (OSError, subprocess.SubprocessError):
             print(f"    ! codex/{name} reconciliation failed")
             failed = 1
@@ -91,23 +123,27 @@ def reconcile_cursor(root: Path, action: str, want: bool, dry: bool) -> int:
         desired = expected(root, relative)
         current = servers.get(name)
         matches = current == desired
+        stale = bool(current) and not matches and isinstance(current, dict) and ours(
+            str(current.get("command") or ""), [str(v) for v in current.get("args") or []], relative)
         if action == "status":
-            print(f"    {'✓' if matches else '-'} cursor/{name} — {'registered' if matches else 'not registered'}")
+            state = "registered" if matches else ("STALE path; sync repoints it" if stale else "not registered")
+            print(f"    {'✓' if matches else '-'} cursor/{name} — {state}")
             continue
         if want and matches or not want and current is None:
             continue
-        if current is not None and not matches:
+        if current is not None and not matches and not stale:
             print(f"    ! cursor/{name} has a command this script does not own; left unchanged")
             continue
         if dry:
-            print(f"    - would {'register' if want else 'remove'} cursor/{name}")
+            verb = "repoint" if stale and want else ("register" if want else "remove")
+            print(f"    - would {verb} cursor/{name}")
             continue
         if want:
             servers[name] = desired
         else:
             servers.pop(name, None)
         changed = True
-        print(f"    ✓ cursor/{name} {'registered' if want else 'removed'}")
+        print(f"    ✓ cursor/{name} {'repointed at this root' if stale and want else ('registered' if want else 'removed')}")
     if changed:
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_suffix(path.suffix + ".tmp")

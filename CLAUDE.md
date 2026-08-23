@@ -48,7 +48,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit a
   persisted run script. It also keeps **the base it started with**: recorded per repo, authoritative on resume, moved
   only by `--accept-base-change`, and the forge's own `target_branch` is asserted against it (`docs/adr/0025`) — a base
-  is never re-derived downstream · `doctor.md` — `aiworks doctor` names what is broken + its owner command, `--fix` runs it ·
+  is never re-derived downstream · `doctor.md` — `aiworks fix` runs every finding's owner command then RE-CHECKS: exit 0 never meant it cleared ·
   `figma.md` · `image-generation.md` · `diagram-generation.md` — each behind its `enabled` flag (default OFF) ·
   `headroom.md` — `hcat` for a big file, never a bare `cat`: an unbounded read ≥8 KiB is hook-BLOCKED, as is a read-modify-write
   heredoc patch (`Edit` ships only the delta).

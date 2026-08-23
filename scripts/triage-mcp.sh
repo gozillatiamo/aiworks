@@ -152,6 +152,32 @@ registered_args() {
 
 expected_args() { printf 'uv run --quiet %s/%s' "$ROOT" "$1"; }
 
+# A DEAD registration this script wrote from a workspace root that is gone — a clone that moved,
+# or a worktree since deleted. Three conditions, and none is decoration:
+#   the shape        `uv run --quiet <path>` and nothing else. A glob alone will not do: `*`
+#                    matches spaces, so `uv run --quiet *` also swallows
+#                    `uv run --quiet --with psycopg[binary] <path>` — somebody's hand-made
+#                    command, which the remove-and-re-add would strip the flag from and break.
+#                    So the remainder must be a single token, which is what `*[[:space:]]*`
+#                    rules out (the Python twin gets this from `len(args) == 3`).
+#   the script       …ending in this server's own relative path.
+#   and it is GONE   the only state where "dead, and nothing else wants it" is true. Shape
+#                    alone is not staleness: a sibling checkout on the same machine registers
+#                    the identical shape and its server works fine.
+# Anything else is somebody's own setup and is left alone. Because the path must be absent, a
+# repoint that fails midway leaves only a registration that was already dead, and the next sync
+# re-adds it.
+# ponytail: `have` is args joined by spaces (registered_args), so a workspace root whose path
+# contains a space cannot be told from an extra flag here. Such a root reports "a different
+# command; leaving it alone" instead of being repointed — the safe direction, and the Python twin
+# handles it properly because it reads the args as a list. Read the list here too if it matters.
+owned_stale_args() {  # <have> <relative>
+  local have="$1" rel="$2" path
+  case "$have" in "uv run --quiet "*) path="${have#uv run --quiet }" ;; *) return 1 ;; esac
+  case "$path" in *[[:space:]]*) return 1 ;; esac
+  [[ "$path" == */"$rel" && ! -e "$path" ]]
+}
+
 if [[ "$ACTION" == "status" ]]; then
   printf '  triage.enabled = %-5s (%s)\n' "$ENABLED" "$ENABLED_SRC"
   printf '  triage.prod    = %-5s (%s)   [enforced in-process by the servers]\n' "$PROD" "$PROD_SRC"
@@ -161,6 +187,8 @@ if [[ "$ACTION" == "status" ]]; then
     have="$(registered_args "$name")"
     if [[ -z "$have" ]]; then dim "$name — not registered"
     elif [[ "$have" == "$(expected_args "$rel")" ]]; then ok "$name — registered (local scope)"
+    elif owned_stale_args "$have" "$rel"; then
+      warn "$name — registered under a STALE path; 'scripts/triage-mcp.sh sync' repoints it: $have"
     else warn "$name — registered with a DIFFERENT command: $have"; fi
   done
   for entry in "${LEGACY[@]}"; do
@@ -190,7 +218,7 @@ for entry in "${LEGACY[@]}"; do
   name="${entry%%|*}"; rel="${entry#*|}"
   have="$(registered_args "$name")"
   [[ -z "$have" ]] && continue
-  if [[ "$have" != "$(expected_args "$rel")" ]]; then
+  if [[ "$have" != "$(expected_args "$rel")" ]] && ! owned_stale_args "$have" "$rel"; then
     warn "$name — legacy entry with a command this script does not own; leaving it alone: $have"
     continue
   fi
@@ -212,22 +240,33 @@ for entry in "${SERVERS[@]}"; do
   if [[ "$WANT" -eq 1 ]]; then
     if [[ ! -f "$abs" ]]; then warn "$name — $rel is missing; not registering"; continue; fi
     if [[ "$have" == "$want_args" ]]; then ok "$name — already registered (local scope)"; continue; fi
+    repoint=0
     if [[ -n "$have" ]]; then
-      # Someone registered this name with a different command (a custom path or flags). Their
-      # entry wins: silently replacing it would break whatever they set up on purpose.
-      warn "$name — registered with a different command; leaving it alone: $have"
-      continue
+      if owned_stale_args "$have" "$rel"; then
+        # Ours, from a root that has moved. Re-point it: `claude mcp add` will not overwrite an
+        # existing name, so the stale entry is removed first.
+        repoint=1
+      else
+        # Someone registered this name with a different command (a custom path or flags). Their
+        # entry wins: silently replacing it would break whatever they set up on purpose.
+        warn "$name — registered with a different command; leaving it alone: $have"
+        continue
+      fi
     fi
-    if [[ "$DRY" -eq 1 ]]; then dim "would register $name (local scope) → $want_args"; changed=1; continue; fi
+    if [[ "$DRY" -eq 1 ]]; then
+      dim "would $([[ $repoint -eq 1 ]] && printf 'repoint' || printf 'register') $name (local scope) → $want_args"
+      changed=1; continue
+    fi
+    [[ $repoint -eq 1 ]] && (cd "$ROOT" && claude mcp remove "$name" --scope local >/dev/null 2>&1)
     if (cd "$ROOT" && claude mcp add "$name" --scope local -- uv run --quiet "$abs" >/dev/null 2>&1); then
-      ok "$name — registered (local scope); restart the session for its tools to appear"
+      ok "$name — $([[ $repoint -eq 1 ]] && printf 'repointed at this root' || printf 'registered') (local scope); restart the session for its tools to appear"
       changed=1
     else
       warn "$name — 'claude mcp add' failed; register by hand (see scripts/${rel%%/*}/README.md)"
     fi
   else
     if [[ -z "$have" ]]; then continue; fi
-    if [[ "$have" != "$want_args" ]]; then
+    if [[ "$have" != "$want_args" ]] && ! owned_stale_args "$have" "$rel"; then
       warn "$name — registered with a command this script does not own; leaving it alone: $have"
       continue
     fi

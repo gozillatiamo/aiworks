@@ -32,7 +32,11 @@
 # from whatever an org happens to have configured changes meaning when someone edits it. The
 # few cases that need the real workspace skip themselves when there isn't one.
 #
-# WRITES NOTHING. Every run is read-only or --fix -n; no case ever passes --fix without -n.
+# WRITES NOTHING OUTSIDE ITS FIXTURES. Every run is read-only or --fix -n, with one exception:
+# case 21 has to prove that --fix's own referee tells a closed finding from a surviving one, and
+# that can only be observed by letting it run. Its fixture is built so the entire plan is a
+# single `chmod +x` on a file inside the temp dir; every other finding there is routed to
+# "needs you", so nothing reaches the network, a daemon, or anything outside $T.
 #
 set -uo pipefail
 
@@ -372,7 +376,7 @@ OUT="$(run_ps)"
 ck "a diverged project-scope copy is a finding"   "drifted from user scope" "$OUT"
 ck "the finding names the plugin"                 "caveman@caveman"         "$OUT"
 ck "an update after the last activation warns"    "updated since the last activation" "$OUT"
-# The rendered owner command is width-truncated ("… (+1 more)"), and the half that gets cut is the
+# The rendered owner command is width-truncated ("… (+1 more words)"), and the half that gets cut is the
 # settings.json restore — the half whose absence breaks the whole team. Assert on --json, which
 # carries the command whole.
 JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
@@ -524,7 +528,7 @@ ck "it does not claim a chain that is not there" "ABSENT:wired through a chained
 # the remote-tracking refs it compares against. No remote is needed: update-ref writes the same
 # refs/remotes/origin/* a fetch would, which is exactly what the check inspects.
 # -v, because the default view collapses a passing check to a count and ellipsises a long
-# detail line ("… (+31 more)") — both of which these cases assert on.
+# detail line ("… (+31 more words)") — both of which these cases assert on.
 dr() { "$1/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1; }
 # The text view ellipsises a long detail at ~96 chars even under -v; --json is the channel
 # that carries it whole, so a case asserting on the tail of a detail reads that instead.
@@ -573,6 +577,62 @@ ck "a base absent from the remote FAILS"       "does not exist on the remote" "$
 ck "…naming the repo and the branch"           "demo-repo(→release/9.9)"      "$OUT"
 ck "…and saying what it costs"                 "no ticket can finish"         "$OUT"
 ck_exit "…so the run exits non-zero"           1 "$RC"
+
+# ── 21 · --fix is refereed by a second pass, not by an exit code ──────────────────
+# Measured on a real workspace: `--fix -y` reported "3 fixed · 0 failed" and a re-run returned a
+# byte-identical finding set. All three owner commands exited 0 while closing nothing — one
+# skipped its own stale registration as foreign, one only ever failed under --check, one stood in
+# for a config edit nobody had made. So the doctor re-runs the same scope and reports what
+# actually cleared, and the VERDICT comes from that second pass rather than the stale first one.
+#
+# The fixture breaks two things at once: a chmod the fix really closes, and an over-budget
+# CLAUDE.md whose fix is an editor — so one finding must clear and the other must be named as
+# still open. This is the only case that runs --fix for real; every command it can reach is a
+# chmod inside $T.
+W="$T/refereed"; make_ws "$W"; stage "$W"
+chmod -x "$W/demo-repo/scripts/dev.sh"
+{ printf '# repo\n'; for i in $(seq 1 130); do printf 'line %s\n' "$i"; done; } > "$W/demo-repo/CLAUDE.md"
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y 2>&1)"; RC=$?
+ck "the runner says it RAN a command, not that it fixed one"  "✓ ran"        "$OUT"
+ck "a second pass re-checks the findings"                    "re-checked:"  "$OUT"
+ck "…counting the one that really cleared"                   "1 cleared"    "$OUT"
+ck "…and the two it did not"                                 "2 still open" "$OUT"
+ck "…named, so nobody has to diff two runs by eye"  "still open  CLAUDE.md over the 100-line budget" "$OUT"
+[[ -x "$W/demo-repo/scripts/dev.sh" ]] && ok "the fix really ran" \
+                                       || bad "the fix really ran" "dev.sh is still not executable"
+ck_exit "the verdict follows the re-check, not the first pass" 0 "$RC"
+# Same run under --strict: what survived is a warning, and --strict fails on one.
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y --strict 2>&1)"; RC=$?
+ck_exit "a warning that survived the fix still fails --strict" 1 "$RC"
+
+# 21b — the referee must survive being invoked by a RELATIVE path. The script cd's to $ROOT
+# during startup, so re-invoking itself as "$0" resolves against the wrong directory: the child
+# produced nothing, the run printed "could not re-check", and the verdict silently fell back to
+# the PRE-FIX pass. Measured: `cd demo-repo && ../scripts/aiworks-doctor.sh --fix -y` exited 1
+# over a finding the chmod had already closed. Every other case here uses an absolute path,
+# which is exactly why none of them caught it.
+W="$T/refereed-rel"; make_ws "$W"; stage "$W"
+chmod -x "$W/demo-repo/scripts/dev.sh"
+OUT="$(cd "$W/demo-repo" && ../scripts/aiworks-doctor.sh --skip mcp,services,credentials,disk --fix -y 2>&1)"; RC=$?
+ck "a relative invocation still re-checks"      "re-checked:"          "$OUT"
+ck "…and does not claim it could not"           "ABSENT:could not re-check" "$OUT"
+ck_exit "…so the closed failure exits 0"        0 "$RC"
+
+# 21c — a CRLF rules file HAS frontmatter. The canonical reader (parse_frontmatter in
+# scripts/codex/common.py) compares lines[0].strip(), so `---\r` is valid there; comparing
+# `head -n 1` to `---` byte for byte made every CRLF rules file a permanent false positive,
+# routed to "needs you", telling the reader to add the block the file already has.
+W="$T/crlf-rules"; make_ws "$W"; stage "$W"
+printf -- '---\r\ndescription: d\r\npaths:\r\n  - "src/**"\r\n---\r\nbody\r\n' \
+  > "$W/demo-repo/.claude/rules/crlf.md"
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1)"
+ck "a CRLF rules file is not called frontmatter-less" "ABSENT:no YAML frontmatter" "$OUT"
+ck "…and its scoping is read correctly"               "ABSENT:globs:' and no 'paths:" "$OUT"
+# …while a file with genuinely no frontmatter is still named.
+printf '# just a heading\n\n- a rule\n' > "$W/demo-repo/.claude/rules/bare.md"
+OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>&1)"
+ck "a file with no frontmatter at all is reported"    "rules file with no YAML frontmatter" "$OUT"
+ck "…naming the file"                                 "demo-repo/.claude/rules/bare.md"     "$OUT"
 
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"

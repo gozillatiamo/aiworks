@@ -80,6 +80,13 @@ Commands:
              clone instead of "go make a token". `--fix` runs the owner commands (never its
              own repair logic) after showing the plan; exit 1 on any failure, `--strict` also
              on a warning.
+  fix        The one-word repair pass: `doctor --deep --fix -y`. Looks at everything, runs the
+             owner command for every finding that HAS one, then re-runs the same checks and
+             reports which findings actually cleared — a command exiting 0 is not evidence that
+             the thing it was meant to fix is gone. What is left is what a person has to decide
+             or type themselves (a secret, a branch-model call, a rules file's scope); each is
+             listed under "needs you" with the command. Takes doctor's own options: `-n` to
+             preview, `--only <group>` to narrow.
   add        Onboard ONE repo: register it (workspace.config.yaml products[] + mani.d +
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
              seed hooks/permissions, seed the default coding-standards rules
@@ -113,8 +120,11 @@ Commands:
              add / sync run this automatically. Use --check in CI.
   codex      Project the canonical Claude-side agent config onto Codex for the root and every
              repo: AGENTS.md + .agents/skills symlinks, generated .codex agents/hooks/rule index,
-             MCP config and native status line. Use --check in CI; --remove deletes only files
-             marked as generator-owned.
+             MCP config and native status line. --remove deletes only files marked as
+             generator-owned. Use --check in CI: it is the only form that verdicts — 0 in sync,
+             1 for drift a reconcile closes, 2 for drift only a person can (a real path where
+             the canonical link belongs, a generated file someone edited, a rules file with no
+             frontmatter). A reconcile itself exits 0 and prints what it could not do.
   harnesses  List, configure, reconcile, or check the organization-wide Harness set declared in
              workspace.config.yaml. `aiworks setup` owns the first-run picker; this command is the
              explicit reconfiguration/CI surface. The registry is data-driven so a future Harness
@@ -167,6 +177,9 @@ Examples:
   aiworks doctor --only adapters -v     # one group, every passing check shown
   aiworks doctor --fix -n               # what --fix WOULD run, run nothing
   aiworks doctor --json --strict        # CI: machine-readable, a warning fails too
+  # …or just repair everything that has an owner command, and verify it actually cleared:
+  aiworks fix                           # = doctor --deep --fix -y, then re-checks the findings
+  aiworks fix -n                        # the same plan, nothing run
   # fast path — declare repos under products: in workspace.config.yaml, then:
   aiworks sync                          # onboard every repo in the config
   aiworks sync your-product --dry-run   # preview just the your-product product
@@ -228,6 +241,11 @@ superset_hook() {
 cmd="${1:-}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
   doctor)         exec "$AIWORKS_BASH" "$DIR/aiworks-doctor.sh" "$@" ;;
+  # `fix` is the one-word form of the only invocation anybody actually wants when something is
+  # off: look at EVERYTHING (--deep), repair what has an owner command, and re-check that the
+  # findings really cleared. Extra args pass through, so `aiworks fix -n` still previews and
+  # `aiworks fix --only triage` still narrows. -y is implied — the whole point of the alias.
+  fix)            exec "$AIWORKS_BASH" "$DIR/aiworks-doctor.sh" --deep --fix -y "$@" ;;
   add)            exec "$AIWORKS_BASH" "$DIR/aiworks-add.sh" "$@" ;;
   sync)           exec "$AIWORKS_BASH" "$DIR/aiworks-sync.sh" "$@" ;;
   remove|rm)      exec "$AIWORKS_BASH" "$DIR/aiworks-remove.sh" "$@" ;;
