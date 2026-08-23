@@ -187,6 +187,40 @@ const BASE = {
       report('G1_build_svc_spawned', SPAWNED.includes('build:FM-12:svc'))
       report('G1_build_svc_not_skipped', !LINES.some((l) => l.includes('[svc] build SKIPPED')))
       report('G1_chain_e2e_also_degraded', LINES.some((l) => l.includes('e2e') && l.includes('DEGRADED') && l.includes('declared upstream svc')))
+    } else if (SCENARIO === 'G1B') {
+      // C2, the half that degrading 'built'+'reviewed' alone did NOT close: svc carries a PASSED
+      // review ledger as well. The skip at the top of reviewRepo() is an OR, so with the gate_*
+      // rows left frozen svc re-BUILT against db's new head and then logged "review SKIPPED —
+      // every gate is ledgered PASSED" over the re-pin diff nobody read. Assert the reviewer
+      // actually runs, and that it runs as a RE-VISIT (ADR 0021: the row keeps first_pass:true,
+      // so this is never a second first review).
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [
+          builtRow('db', 'sha-db-OLD'), { ...runStateRow('db', 'built', { degraded: true }) },
+          builtRow('svc'), runStateRow('svc', 'reviewed', { work_branch: 'feature/FM-12', head_sha: 'sha-svc' }),
+          gatePassedRow('svc', 'review'), prRow('svc', 9),
+        ] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }],
+          test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'rebuilt', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/8', pr_number: 8 },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 're-pinned db', status: 'complete', fixed: ['svc/vendor/schema.sql'] },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+      }
+      await runOnce(ARGS, canned)
+      report('G1B_review_not_skipped', !LINES.some((l) => l.includes('[svc] review SKIPPED')))
+      report('G1B_gate_ledger_not_read_as_passed', !LINES.some((l) => l.includes('every gate is ledgered PASSED')))
+      report('G1B_reviewer_spawned', SPAWNED.includes('review:FM-12:svc#1'))
+      report('G1B_runs_as_revisit_not_first_pass', LINES.some((l) => l.includes('[svc] review ledger') && l.includes('re-visit only')))
+      // pr_open is deliberately NOT degraded: same branch, same base, the PR/MR is still open, so
+      // a second open-pr for svc would be a duplicate MR.
+      report('G1B_no_second_pr_opened', !SPAWNED.includes('open-pr:FM-12:svc#1'))
     } else if (SCENARIO === 'G2A') {
       // C3 — repair path. db has NO row at all this run (repoResults[db] is undefined during
       // Build by construction — the whole batch's results are assigned only after every
@@ -1906,6 +1940,9 @@ ingest() {
 
 echo "── G1 — upstream-degrade (C2), chain propagation"
 out="$(run_scenario G1)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G1b — upstream-degrade also un-freezes the review ledger (C2)"
+out="$(run_scenario G1B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G2a — blocked-on: repair path (C3)"
 out="$(run_scenario G2A)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
