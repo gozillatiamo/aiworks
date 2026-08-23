@@ -53,6 +53,8 @@
 #   · skip   deliberately off (`<feature>.enabled: false`) or --deep-only on a default run.
 #            A switched-off feature is a decision, not a defect, and never scores against you.
 # exit 0 when nothing FAILED, 1 when something did. `--strict` promotes every warn to a fail.
+# After a --fix that ran, both come from the RE-CHECK: the first pass describes a workspace that
+# no longer exists, so `aiworks fix && <next step>` would otherwise trip over an old failure.
 #
 # ⚠️ THE .env RULE. This script never reads a secret. The ONLY thing it does to an adapter's
 # .env is `grep -q '^VAR=.\+'` — quiet, so the exit code is the whole answer and not one byte
@@ -69,9 +71,15 @@
 #       --deep          also run groups 9-12: daemons, ports, live credentials, disk — and the
 #                       Kubernetes half of `triage`.
 #       --json          machine-readable report on stdout. Never contains a secret value.
+#       --findings      one TAB-separated `<status> <group> <label>` record per OPEN finding and
+#                       nothing else. This is the representation --fix's own re-check compares
+#                       against, so both sides of that comparison come from one code path.
 #       --strict        treat every warn as a fail (exit 1 on a warn-only run).
 #       --fix           print the owner command for every fixable finding, then ask to run
-#                       them. Carries no repair logic of its own.
+#                       them. Carries no repair logic of its own. Afterwards it RE-RUNS the same
+#                       checks and reports which findings actually cleared — a command exiting 0
+#                       is not evidence that the thing it was meant to fix is gone — and the exit
+#                       code comes from that second pass. `aiworks fix` is `--deep --fix -y`.
 #   -y, --yes           answer yes to --fix. REQUIRED when stdin is not a TTY.
 #   -n, --dry-run       with --fix: print the plan and stop. Alone: same as a plain run.
 #   -v, --verbose       show every passing check, not just the group's summary line.
@@ -81,6 +89,9 @@ set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
+# Absolute, resolved before the `cd "$ROOT"` below, because --fix re-invokes this script and
+# "$0" is relative to the ORIGINAL working directory.
+SELF="$DIR/$(basename "${BASH_SOURCE[0]}")"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 
@@ -88,11 +99,12 @@ ALL_GROUPS="workspace repos adapters per-repo agent-cfg tooling voice headroom t
 DEEP_GROUPS="mcp services credentials disk"
 
 # ── args ──────────────────────────────────────────────────────────────────────────
-DEEP=0 JSON=0 STRICT=0 FIX=0 YES=0 DRY=0 VERBOSE=0 ONLY="" SKIP="" REPOS_ARG=""
+DEEP=0 JSON=0 STRICT=0 FIX=0 YES=0 DRY=0 VERBOSE=0 ONLY="" SKIP="" REPOS_ARG="" FINDINGS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --deep)        DEEP=1 ;;
     --json)        JSON=1 ;;
+    --findings)    FINDINGS=1 ;;
     --strict)      STRICT=1 ;;
     --fix)         FIX=1 ;;
     -y|--yes)      YES=1 ;;
@@ -678,7 +690,7 @@ check_adapters() {
 # ══════════════════════════════════════════════════════════════════════════════════
 check_per_repo() {
   local g=per-repo r n
-  local no_dev="" noexec_dev="" no_claude="" over="" no_cg="" no_link="" no_lock="" bad_rules=""
+  local no_dev="" noexec_dev="" no_claude="" over="" no_cg="" no_link="" no_lock="" bad_rules="" no_fm=""
   local checked=0
   # ADR-0025 — the base a run cuts a feature branch from is a CONSTANT in the generated workflow
   # mirror, and nothing used to validate it. Measured: suite repos projected onto a base that was
@@ -750,11 +762,26 @@ check_per_repo() {
     # `.claude/rules/*.md` scope with `paths:`; `globs:` is Cursor's key for the same idea.
     # A file carrying BOTH is untidy but works — Claude reads paths:, Cursor reads globs:. The
     # broken shape is `globs:` ALONE: the file parses, the rule loads, and it matches nothing.
+    #
+    # NO frontmatter at all is a third shape, and it used to be invisible here: the only thing
+    # that noticed was the Codex generator, which reported it as one anonymous line of its own
+    # drift ("codex projection has drifted") whose owner command can never close it — a rules
+    # file's scope is a judgement call. Named here instead, with the files, so the person who
+    # has to make that call can see which ones.
     if [[ -d "$d/.claude/rules" ]]; then
       local f
+      while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        # tr -d '\r' because the canonical reader is parse_frontmatter() in
+        # scripts/codex/common.py, and it compares lines[0].STRIP() — so a CRLF file it accepts
+        # would otherwise be reported here as having no frontmatter at all, forever, with an
+        # instruction to add the block it already has.
+        [[ "$(head -n 1 "$f" | tr -d '\r')" == "---" ]] || no_fm="${no_fm:+$no_fm }${f#$ROOT/}"
+      done < <(find "$d/.claude/rules" -name '*.md' -type f 2>/dev/null | sort)
       for f in "$d"/.claude/rules/*.md; do
         [[ -f "$f" ]] || continue
         if awk '
+             { sub(/\r$/, "") }
              NR==1 && $0!="---" { exit }
              NR>1  && $0=="---" { exit }
              /^globs:/ { g=1 }
@@ -787,21 +814,30 @@ check_per_repo() {
                         || pass $g "codegraph index" "$checked repos"
   [[ -n "$no_lock"   ]] && warn $g "no skills-lock.json" "$no_lock" "./aiworks sync -y" slow \
                         || pass $g "skills-lock.json" "$checked repos"
+  [[ -n "$no_fm" ]] && warn $g "rules file with no YAML frontmatter" \
+                            "$no_fm — no frontmatter means no scope, so the rule never loads for a Harness that reads one. Add a frontmatter block declaring paths: (and globs: for Cursor); an unscoped rule needs at least a description:." \
+                            "\$EDITOR <the files above>"
   [[ -n "$bad_rules" ]] && warn $g "rules file scoped with 'globs:' and no 'paths:'" \
                                 "$bad_rules — the rule loads and matches nothing" \
-                                "\$EDITOR <the files above>" \
-                        || pass $g "rules frontmatter" "$checked repos"
+                                "\$EDITOR <the files above>"
+  [[ -z "$bad_rules" && -z "$no_fm" ]] && pass $g "rules frontmatter" "$checked repos"
   # ADR-0025. A base that is not on the remote FAILS: the run cannot open a PR/MR against it, so
   # the ticket stops there. A base that merely disagrees with origin/HEAD WARNS: it is legitimate
   # for a repo to run its own branch policy — it just has to say so in the config rather than
   # inheriting a workspace default that does not fit it.
+  # BOTH base findings are answered by a person, not by a command. `./aiworks config` only
+  # re-projects the mirror FROM workspace.config.yaml — with the config unchanged it reprints the
+  # same disagreement and exits 0, which is what made --fix report these as fixed on every run
+  # forever. The decision (declare the repo's own feature_base:, or move the workspace default)
+  # is the fix; re-projecting is its follow-up, so it is named in the detail and the registered
+  # command is the editor — the form manual_fix() routes to "needs you".
   [[ -n "$base_gone" ]] && fail $g "feature base does not exist on the remote" \
-                                "$base_gone — open-PR hard-stops on this, so no ticket can finish in that repo. Set branch_model.feature_base, or the repo's own feature_base:, to a branch that exists, then re-project." \
-                                "./aiworks config" \
+                                "$base_gone — open-PR hard-stops on this, so no ticket can finish in that repo. Set branch_model.feature_base, or the repo's own feature_base:, to a branch that exists, then run ./aiworks config to re-project." \
+                                "\$EDITOR workspace.config.yaml" \
                         || { [[ $base_checked -gt 0 && -z "$base_drift" ]] && pass $g "feature base vs origin/HEAD" "$base_checked repos agree${cfg_feature_base:+ (branch_model.feature_base: $cfg_feature_base)}"; }
   [[ -n "$base_drift" ]] && warn $g "feature base disagrees with origin/HEAD" \
-                                "$base_drift — a ticket's branch is cut from the base on the left. If that is deliberate, declare it as this repo's own feature_base: under products[].repos[]; if not, fix branch_model.feature_base. Either way re-project so the mirror agrees with the config." \
-                                "./aiworks config"
+                                "$base_drift — a ticket's branch is cut from the base on the left. If that is deliberate, declare it as this repo's own feature_base: under products[].repos[]; if not, fix branch_model.feature_base. Either way run ./aiworks config afterwards so the mirror agrees with the config." \
+                                "\$EDITOR workspace.config.yaml"
   return 0
 }
 
@@ -886,8 +922,19 @@ EOF
       fail $g "codex projection incomplete" "one or more generated Codex surfaces are missing" "./aiworks codex"
     fi
     if [[ $DEEP == 1 ]]; then
-      if "$DIR/aiworks-codex.sh" --check >/dev/null 2>&1; then
+      # Exit 2 means the generator found drift AND cannot close it: a real path where the
+      # canonical link belongs, a generated file somebody edited, a rules file whose scope only
+      # its author can decide. Registering `./aiworks codex` as the fix for that is the mistake
+      # this whole group of checks was cleaned up to stop making — the command runs, refuses,
+      # exits nonzero, and the finding is still there on the next run, forever.
+      local cxout cxrc
+      cxout="$("$DIR/aiworks-codex.sh" --check 2>&1)"; cxrc=$?
+      if [[ $cxrc == 0 ]]; then
         pass $g "codex projection in sync"
+      elif [[ $cxrc == 2 ]]; then
+        warn $g "codex projection has drift only a person can resolve" \
+             "$(printf '%s\n' "$cxout" | sed -n 's/^  needs a person: //p' | sort -u | tr '\n' ' ')" \
+             "\$EDITOR <the paths above>"
       else
         warn $g "codex projection has drifted" "generated .codex no longer matches .claude" "./aiworks codex"
       fi
@@ -1377,15 +1424,25 @@ check_triage() {
     # which is a tooling gap (group 6 owns it) wearing a triage finding's clothes.
     skip $g "triage MCPs" "jq not on PATH — cannot read the registration"
   else
-    local out missing legacy drift
+    local out missing stale legacy drift
     out="$("$sh" status 2>/dev/null)"
     missing="$(printf '%s\n' "$out" | grep -c 'not registered' || true)"
+    stale="$(  printf '%s\n' "$out" | grep -c 'STALE path' || true)"
     legacy="$( printf '%s\n' "$out" | grep -c 'LEGACY registration still present' || true)"
     drift="$(  printf '%s\n' "$out" | grep -c 'registered with a DIFFERENT command' || true)"
-    missing="${missing:-0}"; legacy="${legacy:-0}"; drift="${drift:-0}"
+    missing="${missing:-0}"; stale="${stale:-0}"; legacy="${legacy:-0}"; drift="${drift:-0}"
     if [[ "$missing" -gt 0 ]]; then
       fail $g "$missing triage MCP(s) not registered" \
            "aiworks sync no longer registers them — this is the command that does" \
+           "scripts/triage-mcp.sh sync"
+    elif [[ "$stale" -gt 0 ]]; then
+      # A registration left behind by a clone or worktree that has moved. The detail states a
+      # fact, so the detector proves it: both reconcilers classify an entry as stale ONLY when
+      # the registered script path is absent from disk (a sibling checkout registers the same
+      # SHAPE and works fine). An absent interpreter path means the server never starts and its
+      # tools are silently missing — the same outage as "not registered", hence a fail.
+      fail $g "$stale triage MCP(s) registered under a path that no longer exists" \
+           "the registered script is gone from disk, so the server cannot start" \
            "scripts/triage-mcp.sh sync"
     elif [[ "$legacy" -gt 0 ]]; then
       warn $g "a pre-0005 triage registration is still present" \
@@ -1607,7 +1664,20 @@ rec() { printf '%s' "$1" | cut -d"$US" -f"$2"; }
 
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'; }
 
-if [[ $JSON == 1 ]]; then
+# One record per OPEN finding: <status> TAB <group> TAB <label>. The referee's ground truth, and
+# the reason it never has to read its own JSON back into labels.
+findings_records() {
+  local r
+  for r in ${R+"${R[@]}"}; do
+    case "$(rec "$r" 2)" in
+      warn|fail) printf '%s\t%s\t%s\n' "$(rec "$r" 2)" "$(rec "$r" 1)" "$(rec "$r" 3)" ;;
+    esac
+  done
+}
+
+if [[ $FINDINGS == 1 ]]; then
+  findings_records
+elif [[ $JSON == 1 ]]; then
   printf '{\n'
   printf '  "workspace": "%s",\n' "$(json_escape "$ROOT")"
   printf '  "worktree": %s,\n' "$( [[ $IN_WORKTREE == 1 ]] && printf 'true' || printf 'false' )"
@@ -1641,7 +1711,10 @@ else
     local head="${s:0:$max}"; head="${head% *}"
     local rest="${s:${#head}}"
     local more; more="$(printf '%s' "$rest" | wc -w | tr -d ' ')"
-    printf '%s … (+%s more)' "$head" "$more"
+    # "(+34 more)" counts WORDS, and a detail is "<the list> — <what it means>", so most of that
+    # number is prose. Saying so costs four characters and stops the count being read as "34 more
+    # repos" — a misreading that has already produced one wrong conclusion in a written audit.
+    printf '%s … (+%s more words)' "$head" "$more"
   }
 
   for grp in $ALL_GROUPS; do
@@ -1696,6 +1769,78 @@ if [[ $FIX == 1 ]]; then
     esac
   }
 
+  # ── the referee ─────────────────────────────────────────────────────────────────
+  # "the command exited 0" is NOT "the finding is gone". Measured: three findings reported
+  # `✓ done` and survived a re-run byte-identically — a triage sync that skipped its own stale
+  # registration as foreign, a codex projection whose exit code only ever failed under --check,
+  # and a config re-projection standing in for a workspace.config.yaml edit nobody had made.
+  # Auditing each owner command's exit code catches those three; it does not stop the fourth.
+  # So the doctor is its own referee: after the plan runs, re-run the SAME scope and say which
+  # findings actually cleared. One check, at the only place that can never be bypassed, and the
+  # verdict below comes from the re-check rather than from the stale first pass.
+  #
+  # Only the scope flags are replayed — never --fix — so this recurses exactly one level deep.
+  # SELF, never "$0": the script cd'd to $ROOT during startup, so a relative invocation
+  # (`cd some-repo && ../scripts/aiworks-doctor.sh --fix -y`) leaves "$0" resolving against the
+  # wrong directory. The child then produces nothing, the referee reports "could not re-check",
+  # and the verdict falls back to the pre-fix pass — the exact breakage this exists to prevent,
+  # reachable by nothing more than how you typed the path.
+  RECHECK_ARGS=(--findings)
+  [[ $DEEP == 1 ]]       && RECHECK_ARGS+=(--deep)
+  [[ -n "$ONLY" ]]       && RECHECK_ARGS+=(--only "$ONLY")
+  [[ -n "$SKIP" ]]       && RECHECK_ARGS+=(--skip "$SKIP")
+  [[ -n "$REPOS_ARG" ]]  && RECHECK_ARGS+=(--repo "$REPOS_ARG")
+
+  # A finding's IDENTITY is its group plus its label with every run of digits folded to `#`,
+  # because labels carry counts: "3 repo(s) not cloned" and "1 repo(s) not cloned" are one
+  # finding, two thirds repaired. Compared verbatim they share no line, so a partial repair
+  # reported "1 cleared · 0 still open · 1 new" and filed the surviving half under `new` — the
+  # same "reported fixed, nothing fixed" misreading the referee exists to catch.
+  #
+  # Both sides are emitted by the SAME code path (`--findings`, one `<status> <group> <label>`
+  # record per open finding) rather than one side reading in-memory records and the other
+  # scraping them back out of --json: a label holding a quote or a backslash came back mangled
+  # across that escaping boundary and read as cleared-plus-a-phantom-new.
+  findings_key() { sed 's/[0-9][0-9]*/#/g'; }
+  RECHECK_BEF="" RECHECK_AFT=""
+  AFTER_FAIL="" AFTER_WARN=""
+  recheck() {
+    local cleared still fresh
+    RECHECK_BEF="$(mktemp "${TMPDIR:-/tmp}/aiworks-doctor-before.XXXXXX")"
+    RECHECK_AFT="$(mktemp "${TMPDIR:-/tmp}/aiworks-doctor-after.XXXXXX")"
+    findings_records > "$RECHECK_BEF"
+    "$SELF" "${RECHECK_ARGS[@]}" 2>/dev/null > "$RECHECK_AFT"
+    AFTER_FAIL="$(cut -f1 "$RECHECK_AFT" | grep -c '^fail$' || true)"
+    AFTER_WARN="$(cut -f1 "$RECHECK_AFT" | grep -c '^warn$' || true)"
+    if [[ ! -s "$RECHECK_AFT" ]] && ! "$SELF" "${RECHECK_ARGS[@]}" >/dev/null 2>&1; then
+      # The one path where the referee itself failed must never read as "verified clean": the
+      # counts below would be the PRE-fix pass's, which is what the whole mechanism rejects.
+      printf '  %s✗ could not re-check — the exit code describes the workspace BEFORE the fix.%s\n' \
+        "$c_err" "$c_off"
+      printf '    run ./aiworks doctor%s yourself.\n' "$( [[ $DEEP == 1 ]] && printf ' --deep' )"
+      AFTER_FAIL="" AFTER_WARN="" RECHECK_FAILED=1
+      rm -f "$RECHECK_BEF" "$RECHECK_AFT"
+      return 0
+    fi
+    _keys() { cut -f2,3 "$1" | findings_key | sort -u; }
+    _show() { cut -f2,3 "$1" | awk -F'\t' -v k="$2" '
+      BEGIN { while ((getline line < k) > 0) want[line] = 1 }
+      { key = $0; gsub(/[0-9]+/, "#", key); if (key in want) print $2 }' | sort -u; }
+    local shared; shared="$(mktemp "${TMPDIR:-/tmp}/aiworks-doctor-keys.XXXXXX")"
+    comm -12 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") > "$shared"
+    cleared="$(comm -23 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") | grep -c . || true)"
+    still="$(grep -c . "$shared" || true)"
+    fresh="$(comm -13 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") | grep -c . || true)"
+    printf '  re-checked: %s%d cleared%s · %d still open%s\n' \
+      "$c_ok" "$cleared" "$c_off" "$still" \
+      "$( [[ "$fresh" -gt 0 ]] && printf ' · %d new' "$fresh" )"
+    _show "$RECHECK_AFT" "$shared" | sed "s/^/    ${c_warn}still open${c_off}  /"
+    comm -13 <(_keys "$RECHECK_BEF") <(_keys "$RECHECK_AFT") > "$shared"
+    _show "$RECHECK_AFT" "$shared" | sed "s/^/    ${c_warn}new${c_off}         /"
+    printf '  full report: ./aiworks doctor%s\n' "$( [[ $DEEP == 1 ]] && printf ' --deep' )"
+    rm -f "$RECHECK_BEF" "$RECHECK_AFT" "$shared"
+  }
+
   PLAN=(); MANUAL=()
   for f in ${FIXES+"${FIXES[@]}"}; do
     cost="$(rec "$f" 1)"; label="$(rec "$f" 2)"; cmd="$(rec "$f" 3)"
@@ -1732,19 +1877,19 @@ if [[ $FIX == 1 ]]; then
       fi
       if [[ $go == 1 ]]; then
         printf '\n'
-        nfixed=0 nfailed=0
+        nran=0 nfailed=0
         for p in "${PLAN[@]}"; do
           cmd="$(rec "$p" 3)"
           printf '  %s→ %s%s\n' "$c_hd" "$cmd" "$c_off"
           if fixout="$( (cd "$ROOT" && eval "$cmd") 2>&1 )"; then
-            printf '    %s✓ done%s\n' "$c_ok" "$c_off"; nfixed=$((nfixed+1))
+            printf '    %s✓ ran%s\n' "$c_ok" "$c_off"; nran=$((nran+1))
           else
             printf '    %s✗ failed%s\n' "$c_err" "$c_off"; nfailed=$((nfailed+1))
             printf '%s\n' "$fixout" | tail -n 8 | sed 's/^/      /'
           fi
         done
-        printf '\n  %d fixed · %d failed · %d need you\n' "$nfixed" "$nfailed" "${#MANUAL[@]}"
-        printf '  re-run: ./aiworks doctor\n'
+        printf '\n  %d ran · %d failed · %d need you\n' "$nran" "$nfailed" "${#MANUAL[@]}"
+        recheck
       else
         printf '  cancelled.\n'
       fi
@@ -1753,6 +1898,15 @@ if [[ $FIX == 1 ]]; then
 fi
 
 # ── verdict ───────────────────────────────────────────────────────────────────────
+# After a --fix that actually ran, the FIRST pass's counts describe a workspace that no longer
+# exists. The re-check's do, so `aiworks doctor --fix -y && …` means what it looks like it means.
+if [[ -n "${AFTER_FAIL:-}" ]]; then
+  n_fail="$AFTER_FAIL"; n_warn="${AFTER_WARN:-0}"
+elif [[ "${RECHECK_FAILED:-0}" == 1 ]]; then
+  # "I could not verify" must never read as "verified clean". The first pass's counts describe
+  # the workspace BEFORE the plan ran, which is the one thing this mechanism exists to reject.
+  exit 1
+fi
 if [[ $n_fail -gt 0 ]]; then exit 1; fi
 if [[ $STRICT == 1 && $n_warn -gt 0 ]]; then exit 1; fi
 exit 0

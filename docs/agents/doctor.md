@@ -10,6 +10,8 @@ cloned, or a guard that silently stopped firing because its hook lost its `+x` b
 ```
 aiworks doctor [<repo>] [--repo a,b] [--only g,…] [--skip g,…]
                [--deep] [--json] [--strict] [--fix [-y]] [-n] [-v] [-h]
+
+aiworks fix [<any doctor option>]     # = doctor --deep --fix -y, then re-checks the findings
 ```
 
 A default run is **offline and about 4 seconds**. It is safe to run at any time, from any
@@ -48,6 +50,46 @@ an editor, anything whose fix is to go read something, and anything printed as `
 install this script has no business performing on your machine — a node switch moves the
 global bin dir; Docker Desktop is a GUI app; `scripts/k8s/bootstrap-sa.sh` grants IAM on a GCP
 project and needs an owner to run it) is listed under **needs you** instead.
+
+### `aiworks fix`, and why `--fix` re-checks itself
+
+`aiworks fix` is the one-word form of the invocation anybody actually wants: `doctor --deep
+--fix -y`. It takes doctor's own options, so `aiworks fix -n` still previews and
+`aiworks fix --only triage` still narrows.
+
+**"The command exited 0" is not "the finding is gone."** Measured on a real workspace: `--fix`
+reported `3 fixed · 0 failed` and a re-run returned a byte-identical finding set. All three
+owner commands exited 0 while closing nothing — one skipped its own stale MCP registration as
+if a stranger had written it, one only ever reported failure under `--check`, and one
+re-projected a config file nobody had edited. So `--fix` re-runs the same scope afterwards and
+reports what actually cleared, and **the exit code comes from that second pass** — the first
+pass describes a workspace that no longer exists.
+
+```
+  1 ran · 0 failed · 2 need you
+  re-checked: 1 cleared · 2 still open
+    still open  CLAUDE.md over the 100-line budget
+    still open  no .graphifyignore
+```
+
+The referee is one check at the only place nothing can bypass, so a future finding whose owner
+command silently no-ops is caught without anybody having to remember this failure mode. What
+it cannot do is invent a fix: a finding a person owns stays open, by design, and is named.
+
+Two rules follow for anyone adding a check:
+
+- **Never register a command that cannot close the finding.** `./aiworks config` re-projects
+  the mirror *from* `workspace.config.yaml`; it cannot decide what that file should say. Such a
+  finding takes `$EDITOR <the file>` as its fix and names the mechanical follow-up in the
+  detail text.
+- **A detector must say what it could not close, and the fix must not be that detector.**
+  `aiworks codex --check` exits 1 for drift a reconcile will close and **2** for drift it will
+  not (a real path where the canonical link belongs, a generated file somebody edited, a rules
+  file whose scope only its author can decide); doctor routes the 2 to **needs you** with the
+  paths, rather than re-running a command that will refuse identically forever. The *reconcile*
+  form still exits 0 — it did everything it was allowed to do — because the projector interface
+  says so and because failing it made `aiworks sync` warn on every run of a workspace holding
+  one hand-written `AGENTS.md`. Put the verdict in the check, never in the repair.
 
 ## How a check is scored
 
@@ -180,11 +222,11 @@ doctor learning about it.
 ## Selftest
 
 ```
-./scripts/aiworks-doctor-selftest.sh      # 39 cases, writes nothing
+./scripts/aiworks-doctor-selftest.sh      # writes nothing outside its own fixtures
 ```
 
 Fixtures are built from scratch in a temp dir, so the suite runs in a clone with no live
-config. Two families of case matter most:
+config. Three families of case matter most:
 
 - **The leak test** plants a recognisable fake secret in a fixture `.env` and greps every byte
   doctor emits — both streams, in text, `-v`, `--json`, `--strict` and `--fix -n`, and again
@@ -195,3 +237,8 @@ config. Two families of case matter most:
   worktrees on a workspace whose `gc` output said `orphaned: 0`. All three looked entirely
   convincing in real output. Every false positive costs somebody a real investigation, so the
   shapes that must stay quiet are pinned as cases.
+- **The referee.** One case runs `--fix` for real — the only one that does, and its fixture is
+  built so the entire plan is a single `chmod +x` inside the temp dir, with every other finding
+  routed to *needs you*. It asserts that a closed finding is counted as cleared, that a
+  surviving one is named, and that the exit code follows the second pass rather than the first.
+  Without it, "reports fixed, finding persists" is a regression nothing would catch.
