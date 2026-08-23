@@ -4,7 +4,6 @@ description: Chief Technology Officer (20 yrs). Owns tech stack and technical st
 model: opus
 permissionMode: plan
 effort: high
-maxTurns: 100
 skills:
   - caveman:caveman
   - decompose-ticket

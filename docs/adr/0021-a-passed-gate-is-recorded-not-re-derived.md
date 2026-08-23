@@ -63,3 +63,22 @@ resolves a thread while breaking a test is exactly what the round after a fix ex
 Where a genuinely fresh sweep is wanted, that is a human call: delete the repo's `gate_*` rows,
 or run `/ultra-review --fresh`.
 
+### The one carve-out: a declared upstream that moved
+
+"A passed gate stays passed" is about commits this repo's own loop produced. It is not a claim
+about code the repo was *built against*. When a declared upstream's `built`/`reviewed` proof no
+longer holds, the downstream's `gate_*` rows degrade with its `built` and `reviewed` rows
+(`degradeRows`' default list). Without that, degrading `built`+`reviewed` alone bought nothing:
+the review skip is an `OR` — `doneAt(R,'reviewed') || reviewers.every(done)` — so the repo
+re-built against the new upstream head, then took the second arm and logged "every gate is
+ledgered PASSED" over a re-pin / re-vendor diff no reviewer had read, with the previous
+invocation's approve tick still standing on the PR/MR.
+
+This does not re-derive a finding set, so the decision above is intact. The degraded row keeps
+`first_pass: true` on disk and the ledger check reads that field alone, so the gate returns as a
+**re-visit** scoped to the new commits — never a second first review. Proven by `G1b` in
+`scripts/dev-cycle-gate-selftest.sh`.
+
+`pr_open` is deliberately excluded: a moved upstream head does not change the base, the work
+branch is unchanged, and the PR/MR is still open. Only a base change (`0025`) mis-targets it.
+

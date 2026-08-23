@@ -467,7 +467,7 @@ if (BASE_OVERRIDE && FEATURE_BASE_OVERRIDE) {
 }
 
 
-const DEVCYCLE_VERSION = '2026-08-23.3'
+const DEVCYCLE_VERSION = '2026-08-23.4'
 // `meta` is metadata for the tool, not an in-scope runtime variable — the engine strips the
 // `export const meta = {...}` block before executing the script body, so `meta.name` throws
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
@@ -1189,8 +1189,8 @@ const RESULT_AUDIT_SCHEMA = {
   },
 }
 
-// Appended to every gate prompt. A gate has a finite turn budget (maxTurns in its agent
-// definition), and the structured verdict is the LAST thing it does — so a gate that investigates
+// Appended to every gate prompt. A gate still runs against the harness's own finite turn ceiling
+// (no per-role maxTurns override anymore), and the structured verdict is the LAST thing it does — so a gate that investigates
 // right up to the limit is cut off holding the one artifact the workflow needs, and the round is
 // scored as if it had never run. Measured: three rounds in a row ended at 100/101/100 tool calls
 // with the verdict never returned. Investigating less is the wrong lesson; returning EARLIER is
@@ -2710,14 +2710,30 @@ if (outOfReach.length) log(`[scope] ${outOfReach.length} acceptance criterion/cr
 // existing rule keeps a downstream row 'done' while the upstream it was built against has
 // moved — the measured failure: the DB repo's head moved, the service repo's build (which
 // carries the submodule-pin clause) was skipped, and the reviewer read a stale vendored
-// schema. Applied to a FIXPOINT so a chain (db → svc → e2e) propagates in one pass.
+// schema. Applied to a FIXPOINT so a chain (db → svc → e2e) propagates in one pass. What it
+// degrades — and why the gate rows are in that list while `pr_open` is not — is on degradeRows().
 const declaredUpstreams = {}
 scoped.forEach((r) => { declaredUpstreams[r.repo] = (r.depends_on || []).filter((u) => REPOS[u] && u !== r.repo) })
 const rowMoved = (repo, milestone) => stateRows.some((r) =>
   r.repo === repo && r.milestone === milestone && (r.degraded === true || r.status !== 'done'))
 // `milestones` is a parameter rather than a constant because a base change invalidates the PLAN
 // too, not just what was built from it (docs/adr/0025) — the default is the moved-upstream case.
-const degradeRows = (repo, why, milestones = ['built', 'reviewed']) => {
+//
+// The gate_* rows are in the DEFAULT, not just the base-change list, and that is the whole point
+// of C2: degrading `built`+`reviewed` alone bought nothing. The review skip at the top of
+// reviewRepo() is an OR — `doneAt(R,'reviewed') || reviewers.every(done)` — so a downstream repo
+// whose upstream moved re-BUILT (re-pinned the submodule, re-vendored the generated client) and
+// then took the second arm, logging "every gate is ledgered PASSED" over a diff nobody read. That
+// re-pin diff is exactly where upstream contract drift becomes a downstream bug, and the earlier
+// invocation's approve tick still stood on the PR/MR, so it merged looking reviewed.
+// This does NOT re-derive a finding set (docs/adr/0021 holds): the row on disk keeps
+// `first_pass:true`, and the ledger check reads that field alone — no status/degraded test — so the
+// gate comes back as RE-VISIT, scoped to the new commits, never a second first review.
+// `pr_open` is deliberately NOT here. A moved upstream head does not change this repo's base, the
+// work branch is unchanged and its PR/MR is still open — the push lands on it. A `pr_open` row
+// proves a head sha rather than an MR identity, so degrading it would let a resume open a SECOND
+// MR for the same branch. Only a base change (docs/adr/0025) genuinely mis-targets the PR/MR.
+const degradeRows = (repo, why, milestones = ['built', 'reviewed', 'gate_review', 'gate_guard', 'gate_perf']) => {
   let hit = 0
   stateRows.forEach((r) => {
     if (r.repo !== repo) return

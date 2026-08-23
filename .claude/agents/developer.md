@@ -7,7 +7,6 @@ effort: high
 # distribute) once hit 398 turns; the batched-slice workflow below lands well under this.
 # If you approach the cap, hand off cleanly rather than die mid-slice. Raise only for a
 # legitimate cross-repo (app + backend) ticket.
-maxTurns: 250
 skills:
   # Preloaded (behavioral baseline, never skipped). coding-feature/tdd/diagnosing-bugs/handoff/open-pr
   # stay lazy via the Skill tool — arg-driven/conditional, so preloading would waste context.
