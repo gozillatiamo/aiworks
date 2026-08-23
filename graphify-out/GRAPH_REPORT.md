@@ -1,22 +1,22 @@
-# Graph Report - ai-workspace  (2026-08-22)
+# Graph Report - ai-workspace  (2026-08-23)
 
 ## Corpus Check
-- 238 files · ~270,766 words
+- 242 files · ~276,371 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1100 nodes · 1465 edges · 88 communities (77 shown, 11 thin omitted)
+- 1132 nodes · 1499 edges · 92 communities (81 shown, 11 thin omitted)
 - Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 88 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `3f426c2f`
+- Built from commit: `d7d291c6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - Agent Roster and Dev Harness
-- bluePi Workspace CLAUDE.md
+- hcat
 - Prod PII Vault (HMAC digests only)
 - speak.sh
 - scripts/notify/send.sh
@@ -77,7 +77,7 @@
 - During the session
 - Binary Uploads Refused, Never Rewritten
 - Inner-System Identity Always Survives
-- apply-human-review skill
+- bluePi Workspace CLAUDE.md
 - Obsidian — shared vault settings for the workspace meta-repo
 - hrun
 - Decision
@@ -92,10 +92,14 @@
 - The review ledger — a finding is raised once, and resolved visibly
 - A reviewed-but-unresolved repo still gets the gate
 - A cross-repo finding escalates instead of looping
-- A ticket is a record, not a transcript
+- Codegraph Keeps The Code, Graphify Maps The Prose
 - A QA-attributed fix is quality-checked, not re-reviewed
 - A passed gate is recorded, not re-derived
 - The run ticks its own approval; the merge stays human
+- A repo whose criteria already hold is finished, not stalled
+- How a dev-cycle run ends
+- The build does not stop at the first partial
+- A submodule pin needs a pushed commit, not a merge
 
 ## God Nodes (most connected - your core abstractions)
 1. `qa-runner agent (Peter)` - 29 edges
@@ -116,10 +120,10 @@
   docs/agents/headroom.md → CLAUDE.md
 - `Graphify Stores A Map, Not The Text` --semantically_similar_to--> `Extraction Subagent Prompt`  [INFERRED] [semantically similar]
   docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md → .claude/skills/graphify/references/extraction-spec.md
-- `Disposable Subagent For Huge Files` --semantically_similar_to--> `Parallel Subagent Dispatch`  [INFERRED] [semantically similar]
-  docs/agents/headroom.md → .claude/skills/graphify/SKILL.md
-- `Accuracy Loss Is A Cost, Not A Saving` --semantically_similar_to--> `Honesty Rules`  [INFERRED] [semantically similar]
-  docs/adr/0014-compression-is-explicit-and-file-scoped.md → .claude/skills/graphify/SKILL.md
+- `Native CLAUDE.md Integration` --references--> `bluePi Workspace CLAUDE.md`  [AMBIGUOUS]
+  .claude/skills/graphify/references/hooks.md → CLAUDE.md
+- `Gate Threshold Tuning` --semantically_similar_to--> `Query Token Budget`  [INFERRED] [semantically similar]
+  docs/agents/headroom.md → .claude/skills/graphify/references/query.md
 
 ## Import Cycles
 - None detected.
@@ -147,15 +151,15 @@
 - **Provider-dispatch adapter pattern (lib.sh + swappable impls)** — scripts_tracker_readme_lib_sh, scripts_vcs_readme_lib_sh, scripts_tracker_readme_tracker_provider_interface, scripts_vcs_readme_vcs_provider_interface, scripts_voice_readme [INFERRED 0.85]
 - **Tracker-adapter ticket lifecycle (estimate → plan → automate → gate → PR → notify)** — _claude_skills_estimate_ticket_skill_estimate_ticket, _claude_skills_plan_testcases_skill_plan_testcases, _claude_skills_plan_automate_skill_plan_automate, _claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate, _claude_skills_open_pr_skill_open_pr, _claude_skills_notify_skill_notify, _claude_skills_diagram_ticket_skill_diagram_ticket [INFERRED 0.85]
 
-## Communities (88 total, 11 thin omitted)
+## Communities (92 total, 11 thin omitted)
 
 ### Community 0 - "Agent Roster and Dev Harness"
 Cohesion: 0.07
 Nodes (65): Michael — CEO Agent (conductor only), Daniel — Code Reviewer Agent (merge gate), Emily — CPO Agent, Thomas — CTO Agent, Noah — Senior Fullstack Developer Agent, prod_repro_seed.py — Sanctioned Masked Prod-data Seed, replay_shape.py — Synthetic Redis Shape Replay, scripts/dev.sh — Uniform Per-repo Dev Harness (+57 more)
 
-### Community 1 - "bluePi Workspace CLAUDE.md"
-Cohesion: 0.05
-Nodes (61): Native CLAUDE.md Integration, Query Token Budget, Honesty Rules, No API Key Required, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions, Adapter Pipe Guard (+53 more)
+### Community 1 - "hcat"
+Cohesion: 0.13
+Nodes (26): Honesty Rules, caveman Output Compression, Never Read .env Files, hcat For Big Data Files, Language And Compression Rules, Test-Suite Gate Never Fails Open, pretool-env-guard.sh, graphify extract Fails Open (+18 more)
 
 ### Community 2 - "Prod PII Vault (HMAC digests only)"
 Cohesion: 0.08
@@ -222,28 +226,28 @@ Cohesion: 0.17
 Nodes (15): PII provenance stays production-only, triage.prod — the one production opt-in, ADR-0005 — Triage covers every deployed env; only prod is gated, Targets derived from the GKE context name, Impersonation, not a key file, ADR-0007 — Kubernetes triage authenticates as a separate read-only identity, Bash(kubectl *) / Bash(gcloud *) denied to agents, LEGACY[] table swept by its own rename (+7 more)
 
 ### Community 18 - "Incremental Update"
-Cohesion: 0.21
-Nodes (12): URL Ingest (graphify add), Post-Commit Auto-Rebuild Hook, save-result Feedback Loop, Work Memory And LESSONS.md, Whisper Transcription, detect_incremental, Graph Diff After Update, Incremental Update (+4 more)
+Cohesion: 0.18
+Nodes (14): URL Ingest (graphify add), Post-Commit Auto-Rebuild Hook, save-result Feedback Loop, Work Memory And LESSONS.md, Whisper Domain-Hint Prompt, Whisper Transcription, detect_incremental, Graph Diff After Update (+6 more)
 
 ### Community 19 - "ux-ui-designer agent (Jane)"
-Cohesion: 0.23
-Nodes (14): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, caveman skill, designing-page skill (+6 more)
+Cohesion: 0.22
+Nodes (15): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, workspace.config.yaml, caveman skill (+7 more)
 
 ### Community 20 - "Extraction Subagent Prompt"
-Cohesion: 0.15
-Nodes (16): Call Edge Direction And Language Rule, Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, DEEP_MODE Aggressive Inference, Extraction Subagent Prompt, Hyperedges, Node ID Format, Rationale As Node Attribute (+8 more)
+Cohesion: 0.18
+Nodes (13): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Language Rule, Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, Extraction Subagent Prompt, Hyperedges, Node ID Format (+5 more)
 
 ### Community 21 - "graphify Skill Pipeline"
 Cohesion: 0.18
-Nodes (12): Watch Debounce, Watch Mode Auto-Rebuild, Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, Cumulative Cost Tracker, Fast Path On Existing Graph, GRAPH_REPORT.md (+4 more)
+Nodes (13): Wiki Export, Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, cluster-only Rerun, Community Detection And Labeling, Cumulative Cost Tracker, Fast Path On Existing Graph (+5 more)
 
 ### Community 22 - "coding-automate skill"
 Cohesion: 0.20
 Nodes (14): agent_logs/<KEY>-automation-plan.md, agent_logs/<KEY>-bugs.md, Submodule checkout write ban, Bug log template, coding-automate skill, coding-feature skill, Workspace coding style, Ground truth first (+6 more)
 
 ### Community 23 - "graph.json"
-Cohesion: 0.18
-Nodes (12): Verbatim source_file Rule, BFS And DFS Traversal Modes, Constrained Query Expansion, Node Explanation, Graph Query Flow, Inline NetworkX Fallback, Shortest Path Between Concepts, build_merge Replace-On-Re-Extract (+4 more)
+Cohesion: 0.15
+Nodes (14): Verbatim source_file Rule, BFS And DFS Traversal Modes, Constrained Query Expansion, Node Explanation, Graph Query Flow, Inline NetworkX Fallback, Shortest Path Between Concepts, Query Token Budget (+6 more)
 
 ### Community 24 - "Gitflow and Config Conventions"
 Cohesion: 0.24
@@ -254,12 +258,12 @@ Cohesion: 0.21
 Nodes (12): Step 1 — Base rate before any hypothesis, Step 3 — Discriminator, scripts/observability/find-traces.sh, scripts/observability/get-logs.sh, Step 2 — Hypothesis ledger, root-cause-deployed skill, Step 4 — Verdict tiers (CONFIRMED/LEADING/SPECULATIVE), diagnosing-bugs skill (local red loop) (+4 more)
 
 ### Community 26 - "qa-runner agent (Peter)"
-Cohesion: 0.23
-Nodes (12): agent_logs/<KEY>-report.md, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), karpathy-guidelines skill, loadtest-baseline-gate skill, report-test-results skill, self-control-gitflow skill, telemetry-triage skill (+4 more)
+Cohesion: 0.18
+Nodes (15): agent_logs/<KEY>-report.md, developer agent, development-planner agent, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), apply-human-review skill, loadtest-baseline-gate skill, report-test-results skill (+7 more)
 
 ### Community 27 - "qa-planner agent (Peter)"
-Cohesion: 0.23
-Nodes (12): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, workspace.config.yaml, plan-testcases skill (+4 more)
+Cohesion: 0.18
+Nodes (14): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, karpathy-guidelines skill, plan-testcases skill (+6 more)
 
 ### Community 28 - "TDD and Test Design"
 Cohesion: 0.24
@@ -318,8 +322,8 @@ Cohesion: 0.47
 Nodes (6): Advanced debugging techniques, Installing debug adapters, dap CLI (DAP debugger driver), debugging-code skill, Vendored plugin skills note, scripts/aiworks-cursor.sh (vendor sync)
 
 ### Community 42 - "Optional Export Flags"
-Cohesion: 0.14
-Nodes (16): FalkorDB Export, GraphML Export, graphify MCP Stdio Server, Neo4j Export, Optional Export Flags, SVG Export, Token Reduction Benchmark, Wiki Export (+8 more)
+Cohesion: 0.18
+Nodes (12): FalkorDB Export, GraphML Export, graphify MCP Stdio Server, Neo4j Export, Optional Export Flags, SVG Export, Token Reduction Benchmark, agent_logs Excluded (+4 more)
 
 ### Community 43 - "Ticket Approval Rules"
 Cohesion: 0.40
@@ -357,9 +361,9 @@ Nodes (3): pr-comments.sh, pr-resolve-thread.sh, pr-threads.sh
 Cohesion: 0.09
 Nodes (19): ADR Format, Numbering, Optional sections, Template, What qualifies, When to offer an ADR, CONTEXT.md Format, Rules (+11 more)
 
-### Community 62 - "apply-human-review skill"
-Cohesion: 0.33
-Nodes (6): developer agent, development-planner agent, apply-human-review skill, Human: review directive convention, find-prs.sh, pr-threads.sh
+### Community 62 - "bluePi Workspace CLAUDE.md"
+Cohesion: 0.13
+Nodes (19): Native CLAUDE.md Integration, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions, Adapter Pipe Guard, Known False-Reds, Multi-Repo Workspace, Notification Policy (+11 more)
 
 ### Community 63 - "Obsidian — shared vault settings for the workspace meta-repo"
 Cohesion: 0.40
@@ -398,8 +402,8 @@ Cohesion: 0.22
 Nodes (9): Across invocations, Configuration, Related, The cost, stated plainly, The distinction the old code did not make, The review loop does not halt on a finding, The sanctioned "cannot", What each former halt became (+1 more)
 
 ### Community 79 - "0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md"
-Cohesion: 0.38
-Nodes (3): Related, The run's base is state, and the PR/MR is asserted against it, What this costs
+Cohesion: 0.20
+Nodes (8): Related, The run's base is state, and the PR/MR is asserted against it, What this costs, A ticket is a record, not a transcript, Related, Rules a writer must follow, The decision, What it was
 
 ### Community 81 - "The review ledger — a finding is raised once, and resolved visibly"
 Cohesion: 0.29
@@ -413,25 +417,43 @@ Nodes (6): A reviewed-but-unresolved repo still gets the gate, Advisory means fu
 Cohesion: 0.40
 Nodes (4): A cross-repo finding escalates instead of looping, Consequences, Context, Decision
 
-### Community 84 - "A ticket is a record, not a transcript"
-Cohesion: 0.40
-Nodes (5): A ticket is a record, not a transcript, Related, Rules a writer must follow, The decision, What it was
+### Community 84 - "Codegraph Keeps The Code, Graphify Maps The Prose"
+Cohesion: 0.13
+Nodes (18): DEEP_MODE Aggressive Inference, Gemini Semantic Backend, No API Key Required, Parallel Subagent Dispatch, Semantic Extraction, Semantic Extraction Cache, codegraph Absolute -p Rule, claude-cli Backend (+10 more)
 
 ### Community 85 - "A QA-attributed fix is quality-checked, not re-reviewed"
 Cohesion: 0.50
 Nodes (4): A QA-attributed fix is quality-checked, not re-reviewed, Consequences, Context, Decision
 
 ### Community 86 - "A passed gate is recorded, not re-derived"
-Cohesion: 0.67
-Nodes (3): A passed gate is recorded, not re-derived, What we accept in exchange, Why it qualifies on all three counts
+Cohesion: 0.50
+Nodes (4): A passed gate is recorded, not re-derived, The one carve-out: a declared upstream that moved, What we accept in exchange, Why it qualifies on all three counts
 
 ### Community 87 - "The run ticks its own approval; the merge stays human"
 Cohesion: 0.67
 Nodes (3): The run ticks its own approval; the merge stays human, What it buys, What this costs
 
+### Community 88 - "A repo whose criteria already hold is finished, not stalled"
+Cohesion: 0.25
+Nodes (7): A repo whose criteria already hold is finished, not stalled, Related, The bar goes up, not down, Three places that read "finished" as "broken", What is deliberately NOT changed, What it does to the run, Why the empty-branch rule could not tell the difference
+
+### Community 89 - "How a dev-cycle run ends"
+Cohesion: 0.25
+Nodes (7): A person has to decide (not a failure, and no bound would help), How a dev-cycle run ends, It finished, It ran out of budget, It worked to a bound and recorded what it could not close, The shape to keep, The stops that remain, and why each is genuinely terminal
+
+### Community 90 - "The build does not stop at the first partial"
+Cohesion: 0.29
+Nodes (7): Configuration, Related, The build does not stop at the first partial, The cost, stated plainly, What the continuation is, and is not, What this does NOT make true, Why ADR 0027 missed it
+
+### Community 91 - "A submodule pin needs a pushed commit, not a merge"
+Cohesion: 0.33
+Nodes (6): A submodule pin needs a pushed commit, not a merge, Related, Reordering was already tried, and it was not enough, The cost, stated plainly, The pointer is re-aimed before anything lands, What actually changed
+
 ## Ambiguous Edges - Review These
 - `design (skill)` → `diagram-ticket (skill)`  [AMBIGUOUS]
   .claude/skills/diagram-ticket/SKILL.md · relation: conceptually_related_to
+- `Native CLAUDE.md Integration` → `bluePi Workspace CLAUDE.md`  [AMBIGUOUS]
+  .claude/skills/graphify/references/hooks.md · relation: references
 - `HTML slide template` → `Tailwind responsive design`  [AMBIGUOUS]
   .claude/skills/slides/references/html-template.md · relation: conceptually_related_to
 - `ship skill` → `report-test-results skill`  [AMBIGUOUS]
@@ -442,11 +464,9 @@ Nodes (3): The run ticks its own approval; the merge stays human, What it buys, 
   .claude/skills/graphify/references/exports.md · relation: references
 - `handoff (skill)` → `karpathy-guidelines (skill)`  [AMBIGUOUS]
   .claude/skills/karpathy-guidelines/SKILL.md · relation: conceptually_related_to
-- `Native CLAUDE.md Integration` → `bluePi Workspace CLAUDE.md`  [AMBIGUOUS]
-  .claude/skills/graphify/references/hooks.md · relation: references
 
 ## Knowledge Gaps
-- **405 isolated node(s):** `Why it qualifies on all three counts`, `What that cost`, `What it is not`, `Consequences`, `Addendum — the `planned` row now skips, guarded by a ticket fingerprint` (+400 more)
+- **428 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST)`, `First: can you trigger it at all?`, `Redact`, `Ways to construct one, in roughly this order`, `When the loop needs the *actual* deployed data (OFB)` (+423 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -455,6 +475,8 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `design (skill)` and `diagram-ticket (skill)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+- **What is the exact relationship between `Native CLAUDE.md Integration` and `bluePi Workspace CLAUDE.md`?**
+  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `HTML slide template` and `Tailwind responsive design`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `ship skill` and `report-test-results skill`?**
@@ -465,5 +487,3 @@ _Questions this graph is uniquely positioned to answer:_
   _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
 - **What is the exact relationship between `handoff (skill)` and `karpathy-guidelines (skill)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **What is the exact relationship between `Native CLAUDE.md Integration` and `bluePi Workspace CLAUDE.md`?**
-  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._

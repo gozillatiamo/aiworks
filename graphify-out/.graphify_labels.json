@@ -1,6 +1,6 @@
 {
   "0": "Agent Roster and Dev Harness",
-  "1": "bluePi Workspace CLAUDE.md",
+  "1": "hcat",
   "2": "Prod PII Vault (HMAC digests only)",
   "3": "speak.sh",
   "4": "scripts/notify/send.sh",
@@ -61,7 +61,7 @@
   "59": "During the session",
   "60": "Binary Uploads Refused, Never Rewritten",
   "61": "Inner-System Identity Always Survives",
-  "62": "apply-human-review skill",
+  "62": "bluePi Workspace CLAUDE.md",
   "63": "Obsidian — shared vault settings for the workspace meta-repo",
   "64": "hrun",
   "65": "Decision",
@@ -79,12 +79,16 @@
   "77": "prd/SKILL.md",
   "78": "The review loop does not halt on a finding",
   "79": "0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md",
-  "80": "0021-a-passed-gate-is-recorded-not-re-derived.md",
+  "80": "0027-the-review-loop-does-not-halt-on-a-finding.md",
   "81": "The review ledger — a finding is raised once, and resolved visibly",
   "82": "A reviewed-but-unresolved repo still gets the gate",
   "83": "A cross-repo finding escalates instead of looping",
-  "84": "A ticket is a record, not a transcript",
+  "84": "Codegraph Keeps The Code, Graphify Maps The Prose",
   "85": "A QA-attributed fix is quality-checked, not re-reviewed",
   "86": "A passed gate is recorded, not re-derived",
-  "87": "The run ticks its own approval; the merge stays human"
+  "87": "The run ticks its own approval; the merge stays human",
+  "88": "A repo whose criteria already hold is finished, not stalled",
+  "89": "How a dev-cycle run ends",
+  "90": "The build does not stop at the first partial",
+  "91": "A submodule pin needs a pushed commit, not a merge"
 }
