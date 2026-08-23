@@ -33,12 +33,19 @@ vcs_open_pr() {
     return 0
   fi
   git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
-  local url
+  local url out rc=0
   # `|| true` + an explicit check, for the reason spelled out in gitlab.sh: a failing create must
-  # not kill this function before it can say what went wrong.
-  url="$(_gh_pr create --base "$base" --head "$head" --title "$title" --body "$body" 2>&1)" || true
-  url="$(printf '%s' "$url" | grep -oE 'https?://[^ ]+/pull/[0-9]+' | head -n1)" || true
-  [[ -n "$url" ]] || die "could not parse the PR URL from gh output — the PR was NOT created (repo $nwo, $head -> $base)"
+  # not kill this function before it can say what went wrong. Both lines need it — the second one
+  # is a `grep` that exits 1 on no match, which under `pipefail` + `set -e` is itself fatal.
+  out="$(_gh_pr create --base "$base" --head "$head" --title "$title" --body "$body" 2>&1)" || rc=$?
+  url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/pull/[0-9]+' | head -n1)" || true
+  # A create that reported failure may still have landed the PR (gitlab.sh's _gl_open_mr_url says
+  # why). Same read as the reuse path above — ask the forge before claiming nothing exists.
+  if [[ -z "$url" ]]; then
+    url="$(_gh_pr list --head "$head" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+    [[ -z "$url" ]] || printf 'vcs[github] pr create exited %s, but %s already has an open PR on the forge — reusing %s\n' "$rc" "$head" "$url" >&9
+  fi
+  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "gh pr create exited $rc and printed no PR URL — the PR was NOT created (repo $nwo, $head -> $base). gh's own output is on the line above."; }
   num="${url##*/}" # gh prints the PR URL; the number is the trailing path segment
   printf '%s\nnumber=%s\n' "$url" "$num"
 }

@@ -865,6 +865,30 @@ const APPROVAL_PROBE_SCHEMA = {
     command: { type: 'string' }, note: { type: 'string' },
   },
 }
+// UNRESOLVED `Human:` DIRECTIVES on a PR/MR (docs/agents/human-review.md). Read from
+// `scripts/vcs/pr-threads.sh <n>`, and the shape is deliberately narrow: a directive is a thread
+// that is BOTH still unresolved AND opened by a person. A `Human:` REPLY on a thread an agent
+// opened is a DISPOSITION — it CLEARS that finding rather than opening work — so it is not one of
+// these, and neither is a thread a human resolved and said nothing on. An empty array is the
+// normal answer; `blind:true` is the third value, and it is load-bearing for the same reason
+// APPROVAL_PROBE_SCHEMA's "unknown" is: a probe that could not read the forge has not established
+// that there is nothing there, and must never be the reason a review is skipped.
+const HUMAN_DIRECTIVE_PROBE_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['directives'],
+  properties: {
+    directives: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['thread_id', 'body'],
+        properties: { thread_id: { type: 'string' }, location: { type: 'string' }, body: { type: 'string' } },
+      },
+    },
+    blind: { type: 'boolean' },
+    command: { type: 'string' }, note: { type: 'string' },
+  },
+}
 // What the orchestrator's approval step did, per repo. Reported so the run summary can say the
 // tick landed rather than assuming it: pr-approve.sh degrades to a verdict NOTE on a forge with
 // approvals disabled, and a refused permission would otherwise pass silently.
@@ -1902,6 +1926,68 @@ IF IT STILL STANDS, fix it. If it genuinely cannot be fixed here, \`cannot_fix\`
     }
   }
 
+  // A `Human:` DIRECTIVE ON AN ALREADY-SETTLED PR/MR (docs/agents/human-review.md).
+  //
+  // Everything above this line can freeze a repo whole — a `reviewed` row, three ledgered gates, a
+  // tick on the forge — and every one of those proofs is a statement about a COMMIT. A comment is
+  // not a commit. It moves no branch head, so the run-state proof (docs/adr/0018) cannot see it;
+  // and the ticket-change fingerprint is title + acceptance criteria ONLY, with comment text
+  // excluded on purpose (0018's own addendum — including it made the run's status comments
+  // invalidate the fingerprint on every invocation). Two proofs, both structurally blind to the
+  // same thing, which is why the skip below returned `ready` with a person's directive unread —
+  // twice in a row on one measured run — and the only way to act on it was to invoke
+  // /apply-human-review by hand and know that you had to.
+  //
+  // A human's directive is the one input that outranks every gate (human-review.md §Authority: it
+  // jumps the queue, it is always a must-fix, and the merge/Done gate never passes through one),
+  // and the forge's own record of one being open is the UNRESOLVED thread. So it gets the
+  // narrowest exception to "a passed gate stays passed": ONE read-only haiku probe, and only for a
+  // repo that was about to skip its review entirely. It re-derives no finding — ADR-0021 still
+  // holds, because what follows is a RE-VISIT, never a second first review — it demotes the frozen
+  // gates to re-visit and hands the directives to the first fix pass, exactly as a carried
+  // blocking item does. `!carried.length` guards the probe because a carried item already forces
+  // the loop: the veto is the same, so paying for the read twice buys nothing.
+  let humanDirectives = [], humanProbeBlind = false
+  const wouldSkipReview = (doneAt(R, 'reviewed') || (reviewers.length > 0 && reviewers.every((rv) => done[rv.key] === true))) && pr
+  if (!carried.length && wouldSkipReview && pr.pr_number) {
+    const hp = await safeAgent(
+      `${tag(R, 'tracker', 'human-probe')} READ THE FORGE, WRITE NOTHING — no review, no code, no comment, no thread resolution, no commit. ${inRepo} ${ticket}'s PR/MR ${pr.pr_number} in ${R} is already settled in this run's ledger, so its review is about to be SKIPPED. Before that happens, answer one question: does it carry an unresolved \`Human:\` DIRECTIVE? Run \`scripts/vcs/pr-threads.sh ${pr.pr_number}\` (bare, no pipe) and return that exact command in \`command\`.
+A DIRECTIVE is a thread that is BOTH still \`[unresolved]\` AND whose FIRST comment's first line starts with \`Human:\` — i.e. a person OPENED the thread to ask for something. Return one entry per such thread in \`directives\`: { thread_id, location as "<path>:<line>", body = the directive text VERBATIM (first 400 characters, do not summarize or translate it — a developer acts on these words).
+NOT a directive, and NOT to be returned: (1) a \`Human:\` REPLY on a thread an AGENT opened — that is a DISPOSITION, and it CLEARS that finding rather than opening work; (2) any thread already \`[resolved]\`, whoever resolved it — a thread a human closed is never re-opened; (3) an agent's own comment that quotes, answers or restates a directive. Read \`docs/agents/human-review.md\` §"Two kinds of \`Human:\` comment" and §"Where they live" FIRST and apply them literally rather than from memory.
+An EMPTY \`directives\` array is the normal, healthy answer — return it rather than stretching to find something, because every entry you return costs this repo a full re-visit round. But if the command itself would not answer — the adapter failed, the number is wrong, the forge refused — set \`blind: true\` and say what happened in \`note\`. \`blind\` is not the same as none: an unanswered question must not be reported as a clean bill of health.` +
+        ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+      { agentType: 'developer', model: 'haiku', phase: 'Review', label: `human-probe:${ticket}:${R}`, schema: HUMAN_DIRECTIVE_PROBE_SCHEMA },
+    )
+    // A probe that did not converge is as blind as one that says so. Same rule as the approval
+    // probe's "unknown": the cheap read is the FAST path, not the only one — when it cannot answer,
+    // the gates re-visit and read the threads themselves. A re-visit that finds nothing costs a
+    // round; a directive skipped on a fiction costs the person who wrote it.
+    humanProbeBlind = !hp || hp.blind === true
+    humanDirectives = (hp?.directives || []).filter((d) => d && d.body && d.thread_id)
+    if (!humanProbeBlind && !humanDirectives.length) log(`[${R}] no unresolved \`Human:\` directive on PR/MR ${pr.pr_number} — the settled review stands.`)
+  }
+  // DEMOTE, NEVER THAW. A vetoed skip must produce a RE-VISIT, not a second first review — that is
+  // the whole of ADR-0021 and it survives this exception intact. Two states reach here and both
+  // have to be demoted, which is why this is not just the `done === true` line `carried` uses:
+  // gates ledgered PASSED individually, and a repo whose only proof is a `reviewed` row (the merge
+  // phase writes that one, and a run that got that far completed the loop for every gate). Treating
+  // the second as "no first pass on record" would send all three gates back to a full first review
+  // and re-derive a closed finding set — the exact cost the ledger exists to avoid.
+  if (humanDirectives.length || humanProbeBlind) {
+    reviewers.forEach((rv) => {
+      if (done[rv.key] === true || doneAt(R, 'reviewed')) { done[rv.key] = false; didFirstReview[rv.key] = true; resumedFirstPass[rv.key] = true }
+    })
+  }
+  if (humanProbeBlind && !humanDirectives.length) {
+    log(`⚠️ [${R}] could NOT read the \`Human:\` threads on PR/MR ${pr.pr_number} — so the settled review is not skipped on an unanswered question. Every ledgered gate is demoted to re-visit; the gates read the threads themselves (docs/agents/human-review.md).`)
+  }
+  if (humanDirectives.length) {
+    log(`⚠️ [${R}] ${humanDirectives.length} unresolved \`Human:\` directive(s) on PR/MR ${pr.pr_number} — the settled review is NOT skipped. Every ledgered gate is demoted to re-visit and each directive goes FIRST to the fix pass (docs/agents/human-review.md §Authority).`)
+    extraMustFix.push(...humanDirectives.map((d) => `⛔ \`Human:\` DIRECTIVE — A PERSON WROTE THIS ON PR/MR ${pr.pr_number}, and it OUTRANKS every agent-reviewer comment in this batch: drain it FIRST, and it is a must-fix whatever this run's review.level says (docs/agents/human-review.md §Authority). Thread \`${d.thread_id}\`${d.location ? ` at ${d.location}` : ''}:
+${String(d.body).slice(0, 800)}
+Fix it (a genuine defect via /diagnosing-bugs first, code via /tdd — the same defect-vs-style split as any review comment), reply anchored on that thread, and then RESOLVE thread \`${d.thread_id}\` yourself once the fix is PUSHED: the agent resolves, not the human. If you cannot fix it, or the directive is unclear, reply on the thread asking and LEAVE IT UNRESOLVED, then return it in \`cannot_fix\` with kind "human-review", the thread id, and what you tried. An open directive keeps this repo out of \`ready\` by design — and resolving a thread to make the loop end is the one thing this contract forbids.`))
+  }
+
   // RESUME: skip the whole review↔fix loop rather than re-paying for it (docs/adr/0018) — either
   // because this repo already reached 'reviewed', or because every individual gate is ledgered
   // green and only the merge phase never got far enough to write that row. Deliberately
@@ -1909,8 +1995,10 @@ IF IT STILL STANDS, fix it. If it genuinely cannot be fixed here, \`cannot_fix\`
   // not reopen a settled review. That is the trade-off the ADR records, not an oversight.
   // `!carried.length` is the veto that closes ADR-0027's cross-invocation fail-open: this early
   // `ready` is the exact return that used to un-know a recorded item. A repo carrying one must go
-  // through the loop, whatever the ledger says about the gates it passed.
-  if (!carried.length && (doneAt(R, 'reviewed') || (reviewers.length > 0 && reviewers.every((rv) => done[rv.key] === true))) && pr) {
+  // through the loop, whatever the ledger says about the gates it passed. The two `human*` vetoes
+  // are the same shape for the same reason — an unresolved `Human:` directive, or a forge this run
+  // could not ask about one, is not a state this return may report as settled.
+  if (!carried.length && !humanDirectives.length && !humanProbeBlind && wouldSkipReview) {
     log(`[${R}] review SKIPPED — ${doneAt(R, 'reviewed') ? "run state says reviewed" : "every gate is ledgered PASSED"}. PR ${pr.pr_number ?? '?'}.`)
     return { repo: R, status: 'ready', plan: rp, pr, reviewRound: 0, verdict: {}, gatesUnavailable: {}, deferred: deferredScope, met_acceptance: dev.met_acceptance || [], build: { summary: dev.summary, fixed: [] } }
   }
@@ -1960,7 +2048,8 @@ IF IT STILL STANDS, fix it. If it genuinely cannot be fixed here, \`cannot_fix\`
     // decoration: an unresolved thread is the forge's own record that a finding is still open. The
     // fixer ticks the ones it fixed, but the gate OWNS the judgement, so the invariant lives here —
     // a gate may not pass while a thread it opened is unresolved.
-    const resolveRule = (rv) => ` THREAD RESOLUTION — you OWN every thread you opened, and ${rv.key === 'review' ? 'approved:true' : 'passed:true'} asserts you have none of them left open. List them with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\` (yours are the ones tagged \`[gate:${rv.key}]\`) and settle EACH one: where the developer's fix genuinely resolves it, tick Resolve yourself — \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — and where it does not, leave it unresolved (or reopen one the developer closed prematurely, \`--unresolve\`, with a comment saying why) and do NOT pass. Return the ids you resolved in resolved_threads and the ones you left in still_open. A pass sitting above an unresolved thread you own is the one outcome this contract forbids; so is resolving a thread to make the loop end.`
+    const resolveRule = (rv) => ` THREAD RESOLUTION — you OWN every thread you opened, and ${rv.key === 'review' ? 'approved:true' : 'passed:true'} asserts you have none of them left open. List them with \`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\` (yours are the ones tagged \`[gate:${rv.key}]\`) and settle EACH one: where the developer's fix genuinely resolves it, tick Resolve yourself — \`scripts/vcs/pr-resolve-thread.sh ${pr.pr_number ?? '<number>'} <thread-id>\` — and where it does not, leave it unresolved (or reopen one the developer closed prematurely, \`--unresolve\`, with a comment saying why) and do NOT pass. Return the ids you resolved in resolved_threads and the ones you left in still_open. A pass sitting above an unresolved thread you own is the one outcome this contract forbids; so is resolving a thread to make the loop end.
+ONE THREAD YOU DO NOT OWN STILL BLOCKS YOU: a \`Human:\` DIRECTIVE — an unresolved thread a PERSON opened whose first line starts with \`Human:\`. It outranks every finding of yours, it is a must-fix whatever this run's review level says, and no gate passes through one (docs/agents/human-review.md §Authority). You do NOT fix it and you do NOT resolve it — the developer does both. Name each one you see in still_open and withhold your pass until it is gone. The mirror image is NOT a blocker and must not be treated as one: a \`Human:\` REPLY inside a thread YOU opened is a DISPOSITION — it CLEARS that finding, so stop counting it, do not re-argue it, and never re-open a thread a person resolved.`
     const revisitTask = (rv) => {
       const recheck = rv.key === 'review'
         ? `Do NOT run /review again — that re-derives a full review from scratch and surfaces new findings, exactly what re-visit forbids. Instead list the review threads YOU opened (\`scripts/vcs/pr-threads.sh ${pr.pr_number ?? '<number>'}\`) and, for each must-fix you raised in your first review, confirm the developer's fix + reply genuinely resolve it. The green gate is NOT scoped down by a re-visit: the developer changed code, so RE-RUN the suite (\`scripts/dev.sh test\` from inside ${R}, plus analyze/gen where this repo's green needs them) and return a FRESH tests_green + tests_receipt — last round's green proves nothing about this commit, and a fix that resolves your thread while breaking a test is exactly what this catches. Return approved:true ONLY when EVERY one of your first-review must-fixes is resolved AND tests_green is true; else approved:false listing which of YOUR threads remain open (a newly-red suite counts as one).${NO_SELF_APPROVE}`
@@ -2363,6 +2452,29 @@ STILL OPEN: ${openReviewers.filter((rv) => !done[rv.key]).map((rv) => rv.key).jo
 Treat your own previous reading of these findings as a HYPOTHESIS TO DISPROVE, not as settled. Re-read the actual threads on the PR/MR rather than your memory of them, and say in your summary which ones you re-read and what you had misread.
 If you produced no commit because you believe there is nothing to change, that is a claim about the FINDING, not about the code: reply ON ITS THREAD saying which finding you dispute and why. An answered thread is a real outcome; silence reads as a stall to this loop and always will.`)
       }
+    }
+  }
+
+  // A `Human:` DIRECTIVE IS SETTLED ONLY WHEN ITS THREAD IS. The reviewers' pass asserts nothing
+  // about it — no gate OWNS a thread a person opened, and the developer's word for "fixed" is not
+  // the forge's record. So when this repo entered the loop because of a directive (or because the
+  // probe went blind), read the threads back ONCE at the end and RECORD whatever is still open:
+  // `blocking` non-empty is what the guard below turns into `review-unresolved`, which is the only
+  // honest ending for a PR/MR still carrying a person's unanswered instruction. Recording rather
+  // than halting is ADR-0027's shape, so the rest of this run's work is not thrown away.
+  if ((humanDirectives.length || humanProbeBlind) && pr?.pr_number) {
+    const hv = await safeAgent(
+      `${tag(R, 'tracker', 'human-verify')} READ THE FORGE, WRITE NOTHING — no code, no comment, no thread resolution. ${inRepo} This run worked ${ticket}'s PR/MR ${pr.pr_number} in ${R} because it carried unresolved \`Human:\` directive(s)${humanDirectives.length ? ` (thread ids: ${humanDirectives.map((d) => d.thread_id).join(', ')})` : ' — or because the earlier probe could not read them'}. The reviewers have now converged, so confirm the ONE thing their pass does not: is every \`Human:\` directive thread actually RESOLVED on the forge now? Run \`scripts/vcs/pr-threads.sh ${pr.pr_number}\` (bare, no pipe) and return the command in \`command\`. Apply the SAME definition as before — a directive is a thread still \`[unresolved]\` whose FIRST comment's first line starts with \`Human:\`; a \`Human:\` reply inside an agent's own thread is a disposition and is not one; a resolved thread is done whoever resolved it. Return the ones STILL open in \`directives\` (thread_id, location, body verbatim, first 400 chars) — an empty array meaning every directive is settled, which is the outcome this run was working toward. If you cannot read the threads, \`blind: true\` + \`note\`.` +
+        ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+      { agentType: 'developer', model: 'haiku', phase: 'Review', label: `human-verify:${ticket}:${R}`, schema: HUMAN_DIRECTIVE_PROBE_SCHEMA },
+    )
+    const stillOpen = (hv?.directives || []).filter((d) => d && d.thread_id)
+    if (!hv || hv.blind === true) {
+      record('human-review', `PR/MR ${pr.pr_number} was worked for \`Human:\` review comment(s) and this run could NOT read the threads back, so it cannot say whether they are resolved${hv?.note ? ` (${String(hv.note).slice(0, 160)})` : ''}`, `read the \`Human:\` threads on PR/MR ${pr.pr_number} yourself and either resolve them or say what is still needed — the run will not claim a directive is settled it could not see`)
+    } else if (stillOpen.length) {
+      stillOpen.forEach((d) => record('human-review', `an unresolved \`Human:\` directive is still open on PR/MR ${pr.pr_number} — thread ${d.thread_id}${d.location ? ` at ${d.location}` : ''}: ${String(d.body).slice(0, 240)}`, `answer or narrow the directive on thread ${d.thread_id} (a reply from you resolves it), or resolve the thread if the fix already landed`))
+    } else {
+      log(`[${R}] every \`Human:\` directive on PR/MR ${pr.pr_number} is resolved on the forge — the repo may proceed.`)
     }
   }
 

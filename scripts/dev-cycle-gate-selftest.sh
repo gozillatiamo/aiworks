@@ -142,6 +142,14 @@ async function runOnce(argsStr, canned, opts = {}) {
       return { repo, target_branch: base, matches: true, retargeted: false, detail: null,
                open_prs: [{ number: Number(num), target_branch: base, source_branch: 'feature/FM-12', url: `https://x/${num}` }] }
     }
+    // The `Human:`-directive probe fires on EVERY repo that was about to skip its review, so
+    // stubbing it per scenario would mean adding a row to a dozen canned tables to say "no, nobody
+    // commented". Default it to the healthy answer — no directives, not blind — and let a scenario
+    // override the label to exercise one. Same reasoning as the target-gate default above; without
+    // it every resume scenario would be testing this probe instead of what it is about.
+    if (label && (label.startsWith('human-probe:') || label.startsWith('human-verify:')) && !(label in canned)) {
+      return { directives: [], blind: false, command: 'scripts/vcs/pr-threads.sh' }
+    }
     if (!label || !(label in canned)) throw new Error('selftest: unstubbed agent label ' + label)
     return canned[label]
   }
@@ -636,6 +644,77 @@ const BASE = {
       report('G8B_not_first_review', !p.includes('First review (round 1)'))
       report('G8B_told_first_pass_was_earlier_invocation', p.includes('EARLIER INVOCATION'))
       report('G8B_ledger_line_says_revisit_only', LINES.some((l) => l.includes('review ledger') && l.includes('re-visit only')))
+    } else if (SCENARIO === 'G8D' || SCENARIO === 'G8E' || SCENARIO === 'G8F' || SCENARIO === 'G8G') {
+      // A `Human:` DIRECTIVE ON A SETTLED PR/MR (docs/agents/human-review.md). G8A above is this
+      // exact shape minus the directive: every gate ledgered PASSED, so the review is skipped and
+      // no reviewer is spawned. That skip's two proofs — a branch head that has not moved
+      // (docs/adr/0018) and a ticket fingerprint of title + acceptance only (0018's addendum) —
+      // are both blind to a comment, so a person's directive on the MR was returned as `ready`
+      // with nobody having read it. Three cases, one per state the probe can be in:
+      //   G8D  a directive exists   -> the skip is VETOED, the gates re-visit, the fix pass gets
+      //                               the directive text FIRST, and the run ends ready once the
+      //                               thread is resolved on the forge.
+      //   G8E  the probe is BLIND   -> also not skipped. An unanswered question is not "none"
+      //                               (the same rule as the approval probe's "unknown").
+      //   G8F  never resolved       -> the reviewers pass, the thread does NOT, and the repo ends
+      //                               `review-unresolved` carrying a `human-review` item rather
+      //                               than reporting ready above a person's open instruction.
+      //   G8G  a `reviewed` row and NO per-gate rows — the OTHER shape that reaches this skip (the
+      //        merge phase writes `reviewed`, so a run that got that far completed the loop for
+      //        every gate). Demoting only gates ledgered `done` would leave all three with no first
+      //        pass on record and send them back to a FULL first review, re-deriving the closed
+      //        finding set the ledger exists to protect. The veto must produce a re-visit here too.
+      const directive ={ thread_id: 'th-9', location: 'lib/x.rs:42', body: 'Human: rename this to settle_batch and add the overflow guard' }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: SCENARIO === 'G8G'
+          ? readyRows('db', 7)
+          : [builtRow('db'), prRow('db', 7), gatePassedRow('db', 'review')] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'human-probe:FM-12:db': SCENARIO === 'G8E'
+          ? { directives: [], blind: true, note: 'pr-threads.sh exited 1' }
+          : { directives: [directive], blind: false },
+        // The re-visit (not a second first review) and the fix pass the veto creates.
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'exit 0', comments: [], resolved_threads: [], still_open: [] },
+        'pr-fix:FM-12:db#1': { work_branch: 'feature/FM-12', summary: 'applied the directive', status: 'complete', fixed: ['lib/x.rs'] },
+        // G8F: the developer said done, the forge says the thread is still open. The forge wins.
+        'human-verify:FM-12:db': SCENARIO === 'G8F'
+          ? { directives: [directive], blind: false }
+          : { directives: [], blind: false },
+      }
+      const result = await runOnce(ARGS, canned)
+      const pre = SCENARIO
+      report(`${pre}_skip_is_vetoed`, !LINES.some((l) => l.includes('[db] review SKIPPED')))
+      report(`${pre}_reviewer_spawned`, SPAWNED.includes('review:FM-12:db#1'))
+      // The veto must not become a re-review: the frozen gate is demoted to RE-VISIT, which is
+      // the whole point of ADR-0021 surviving this change.
+      report(`${pre}_mode_is_revisit`, (PROMPTS['review:FM-12:db#1'] || '').includes('RE-VISIT (round 1)'))
+      report(`${pre}_gate_told_human_thread_blocks_it`, (PROMPTS['review:FM-12:db#1'] || '').includes('ONE THREAD YOU DO NOT OWN STILL BLOCKS YOU'))
+      if (SCENARIO === 'G8G') {
+        report('G8G_not_a_second_first_review', !(PROMPTS['review:FM-12:db#1'] || '').includes('First review (round 1)'))
+        report('G8G_told_first_pass_was_earlier_invocation', (PROMPTS['review:FM-12:db#1'] || '').includes('EARLIER INVOCATION'))
+      }
+      if (SCENARIO === 'G8D' || SCENARIO === 'G8F' || SCENARIO === 'G8G') {
+        const fp = PROMPTS['pr-fix:FM-12:db#1'] || ''
+        report(`${pre}_logged_the_directive_count`, LINES.some((l) => l.includes('[db] 1 unresolved') && l.includes('is NOT skipped')))
+        report(`${pre}_fix_pass_gets_the_directive_verbatim`, fp.includes('rename this to settle_batch and add the overflow guard'))
+        report(`${pre}_fix_pass_gets_the_thread_id`, fp.includes('th-9'))
+        report(`${pre}_directive_outranks_the_batch`, fp.includes('OUTRANKS every agent-reviewer comment'))
+      }
+      if (SCENARIO === 'G8E') {
+        report('G8E_blindness_is_not_none', LINES.some((l) => l.includes('could NOT read the `Human:` threads')))
+        report('G8E_no_directive_text_invented', !(PROMPTS['pr-fix:FM-12:db#1'] || '').includes('`Human:` DIRECTIVE —'))
+      }
+      if (SCENARIO === 'G8F') {
+        report('G8F_repo_not_ready', (result?.repoResults?.db?.status) === 'review-unresolved')
+        report('G8F_recorded_as_human_review', LINES.some((l) => l.includes('BLOCKING RECORDED (human-review)')))
+        report('G8F_names_the_open_thread', LINES.some((l) => l.includes('BLOCKING RECORDED (human-review)') && l.includes('th-9')))
+      } else {
+        report(`${pre}_ends_ready_once_the_thread_is_resolved`, (result?.repoResults?.db?.status) === 'ready')
+      }
     } else if (SCENARIO === 'G8C') {
       // No ledger at all => a genuine first pass, and the brief carries the three contracts the
       // ledger depends on: the gate tag, the resolve-what-you-own rule, and the checkpoint write.
@@ -2000,6 +2079,18 @@ out="$(run_scenario G8B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 
 
 echo "── G8c — no ledger: genuine first pass, brief carries tag + resolve + checkpoint contracts"
 out="$(run_scenario G8C)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G8d — an unresolved \`Human:\` directive VETOES the skip (human-review.md), re-visit not re-review"
+out="$(run_scenario G8D)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G8e — a BLIND \`Human:\` probe is not 'no directives': the skip is vetoed too"
+out="$(run_scenario G8E)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G8f — a directive still open at the end is RECORDED, never reported ready"
+out="$(run_scenario G8F)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G8g — a vetoed skip on a 'reviewed' row RE-VISITS; it never re-derives a first review"
+out="$(run_scenario G8G)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G9a — forge approval freezes the whole review (already-approved ⇒ no re-entry)"
 out="$(run_scenario G9A)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

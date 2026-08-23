@@ -43,6 +43,7 @@ vcs/
 ├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
 ├── retarget-pr.sh     find-prs.sh  list-prs.sh  close-pr.sh
 ├── approve-selftest.sh       # offline regression for the approval read + write (stubbed CLI)
+├── open-pr-selftest.sh       # offline regression for the open-PR/MR FAILURE paths (stubbed CLI)
 ├── repo-target-selftest.sh   # offline regression: every native glab/gh subcommand names its repo
 ├── target-branch-selftest.sh # offline regression for reading + changing a target branch
 └── .env.example       # optional VCS_PROVIDER override
@@ -118,6 +119,19 @@ Handled by the provider CLI, not this adapter:
   every CLI invocation so the test can assert `mr note` was never called), a project that
   requires zero approvals answering `"approved": true` with an empty `approved_by`, and an
   approvals endpoint that refuses on demand. No network, no credentials, no MR touched.
+- **A create that fails must SAY so — and must not claim nothing was created.** `vcs_open_pr`
+  captures the CLI's combined output *and* its exit status, then reports both. The reason it now
+  does: the GitLab side captured the output and died one line later, on
+  `url="$(… | grep -oE …)"` — `grep` exits 1 when it matches nothing, `pipefail` promotes that to
+  the pipeline's status, and a failing assignment is fatal under `set -e`, so the diagnostic the
+  capture existed for never ran. Every failing create surfaced as **exit 1 with zero bytes**; nine
+  reproductions were read as "glab prints nothing for this project" while glab's error sat in a
+  variable nobody got to print. `github.sh` had carried the missing `|| true` since it was written.
+  Second half of the same contract: a create can fail *after* the server made the PR/MR (a webhook
+  erroring the response, a dropped connection after the POST), so before reporting failure the
+  adapter re-runs the same open-PR/MR query the reuse path uses and returns what the forge actually
+  has. `scripts/vcs/open-pr-selftest.sh` is the regression for both, offline — a healthy forge
+  cannot be asked to fail on demand, and "the CLI was never invoked" is only visible by watching it.
 - "PR" maps to a GitLab **merge request**; a PR `number` is the **MR IID**.
 - Inline-at-line comments are a true review comment on both hosts: GitHub posts a PR
   review comment, GitLab a **positioned MR discussion** on the new side of the diff
