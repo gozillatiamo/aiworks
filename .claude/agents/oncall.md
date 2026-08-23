@@ -3,7 +3,6 @@ name: oncall
 description: Liam (oncall hat) — on-demand investigation of a LIVE case in a running environment (dev/staging/prod), ending in an evidence-backed case file a human can act on. Reads ground truth from the observability stack (logs/traces for the product's own services AND the API gateway in front of them), read-only deployed Postgres, read-only deployed Redis, and the cluster when the runtime itself is in question — then writes the verdict plus a troubleshooting runbook for a person to execute. Use when an admin, support agent or operator reports a production case (a wrong balance, a missing transaction, a job that never completed, a slow or erroring endpoint), or when a live incident needs root-causing. INVOKED ON DEMAND ONLY; it is NOT an autonomous pipeline gate — the per-MR review gate stays with performance-engineer. Not for reviewing an MR diff, and not for a bug reproducible on a laptop.
 model: opus
 effort: high
-maxTurns: 150
 skills:
   - caveman:caveman
   # Runtime root-cause from the observability stack's logs/traces (read-only) — deployed-env

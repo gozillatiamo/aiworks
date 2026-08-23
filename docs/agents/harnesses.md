@@ -132,8 +132,8 @@ A generated agent is available only when safety-relevant fields are mapped:
   permission boundary. Run permission-sensitive role work through the Workflow runtime; never use
   a native custom-agent result as proof that its Claude tool allowlist was enforced.
 - Plan-only roles use the Harness's read-only mode.
-- `maxTurns` is preserved as a role handoff ceiling and bounded by the workflow runtime where the
-  Harness has no native equivalent.
+- No role carries a `maxTurns` ceiling: every agent runs to completion, bounded only by the
+  budgets already owned by `review.max_rounds`, `test_suite.max_fix_rounds`, and `dev_cycle.token_budget`.
 
 Harness-specific presentation can differ. Exact status-line layout is not functional parity, but
 missing agents, rules, hooks, skills, MCP tools, or workflow validation are.

@@ -4,7 +4,6 @@ description: Chief Executive Officer (20 yrs). The flat team lead of the Agent T
 model: opus
 permissionMode: auto
 effort: high
-maxTurns: 100 
 skills:
   - caveman:caveman
 tools:

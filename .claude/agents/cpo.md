@@ -4,7 +4,6 @@ description: Emily — elite Chief Product Officer & UX Strategist (10+ yrs scal
 model: opus
 permissionMode: plan
 effort: high
-maxTurns: 100 
 skills:
   - caveman:caveman
 tools:
