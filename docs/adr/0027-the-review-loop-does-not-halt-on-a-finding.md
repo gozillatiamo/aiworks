@@ -140,7 +140,12 @@ while a blocking item stands, and an instruction is not a mechanism.
 Four states still stop a repo, because there is no loop to continue into:
 
 - **the build returned no structured handoff** — nothing is known about what landed, so there is no
-  diff, no PR and nothing to review
+  diff, no PR and nothing to review. ⚠️ This entry was read for two changes as covering a `partial`
+  handoff too, and it never did:
+  [ADR 0032](0032-the-build-does-not-stop-at-the-first-partial.md) converts that one. A missing
+  handoff means nothing is known; a `partial` handoff means everything is known — what landed, what
+  remains, the measured cause, the commands run — which makes it the best-informed continuation point
+  in the run, not a terminal state. The two looked like one case because they sat on adjacent lines
 - **open-PR did not converge** — there is no PR/MR number, and every reviewer prompt needs one
 - **a target branch that cannot be made right** — `git diff <base>...<head>` cannot be computed
   without that ref on the remote, so reviewers would produce findings about the wrong comparison.
@@ -185,5 +190,8 @@ than a repeat.
   in the workflow ends on a finding.
 - [ADR 0029](0029-a-reviewed-but-unresolved-repo-still-gets-the-gate.md) — the same argument one
   level up: a repo left `review-unresolved` here no longer stops the RUN from gating the rest.
+- [ADR 0030](0030-a-repo-whose-criteria-already-hold-is-finished-not-stalled.md) — the same reading
+  applied to a repo with nothing to finish, where the halt was a proxy test (commit count) standing
+  in for the question actually being asked.
 - `docs/agents/review-ledger.md` — a finding is raised once; this document is about what happens
   when it cannot be closed.

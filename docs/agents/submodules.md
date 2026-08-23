@@ -16,6 +16,16 @@ superproject pins to one commit, not a place to develop.
 the PR/MR there. Bumping the superproject's pointer to the merged commit is a separate,
 deliberate step, not this skill's job.
 
+### Inside a dev-cycle run, a pointer move is the ONE sanctioned write — and it does not wait for a merge
+
+A pointer move is a commit in the **superproject**, so it is not a write inside the checkout and the
+guard does not touch it. When a `dev-cycle` run touches both a repo and something that vendors it,
+the vendoring repo is built in a **later wave** and pins to the upstream's *pushed* branch tip —
+unmerged, on purpose. A submodule pointer needs a commit that exists on the remote, not a merged
+one, and waiting for the merge is what used to cost the ticket a whole extra round. The pointer is
+re-aimed at the merged sha by the run's `submodule-bump` ship step, after the upstream lands and
+before the downstream does. → [ADR 0031](../adr/0031-a-submodule-pin-needs-a-pushed-commit-not-a-merge.md)
+
 ### …but READING one is fine, and so is a checkout that proves something
 
 The prohibition is on **create / edit / commit**, and on nothing else. Inspecting a
