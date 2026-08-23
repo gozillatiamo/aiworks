@@ -120,7 +120,7 @@ tracker_get_details() {
   key="$(jira_key "$1")"
   # Append the configured point/effort field ids so the estimate is visible (e.g. for
   # /estimate-ticket re-estimation) — the endpoint returns only the fields requested.
-  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks,attachment"
+  fields_q="summary,status,priority,assignee,labels,issuetype,description,parent,issuelinks,attachment,fixVersions"
   for f in "$JIRA_DEV_POINTS_FIELD" "$JIRA_QA_POINTS_FIELD" "$JIRA_EFFORT_FIELD" "$JIRA_SPRINT_FIELD"; do
     [[ -n "$f" ]] && fields_q="$fields_q,$f"
   done
