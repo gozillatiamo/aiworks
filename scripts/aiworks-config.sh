@@ -377,6 +377,7 @@ TS_MAX_REPAIR='3'
 # per-condition attempt budgets for the states that used to halt a repo mid-review.
 RV_MAX_ROUNDS='14'; RV_MAX_REGRESSION='3'; RV_MAX_STALL='3'; RV_MAX_ESCALATION='3'
 # dev_cycle.token_budget — the run's own spend ceiling (C9), and notify.dm_on_incomplete (C10).
+BD_MAX_CONT='3'
 DC_TOKEN_BUDGET='2000000'
 NOTIFY_DM=''
 STATUS_PAIRS=''   # accumulates "<canonical_key>\t<real name>\n" for EVERY status the org declares,
@@ -414,6 +415,7 @@ while IFS=$'\t' read -r k v; do
     RV_MAX_REGRESSION)  RV_MAX_REGRESSION="$v" ;;
     RV_MAX_STALL)       RV_MAX_STALL="$v" ;;
     RV_MAX_ESCALATION)  RV_MAX_ESCALATION="$v" ;;
+    BD_MAX_CONT)        BD_MAX_CONT="$v" ;;
     DC_TOKEN_BUDGET)    DC_TOKEN_BUDGET="$v" ;;
     ST_*)          STATUS_PAIRS+="${k#ST_}"$'\t'"$v"$'\n' ;;   # pass through every declared status
   esac
@@ -450,6 +452,7 @@ done < <(
     sec=="review"       && /^  max_stall_reattempts:/    { print "RV_MAX_STALL\t"      val($0); next }
     sec=="review"       && /^  max_escalation_attempts:/ { print "RV_MAX_ESCALATION\t" val($0); next }
     sec=="test_suite"   && /^  max_suite_repair_attempts:/ { print "TS_MAX_REPAIR\t"   val($0); next }
+    sec=="build"        && /^  max_continuation_passes:/ { print "BD_MAX_CONT\t"     val($0); next }
     sec=="loadtest"     && /^  tolerance_pct:/        { print "LT_TOLERANCE\t"      val($0); next }
     sec=="loadtest"     && /^  noise_runs:/           { print "LT_NOISE_RUNS\t"     val($0); next }
     sec=="loadtest"     && /^  noise_ceiling_multiple:/ { print "LT_NOISE_CEILING\t" val($0); next }
@@ -482,6 +485,7 @@ LT_CACHE="${LT_CACHE:-~/.cache/aiworks/loadtest-baselines}"
 [[ "$RV_MAX_REGRESSION" =~ ^[0-9]+$ ]] || RV_MAX_REGRESSION='3'
 [[ "$RV_MAX_STALL" =~ ^[0-9]+$ ]]      || RV_MAX_STALL='3'
 [[ "$RV_MAX_ESCALATION" =~ ^[0-9]+$ ]] || RV_MAX_ESCALATION='3'
+[[ "$BD_MAX_CONT" =~ ^[0-9]+$ ]]      || BD_MAX_CONT='3'
 [[ "$DC_TOKEN_BUDGET" =~ ^[0-9]+$ ]]  || DC_TOKEN_BUDGET='2000000'
 REVIEW_LEVEL="$(printf '%s' "${RL_RAW:-strict}" | tr '[:upper:]' '[:lower:]')"
 case "$REVIEW_LEVEL" in strict|thorough) ;; *) REVIEW_LEVEL='strict' ;; esac   # clamp to the two levels (default strict)
@@ -688,6 +692,9 @@ const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bou
   maxRegressionFixes: ${RV_MAX_REGRESSION},   // a fix that caused a new blocking problem, handed straight back
   maxStallReattempts: ${RV_MAX_STALL},        // same finding set + no new commit ⇒ ESCALATE the brief, then retry
   maxEscalationAttempts: ${RV_MAX_ESCALATION},// cross-repo fix + scoped re-gate, per (repo, finding)
+}
+const BUILD = {   // from workspace.config.yaml build.*; the build phase's own bound (docs/adr/0032)
+  maxContinuationPasses: ${BD_MAX_CONT},  // a \`partial\`/\`blocked\` handoff is CONTINUED this many times before it is RECORDED
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: ${DC_TOKEN_BUDGET},        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable

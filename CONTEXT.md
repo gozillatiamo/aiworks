@@ -88,10 +88,15 @@ the owning gate makes the final call and may not pass while a thread it owns is 
 
 **Wave**:
 A dependency batch of repos, derived from each repo's declared upstreams. Waves order the merge,
-not the build: every scoped repo builds concurrently. *Avoid*: stage, phase, batch.
+and normally not the build: every scoped repo builds concurrently, because a build needs the agreed
+contract rather than a merged upstream. The one exception is a **submodule pin**, which orders the
+build too — a vendored harness can only see commits its pointer can reach. *Avoid*: stage, phase,
+batch.
 
 **Repo status** (dev-cycle):
-The verdict one repo's pipeline returns. `ready` is the only one that lets the change set proceed.
+The verdict one repo's pipeline returns. `ready` is the only one that lets the change set proceed —
+except **already-satisfied**, which is not a stall at all: that repo needed no change and leaves the
+run before any of these apply.
 Since [ADR 0027](docs/adr/0027-the-review-loop-does-not-halt-on-a-finding.md) the review loop does
 not stop on a finding, so **`review-unresolved` is the one review outcome that is not `ready`**: the
 loop worked to `review.max_rounds` and hands back whatever it could not close as **blocking items**
@@ -226,6 +231,42 @@ re-parents, re-sprints or re-estimates one. Shipped work is a record, not a work
 **Writable ticket**:
 A ticket an automated run may write to: any covering ticket that is not a **reference ticket**,
 plus a key a human named explicitly. The distinction is enforced in code, not by instruction.
+
+**Build continuation**:
+A bounded pass that resumes an unfinished build from the branch as it stands, rather than ending the
+repo. A `partial` handoff means "some slices landed, work of my own remains" — the best-informed
+continuation point in the run — and it used to stop the repo on attempt one, so the next invocation
+paid for Scope, Kickoff and a resume to reach the same place. The brief carries what landed, what
+remains, the measured cause and any parked WIP, and forbids a restart; `blocked` takes the same
+ladder with the cheap classes named first; an unchanged `remaining` escalates the brief rather than
+repeating it; an evidenced `cannot_fix` ends the passes early. Bounded by
+`build.max_continuation_passes`, and what the bound cannot close is a **blocking item** — it buys the
+passes, never a pass ([ADR 0032](docs/adr/0032-the-build-does-not-stop-at-the-first-partial.md)).
+*Avoid*: build retry (a retry re-runs the same attempt; this continues a different one).
+
+**Already satisfied**:
+A repo the ticket touches on paper but needs no change in: the behaviour asked of it shipped under
+earlier work, so the correct diff is empty. Distinct from **deferred scope** (someone else owes the
+work) and from `partial` (the repo owes it). The claim is a set of CITATIONS, one per acceptance
+criterion the repo owns — the commit that shipped it, the file:line, the source quoted — and a
+verifier re-opens every one, checks the list covers every criterion, and reads the code around each
+line. What it must never do is reject on commit count: an empty branch is the expected shape here,
+and testing for one is the bug this status replaced
+([ADR 0030](docs/adr/0030-a-repo-whose-criteria-already-hold-is-finished-not-stalled.md)). Upheld,
+the repo leaves the run with no branch, no PR/MR and nothing to merge; refused, it lands on
+`partial` and stops. Every scoped repo satisfied is the run's own ending — *not*
+`nothing-delivered`, which is the opposite finding.
+
+**Submodule pin**:
+A vendored checkout of one scoped repo inside another, declared in the downstream's `.gitmodules`.
+Unlike `depends_on` — a contract between repos, which never serializes a build — a pin is a fact
+about the downstream's harness and binds harder: a suite that rebuilds its schema from the vendored
+tree can only see commits the pin can reach. So a pinned upstream builds and **pushes** in an
+earlier wave and the downstream pins to that branch tip. It does not wait for a merge: a pointer
+needs a commit that exists on the remote, nothing more, and the merge stays human
+([ADR 0031](docs/adr/0031-a-submodule-pin-needs-a-pushed-commit-not-a-merge.md)). The pointer is
+re-aimed at the merged sha by the `submodule-bump` ship step before the downstream lands. No pin
+declared ⇒ one fully-parallel wave, exactly as before.
 
 **Deferred scope**:
 Part of a ticket's scope that a repo's build cannot finish because it belongs to another owner — a

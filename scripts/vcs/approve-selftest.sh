@@ -136,13 +136,13 @@ hasnt "github: posts NO comment"             "pr comment"                       
 
 echo "── an UNAPPROVED MR still gets the tick (the early return is not a blanket skip)"
 out="$(run gitlab unapproved vcs_approve_pr 7 "requirements met, tests green")"; log="$(calls)"
-has "gitlab: approves"                "mr approve 7"    "$log"
+has "gitlab: approves"                "mr approve -R group/project 7"    "$log"
 has "gitlab: posts the verdict note"  "mr note"         "$log"
 has "gitlab: marker prepended"        "✅ APPROVED — requirements met" "$log"
 has "gitlab: reports success"         "Approved MR !7"  "$out"
 
 out="$(run github unapproved vcs_approve_pr 7 "requirements met, tests green")"; log="$(calls)"
-has "github: submits APPROVE review"  "pr review 7 --approve" "$log"
+has "github: submits APPROVE review"  "pr review --repo group/project 7 --approve" "$log"
 has "github: marker prepended"        "✅ APPROVED — requirements met" "$log"
 
 echo "── UNKNOWN is not YES: a forge that won't answer still gets approved"
@@ -150,19 +150,19 @@ echo "── UNKNOWN is not YES: a forge that won't answer still gets approved"
 # write must agree, or an instance with approvals disabled would never be ticked at all.
 out="$(run gitlab endpoint_down vcs_approve_pr 9 "tests green")"; log="$(calls)"
 hasnt "gitlab: not short-circuited"   "already approved" "$out"
-has   "gitlab: still attempts approve" "mr approve 9"    "$log"
+has   "gitlab: still attempts approve" "mr approve -R group/project 9"    "$log"
 
 echo "── empty --body: the documented 'approval only, no verdict note' call"
 # REGRESSION. This was `[[ -n "$body" ]] && { … }`, whose exit status is 1 when the body is
 # empty — and under `set -e` that killed the function before `glab mr approve` ever ran, so
 # the documented approval-only call silently did nothing at all.
 out="$(run gitlab unapproved vcs_approve_pr 7 "")"; log="$(calls)"
-has   "gitlab: approves with no body" "mr approve 7" "$log"
+has   "gitlab: approves with no body" "mr approve -R group/project 7" "$log"
 hasnt "gitlab: posts no note"         "mr note"      "$log"
 has   "gitlab: reports success"       "Approved MR !7" "$out"
 
 out="$(run github unapproved vcs_approve_pr 7 "")"; log="$(calls)"
-has "github: approves with no body"   "pr review 7 --approve" "$log"
+has "github: approves with no body"   "pr review --repo group/project 7 --approve" "$log"
 
 echo "── pr-view.sh surfaces the state as a field"
 has "gitlab: pr-view prints approved=" "approved=yes" \

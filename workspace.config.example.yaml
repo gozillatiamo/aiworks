@@ -283,6 +283,23 @@ test_suite:
                                    #   WITH evidence closes these attempts early rather than
                                    #   grinding the budget, and the gate stays unverified.
 
+# ── build phase limits ─────────────────────────────────────────────────────────
+build:
+  max_continuation_passes: 3       # a `partial` handoff means "some slices landed, work OF MY OWN
+                                   #   remains" — the best-informed continuation point in the run,
+                                   #   and it used to end the repo on attempt one. It is CONTINUED
+                                   #   this many times from the branch as it stands (never a restart:
+                                   #   the brief carries what landed, what remains, the measured
+                                   #   cause and any parked WIP). `blocked` takes the same ladder with
+                                   #   a brief that rules out the cheap classes first.
+                                   #   A pass whose `remaining` came back unchanged escalates the
+                                   #   brief instead of repeating it, and an EVIDENCED cannot_fix ends
+                                   #   the passes early rather than grinding the budget to reach the
+                                   #   same answer. What the bound cannot close is RECORDED, and the
+                                   #   repo still cannot reach ready — this buys the passes, not a
+                                   #   pass. 0 = the old behaviour (stop at the first partial).
+                                   #   docs/adr/0032.
+
 # ── dev-cycle run limits ───────────────────────────────────────────────────────
 dev_cycle:
   token_budget: 2000000            # the run's own spend ceiling — OUTPUT tokens across the run's
@@ -299,6 +316,26 @@ dev_cycle:
                                    #   hard multi-repo ticket spanning several invocations pays it
                                    #   each time; the run summary reports the per-ticket running
                                    #   total across rounds so the real cost is visible somewhere.
+                                   # SIZING IT. Since ADRs 0027/0028/0029/0032 no phase ends on its
+                                   #   first bad answer, so this ceiling is now close to the only
+                                   #   thing that stops a run — which makes "is it big enough?" the
+                                   #   question, not "is it small enough?". Two measurements to
+                                   #   anchor on: the four-repo run above spent 232k output, and an
+                                   #   audited SIX-repo run that stopped three times spent 4.57M
+                                   #   total ≈ 158k output across 41 agents. Both are under a TENTH
+                                   #   of this default, and neither was stopped by it — they were
+                                   #   stopped by the halts those ADRs removed. So the default has
+                                   #   roughly an order of magnitude of headroom for the tickets
+                                   #   this workspace actually runs, and RAISING it is not the lever
+                                   #   for a run that ends early: read the summary's "Blocking —
+                                   #   needs a person" section first, because a recorded item is a
+                                   #   different ending than budget-stopped and no ceiling fixes it.
+                                   #   Lower it only to cap spend deliberately (a spike, an
+                                   #   unfamiliar ticket) and expect budget-stopped as the normal
+                                   #   result; raise it when the summary actually says
+                                   #   budget-stopped AND the per-ticket total is climbing across
+                                   #   rounds. The bounds that shape the WORK are review.max_rounds
+                                   #   (the one terminal bound) and build.max_continuation_passes.
 
 # ── Planning (governs every planning step — e.g. the dev-cycle Kickoff) ────────
 planning:

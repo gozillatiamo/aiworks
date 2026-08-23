@@ -57,6 +57,7 @@ const TEST_SUITE = { maxFixRounds: Number(process.env.FIXTURE_TS_MAX_FIX_ROUNDS 
 // exhaust one in a single round instead of fourteen; real defaults live in workspace.config.yaml.
 // (No apostrophes in this block: CONFIG_FIXTURE is a single-quoted shell string.)
 const REVIEW = { maxRounds: Number(process.env.FIXTURE_RV_MAX_ROUNDS || 14), maxRegressionFixes: Number(process.env.FIXTURE_RV_MAX_REGRESSION || 1), maxStallReattempts: Number(process.env.FIXTURE_RV_MAX_STALL || 1), maxEscalationAttempts: Number(process.env.FIXTURE_RV_MAX_ESCALATION || 1) }
+const BUILD = { maxContinuationPasses: Number(process.env.FIXTURE_BUILD_MAX_CONT || 2) }
 const DEV_CYCLE = { tokenBudget: Number(process.env.FIXTURE_TOKEN_BUDGET || 0) }
 const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", testing: "Testing", done: "Done" }
 const REPOS = {
@@ -1399,6 +1400,418 @@ const BASE = {
         report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
         report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
       }
+    } else if (SCENARIO === 'G39' || SCENARIO === 'G39B') {
+      // An already-satisfied repo is FINISHED, and three places used to read it as broken:
+      //  (a) a reviewer finding naming it recorded a `blocked-on` item, keeping the DOWNSTREAM out of
+      //      `ready` over a repo with nothing wrong with it — the new state turned into a run failure;
+      //  (b) a cross-repo escalation routed a fix into it, opening commits and a PR/MR in a repo every
+      //      ship phase has already filtered out — a merge that tells nobody;
+      //  (c) with every CODE repo satisfied, the run walked on to the gate with an EMPTY candidate
+      //      list and a green pass over nothing.
+      // This drives (a) and (b): db is satisfied, app is live and its reviewer names db.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'app', depends_on: ['db'] }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'app']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        // app PINS db, so db finishes in wave 1 and app's review sees its verdict — which is what
+        // makes an `already-satisfied` upstream visible to the blocked-on check at all.
+        'kickoff:FM-12:app': { ...REPO_PLAN('app', 'develop'), submodule_pins: [{ repo: 'db', path: 'vendor/db' }] },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: [{ criterion: 'A1', commit: 'a1b2c3d', path_line: 'db/src/x.ts:9', quote: 'export const supportsFallback = (p) => p.flags.fallback' }] },
+        'verify-satisfied:FM-12:db': { upheld: true, reason: 'holds', checked: [] },
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:app': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:app#1': { approved: false, tests_green: true, tests_receipt: 'ok', comments: [{ path: 'app/src/a.ts', line: 3, body: 'the db repo returns the wrong shape here' }], resolved_threads: [], still_open: ['db shape'], upstream_fix_needed: [{ repo: 'db', finding: 'wrong shape', evidence: 'observed' }] },
+        'guard:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        'perf:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        // The escalation comes from the FIX agent's handoff, not the reviewer's — this is the ask
+        // that used to open commits and a PR/MR in a repo every ship phase had already filtered out.
+        'pr-fix:FM-12:app#1': { work_branch: 'feature/FM-12', summary: 'fixed here', status: 'complete', fixed: ['app/src/a.ts'], ...(SCENARIO === 'G39B' ? { upstream_fix_needed: [{ repo: 'db', finding: 'the shape is wrong at the source', evidence: 'observed: db/src/x.ts:9 returns a bare boolean where the caller reads an object' }] } : {}) },
+        'review:FM-12:app#2': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: ['db shape'], still_open: [] },
+        'guard:FM-12:app#2': { approved: true, tests_green: true, comments: [] },
+        'perf:FM-12:app#2': { approved: true, tests_green: true, comments: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      const blocked = JSON.stringify(result?.blockingByRepo || [])
+      if (SCENARIO === 'G39') {
+        report('G39a_satisfied_upstream_is_not_a_blocking_item', !blocked.includes('blocked-on'))
+        report('G39a_downstream_still_reaches_ready', !!result && result.status !== 'repo-unresolved' && result.status !== 'review-unresolved')
+        report('G39a_fix_pass_told_to_resolve_it_here', Object.entries(PROMPTS).some(([k, v]) => k.startsWith('pr-fix:FM-12:app') && /needed NO change for FM-12/.test(v)))
+      } else {
+        report('G39b_no_fix_routed_into_the_satisfied_repo', !SPAWNED.some((l) => l.startsWith('xrepo-fix:FM-12:db')))
+        report('G39b_no_pr_opened_in_the_satisfied_repo', !SPAWNED.includes('open-pr:FM-12:db'))
+        // Refusing to route it is not pretending the finding went away: it is a real gap in shipped
+        // code, so it is RECORDED and the repo stays out of ready.
+        report('G39b_refusal_is_recorded_not_swallowed', blocked.includes('cross-repo') && blocked.includes('left the run'))
+      }
+    } else if (SCENARIO === 'G40') {
+      // (c) — every CODE repo satisfied, a suite repo still live and the gate REQUESTED. There is no
+      // candidate, so the gate must not run and must not be reported as a pass; the run ends
+      // already-satisfied and says the suite work is unvalidated.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }], test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: [{ criterion: 'A1', commit: 'a1b2c3d', path_line: 'db/src/x.ts:9', quote: 'export const supportsFallback = (p) => p.flags.fallback' }] },
+        'verify-satisfied:FM-12:db': { upheld: true, reason: 'holds', checked: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/9', pr_number: 9 },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G40_gate_not_run_over_an_empty_candidate', !SPAWNED.some((l) => l.startsWith('test-suite:FM-12')))
+      report('G40_not_reported_as_a_pass', !!result && result.status === 'already-satisfied')
+      report('G40_gate_unavailable_is_stated', /no candidate build to run against/.test(result?.testSuiteGateUnavailable || ''))
+      report('G40_says_the_suite_work_is_unvalidated', /unvalidated/.test(result?.decision_needed || ''))
+      report('G40_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
+    } else if (SCENARIO.startsWith('G44')) {
+      // THE LAST NON-BUDGET STOPS. The goal behind this branch is that budget exhaustion should be
+      // close to the only thing that ends a run, so every remaining terminal path was swept. Three
+      // were one non-converging agent away from a stop that a single re-ask fixes:
+      //   G44_SCOPE   — the scope stage THREW. No summary, no run-state, no record, no DM: the
+      //                 operator got a stack trace and the next invocation started from nothing.
+      //   G44_PR      — open-PR had NO retry at all, so one flaky agent ended a repo whose branch
+      //                 was already built and pushed, and with it the whole change set.
+      //   G44_REPLAN  — a missing plan FILE ended the run for every repo, including the ones whose
+      //                 plans were fine, over the one artifact a re-ask reliably reproduces.
+      const base = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      if (SCENARIO === 'G44_SCOPE' || SCENARIO === 'G44_SCOPE_DEAD') {
+        const canned = { ...base, 'scope:FM-12': null }
+        if (SCENARIO === 'G44_SCOPE') canned['scope-retry:FM-12'] = base['scope:FM-12']
+        else canned['scope-retry:FM-12'] = null
+        const result = await runOnce(ARGS, canned)
+        if (SCENARIO === 'G44_SCOPE') {
+          report('G44_scope_is_retried_not_thrown', SPAWNED.includes('scope-retry:FM-12'))
+          report('G44_run_continues_after_the_retry', SPAWNED.includes('build:FM-12:db'))
+          report('G44_retry_brief_says_stop_investigating', /STOP investigating now/.test(PROMPTS['scope-retry:FM-12'] || ''))
+        } else {
+          report('G44_dead_scope_reports_instead_of_throwing', !!result && result.status === 'scope-unresolved')
+          report('G44_dead_scope_still_writes_a_summary', SPAWNED.includes('summary:FM-12'))
+          report('G44_dead_scope_names_the_decision', /could not be scoped/.test(result?.decision_needed || ''))
+          report('G44_dead_scope_branched_nothing', !SPAWNED.some((l) => l.startsWith('kickoff:') || l.startsWith('build:')))
+        }
+      } else if (SCENARIO === 'G44_PR') {
+        const result = await runOnce(ARGS, { ...base, 'open-pr:FM-12:db': null, 'open-pr-retry:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 } })
+        report('G44_open_pr_is_retried', SPAWNED.includes('open-pr-retry:FM-12:db'))
+        report('G44_repo_recovers_to_review', SPAWNED.some((l) => l.startsWith('review:FM-12:db')))
+        report('G44_run_is_not_pr_unresolved', !!result && result.status !== 'repo-unresolved')
+        report('G44_retry_brief_forbids_a_compound_writer', /run BARE/.test(PROMPTS['open-pr-retry:FM-12:db'] || ''))
+      } else {
+        const guardMissing = { repos: [{ repo: 'db', ok: [], relocated: [], missing: ['agent_logs/development-planner/FM-12-db-plan.md'] }] }
+        const canned = { ...base, 'plan-guard:FM-12': guardMissing }
+        if (SCENARIO === 'G44_REPLAN') canned['replan:FM-12:db'] = REPO_PLAN('db', 'develop')
+        else canned['replan:FM-12:db'] = null
+        const result = await runOnce(ARGS, canned)
+        if (SCENARIO === 'G44_REPLAN') {
+          report('G44_missing_plan_is_rewritten', SPAWNED.includes('replan:FM-12:db'))
+          report('G44_run_proceeds_to_build', SPAWNED.includes('build:FM-12:db'))
+          report('G44_replan_writes_no_code_and_no_branch', /Do NOT create or switch a branch/.test(PROMPTS['replan:FM-12:db'] || ''))
+        } else {
+          report('G44_unrecovered_plan_still_stops', !!result && result.status === 'plan-missing')
+          report('G44_but_only_after_trying', SPAWNED.includes('replan:FM-12:db'))
+        }
+      }
+    } else if (SCENARIO.startsWith('G43')) {
+      // ADR 0032 — a `partial` handoff is the most continuable condition in the run, and it used to
+      // end the repo on attempt one. `partial` means "some slices landed, work OF MY OWN remains":
+      // the next invocation then paid for Scope, Kickoff and a resume to stand where this one already
+      // was. Four shapes: it finishes on continuation (G43), it never finishes and the BOUND is what
+      // stops it (G43_EXHAUST), an unmoved pass escalates the brief (G43_STALL), and an evidenced
+      // cannot_fix ends the passes early rather than burning the budget to reach the same answer
+      // (G43_DECLINE).
+      const PARTIAL = (n) => ({ work_branch: 'feature/FM-12', summary: `slice ${n} landed`, status: 'partial', remaining: SCENARIO === 'G43_STALL' ? 'the same thing, unchanged' : `slices ${n + 1}-11 remain`, root_cause: 'db/src/x.ts:9 needs the new column', commands_run: [{ command: 'cargo test', exit_code: 1 }] })
+      const DONE = { work_branch: 'feature/FM-12', summary: 'all slices landed', status: 'complete', fixed: ['db/src/x.ts'] }
+      const DECLINE = { work_branch: 'feature/FM-12', summary: 'cannot proceed', status: 'blocked', remaining: 'the vendor API is not in this environment', cannot_fix: [{ kind: 'environment', reason: 'the vendor sandbox is absent from this environment', evidence: 'curl -sS https://vendor.local/health -> exit 7 (could not connect)', tried: 'harness restart, docker compose up, fixture seed, VPN check' }] }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': SCENARIO === 'G43_DECLINE' ? { ...PARTIAL(1), status: 'blocked' } : PARTIAL(1),
+        'build-continue:FM-12:db#1': SCENARIO === 'G43' ? DONE : SCENARIO === 'G43_DECLINE' ? DECLINE : PARTIAL(2),
+        'build-continue:FM-12:db#2': PARTIAL(3),
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      const conts = SPAWNED.filter((l) => l.startsWith('build-continue:FM-12:db'))
+      if (SCENARIO === 'G43') {
+        report('G43_partial_is_continued_not_stopped', conts.length === 1)
+        report('G43_repo_reaches_ready', !!result && result.status !== 'repo-unresolved')
+        report('G43_pr_opened_after_the_continuation', SPAWNED.includes('open-pr:FM-12:db'))
+        const p = PROMPTS['build-continue:FM-12:db#1'] || ''
+        report('G43_brief_carries_what_remains', p.includes('slices 2-11 remain'))
+        report('G43_brief_forbids_a_restart', /it is not a restart/.test(p) && /What is already committed is DONE/.test(p))
+      } else if (SCENARIO === 'G43_EXHAUST') {
+        report('G43_bound_is_what_stops_it', conts.length === 2)
+        report('G43_no_pass_past_the_bound', !SPAWNED.includes('build-continue:FM-12:db#3'))
+        report('G43_repo_still_not_ready', !!result && result.status === 'repo-unresolved')
+        report('G43_record_says_the_bound_stopped_it', JSON.stringify(result?.handoffs || result?.repoResults || {}).includes('continuation pass(es) ran and could not finish it'))
+        report('G43_no_pr_on_an_unfinished_build', !SPAWNED.includes('open-pr:FM-12:db'))
+      } else if (SCENARIO === 'G43_STALL') {
+        report('G43_stall_escalates_the_brief', /YOUR LAST PASS MOVED NOTHING/.test(PROMPTS['build-continue:FM-12:db#2'] || ''))
+        report('G43_first_pass_is_not_accused_of_stalling', !/YOUR LAST PASS MOVED NOTHING/.test(PROMPTS['build-continue:FM-12:db#1'] || ''))
+      } else {
+        report('G43_evidenced_decline_ends_the_passes', conts.length === 1)
+        report('G43_decline_does_not_burn_the_budget', !SPAWNED.includes('build-continue:FM-12:db#2'))
+        report('G43_blocked_brief_rules_out_the_cheap_classes', /YOU REPORTED BLOCKED/.test(PROMPTS['build-continue:FM-12:db#1'] || ''))
+        report('G43_decline_reaches_the_handoff', JSON.stringify(result?.handoffs || result?.repoResults || {}).includes('declined this with evidence'))
+      }
+    } else if (SCENARIO === 'G42_FP') {
+      // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
+      // THIS run's fp, so the assertion run needs the value this one logs.
+      await runOnce(ARGS, {
+        ...BASE,
+        'resolve-runtime-config': { language: 'en', plan_to_html: false, auto_approve: false, artifacts_enabled: false },
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }], test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:e2e': REPO_PLAN('e2e', 'main'),
+      })
+      const fpLine = LINES.find((l) => /fp=([0-9a-f]+)/.test(l))
+      const fp = fpLine ? fpLine.match(/fp=([0-9a-f]+)/)[1] : null
+      report('G42_FP_fingerprint_logged', !!fp)
+      if (fp) console.log(`FP=${fp}`)
+      // The row must be TOLD to carry the pins, or there is nothing to read back on the resume.
+      report('G42_planned_row_records_the_pins', /"submodule_pins":/.test(PROMPTS['kickoff:FM-12:e2e'] || ''))
+    } else if (SCENARIO === 'G42') {
+      // A RESUMED invocation reuses each plan from its `planned` run-state row instead of re-planning.
+      // `submodule_pins` lives only on a live planner result, so the rehydrated plan dropped it and
+      // the whole wave ordering silently stopped firing from run 2 onward — the mechanism working
+      // exactly once per ticket, on the run least likely to need it. The row carries it now.
+      const scope42 = { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+        repos: [{ repo: 'db' }, { repo: 'e2e', depends_on: ['db'] }], test_suite: { needed: true }, tracker_reachable: true }
+      const plannedRow = (repo, pins) => runStateRow(repo, 'planned', {
+        ticket_fp: FP, plan_path: `/tmp/ws/${repo}/plan.md`, plan_bytes: 4096, title: 'T', acceptance: ['A1'],
+        ...(pins ? { submodule_pins: pins } : {}),
+      })
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [plannedRow('db'), plannedRow('e2e', [{ repo: 'db', path: 'vendor/db' }])] },
+        'scope:FM-12': scope42,
+        'plan-guard:FM-12': planGuardOk(['db', 'e2e']),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/1', pr_number: 1 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/2', pr_number: 2 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'posted' },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      report('G42_no_planner_respawned', !SPAWNED.some((l) => l.startsWith('kickoff:')))
+      report('G42_pin_survives_the_resume', SPAWNED.indexOf('build:FM-12:db') < SPAWNED.indexOf('build:FM-12:e2e'))
+      report('G42_pin_targets_the_pushed_branch', (PROMPTS['build:FM-12:e2e'] || '').includes('PUSHED earlier in this run'))
+      report('G42_upstream_still_told_to_push', /PUSH BEFORE YOU HAND OFF/.test(PROMPTS['build:FM-12:db'] || ''))
+      report('G42_repin_ship_step_is_emitted', JSON.stringify(result?.shipSteps || []).includes('submodule-repin'))
+    } else if (SCENARIO === 'G41') {
+      // One pin must not serialize an unrelated depends_on chain. db+svc+app is a depends_on chain and
+      // e2e pins db; the merge waves would give three sequential build waves for one real edge. Only
+      // the pin graph orders the build, so this is TWO waves: everything, then e2e.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }, { repo: 'app', depends_on: ['svc'] }, { repo: 'e2e', depends_on: ['app'] }],
+          test_suite: { needed: true }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc', 'app', 'e2e']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'kickoff:FM-12:app': REPO_PLAN('app', 'develop'),
+        'kickoff:FM-12:e2e': { ...REPO_PLAN('e2e', 'main'), submodule_pins: [{ repo: 'db', path: 'vendor/db' }] },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:app': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'build:FM-12:e2e': { work_branch: 'feature/FM-12', summary: 'specs', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/1', pr_number: 1 },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/2', pr_number: 2 },
+        'open-pr:FM-12:app': { pr_url: 'https://x/3', pr_number: 3 },
+        'open-pr:FM-12:e2e': { pr_url: 'https://x/4', pr_number: 4 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'review:FM-12:app#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'guard:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        'perf:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
+        'approve:FM-12': { approved: true },
+        'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
+        'audit:FM-12:e2e': { posted: true, detail: 'posted' },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      // The three code repos share wave 1 despite a full depends_on chain; only the pinned edge waits.
+      const iDb = SPAWNED.indexOf('build:FM-12:db'), iSvc = SPAWNED.indexOf('build:FM-12:svc')
+      const iApp = SPAWNED.indexOf('build:FM-12:app'), iE2e = SPAWNED.indexOf('build:FM-12:e2e')
+      report('G41_depends_on_chain_is_not_serialized', iDb >= 0 && iSvc >= 0 && iApp >= 0 && Math.max(iDb, iSvc, iApp) < iE2e)
+      report('G41_pinned_repo_waits', iE2e > iDb)
+      report('G41_pin_still_targets_the_pushed_branch', (PROMPTS['build:FM-12:e2e'] || '').includes('PUSHED earlier in this run'))
+    } else if (SCENARIO === 'G38') {
+      // The wave ran is NOT the same as the wave pushed. A `build-unresolved` upstream handed back
+      // no complete state, so its branch may hold nothing and may never have reached the remote —
+      // pinning to it aims the pointer at a commit that does not exist, and fails deep inside the
+      // downstream's harness instead of here. It must fall back to the merged base.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': { ...REPO_PLAN('svc', 'develop'), submodule_pins: [{ repo: 'db', path: 'vendor/db' }] },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'stuck', status: 'blocked', remaining: 'liquibase would not run' },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      const svcBuild = PROMPTS['build:FM-12:svc'] || ''
+      report('G38_downstream_still_builds', SPAWNED.includes('build:FM-12:svc'))
+      report('G38_does_not_pin_to_an_unpushed_branch', !svcBuild.includes('PUSHED earlier in this run'))
+      report('G38_falls_back_to_the_merged_base', /db.*→ origin\/develop \(not built this run/.test(svcBuild))
+    } else if (SCENARIO === 'G36' || SCENARIO === 'G37') {
+      // SUBMODULE PIN ORDERING. G36: `svc` vendors `db` at "vendor/db", so db must build (and push)
+      // in an EARLIER wave, and svc's pin target must be db's pushed BRANCH, not db's merged base —
+      // the difference between svc doing its work this round and stalling until the next one.
+      // G37: the same two repos with NO pin declared keep today's single fully-parallel wave, so the
+      // ordering costs nothing on the tickets that do not need it.
+      const pinned = SCENARIO === 'G36'
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc', depends_on: ['db'] }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': { ...REPO_PLAN('svc', 'develop'), ...(pinned ? { submodule_pins: [{ repo: 'db', path: 'vendor/db' }] } : {}) },
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'migration', status: 'complete', fixed: [] },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      await runOnce(ARGS, canned)
+      const svcBuild = PROMPTS['build:FM-12:svc'] || ''
+      const dbBuild = PROMPTS['build:FM-12:db'] || ''
+      if (pinned) {
+        // The upstream's whole build must be finished before the downstream's is even spawned —
+        // "started first" is not enough, the commit has to be on the remote.
+        report('G36_upstream_builds_before_downstream', SPAWNED.indexOf('build:FM-12:db') < SPAWNED.indexOf('build:FM-12:svc'))
+        report('G36_upstream_told_to_push', /PUSH BEFORE YOU HAND OFF/.test(dbBuild) && dbBuild.includes('push -u origin feature/FM-12'))
+        report('G36_pin_targets_the_pushed_branch', svcBuild.includes('origin/feature/FM-12') && svcBuild.includes('PUSHED earlier in this run'))
+        report('G36_pin_not_capped_at_the_merged_base', !/db → origin\/develop \(not built this run/.test(svcBuild))
+        report('G36_pin_names_the_real_submodule_path', svcBuild.includes('db (at "vendor/db")'))
+        report('G36_downstream_not_told_to_push_for_a_pin', !/PUSH BEFORE YOU HAND OFF/.test(svcBuild))
+        report('G36_reviewer_told_the_unmerged_pin_is_intended', /SUBMODULE PIN, already decided/.test(PROMPTS['review:FM-12:svc#1'] || ''))
+      } else {
+        report('G37_no_pin_no_push_obligation', !/PUSH BEFORE YOU HAND OFF/.test(dbBuild))
+        report('G37_pin_stays_capped_at_the_merged_base', /db.*→ origin\/develop \(not built this run/.test(svcBuild))
+        report('G37_reviewer_gets_no_pin_note', !/SUBMODULE PIN, already decided/.test(PROMPTS['review:FM-12:svc#1'] || ''))
+      }
+    } else if (SCENARIO === 'G32' || SCENARIO === 'G33') {
+      // ALREADY-SATISFIED — a repo whose criteria are met by code that shipped before this ticket.
+      // G32: the verifier upholds it, so `db` leaves the run with no branch, no PR/MR and nothing to
+      // merge, while `svc` proceeds normally — the run must NOT stop, and must NOT try to open a PR
+      // or review the repo that has no diff. G33: the same handoff, refused by the verifier, must
+      // land back on the old road — 'partial', which stops the repo.
+      const CITED = [
+        { criterion: 'A1: the warning renders for a flagged provider', commit: 'a1b2c3d', path_line: 'db/src/warn.ts:42', quote: 'if (provider.timeout_ban_warning) return <Warning/>  // generic, flag-driven' },
+      ]
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }, { repo: 'svc' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db', 'svc']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'kickoff:FM-12:svc': REPO_PLAN('svc', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: CITED },
+        'build:FM-12:svc': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
+        'verify-satisfied:FM-12:db': { upheld: SCENARIO === 'G32', reason: SCENARIO === 'G32' ? 'all four checks hold' : 'A2 is uncited and the generic path does not cover it — db/src/route.ts', checked: ['git show a1b2c3d'] },
+        'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
+        'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12': { approved: true },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      if (SCENARIO === 'G32') {
+        report('G32_verifier_adjudicated_the_claim', SPAWNED.includes('verify-satisfied:FM-12:db'))
+        report('G32_no_pr_opened_for_the_satisfied_repo', !SPAWNED.includes('open-pr:FM-12:db'))
+        report('G32_no_review_for_the_satisfied_repo', !SPAWNED.some((l) => l.startsWith('review:FM-12:db')))
+        report('G32_run_does_not_stop', !!result && result.status !== 'repo-unresolved' && result.status !== 'nothing-delivered')
+        report('G32_other_repo_proceeds', SPAWNED.includes('open-pr:FM-12:svc'))
+        // The verifier is told the one thing that broke this before: an empty branch is the
+        // EXPECTED shape here, so commit count must not be the test.
+        report('G32_brief_forbids_the_commit_count_test', /DO NOT REJECT ON COMMIT COUNT/.test(PROMPTS['verify-satisfied:FM-12:db'] || ''))
+        report('G32_brief_demands_full_coverage', /THE LIST IS COMPLETE/.test(PROMPTS['verify-satisfied:FM-12:db'] || ''))
+      } else {
+        report('G33_rejected_claim_stops_the_repo', !!result && result.status === 'repo-unresolved')
+        report('G33_still_no_pr_for_it', !SPAWNED.includes('open-pr:FM-12:db'))
+        report('G33_reason_reaches_the_handoff', JSON.stringify(result?.handoffs || result || '').includes('downgraded to'))
+      }
+    } else if (SCENARIO === 'G34' || SCENARIO === 'G35') {
+      // G34 — EVERY scoped repo already satisfied. That is a clean ending of its own: the ticket was
+      // done before the run started. It must NOT be reported as `nothing-delivered` (ADR 0011),
+      // which is the opposite finding, and it must not fall through to a merge phase with no repos.
+      // G35 — the structural bar, before any agent is paid for: a claim with no usable citation is
+      // refused outright, and the verifier is never spawned.
+      const GOOD = [{ criterion: 'A1', commit: 'a1b2c3d', path_line: 'db/src/warn.ts:42', quote: 'if (provider.timeout_ban_warning) return <Warning/>' }]
+      const JUNK = [{ criterion: 'A1', commit: 'the last release', path_line: 'somewhere in the UI', quote: 'it works' }]
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'nothing to do', status: 'already-satisfied', satisfied_by: SCENARIO === 'G34' ? GOOD : JUNK },
+        'verify-satisfied:FM-12:db': { upheld: true, reason: 'holds', checked: [] },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      const result = await runOnce(ARGS, canned)
+      if (SCENARIO === 'G34') {
+        report('G34_its_own_ending', !!result && result.status === 'already-satisfied')
+        report('G34_not_reported_as_nothing_delivered', !!result && result.status !== 'nothing-delivered')
+        report('G34_carries_the_citations_out', JSON.stringify(result?.satisfied || []).includes('a1b2c3d'))
+        report('G34_names_the_decision', /Close the ticket/.test(result?.decision_needed || ''))
+        report('G34_nothing_merged_or_opened', !SPAWNED.some((l) => l.startsWith('open-pr:') || l.startsWith('approve:')))
+      } else {
+        report('G35_unusable_citation_costs_no_verifier', !SPAWNED.includes('verify-satisfied:FM-12:db'))
+        report('G35_repo_stops', !!result && result.status === 'repo-unresolved')
+      }
     } else if (SCENARIO === 'G31') {
       // ADR-0029 — the SIBLINGS of the near-miss. Removing the abort `return` promoted every return
       // below it into a new reachable state, and those were written when "a repo was not ready"
@@ -1655,6 +2068,62 @@ out="$(FIXTURE_TS_MAX_REPAIR=1 run_scenario G30)"; [[ "$VERBOSE" -eq 1 ]] && pri
 
 echo "── G31 — a return newly reachable past the abort point still carries the records out"
 out="$(FIXTURE_TS_MAX_REPAIR=1 FIXTURE_TOKEN_BUDGET=1000000 run_scenario G31)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G39 — a satisfied repo is finished: not a blocker, and never an escalation target"
+out="$(run_scenario G39)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G39B — …and an escalation aimed at it is refused and recorded, never routed"
+out="$(run_scenario G39B)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G40 — no code candidate means the requested gate does not run and is not reported as a pass"
+out="$(run_scenario G40)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G44 — the last non-budget stops: scope, open-PR and a missing plan all get one re-ask"
+for s in G44_SCOPE G44_SCOPE_DEAD G44_PR G44_REPLAN G44_REPLAN_DEAD; do
+  out="$(run_scenario $s)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+done
+
+echo "── G43 — a partial build is CONTINUED to a finish, not stopped at attempt one"
+out="$(run_scenario G43)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G43_EXHAUST — and when it never finishes, the BOUND is what stops it, recorded"
+out="$(run_scenario G43_EXHAUST)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G43_STALL — a pass that moved nothing escalates the brief instead of repeating it"
+out="$(run_scenario G43_STALL)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G43_DECLINE — an evidenced cannot_fix ends the passes rather than burning the budget"
+out="$(run_scenario G43_DECLINE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G42 — the pin survives a resume, and the required re-pin ships even with auto-merge off"
+outFp42="$(run_scenario G42_FP)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outFp42" | sed 's/^/      /'; ingest "$outFp42"
+FP42="$(grep -o 'FP=[0-9a-f]\+' <<<"$outFp42" | head -1 | cut -d= -f2)"
+if [[ -n "$FP42" ]]; then pass "G42_fingerprint_scraped (fp=$FP42)"; else fail "G42_fingerprint_scraped — could not scrape fp= from the probe run"; fi
+out="$(FP="$FP42" run_scenario G42)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G41 — one pin orders one edge, not a whole depends_on chain"
+out="$(run_scenario G41)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G38 — a wave that RAN is not a wave that pushed: an unresolved upstream keeps the safe pin"
+out="$(run_scenario G38)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G36 — a submodule-pinned upstream builds and pushes first; the downstream pins to that tip"
+out="$(run_scenario G36)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G37 — and with no pin declared, the build stays one fully-parallel wave"
+out="$(run_scenario G37)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G32 — a verified already-satisfied repo leaves the run; the rest of the change set proceeds"
+out="$(run_scenario G32)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G33 — and a refused claim lands back on 'partial', which stops the repo"
+out="$(run_scenario G33)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G34 — every repo already satisfied is its own ending, not 'nothing delivered'"
+out="$(run_scenario G34)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G35 — an unusable citation is refused before a verifier is ever paid for"
+out="$(run_scenario G35)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G17 — each invocation keeps its own summary, and the budget unit is stated honestly"
 out="$(run_scenario G17)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
