@@ -319,7 +319,8 @@ def issue_details_text($base):
         {k: "Priority", v: ($i.fields.priority.name // "")},
         {k: "Assignee", v: ($i.fields.assignee.displayName // "")},
         {k: "Parent",   v: ($i.fields.parent.key // "")},
-        {k: "Labels",   v: (($i.fields.labels // []) | join(", "))} ]
+        {k: "Labels",   v: (($i.fields.labels // []) | join(", "))},
+        {k: "Fix Version", v: (($i.fields.fixVersions // []) | map(.name) | join(", "))} ]
       | map(select(.v != null and .v != "")) ) as $rows
   | ($rows | map(.k | length) | max // 0) as $w
   | ($i.fields.description | adf_to_text) as $desc
