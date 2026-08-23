@@ -127,7 +127,7 @@ const REVIEW = {   // from workspace.config.yaml review.*; the review loop's bou
   maxEscalationAttempts: 3,// cross-repo fix + scoped re-gate, per (repo, finding)
 }
 const BUILD = {   // from workspace.config.yaml build.*; the build phase's own bound (docs/adr/0032)
-  maxContinuationPasses: 3,    // a `partial`/`blocked` handoff is CONTINUED this many times before it is RECORDED
+  maxContinuationPasses: 3,  // a `partial`/`blocked` handoff is CONTINUED this many times before it is RECORDED
 }
 const DEV_CYCLE = {   // from workspace.config.yaml dev_cycle.*; the run's own spend ceiling
   tokenBudget: 6000000,        // budget.spent() above this at a phase boundary ⇒ graceful stop (status 'budget-stopped'), fully resumable
@@ -262,7 +262,7 @@ const REPOS = {
   },
   'game': {
     path: 'game', kind: 'package',
-    base: { feature: 'develop', fix: 'main' },
+    base: { feature: 'main', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
     green: 'unit tests and integration passed successfully',

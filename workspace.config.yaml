@@ -160,6 +160,9 @@ test_suite:
   max_fix_rounds: 3
   max_suite_repair_attempts: 3
 
+build:
+  max_continuation_passes: 3
+
 dev_cycle:
   token_budget: 6000000
 
@@ -269,6 +272,8 @@ products:
         lang: rust
         green: "unit tests and integration passed successfully"
         guardian_focus: "secrets, data-protection"
+        feature_base: main
+        fix_base: main
 
       - url: git@gitlab.com:bluepicode/ofb/cashback-batch.git
         kind: backend
