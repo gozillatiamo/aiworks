@@ -768,6 +768,11 @@
       "source": "live-sub/.claude/rules/build-run-test.md"
     },
     {
+      "scopes": [],
+      "sha256": "fcd859a2f676ba2c32330f6f5806d410e68e0a74dcf60490200b7382c614b3ae",
+      "source": "live-sub/.claude/rules/code_reading.md"
+    },
+    {
       "scopes": [
         "live-sub/src/**"
       ],
@@ -796,6 +801,16 @@
       ],
       "sha256": "1c0a41486fb612f00cac8a29ab2d42eef1ec8d364414e653b8dd2ec4fa62f619",
       "source": "live-sub/.claude/rules/database-and-sharding.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "7a8959b9d0d2fdee08a7275d65779f96e0e0697bcf21f0819c951f8c51bbdd0d",
+      "source": "live-sub/.claude/rules/debugging.md"
+    },
+    {
+      "scopes": [],
+      "sha256": "48243a34c0940cf8af5925713ef9be433f7dd1b50fed80307b1709a415e97a53",
+      "source": "live-sub/.claude/rules/implementation.md"
     },
     {
       "scopes": [
