@@ -191,6 +191,74 @@ out="$(NOTION_TOKEN=x NOTION_DB_ID=y TRACKER_PROVIDER=notion \
         bash "$TDIR/upsert-ticket-comment.sh" APP-1 "some text" 2>&1)"
 has "…and --marker is mandatory"               "--marker is required"        "$out"
 
+# ── section-scoped records ─────────────────────────────────────────────────────────
+# ONE record co-written by several repos. The splice is what keeps a parallel sibling's block
+# alive: a writer that rewrote the whole body would drop every section it did not author, which
+# is the same duplicate-record failure wearing different clothes.
+sec() { NOTION_TOKEN=x NOTION_DB_ID=y TRACKER_PROVIDER=notion bash -c '. "$1"/lib.sh; shift; "$@"' _ "$TDIR" "$@"; }
+REC='**[dev · APP-1]**
+
+### repo-a
+#### Status
+branch feature/APP-1 · MR repo-a!1
+
+### repo-b
+#### Status
+branch feature/APP-1 · MR repo-b!2'
+
+echo "── sections"
+out="$(sec tracker_section_extract "$REC" '### repo-a')"
+has  "extract returns its own block"                 "MR repo-a!1" "$out"
+hasnt "…and not the sibling's"                       "repo-b!2"    "$out"
+is   "an absent heading extracts to nothing"    ""  "$(sec tracker_section_extract "$REC" '### repo-c')"
+
+out="$(sec tracker_section_splice "$REC" '### repo-a' '### repo-a
+#### Status
+branch feature/APP-1 · MR repo-a!9')"
+has  "splice rewrites the writer's own block"        "repo-a!9"    "$out"
+hasnt "…dropping its previous content"               "repo-a!1"    "$out"
+has  "…and leaves a parallel sibling untouched"      "repo-b!2"    "$out"
+has  "…and keeps the marker line"                    "[dev · APP-1]" "$out"
+
+out="$(sec tracker_section_splice "$REC" '### repo-c' '### repo-c
+#### Status
+new')"
+has  "a heading not there yet is appended"           "### repo-c"  "$out"
+has  "…without disturbing what was there"            "repo-a!1"    "$out"
+
+out="$(NOTION_TOKEN=x NOTION_DB_ID=y TRACKER_PROVIDER=notion \
+        bash "$TDIR/upsert-ticket-comment.sh" APP-1 --marker "$MARKER" --section '### repo-a' '### repo-b
+wrong block' 2>&1)"
+has "a body under the wrong heading is refused" "must start with its own heading" "$out"
+
+# The co-write itself, end to end through the wrapper: a stub provider stands in for the tracker,
+# so find → splice → write is the REAL code path. Two repos, one record, neither aware of the other.
+mkdir -p "$TDIR/stub"
+cat > "$TDIR/stub/impl.sh" <<'IMPL'
+tracker_require_config() { :; }
+tracker_find_comment()  { [[ -s "$STUB_REC" ]] || return 0; printf 'c-1\n'; cat "$STUB_REC"; }
+tracker_edit_comment()  { printf '%s' "$4" > "$STUB_REC"; echo "Updated comment $2"; }
+tracker_add_comment()   { printf '%s' "$3" > "$STUB_REC"; echo "Added comment c-1"; }
+IMPL
+STUB_REC="$TMP/record.md"; : > "$STUB_REC"
+write_section() { # write_section <heading> <status-line>
+  STUB_REC="$STUB_REC" TRACKER_PROVIDER=stub bash "$TDIR/upsert-ticket-comment.sh" APP-1 \
+    --marker '[dev · APP-1]' --section "$1" "$1
+#### Status
+$2" 2>&1
+}
+write_section '### repo-a' 'MR repo-a!1' >/dev/null
+has  "a fresh record gets the marker line written for it" "[dev · APP-1]" "$(cat "$STUB_REC")"
+has  "…and the first repo's section"                      "MR repo-a!1"   "$(cat "$STUB_REC")"
+write_section '### repo-b' 'MR repo-b!2' >/dev/null
+has  "a second repo appends its own section"              "MR repo-b!2"   "$(cat "$STUB_REC")"
+has  "…without touching the first repo's"                 "MR repo-a!1"   "$(cat "$STUB_REC")"
+is   "…and it is still ONE record"  "1" "$(grep -c 'dev · APP-1' "$STUB_REC")"
+write_section '### repo-a' 'MR repo-a!7' >/dev/null
+has  "a re-run rewrites only its own section"             "MR repo-a!7"   "$(cat "$STUB_REC")"
+hasnt "…dropping what it said before"                     "MR repo-a!1"   "$(cat "$STUB_REC")"
+has  "…and the sibling survives the rewrite"              "MR repo-b!2"   "$(cat "$STUB_REC")"
+
 echo
 if [[ "$fail" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$pass" "$fail" "$c_off"; exit 1; fi
 printf '%s%d passed%s\n' "$c_ok" "$pass" "$c_off"

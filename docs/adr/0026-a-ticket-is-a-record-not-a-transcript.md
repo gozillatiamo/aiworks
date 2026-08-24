@@ -37,8 +37,7 @@ writer bug was still live.
 
 | Marker | Owner | Contents |
 |---|---|---|
-| `[dev-status · <repo>]` | build role | the work branch, the PR/MR, one line per deferred criterion and its owner |
-| `[regression · <repo>]` | build role | the regression scope only the author of the change can know |
+| `[dev · <KEY>]` | build role | one `### <repo>` **section** per repo: `#### Status` (work branch, PR/MR, deferred criteria + owner), `#### Regression` (the scope only the author of the change can know), `#### History` |
 | `[qa-plan · <repo>]` | QA planner | the BDD plan, current revision, plus a revision ledger |
 | `[test-report · <repo>]` | `/report-test-results` | the run's verdict, with its own evidence |
 | `[plans · <KEY>]` | main session | plan Artifact links, ticket-wide |
@@ -89,6 +88,14 @@ cannot find is not a missing convenience; it is a gate that cannot pass.
   omits its own marker: such a record is invisible to the next run, which then posts a second one.
 - It is a WRITER — run it bare. No pipe, no `&&`, no `$( )`, no heredoc, or the allow rules match
   nothing and the call is denied silently.
+- **A record several agents co-write is SPLICED, not rewritten** (amended 2026-08-24). The build
+  role used to own two markers per repo, so a four-repo ticket carried eight comments for what is
+  one story per repo. It is now one ticket-wide `[dev · <KEY>]` record with a `### <repo>` section
+  each, written with `upsert-ticket-comment.sh --section '### <repo>'`: the section body starts with
+  its own heading, carries no marker (the script writes it), and replaces only that block. The repos
+  build in **parallel**, so this is not a convenience — a writer rewriting the whole body would drop
+  every sibling's section, and the splice runs under a ticket+marker lock so two concurrent writers
+  cannot lose each other's block. Read one back with `find-ticket-comment.sh … --section '### <repo>'`.
 - `add-ticket-comment.sh` remains correct for a genuine **one-off**: an "already implemented"
   short-circuit, a note that this ticket duplicates another, a link to a filed improvement. The test
   is whether a later run would ever write it again.
