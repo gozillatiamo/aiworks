@@ -26,14 +26,14 @@ Turn a ticket into a test plan a real end user could follow. **Plan only — nev
 - Resolve it: `$ticket` (a key, e.g. `FM-9` / `APP-123`) given → use it. Already in context (e.g. an agent passed the ticket) → reuse it, don't re-fetch. Neither → ask the user for the key.
 - Read the ticket with the tracker adapter (run from the workspace root — they print plain text to stdout and accept a full key, a bare number, a page id, or a tracker URL):
   - `scripts/tracker/get-ticket-details.sh <KEY>` — title, properties (Status, Priority, …), and the body / **acceptance criteria**.
-  - `scripts/tracker/get-ticket-comments.sh <KEY>` — the ticket's comments (where the regression request lives). Add `--deep` to also pull inline/block-anchored comments (Notion) if you suspect one's hiding there.
+  - `scripts/tracker/get-ticket-comments.sh <KEY>` — the ticket's comments (where the dev record lives). Add `--deep` to also pull inline/block-anchored comments (Notion) if you suspect one's hiding there.
   - They need `scripts/tracker/.env` configured for the active `TRACKER_PROVIDER`, plus `curl` + `jq`. If a script errors (missing creds, ticket not found), surface that and stop — don't plan from a half-read ticket.
 - Requirements come from the **ticket only** — do not read `docs/` or product-plan files. If the ticket is ambiguous or wrong, that is itself a finding — note it in the plan.
-- Find the developer's **regression record** — one durable record per repo, marked `[regression · <repo>]` (`docs/adr/0026`). Read it directly rather than scanning the whole comment stream for it:
+- Find the developer's **regression scope** — it lives in the ticket's ONE `[dev · <KEY>]` record (`docs/adr/0026`), under `### <repo>` → `#### Regression`. Read that section directly rather than scanning the whole comment stream for it:
   ```sh
-  scripts/tracker/find-ticket-comment.sh <KEY> --marker '[regression · <repo>]'
+  scripts/tracker/find-ticket-comment.sh <KEY> --marker '[dev · <KEY>]' --section '### <repo>' | sed -n '/^#### Regression/,/^#### /p'
   ```
-  A multi-repo ticket carries one per repo — read every repo whose code changed. It is the **sole** source of regression scope — never invent regressions. If the dev changed behavior but left no request, note that gap; don't guess at it. (Heads-up: by default the reader pulls the main comment stream where the regression request normally lives; `--deep` also pulls inline/block-anchored comments on providers that have them. Some trackers don't expose **resolved** threads, so a request buried in one may not show up.)
+  (a reader, so it may be piped — unlike the tracker writers). A multi-repo ticket carries one section per repo — read every repo whose code changed. It is the **sole** source of regression scope — never invent regressions. If the dev changed behavior but left no request, note that gap; don't guess at it. (Heads-up: by default the reader pulls the main comment stream where the regression request normally lives; `--deep` also pulls inline/block-anchored comments on providers that have them. Some trackers don't expose **resolved** threads, so a request buried in one may not show up.)
 
 **b. Read the Figma design — only if the ticket links one.**
 
@@ -59,9 +59,9 @@ If the ticket introduces **no user-observable behavior worth verifying** — a c
 
 ## 4. Regression checks (only if requested)
 
-Pull regression scope **only** from the developer's `[regression · <repo>]` record(s). For each existing feature listed, add **one concise bullet at the very bottom**: the feature + the expectation that it still works. Keep them a tight conclusion list, not full scenarios.
+Pull regression scope **only** from the `#### Regression` block of each repo's section in the developer's `[dev · <KEY>]` record. For each existing feature listed, add **one concise bullet at the very bottom**: the feature + the expectation that it still works. Keep them a tight conclusion list, not full scenarios.
 
-- No regression record → omit the section.
+- No `#### Regression` block → omit the section.
 - Dev clearly touched shared behavior but filed no request → add a single bullet flagging the gap, rather than inventing scope.
 
 ## 5. Fill the template and write to agent_logs/
@@ -70,7 +70,7 @@ The plan's layout lives in a separate file: **`test-plan-template.md`** (next to
 
 - **Title line** — fill the ticket number and the QA engineer's name (you — e.g. `Peter` when run by qa-planner). Keep `· Status → Testing`.
 - **Scenarios** — one `### TC00N — …` block per case (3–6 total); remove the unused `### TC` placeholders.
-- **Regressions** — keep this block **only** if the dev filed a `[regression · <repo>]` record (one bullet per feature). No request → delete the whole `**Regressions**` block.
+- **Regressions** — keep this block **only** if the dev filed a `#### Regression` block (one bullet per feature). No request → delete the whole `**Regressions**` block.
 - **Nothing to test** — keep only the title line and replace the body with a single `**Nothing to test** — <one-line reason>.` (drop the scenarios and regressions).
 
 Finish by reporting the file path back to whoever invoked the skill.

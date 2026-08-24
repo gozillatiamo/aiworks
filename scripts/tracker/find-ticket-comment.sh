@@ -28,6 +28,9 @@ Options:
   --marker <text>   The identifying text the comment's body contains. Matched against the
                     RENDERED text, so it must be a line a human can see — an HTML comment
                     does not survive the Markdown → tracker → text round trip.
+  --section <h>     Print only the block under heading <h> (e.g. '### web-app') — for a record
+                    several agents co-write, one section each. Nothing when that heading is
+                    absent, exactly as for a missing record.
   --id-only         Print only the comment id.
   -h, --help        Show this help and exit.
 
@@ -41,11 +44,12 @@ for a in "$@"; do case "$a" in -h|--help) usage; exit 0 ;; esac; done
 # shellcheck source=lib.sh
 . "$DIR/lib.sh"
 
-ticket=""; marker=""; id_only=0
+ticket=""; marker=""; section=""; id_only=0
 need() { [[ -n "${1:-}" ]] || die "$2"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --marker)  need "${2:-}" "--marker needs a value"; marker="$2"; shift 2 ;;
+    --section) need "${2:-}" "--section needs a heading, e.g. '### web-app'"; section="$2"; shift 2 ;;
     --id-only) id_only=1; shift ;;
     -*)        die "unknown option: $1   (see -h)" ;;
     *)         ticket="$1"; shift ;;
@@ -57,4 +61,12 @@ done
 
 found="$(tracker_find_comment "$ticket" "$marker")"
 [[ -n "$found" ]] || exit 0
-if [[ "$id_only" -eq 1 ]]; then printf '%s\n' "${found%%$'\n'*}"; else printf '%s\n' "$found"; fi
+if [[ "$id_only" -eq 1 ]]; then printf '%s\n' "${found%%$'\n'*}"; exit 0; fi
+
+if [[ -n "$section" ]]; then
+  block="$(tracker_section_extract "${found#*$'\n'}" "$section")"
+  [[ -n "$block" ]] || exit 0
+  printf '%s\n%s\n' "${found%%$'\n'*}" "$block"
+else
+  printf '%s\n' "$found"
+fi
