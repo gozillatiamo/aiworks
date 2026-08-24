@@ -181,3 +181,38 @@ IMPL="$TRACKER_DIR/$TRACKER_PROVIDER/impl.sh"
 declare -F tracker_add_marked >/dev/null || tracker_add_marked() { tracker_add_comment "$@"; }
 
 tracker_require_config
+
+# ── Section-scoped records ────────────────────────────────────────────────────────────────
+# One durable record can be CO-WRITTEN by several agents: one comment for the whole ticket, one
+# `### <repo>` section inside it per repo. A writer owns the block under its own heading and must
+# leave every other byte alone, so an update is a SPLICE of that block — never a rewrite of the
+# whole body, which is how a parallel sibling's section gets silently dropped.
+#
+# A section runs from its heading line to the next heading at the SAME level or shallower, so a
+# writer is free to use deeper headings (`#### Status`, `#### Regression`) inside its own block.
+# Heading match is exact, ignoring trailing whitespace. Both helpers are pure text.
+
+# tracker_section_extract BODY HEADING — print the section (heading line included), or nothing.
+tracker_section_extract() {
+  printf '%s\n' "$1" | _TS_HEAD="$2" awk '
+    BEGIN { h = ENVIRON["_TS_HEAD"]; sub(/[ \t]+$/, "", h); match(h, /^#+/); lvl = RLENGTH }
+    { line = $0; sub(/[ \t]+$/, "", line) }
+    !inside && line == h { inside = 1; print; next }
+    inside {
+      if (match(line, /^#+ /) && RLENGTH - 1 <= lvl) exit
+      print
+    }'
+}
+
+# tracker_section_splice BODY HEADING SECTION — print BODY with HEADING's block replaced by
+# SECTION, or with SECTION appended when the heading is not there yet.
+tracker_section_splice() {
+  printf '%s\n' "$1" | _TS_HEAD="$2" _TS_SECTION="$3" awk '
+    BEGIN { h = ENVIRON["_TS_HEAD"]; sub(/[ \t]+$/, "", h); match(h, /^#+/); lvl = RLENGTH
+            repl = ENVIRON["_TS_SECTION"] }
+    { line = $0; sub(/[ \t]+$/, "", line) }
+    !spliced && line == h { inside = 1; spliced = 1; print repl; print ""; next }
+    inside { if (match(line, /^#+ /) && RLENGTH - 1 <= lvl) inside = 0; else next }
+    { print }
+    END { if (!spliced) { print ""; print repl } }'
+}

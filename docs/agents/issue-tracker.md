@@ -32,11 +32,18 @@ is an ordinary comment. That is the whole test. Full reasoning:
 
 | Marker | Written by | Contents |
 |---|---|---|
-| `[dev-status · <repo>]` | the build role | work branch, PR/MR, one line per deferred criterion + owner |
-| `[regression · <repo>]` | the build role | the regression scope QA must cover — QA never guesses this |
+| `[dev · <KEY>]` | the build role | ONE ticket-wide record, one `### <repo>` **section** per repo: `#### Status` (work branch, PR/MR, deferred criteria + owner), `#### Regression` (the scope QA must cover — QA never guesses it), `#### History` |
 | `[qa-plan · <repo>]` | the QA planner | the BDD plan (current revision) + a revision ledger |
 | `[test-report · <repo>]` | `/report-test-results` | the run's verdict, screenshots and video |
 | `[plans · <KEY>]` | the main session | plan Artifact links, one line per repo — omitted entirely when artifacts are off |
+
+**One record, several writers — `--section`.** A record co-written by more than one agent (the
+`[dev · <KEY>]` one: a `### <repo>` section per repo) is **spliced**, never rewritten whole. Each
+writer passes `--section '### <repo>'` and a body whose first line is that heading and which carries
+**no** marker — the script writes the marker line. The repos build in PARALLEL, so a writer that
+rewrote the whole body would silently drop every sibling's section; the splice runs under a
+ticket+marker lock, so two concurrent writers cannot lose each other's block. Read one section back
+with `find-ticket-comment.sh <KEY> --marker '[dev · <KEY>]' --section '### <repo>'`.
 
 Rules that make a record work:
 

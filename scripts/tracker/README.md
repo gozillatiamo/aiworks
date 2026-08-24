@@ -15,6 +15,7 @@ print **plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare numb
 | `add-ticket-comment.sh`   | Add a comment (text from an argument or stdin) — Markdown is rendered to the tracker's native style, not posted raw |
 | `find-ticket-comment.sh`  | **Read-only.** Print the id + body of the one comment carrying `--marker <text>`, or nothing |
 | `upsert-ticket-comment.sh`| Add that comment the first time and **update it in place** every run after — one durable comment per marker instead of a growing pile |
+| `… --section '### <repo>'` | Write only that heading's block inside the marked record, leaving every other section byte-identical — one comment co-written by several agents (`find-ticket-comment.sh --section` reads one back) |
 
 The two write scripts accept `--dry-run` to print the request instead of sending it.
 
@@ -73,6 +74,12 @@ that each later run rewrites. The marker has to be a **visible line** in the bod
 format, and read back as text, and an HTML comment does not survive that trip. The script
 refuses a body that omits its own marker, because such a record is invisible to the next run
 and the next run then posts a second one.
+
+**One comment, several writers.** A record more than one agent contributes to — the build role's
+`[dev · <KEY>]`, one `### <repo>` section per repo — is written with `--section '### <repo>'`:
+the body starts with that heading, carries no marker (the script writes it), and only that block is
+replaced. The repos build in parallel, so a writer rewriting the whole body would silently drop
+every sibling's section; the read-modify-write runs under a ticket+marker directory lock.
 
 **Every provider updates in place** — by whichever route its API actually offers. **Jira** and
 **Linear** rewrite the comment body (`commentUpdate` on Linear). **Notion**'s comment API has no
@@ -163,8 +170,10 @@ Requires `bash`, `curl`, and `jq`.
 ./add-ticket-comment.sh    APP-123 < plan.md
 
 # a comment with an IDENTITY — posted once, rewritten by every later run
-./upsert-ticket-comment.sh OFB-2245 --marker '[test-report · ofb-k6-loadtests]' < report.md
-./find-ticket-comment.sh   OFB-2245 --marker '[test-report · ofb-k6-loadtests]' --id-only
+./upsert-ticket-comment.sh APP-123 --marker '[test-report · e2e-suite]' < report.md
+./find-ticket-comment.sh   APP-123 --marker '[test-report · e2e-suite]' --id-only
+./upsert-ticket-comment.sh APP-123 --marker '[dev · APP-123]' --section '### web-app' < section.md
+./find-ticket-comment.sh   APP-123 --marker '[dev · APP-123]' --section '### web-app'
 ./upsert-ticket-details.sh APP-123 --status Done --dry-run   # preview, don't send
 
 # create a QA sub-task under a parent (component validated, Implements link added)

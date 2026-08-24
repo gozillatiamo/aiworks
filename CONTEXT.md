@@ -209,9 +209,10 @@ other reds — being worked. Read in both loops: `suite-unverified`, `regression
 
 **Durable record**:
 One marker-keyed comment per (kind, scope) that a run REWRITES on every later invocation, rather
-than appending another — `[dev-status · <repo>]`, `[regression · <repo>]`, `[qa-plan · <repo>]`,
-`[test-report · <repo>]`, `[plans · <KEY>]`. A ticket carries the current state of the work, not a
-transcript of the runs that produced it.
+than appending another — `[dev · <KEY>]`, `[qa-plan · <repo>]`, `[test-report · <repo>]`,
+`[plans · <KEY>]`. A ticket carries the current state of the work, not a transcript of the runs
+that produced it. A record several agents co-write carries one `### <repo>` **section** each,
+spliced in with `upsert-ticket-comment.sh --section` so a parallel sibling's block survives.
 → [ADR 0026](docs/adr/0026-a-ticket-is-a-record-not-a-transcript.md).
 *Avoid*: status comment, progress update (both describe a transcript entry).
 
