@@ -43,12 +43,24 @@ You are generating a mutation. Establish, before anything else:
 - **The defect**, as an established verdict with a receipt behind it — not a reported symptom. A
   repair generated from "the player says the balance is wrong" repairs a guess. If the verdict is
   not established, this is the wrong skill: investigate first, then come back.
+
+  **The fast lane.** Some defects are a *shape the organization already recognises*, and for those
+  the discovery query IS the receipt — its filter is the verdict, written down and reviewed once
+  instead of re-argued per case. When the organization's guideline names such a shape and the ask
+  matches it, run that query and go straight to Step 4. This is the difference between answering
+  in two steps and answering in ten, and it is why the guideline names them.
+
+  It is a fast lane, not a bypass: the query's own scope is now the claim you are making, so state
+  the range it covered, and take the long road the moment the ask drifts off the named shape — a
+  different symptom, an unbounded "how far back", or anyone disputing the money.
+
 - **The entity set** — every record the repair will touch, found by scoping to the *entity* and
   reading its own history. **The date a human noticed is never the bound.** Widen until the far
   edge comes back empty; a query still returning hits at its boundary is a truncation.
 
-**Done when:** the defect has a receipt, and the entity set was widened until its far edge
-returned nothing.
+**Done when:** the defect has a receipt — a named fast-lane query counts as one — and the entity
+set is bounded by something you can state: a widened history whose far edge came back empty, or
+the fast lane's own scope, named as such.
 
 ## Step 2 — Load the organization's ladder
 
@@ -85,6 +97,11 @@ equivalent when one is declared for the shape.
   records were written in.
 - **One artifact covers the whole entity set.** A repair split across a dozen hand-run commands is
   where a record gets missed.
+- **Repair only what is actually broken.** Within each target, act on the records still in the bad
+  state and leave the rest out of the payload entirely. A blanket rewrite re-applies the repair to
+  something already correct — a second defect, usually the irreversible kind — and a
+  correct record riding along in a batch is what makes the batch abort on it. When a target turns
+  out to have nothing left to repair, skip it and say why; do not send an empty repair.
 - **A target the generator could not cover stays visible in the artifact** — a comment, a skipped
   list, a count in its summary. Never silently dropped; each one is a candidate for the next rung
   down.
