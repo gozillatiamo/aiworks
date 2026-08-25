@@ -9,6 +9,8 @@ skills:
   - ticket-kickoff
   - write-interactive-docs
   - diagram-ticket
+  # Read-only deployed logs/traces — ground a fix plan when source alone cannot explain runtime behavior.
+  - telemetry-triage
 tools:
   - Read
   - Grep
@@ -46,6 +48,7 @@ tools:
   # codegraph + reading can't reveal HOW execution reaches the buggy state. Investigate, never fix.
   - Bash(dap *)
   - Bash(*scripts/tracker/*)
+  - Bash(*scripts/observability/*)
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context

@@ -84,5 +84,5 @@ Return the kickoff summary **plus** the plan file path and a condensed plan (goa
 
 ## Required startup skills
 
-Before doing role work, load and follow these projected skills: `caveman`, `ticket-kickoff`, `write-interactive-docs`, `diagram-ticket`. Missing or unreadable skill content is a hard failure.
+Before doing role work, load and follow these projected skills: `caveman`, `ticket-kickoff`, `write-interactive-docs`, `diagram-ticket`, `telemetry-triage`. Missing or unreadable skill content is a hard failure.
 '''
