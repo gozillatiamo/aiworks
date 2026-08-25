@@ -97,7 +97,38 @@ Some data bugs only reproduce against the *actual* offending prod rows (a fixed-
    - **🛑 MUST DO — prove it runs first.** QA tests the running app/service, not your branch; a stale or unverified artifact stalls the gate (a stale build handed to QA burns whole review rounds on a "bug" that was never in your code). Before `Status → Ready to test`: confirm current HEAD is green (`scripts/dev.sh analyze` + `scripts/dev.sh test`) and actually launches via `scripts/dev.sh run`, and record in the `/handoff` the SHA + exactly how to run it (command, port/URL, any seed/migration/env steps). If it genuinely can't run in this environment (e.g. missing external dep), say so explicitly — never leave QA a missing or stale artifact.
    - **Leave nothing behind.** Run `git status --porcelain` — the working tree must be clean. (`agent_logs/` is git-ignored, so plans/logs never appear here.) Commit or remove any stray artifact (no scratch files, no uncommitted generated/build output).
    - Invoke **`/handoff`** (OS temp dir) describing what was built, how to run it, acceptance criteria covered, and which tests exist. Suggested next agent: `qa-planner` (authors the BDD test plan; `qa-runner` then executes it).
-   - **Request regression testing — you own the scope.** You changed the code, so **you** are the one who knows what it could affect — QA does **not** guess this for you. **Always** post a **concise** "⚠️ Regression request" on the ticket via `scripts/tracker/add-ticket-comment.sh <KEY> "…"` telling QA exactly which existing features to regression-test: a bullet list (shared components/modules, touched `core/`-or-shared code, repository/API-contract or DB-migration changes, altered routing/state…) + one line on *why* each. No prose. If genuinely nothing existing is touched, comment "No regression needed — <one-line reason>". **This comment is the sole source of QA's regression scope** — without it QA runs no regression and will ping you for one.
+   - **Write your ONE dev record — status + regression scope in a single comment, and nothing
+     else.** The ticket carries exactly one `**[dev · <KEY>]**` record for the whole ticket, with
+     one `### <this repo>` section per repo inside it (`docs/adr/0026`). You own your section and
+     only your section: `--section` splices your block in and leaves every sibling repo's block
+     byte-identical, so never rewrite the record without it.
+     ```sh
+     # /tmp/<KEY>-dev.md — the body starts with your section heading, and carries NO marker line
+     # (the script writes that). Deeper headings inside your block are yours to use.
+     scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[dev · <KEY>]" --section "### <this repo>" < /tmp/<KEY>-dev.md
+     ```
+     Your section, in this order and nothing more:
+     - `#### Status` — one line naming the work branch and the PR/MR, then one line per `deferred`
+       acceptance criterion with its owner. That is all. **No "dev done", no "build finished", no
+       commit list, no summary of what you implemented** — the PR/MR is the code story, and a
+       comment restating it is noise on a ticket someone is trying to read.
+     - `#### Regression` — **you own this scope.** You changed the code, so **you** are the one who
+       knows what it could affect; QA does **not** guess it for you. A bullet list of which
+       EXISTING features QA must re-test (shared components/modules, touched `core/`-or-shared
+       code, repository/API-contract or DB-migration changes, altered routing/state…) + one line on
+       *why* each. No prose. Nothing existing touched → `No regression needed — <one-line reason>`.
+       **This block is the sole source of QA's regression scope** — without it QA runs no
+       regression and will ping you for one.
+     - `#### History` — append one line to `agent_logs/<KEY>-dev-history.tsv`
+       (`<UTC>\t<branch>\t<what changed this round>`), then render the WHOLE file as a small table.
+       The blocks above are always rewritten to *current* truth; the ledger is where earlier rounds
+       survive. Never carry old lines forward by hand out of the previous body — that is what
+       produced records contradicting their own runs.
+
+     `upsert --section`, never `add`: you refresh this after every bug-fix batch (below), and with
+     `add` a hard ticket ends up carrying five dev notes with no way to tell which is current. Run
+     it **bare** — no pipe, no `&&`, no `$( )` — or the allow rules miss it and the call is denied
+     silently.
    - Set `Status → Ready to test` via `scripts/tracker/upsert-ticket-details.sh <KEY> --status "Ready to test"` — **standalone runs only.** When the dev-cycle workflow orchestrates you it owns the ticket status (it moves the ticket itself, monotonically); skip this Status move under orchestration and just `/handoff`. Use the org's real status names from `workspace.config.yaml`.
    - Return the handoff doc path + a summary + the work-branch name.
 
@@ -106,7 +137,7 @@ Some data bugs only reproduce against the *actual* offending prod rows (a fixed-
    - Then pull the **next request in arrival order**: run **`/diagnosing-bugs` first** to build the tight red-capable repro (per *Bugs — diagnose before you fix* — 🛑 MUST DO, no skipping for "small" bugs), turn that repro into a **failing test** (`/tdd`), fix to green, commit (`fix(…): … Refs FM-<n>`), push.
    - **Ping that specific requester** with a re-check pointer (e.g. "bug #2 fixed, pushed `abc123`, re-verify") so they re-check that scope in parallel while you pull the next request. One branch, serialized writes — never interleave two fixes.
    - A new ping that arrives while you're fixing lands in the queue; handle it when the current unit closes, not by dropping what you're on. Drain continuously — never block on "all of them done."
-   - **Bookend with the formal handoff** only when a full QA bug-fix batch is drained: redo step 4 in full (**the fresh `scripts/dev.sh run` launch-verify MUST DO**, `/handoff`, `Status → Ready to test`) — **including a refreshed "⚠️ Regression request"** covering what the fixes touched, since you just changed code again and own that blast radius. Per-fix pings between you and a reporter don't churn the ticket status on every commit.
+   - **Bookend with the formal handoff** only when a full QA bug-fix batch is drained: redo step 4 in full (**the fresh `scripts/dev.sh run` launch-verify MUST DO**, `/handoff`, `Status → Ready to test`) — **including a refreshed `#### Regression` block** covering what the fixes touched, since you just changed code again and own that blast radius — the same `[dev · <KEY>]` record, your own `### <this repo>` section re-spliced with one more `#### History` line, not a second request. Per-fix pings between you and a reporter don't churn the ticket status on every commit.
 
 6. **Ship.** When QA approves (ticket `Done`): re-check `git status --porcelain` is clean (commit any remaining artifact first), then invoke **`/open-pr FM-<n>`** to open the PR to the parent branch. `/open-pr` titles it per **Conventional Commits**, deriving the type from the branch: a `feature/*` branch → `feat(FM-<n>): <Task name>`, a `fix/*` branch → `fix(FM-<n>): <Task name>`. Return the PR URL.
 
@@ -121,8 +152,4 @@ Green `scripts/dev.sh analyze` + `scripts/dev.sh test`, standards honored, ADRs 
 ## Required startup skills
 
 Before doing role work, load and follow these projected skills: `caveman`, `karpathy-guidelines`, `open-pr`, `pg-triage`, `redis-triage`. Missing or unreadable skill content is a hard failure.
-
-## Execution ceiling
-
-The canonical role ceiling is 250 agentic turns. Hand off a complete checkpoint before reaching it; never die mid-step.
 '''

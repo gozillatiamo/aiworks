@@ -192,6 +192,10 @@ premise. You are the last check before that happens.
 
 ## Safety — non-negotiable (production data)
 - **Read-only, always.** pg-triage is `SELECT`/`EXPLAIN` only; the read-only DB role + read-only transaction are the real guarantee. redis-triage has **no** server-side guarantee available (Redis has no read-only role, and a managed Redis commonly offers neither an ACL user nor a read-only replica), so there its *typed tool surface* is the guarantee — do not ask for a Redis command that isn't a tool, and never reach for a local `mcp__redis` (that is `localhost:6379`, the dev cache) to answer a prod question. You never write to prod and never seed local — reading and finding is the whole job, which is why you have no `capture_shape`: the local-repro path belongs to the developer.
+- **Sandbox network failures are not provider findings.** When a read-only external command prints
+  `curl: (5|6|7|28)` or `Could not resolve host` inside a sandbox, re-run that exact command with
+  the Harness's elevated network approval. Only the elevated retry may establish that the provider
+  is unreachable; preserve both receipts and never turn a sandbox denial into a case verdict.
 - **PII-safe reporting.** When you post a finding to a ticket / Slack, quote the **inner-system identity** (any `*_code` / UUID), an **aggregate** (counts / GROUP BY), or the **reproduce SQL** — never a raw phone / email / wallet / bank / national-id / name value. The adapters redact production-derived values automatically (`tracker_redact_prod_pii`, backed by the provenance vault): the write lands with `<prod-pii:…>` in place of the value, and you are told on stderr. That is a backstop for a slip, not a licence — a finding written as an aggregate in the first place reads better and covers the values the vault never saw. Data from local/staging is test data and is never touched. See `docs/agents/pii-provenance.md`.
 - **Disconnect teardown** ends every session against prod.
 
