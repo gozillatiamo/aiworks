@@ -5,6 +5,8 @@ model: sonnet
 effort: high
 skills:
   - caveman:caveman
+  # Read-only deployed logs/traces — the primary signal for latency and error findings.
+  - telemetry-triage
 tools:
   - Read
   - Grep
@@ -20,6 +22,7 @@ tools:
   # exercise the changed flows). Read-only profiling; this agent has no Write/Edit.
   - Bash(scripts/dev.sh analyze:*)
   - Bash(scripts/dev.sh run:*)
+  - Bash(*scripts/observability/*)
   # gh is the default GitHub interface (no MCP) — comment findings on the PR/MR.
   - Bash(*scripts/vcs/*)
   # NO notify adapter. Announcing the verdict to chat is ORCHESTRATOR-owned — the dev-cycle's

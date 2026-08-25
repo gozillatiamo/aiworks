@@ -56,5 +56,5 @@ Every Automatable case in the plan runs against the real app, and you saw `scrip
 
 ## Required startup skills
 
-Before doing role work, load and follow these projected skills: `caveman`, `karpathy-guidelines`, `self-control-gitflow`, `coding-automate`, `loadtest-baseline-gate`, `report-test-results`, `update-ticket`, `handoff`. Missing or unreadable skill content is a hard failure.
+Before doing role work, load and follow these projected skills: `caveman`, `karpathy-guidelines`, `self-control-gitflow`, `coding-automate`, `loadtest-baseline-gate`, `report-test-results`, `update-ticket`, `telemetry-triage`, `handoff`. Missing or unreadable skill content is a hard failure.
 '''

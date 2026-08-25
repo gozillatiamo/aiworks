@@ -9,6 +9,8 @@ skills:
   - plan-testcases
   - update-ticket
   - plan-automate
+  # Read-only deployed logs/traces — classify an environment-only red before planning coverage.
+  - telemetry-triage
   - handoff
   - write-interactive-docs
 tools:
@@ -41,6 +43,7 @@ tools:
   - Bash(codegraph *)
   # Read the ticket (plan-testcases) and publish to it (update-ticket).
   - Bash(*scripts/tracker/*)
+  - Bash(*scripts/observability/*)
   # Ground truth — inspect the REAL schema when planning prerequisites (structure only; no execute_sql).
   - mcp__postgres_secondary__list_schemas
   - mcp__postgres_secondary__list_objects

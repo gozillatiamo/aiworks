@@ -15,6 +15,8 @@ skills:
   - caveman:caveman
   - karpathy-guidelines
   - open-pr
+  # Read-only deployed logs/traces — establish what happened before reproducing a live-only bug.
+  - telemetry-triage
   # Read-only PRODUCTION Postgres ground truth — SCOPED TO /diagnosing-bugs ONLY (bug triage:
   # confirm the offending prod row, then persist it masked into a throwaway local DB via
   # prod_repro_seed to reproduce against local source). NOT for feature build — never touch prod
@@ -54,6 +56,7 @@ tools:
   - Bash(codegraph *)
   # VCS adapter (scripts/vcs/, github|gitlab): open PRs/MRs, reply to review comments.
   - Bash(*scripts/vcs/*)
+  - Bash(*scripts/observability/*)
   # Tracker adapter (scripts/tracker/, notion|jira): close the ticket after shipping
   # (Status → Done) via /update-ticket. The build role owns the Done transition post-distribute.
   - Bash(*scripts/tracker/*)

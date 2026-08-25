@@ -8,6 +8,8 @@ skills:
   - caveman:caveman
   - decompose-ticket
   - diagram-ticket
+  # Read-only deployed logs/traces — ground feasibility and risk in observed runtime behavior.
+  - telemetry-triage
 tools:
   - Read
   - Grep
@@ -18,6 +20,7 @@ tools:
   - WebFetch
   - Bash(*scripts/tracker/*)
   - Bash(*scripts/diagram/*)
+  - Bash(*scripts/observability/*)
   # DB access (read + query) — assess feasibility/architecture against the REAL schema and run SELECT via execute_sql.
   # NOTE: execute_sql is NOT verb-restricted at the tool layer; enforce true read-only with a read-only DB role.
   - mcp__postgres_secondary__list_schemas
