@@ -86,7 +86,15 @@ result with no control is a wrong query, not an absent record.
 A rung closed by assumption is the failure this step exists to prevent — it silently trades a
 complete repair for a partial one.
 
-**Done when:** the chosen rung is named, and every rung above it has a receipt beside it.
+> **Silence from a system that forgets is a gap, not evidence.** Any source with a retention
+> window answers "I never had it" and "I no longer have it" with the same empty result, and those
+> justify opposite repairs. Before an absence becomes a reason to act, establish that the record
+> would still be there if it existed — by the target's age against that window, or by a control
+> of the same age coming back populated. An absence you cannot date is not a finding; hold it
+> back for a person and say what would settle it.
+
+**Done when:** the chosen rung is named, every rung above it has a receipt beside it, and any
+absence used as a receipt has been dated against the source's retention.
 
 ## Step 4 — Generate
 
