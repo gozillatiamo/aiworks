@@ -146,6 +146,15 @@ A generated agent is available only when safety-relevant fields are mapped:
 Harness-specific presentation can differ. Exact status-line layout is not functional parity, but
 missing agents, rules, hooks, skills, MCP tools, or workflow validation are.
 
+### Interactive child-agent visibility
+
+A named role spawned inside one interactive turn is child state of that turn, not necessarily a
+separate app-server session. Harness session browsers such as `codex agents` therefore cannot be
+used as proof that the child was or was not created. The orchestrator must expose the child’s
+canonical name plus `running` and terminal status in chat, and must use its native child-list tool
+as the authoritative view. A slow child stays alive while independent work continues; interruption
+is an explicit, reported state transition, never a silent fallback to inline impersonation.
+
 ## Setup, update, and doctor
 
 A registered Harness is incomplete until all three lifecycle owners know it:

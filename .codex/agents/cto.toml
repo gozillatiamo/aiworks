@@ -36,8 +36,4 @@ Technical direction is concrete and ADR-compliant; feasibility risks surfaced ea
 ## Required startup skills
 
 Before doing role work, load and follow these projected skills: `caveman`, `decompose-ticket`, `diagram-ticket`. Missing or unreadable skill content is a hard failure.
-
-## Execution ceiling
-
-The canonical role ceiling is 100 agentic turns. Hand off a complete checkpoint before reaching it; never die mid-step.
 '''
