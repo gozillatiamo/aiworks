@@ -94,7 +94,7 @@
       "scopes": [
         "agent-db/changelog/**"
       ],
-      "sha256": "27b4bdd0786603db570ebbbf27294f18734b103ba3750e07cc101d6136496bdc",
+      "sha256": "d1ecd205daedcba03b0bc82dbfa33a6512f20285a0b1e48e59bb689bb6e78b9e",
       "source": "agent-db/.claude/rules/changelogs.md"
     },
     {
@@ -923,7 +923,7 @@
         "dev-script/retry-amb-callback/**",
         "dev-script/get-amb-raw-request/**"
       ],
-      "sha256": "47df761ebb33ab0763fdb5e18f246b7f130258456a59db03e08ef2267afe978b",
+      "sha256": "f26732fe95f6acfba956ff7e9247dd22b14c1f07a4a395bf129b3472ca989ffe",
       "source": "dev-script/.claude/rules/retry-amb-callback.md"
     }
   ]
