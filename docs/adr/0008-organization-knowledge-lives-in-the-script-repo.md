@@ -36,7 +36,8 @@ about a future code review.
 ## The binding is config for the repo, convention for the filenames
 
 The skill resolves the *repo* from configuration, and the *filenames* by convention:
-`docs/production-troubleshooting.md` and `docs/case-report-template.md`.
+`docs/production-troubleshooting.md` and `docs/case-report-template.md` — and, for the sibling
+`repair-script` skill that generates the artifact a case's runbook hands over, `docs/repair-script.md`.
 
 That split looks inconsistent and is deliberate. Which repo holds an organization's scripts is a
 genuine per-organization fact, and each one names it differently. What the guideline file is called
