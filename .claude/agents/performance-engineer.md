@@ -5,8 +5,7 @@ model: sonnet
 effort: high
 skills:
   - caveman:caveman
-  # Runtime root-cause from SigNoz logs/traces (read-only) — the deployed-env latency/error
-  # ground truth for a slow/erroring request. STOP at Phase 4 (finding); never edits code.
+  # Read-only deployed logs/traces — the primary signal for latency and error findings.
   - telemetry-triage
 tools:
   - Read
@@ -30,10 +29,9 @@ tools:
   # ANALYZE=true next build → bundle-analyzer reports (.next/analyze/*.html), the real web perf
   # entrypoint. (In a Rust repo `analyze` is clippy/fmt — lint, not perf; use traces + DB plans.)
   - Bash(scripts/dev.sh analyze:*)
-  # Observability adapter (scripts/observability/, signoz): read-only logs/traces for
-  # telemetry-triage — the primary deployed-env (dev/staging/prod) latency + error ground truth.
+  - Bash(scripts/dev.sh run:*)
   - Bash(*scripts/observability/*)
-  # gh/glab via the VCS adapter — comment findings inline on the MR/PR.
+  # gh is the default GitHub interface (no MCP) — comment findings on the PR/MR.
   - Bash(*scripts/vcs/*)
   # NO notify adapter. Announcing the verdict to chat is ORCHESTRATOR-owned — the dev-cycle's
   # Notify phase and ultra-review §4 gather every gate's verdict across every repo and send it

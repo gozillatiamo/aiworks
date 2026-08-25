@@ -155,4 +155,9 @@ python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --remove >/dev/null
 test -f "$FIXTURE/.codex/hooks.json"
 test ! -e "$FIXTURE/.agents/skills"
 
+for role in cto developer development-planner performance-engineer qa-planner qa-runner; do
+  grep -q '^  - telemetry-triage$' "$ROOT/.claude/agents/$role.md"
+  grep -q '`telemetry-triage`' "$ROOT/.codex/agents/$role.toml"
+done
+
 printf 'codex projection selftest: ok\n'

@@ -81,6 +81,17 @@ a follow-up's NEW facts still go complete. **Ponytail is that rule for code** �
 dependency — stopping at a repo's test suite, a ticket's acceptance criteria and the adapters: it shortens the
 implementation, never the requirement (`ponytail.md`).
 
+## Named-agent requests
+
+When a person explicitly asks for a named role (`oncall agent`, `developer agent`, …), spawn that
+role in the **current session** before doing its work inline. Immediately surface the canonical
+child name and status (`Agent: /root/<task> — running`), then surface its terminal status
+(`completed` / `failed` / `interrupted`) in the handoff. Never silently interrupt a slow child;
+keep it alive while useful local work continues, and report the reason before replacing it with
+inline work. `/agents` and `codex agents` browse Harness/app-server sessions and are not proof that
+an in-turn child exists; the orchestrator's native agent-list tool is the source of truth, and the
+root relays that state so the person never needs a second terminal to verify delegation.
+
 ## Speaking and showing
 
 Per-person and off by default; what concerns you is what you put in a **reply**.

@@ -13,8 +13,7 @@ skills:
   - loadtest-baseline-gate
   - report-test-results
   - update-ticket
-  # Deployed-env (staging) suite red → pull the real SigNoz trace to judge app-fault vs env issue
-  # before reporting. Finding only (Phase 4) — folds into the report; QA never edits app code.
+  # Read-only deployed logs/traces — classify an environment-only suite red before reporting it.
   - telemetry-triage
   - handoff
 tools:
@@ -63,6 +62,7 @@ tools:
   - mcp__postgres_mad__get_object_details
   # Read the ticket for context, then publish results onto it (report-test-results + update-ticket).
   - Bash(*scripts/tracker/*)
+  - Bash(*scripts/observability/*)
   # Confirm design intent when the ticket links a figma.com screen — ONLY when
   # design.enabled is true (the workspace-wide Figma switch; see docs/agents/figma.md).
   # When Figma is OFF, derive intent from the ticket spec, not a Figma read.

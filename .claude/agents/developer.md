@@ -15,16 +15,12 @@ skills:
   - caveman:caveman
   - karpathy-guidelines
   - open-pr
-  # SigNoz logs/traces for a deployed-env bug. This is the DATA; the METHOD for a symptom that
-  # cannot be reproduced locally is /root-cause-deployed (base rate -> hypothesis ledger ->
-  # discriminator -> CONFIRMED/LEADING/SPECULATIVE), invoked on demand like /diagnosing-bugs.
-  # Its finding then seeds /diagnosing-bugs with something reproducible to fix test-first.
+  # Read-only deployed logs/traces — establish what happened before reproducing a live-only bug.
   - telemetry-triage
-  # Read-only deployed Postgres ground truth (staging or prod, `env` per call; prod needs the
-  # machine's triage.prod opt-in) — SCOPED TO /diagnosing-bugs ONLY (bug triage: PRD pre-ticket
-  # sandbox + dev-cycle QA-bug fix). Confirm the real offending row, then seed it into a throwaway
-  # local DB via prod_repro_seed to reproduce against local source (a prod source is masked, a
-  # staging source verbatim). See "Prod data for a repro". NOT for feature build.
+  # Read-only PRODUCTION Postgres ground truth — SCOPED TO /diagnosing-bugs ONLY (bug triage:
+  # confirm the offending prod row, then persist it masked into a throwaway local DB via
+  # prod_repro_seed to reproduce against local source). NOT for feature build — never touch prod
+  # outside a bug repro. See "Prod data for a repro".
   - pg-triage
   # Read-only PRODUCTION/staging Redis ground truth — SAME /diagnosing-bugs SCOPE as
   # pg-triage. For a stale-cache / missing-session / stream-not-consumed bug. Prod values
@@ -60,8 +56,6 @@ tools:
   - Bash(codegraph *)
   # VCS adapter (scripts/vcs/, github|gitlab): open PRs/MRs, reply to review comments.
   - Bash(*scripts/vcs/*)
-  # Observability adapter (scripts/observability/, signoz): logs/traces for telemetry-triage —
-  # root-cause a deployed-env bug from real telemetry before reproducing it locally.
   - Bash(*scripts/observability/*)
   # Tracker adapter (scripts/tracker/, notion|jira): close the ticket after shipping
   # (Status → Done) via /update-ticket. The build role owns the Done transition post-distribute.
