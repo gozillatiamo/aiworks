@@ -91,6 +91,11 @@
   "89": "How a dev-cycle run ends",
   "90": "The build does not stop at the first partial",
   "91": "A submodule pin needs a pushed commit, not a merge",
-  "92": "apply-human-review skill",
-  "93": "The run's base is state, and the PR/MR is asserted against it"
+  "92": "Logo Design Reference",
+  "93": "0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md",
+  "94": "During the session",
+  "95": "Diagnosing Bugs",
+  "96": ".skills-upstream/grill-me/SKILL.md",
+  "97": ".skills-upstream/grill-with-docs/SKILL.md",
+  "98": ".skills-upstream/grilling/SKILL.md"
 }

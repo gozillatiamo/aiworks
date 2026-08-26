@@ -1,16 +1,16 @@
 # Graph Report - ai-workspace  (2026-08-26)
 
 ## Corpus Check
-- 243 files · ~280,039 words
+- 250 files · ~283,059 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1143 nodes · 1510 edges · 94 communities (83 shown, 11 thin omitted)
+- 1183 nodes · 1545 edges · 99 communities (88 shown, 11 thin omitted)
 - Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 88 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9162a08b`
+- Built from commit: `f4be390c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -100,8 +100,10 @@
 - How a dev-cycle run ends
 - The build does not stop at the first partial
 - A submodule pin needs a pushed commit, not a merge
-- apply-human-review skill
-- The run's base is state, and the PR/MR is asserted against it
+- Logo Design Reference
+- 0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md
+- During the session
+- Diagnosing Bugs
 
 ## God Nodes (most connected - your core abstractions)
 1. `qa-runner agent (Peter)` - 29 edges
@@ -153,7 +155,7 @@
 - **Provider-dispatch adapter pattern (lib.sh + swappable impls)** — scripts_tracker_readme_lib_sh, scripts_vcs_readme_lib_sh, scripts_tracker_readme_tracker_provider_interface, scripts_vcs_readme_vcs_provider_interface, scripts_voice_readme [INFERRED 0.85]
 - **Tracker-adapter ticket lifecycle (estimate → plan → automate → gate → PR → notify)** — _claude_skills_estimate_ticket_skill_estimate_ticket, _claude_skills_plan_testcases_skill_plan_testcases, _claude_skills_plan_automate_skill_plan_automate, _claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate, _claude_skills_open_pr_skill_open_pr, _claude_skills_notify_skill_notify, _claude_skills_diagram_ticket_skill_diagram_ticket [INFERRED 0.85]
 
-## Communities (94 total, 11 thin omitted)
+## Communities (99 total, 11 thin omitted)
 
 ### Community 0 - "Agent Roster and Dev Harness"
 Cohesion: 0.07
@@ -192,8 +194,8 @@ Cohesion: 0.07
 Nodes (33): Two Coordinate Traps (NSScreen vs AX, size-then-position), Focus Phrase (~phrase) → Text Fragment, scripts/stagehand/follow.sh, .claude/hooks/stagehand-follow.sh (Stop), .claude/hooks/stagehand-show.sh (PostToolUse), scripts/stagehand/lib.sh, Why Not computer-use, scripts/stagehand/place.js (+25 more)
 
 ### Community 9 - "design-system (skill)"
-Cohesion: 0.05
-Nodes (64): Banner Sizes & Art Direction Styles, CIP Deliverable Guide, CIP Design Reference, CIP Mockup Prompt Engineering, CIP Design Style Guide, Design Routing Guide, Icon Design Reference, Logo Color Psychology (+56 more)
+Cohesion: 0.10
+Nodes (37): Banner Sizes & Art Direction Styles, Design Routing Guide, Icon Design Reference, Slides Reference, Copywriting Formulas, Slides Create (invocation stub), HTML Slide Template, Slide Layout Patterns (+29 more)
 
 ### Community 10 - "brand skill"
 Cohesion: 0.12
@@ -232,8 +234,8 @@ Cohesion: 0.18
 Nodes (14): URL Ingest (graphify add), Post-Commit Auto-Rebuild Hook, save-result Feedback Loop, Work Memory And LESSONS.md, Whisper Domain-Hint Prompt, Whisper Transcription, detect_incremental, Graph Diff After Update (+6 more)
 
 ### Community 19 - "ux-ui-designer agent (Jane)"
-Cohesion: 0.23
-Nodes (14): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, caveman skill, designing-page skill (+6 more)
+Cohesion: 0.22
+Nodes (15): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, workspace.config.yaml, caveman skill (+7 more)
 
 ### Community 20 - "Extraction Subagent Prompt"
 Cohesion: 0.18
@@ -260,12 +262,12 @@ Cohesion: 0.21
 Nodes (12): Step 1 — Base rate before any hypothesis, Step 3 — Discriminator, scripts/observability/find-traces.sh, scripts/observability/get-logs.sh, Step 2 — Hypothesis ledger, root-cause-deployed skill, Step 4 — Verdict tiers (CONFIRMED/LEADING/SPECULATIVE), diagnosing-bugs skill (local red loop) (+4 more)
 
 ### Community 26 - "qa-runner agent (Peter)"
-Cohesion: 0.23
-Nodes (12): agent_logs/<KEY>-report.md, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), karpathy-guidelines skill, loadtest-baseline-gate skill, report-test-results skill, self-control-gitflow skill, telemetry-triage skill (+4 more)
+Cohesion: 0.18
+Nodes (15): agent_logs/<KEY>-report.md, developer agent, development-planner agent, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), apply-human-review skill, loadtest-baseline-gate skill, report-test-results skill (+7 more)
 
 ### Community 27 - "qa-planner agent (Peter)"
-Cohesion: 0.23
-Nodes (12): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, workspace.config.yaml, plan-testcases skill (+4 more)
+Cohesion: 0.18
+Nodes (14): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, karpathy-guidelines skill, plan-testcases skill (+6 more)
 
 ### Community 28 - "TDD and Test Design"
 Cohesion: 0.24
@@ -451,13 +453,21 @@ Nodes (7): Configuration, Related, The build does not stop at the first partial,
 Cohesion: 0.33
 Nodes (6): A submodule pin needs a pushed commit, not a merge, Related, Reordering was already tried, and it was not enough, The cost, stated plainly, The pointer is re-aimed before anything lands, What actually changed
 
-### Community 92 - "apply-human-review skill"
-Cohesion: 0.33
-Nodes (6): developer agent, development-planner agent, apply-human-review skill, Human: review directive convention, find-prs.sh, pr-threads.sh
+### Community 92 - "Logo Design Reference"
+Cohesion: 0.10
+Nodes (27): CIP Deliverable Guide, CIP Design Reference, CIP Mockup Prompt Engineering, CIP Design Style Guide, Logo Color Psychology, Logo Design Reference, Logo AI Prompt Engineering, Logo Style Guide (+19 more)
 
-### Community 93 - "The run's base is state, and the PR/MR is asserted against it"
-Cohesion: 0.67
+### Community 93 - "0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md"
+Cohesion: 0.38
 Nodes (3): Related, The run's base is state, and the PR/MR is asserted against it, What this costs
+
+### Community 94 - "During the session"
+Cohesion: 0.09
+Nodes (19): ADR Format, Numbering, Optional sections, Template, What qualifies, When to offer an ADR, CONTEXT.md Format, Rules (+11 more)
+
+### Community 95 - "Diagnosing Bugs"
+Cohesion: 0.13
+Nodes (14): Completion criterion: a tight loop that goes red, Diagnosing Bugs, Minimise, Non-deterministic bugs, Phase 1: Build a feedback loop, Phase 2: Reproduce + minimise, Phase 3: Hypothesise, Phase 4: Instrument (+6 more)
 
 ## Ambiguous Edges - Review These
 - `design (skill)` → `diagram-ticket (skill)`  [AMBIGUOUS]
@@ -476,7 +486,7 @@ Nodes (3): Related, The run's base is state, and the PR/MR is asserted against i
   .claude/skills/graphify/references/hooks.md · relation: references
 
 ## Knowledge Gaps
-- **435 isolated node(s):** `Output language — resolve BEFORE writing (do this FIRST)`, `First: can you trigger it at all?`, `Redact`, `Ways to construct one, in roughly this order`, `When the loop needs the *actual* deployed data (OFB)` (+430 more)
+- **460 isolated node(s):** `Redact`, `Ways to construct one, in roughly this order`, `Tighten the loop`, `Non-deterministic bugs`, `When you genuinely cannot build a loop` (+455 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 

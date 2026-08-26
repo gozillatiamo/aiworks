@@ -222,9 +222,9 @@
     "semantic_hash": ""
   },
   ".claude/skills/caveman/SKILL.md": {
-    "mtime": 1787485533.3004131,
-    "seen": 1787485543.223519,
-    "ast_hash": "f4717c3fd9df0c1340d70fd9530bec22",
+    "mtime": 1787705706.6793048,
+    "seen": 1787708416.2329652,
+    "ast_hash": "5c05422ff18a4b8a75d4f78725a7ae87",
     "semantic_hash": ""
   },
   ".claude/skills/clarifying-ticket/SKILL.md": {
@@ -1326,44 +1326,44 @@
     "semantic_hash": ""
   },
   ".claude/skills/diagnosing-bugs/SKILL.md": {
-    "mtime": 1787485533.3021138,
-    "seen": 1787485543.223536,
+    "mtime": 1787705567.7236059,
+    "seen": 1787708416.232984,
     "ast_hash": "82e32dc3c241bb89f03232a5d0dd5650",
     "semantic_hash": ""
   },
   ".claude/skills/domain-modeling/ADR-FORMAT.md": {
-    "mtime": 1787485533.302948,
-    "seen": 1787485543.223537,
+    "mtime": 1787705549.6752458,
+    "seen": 1787708416.232985,
     "ast_hash": "7bcce3d6e7066aca42baf11cc609d382",
     "semantic_hash": ""
   },
   ".claude/skills/domain-modeling/CONTEXT-FORMAT.md": {
-    "mtime": 1787485533.3032022,
-    "seen": 1787485543.223538,
+    "mtime": 1787705549.6751928,
+    "seen": 1787708416.2329862,
     "ast_hash": "710770e708d7e2004b71ef306a365e19",
     "semantic_hash": ""
   },
   ".claude/skills/domain-modeling/SKILL.md": {
-    "mtime": 1787485533.303369,
-    "seen": 1787485543.223538,
+    "mtime": 1787705549.6754112,
+    "seen": 1787708416.2329862,
     "ast_hash": "49d8e04f96d25fa065ce75c2701e9fac",
     "semantic_hash": ""
   },
   ".claude/skills/grill-me/SKILL.md": {
-    "mtime": 1787485533.307116,
-    "seen": 1787485543.223543,
+    "mtime": 1787705555.3940017,
+    "seen": 1787708416.232992,
     "ast_hash": "51ba9306293963bb76680d5e41525aea",
     "semantic_hash": ""
   },
   ".claude/skills/grill-with-docs/SKILL.md": {
-    "mtime": 1787282257.6922479,
-    "seen": 1787291263.2352839,
+    "mtime": 1787705568.7857964,
+    "seen": 1787708416.232992,
     "ast_hash": "fd58bfcbd644439f892b3b51d3608e12",
     "semantic_hash": ""
   },
   ".claude/skills/grilling/SKILL.md": {
-    "mtime": 1787485533.3073573,
-    "seen": 1787485543.2235441,
+    "mtime": 1787705568.8198028,
+    "seen": 1787708416.2329931,
     "ast_hash": "b1cf8a26600bdd7273e508aa6e67d01b",
     "semantic_hash": ""
   },
@@ -1455,6 +1455,48 @@
     "mtime": 1787628135.7195256,
     "seen": 1787705355.79301,
     "ast_hash": "d32e2130499a8cb6e1897d5e4f10193c",
+    "semantic_hash": ""
+  },
+  ".claude/.skills-upstream/diagnosing-bugs/SKILL.md": {
+    "mtime": 1787705568.7485747,
+    "seen": 1787708416.2329412,
+    "ast_hash": "d5b1387a7074ca9740ad2c5ff91ad1bc",
+    "semantic_hash": ""
+  },
+  ".claude/.skills-upstream/domain-modeling/ADR-FORMAT.md": {
+    "mtime": 1787705569.0365164,
+    "seen": 1787708416.232942,
+    "ast_hash": "7bcce3d6e7066aca42baf11cc609d382",
+    "semantic_hash": ""
+  },
+  ".claude/.skills-upstream/domain-modeling/CONTEXT-FORMAT.md": {
+    "mtime": 1787705569.0287442,
+    "seen": 1787708416.232943,
+    "ast_hash": "710770e708d7e2004b71ef306a365e19",
+    "semantic_hash": ""
+  },
+  ".claude/.skills-upstream/domain-modeling/SKILL.md": {
+    "mtime": 1787705569.0190465,
+    "seen": 1787708416.232943,
+    "ast_hash": "49d8e04f96d25fa065ce75c2701e9fac",
+    "semantic_hash": ""
+  },
+  ".claude/.skills-upstream/grill-me/SKILL.md": {
+    "mtime": 1787705569.1088064,
+    "seen": 1787708416.232944,
+    "ast_hash": "51ba9306293963bb76680d5e41525aea",
+    "semantic_hash": ""
+  },
+  ".claude/.skills-upstream/grill-with-docs/SKILL.md": {
+    "mtime": 1787705568.7986457,
+    "seen": 1787708416.232944,
+    "ast_hash": "2e333f0b42a23dbb1ae531e62c555c66",
+    "semantic_hash": ""
+  },
+  ".claude/.skills-upstream/grilling/SKILL.md": {
+    "mtime": 1787705568.8291552,
+    "seen": 1787708416.232944,
+    "ast_hash": "284efe9cf334900d08230e572fc6db90",
     "semantic_hash": ""
   }
 }
