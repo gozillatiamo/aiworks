@@ -10,7 +10,7 @@
   "8": "Stagehand Window Placement",
   "9": "design-system (skill)",
   "10": "brand skill",
-  "11": "Logo and Corporate Identity",
+  "11": "Repair script",
   "12": "ui-styling skill",
   "13": "Ticket Estimation",
   "14": "clarifying-ticket skill",
@@ -78,7 +78,7 @@
   "76": "grilling/SKILL.md",
   "77": "prd/SKILL.md",
   "78": "The review loop does not halt on a finding",
-  "79": "0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md",
+  "79": "A ticket is a record, not a transcript",
   "80": "0027-the-review-loop-does-not-halt-on-a-finding.md",
   "81": "The review ledger — a finding is raised once, and resolved visibly",
   "82": "A reviewed-but-unresolved repo still gets the gate",
@@ -90,5 +90,7 @@
   "88": "A repo whose criteria already hold is finished, not stalled",
   "89": "How a dev-cycle run ends",
   "90": "The build does not stop at the first partial",
-  "91": "A submodule pin needs a pushed commit, not a merge"
+  "91": "A submodule pin needs a pushed commit, not a merge",
+  "92": "apply-human-review skill",
+  "93": "The run's base is state, and the PR/MR is asserted against it"
 }
