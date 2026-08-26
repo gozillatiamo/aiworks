@@ -1124,7 +1124,8 @@ const overBudget = () => TOKEN_BUDGET > 0 && budget.spent() > TOKEN_BUDGET
 const safeAgent = async (prompt, opts) => {
   try { return await agent(prompt, opts) }
   catch (e) {
-    log(`⚠️ agent did not converge${opts?.label ? ` (${opts.label})` : ''} — treated as null: ${String(e?.message || e).slice(0, 140)}`)
+    const diagnostic = String(e?.stdout || e?.message || e).trim()
+    log(`⚠️ agent did not converge${opts?.label ? ` (${opts.label})` : ''} — treated as null: ${diagnostic.slice(-1200)}`)
     return null
   }
 }

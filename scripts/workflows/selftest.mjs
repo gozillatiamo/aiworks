@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { run as runCodex } from "./adapters/codex.mjs";
+import { run as runCodex, strictOutputSchema } from "./adapters/codex.mjs";
+import { runProcess } from "./adapters/common.mjs";
 import { run as runCursor } from "./adapters/cursor.mjs";
 
 const exec = promisify(execFile);
@@ -32,6 +33,22 @@ await chmod(cursor, 0o755);
 process.env.AIWORKS_CURSOR_CLI = cursor;
 const schema = { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { type: "boolean" } } };
 const definition = { data: {}, body: "Fixture" };
+const optionalNestedSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["rows"],
+  properties: {
+    rows: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { kind: { type: "string" }, note: { type: "string" } },
+      },
+    },
+  },
+};
+assert.deepEqual(strictOutputSchema(optionalNestedSchema).properties.rows.items.required, ["kind", "note"]);
+assert.deepEqual(optionalNestedSchema.properties.rows.items.required, undefined);
 const cursorResult = await runCursor({ root, definition, prompt: "return JSON", schema });
 assert.deepEqual(cursorResult.value, { ok: true });
 assert.ok(cursorResult.spent >= 7);
@@ -51,5 +68,14 @@ process.env.AIWORKS_CODEX_CLI = codex;
 const codexResult = await runCodex({ root, role: "fixture", definition, prompt: "return JSON", schema, options: { model: "haiku", effort: "high" } });
 assert.deepEqual(codexResult.value, { ok: true });
 assert.equal(codexResult.spent, 11);
+
+const failed = path.join(fixture, "failed");
+await writeFile(failed, `#!/usr/bin/env bash
+printf '%s\\n' 'stdout diagnostic'
+printf '%s\\n' 'stderr diagnostic' >&2
+exit 1
+`);
+await chmod(failed, 0o755);
+await assert.rejects(runProcess(failed, [], "", { root }), /stdout diagnostic.*stderr diagnostic/s);
 
 console.log("workflow runtime selftest: ok");
