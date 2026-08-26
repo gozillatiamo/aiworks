@@ -88,6 +88,10 @@ denied="${denied/FIXTURE/$FIXTURE}"
 printf '%s' "$denied" | PYTHONPATH="$ROOT/scripts/codex" python3 "$ROOT/scripts/codex/tool_guard.py" reviewer \
   | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null
 
+quoted_pipe="{\"cwd\":\"FIXTURE\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rg -n '^(language:|planning:)' workspace.config.yaml\"}}"
+quoted_pipe="${quoted_pipe/FIXTURE/$FIXTURE}"
+test -z "$(printf '%s' "$quoted_pipe" | PYTHONPATH="$ROOT/scripts/codex" python3 "$ROOT/scripts/codex/tool_guard.py" reviewer)"
+
 session="fixture-$$-$RANDOM"
 payload='{"cwd":"FIXTURE","session_id":"SESSION","hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: src/a.js\n*** End Patch"}}'
 payload="${payload/FIXTURE/$FIXTURE}"

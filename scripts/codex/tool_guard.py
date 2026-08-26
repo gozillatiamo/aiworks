@@ -22,6 +22,7 @@ READ_COMMANDS = {
     "cut",
     "dirname",
     "du",
+    "echo",
     "file",
     "find",
     "git",
@@ -112,8 +113,16 @@ def read_segment_allowed(segment: str) -> bool:
         return False
     while parts and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", parts[0]):
         parts.pop(0)
+    if parts and parts[0] in {"then", "else"}:
+        parts.pop(0)
+    if parts == ["fi"]:
+        return True
+    if parts and parts[0] == "if":
+        parts.pop(0)
     if not parts:
         return True
+    if parts[0] == "[":
+        return len(parts) == 4 and parts[1] in {"-d", "-e", "-f", "-r"} and parts[-1] == "]"
     base = Path(parts[0]).name
     if base not in READ_COMMANDS:
         return False
@@ -130,10 +139,24 @@ def read_segment_allowed(segment: str) -> bool:
 
 
 def read_bash_allowed(command: str) -> bool:
-    if re.search(r"\n|\|\||&>|>>|<<", command):
+    if "\n" in command:
         return False
-    segments = re.split(r"\s*(?:\||&&|;)\s*", command)
-    return all(read_segment_allowed(segment) for segment in segments if segment.strip())
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars="|;&")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return False
+
+    segments = [[]]
+    for token in tokens:
+        if token in {"||", "&>", ">>", "<<"}:
+            return False
+        if token in {"|", "&&", ";"}:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    return all(read_segment_allowed(shlex.join(segment)) for segment in segments if segment)
 
 
 def tool_allowed(tool_name: str, payload: dict, tools: list[str], denied_tools: list[str]) -> bool:

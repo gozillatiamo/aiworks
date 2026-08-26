@@ -14,7 +14,12 @@ export function runProcess(command, args, prompt, { root, env = {} }) {
     child.stderr.on("data", (chunk) => { stderr += chunk; process.stderr.write(chunk); });
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code !== 0) reject(new Error(`${command} exited ${code}: ${stderr.trim()}`));
+      if (code !== 0) {
+        const diagnostic = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+        const error = new Error(`${command} exited ${code}: ${diagnostic}`);
+        error.stdout = stdout;
+        reject(error);
+      }
       else resolve({ stdout, stderr });
     });
     child.stdin.end(prompt);
