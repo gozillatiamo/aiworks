@@ -1516,7 +1516,7 @@ check_services() {
       skip $g "$name" "127.0.0.1:$port not listening (optional service)"
     else
       warn $g "$name not listening" "127.0.0.1:$port — repos that need it will fail to start" \
-           "aiworks run"
+           "./aiworks run"
     fi
   done
 }
