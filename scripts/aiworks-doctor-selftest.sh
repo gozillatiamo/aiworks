@@ -146,8 +146,11 @@ run() {
 # would ever use.
 stage() {  # stage <fixture-dir> — prints the staged script's dir
   local w="$1"
-  mkdir -p "$w/scripts"
+  mkdir -p "$w/scripts/harnesses"
   cp "$SCRIPT" "$w/scripts/aiworks-doctor.sh"
+  cp "$ROOT/scripts/aiworks-harnesses.sh" "$w/scripts/"
+  cp "$ROOT/scripts/harnesses/config.py" "$ROOT/scripts/harnesses/registry.json" "$w/scripts/harnesses/"
+  chmod +x "$w/scripts/aiworks-harnesses.sh"
   chmod +x "$w/scripts/aiworks-doctor.sh"
 }
 
@@ -158,6 +161,23 @@ W="$T/healthy"; make_ws "$W"; stage "$W"
 OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk 2>&1)"; RC=$?
 ck_exit "healthy fixture exits 0" 0 "$RC"
 ck "healthy fixture reports no failure" "0 fail" "$OUT"
+
+# ── 1b · shared projections and local active Harnesses are distinct ──────────────
+W="$T/local-harnesses"; make_ws "$W"; stage "$W"
+printf 'harnesses:\n  - claude\n  - cursor\n  - codex\n' >> "$W/workspace.config.yaml"
+printf 'harnesses:\n  - claude\n' > "$W/workspace.config.local.yaml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg -v 2>&1)"; RC=$?
+ck_exit "shared Codex projection is still checked" 1 "$RC"
+ck "doctor reports the supported Harness set" "Supported Harness set" "$OUT"
+ck "doctor reports the active Harness set" "Active Harness set" "$OUT"
+ck "doctor checks shared Codex projection" "codex projection incomplete" "$OUT"
+
+W="$T/invalid-local-harnesses"; make_ws "$W"; stage "$W"
+printf 'harnesses:\n  - claude\n  - cursor\n' >> "$W/workspace.config.yaml"
+printf 'harnesses:\n  - codex\n' > "$W/workspace.config.local.yaml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg 2>&1)"; RC=$?
+ck_exit "an invalid local Harness set fails doctor" 1 "$RC"
+ck "doctor names the invalid active set" "active Harness set is invalid" "$OUT"
 
 # ── 2 · not a workspace at all ────────────────────────────────────────────────────
 W2="$T/notaws"; mkdir -p "$W2/scripts"; cp "$SCRIPT" "$W2/scripts/"; chmod +x "$W2/scripts/aiworks-doctor.sh"

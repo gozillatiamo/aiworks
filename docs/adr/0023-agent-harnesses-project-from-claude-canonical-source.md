@@ -3,8 +3,8 @@
 **Status:** Accepted
 
 The authored agent configuration remains under `.claude/`, with the shared MCP registry in
-`.mcp.json`. An organization declares its Harness set in `workspace.config.yaml`; `aiworks sync`
-then projects only those Harnesses at the workspace root and in every repo. Compatible artifacts
+`.mcp.json`. An organization declares its supported Harness set in `workspace.config.yaml`;
+`aiworks sync` then projects those Harnesses at the workspace root and in every repo. Compatible artifacts
 use symlinks, while incompatible formats are generated and guarded by Harness-specific `--check`
 commands. A missing safety mapping fails closed rather than silently widening an agent.
 
@@ -34,9 +34,11 @@ forking a Harness UI.
 
 ## Consequences
 
-First-run `aiworks setup` selects and bootstraps the organization-wide Harness set; later setup
-runs are idempotent. Sync reconciles projections in both directions, removing only generator-owned
-artifacts for a deselected Harness. Skills remain canonical under `.claude/skills`, with
+First-run `aiworks setup` selects and bootstraps the organization-wide supported Harness set; later
+setup runs are idempotent. A git-ignored local config may activate a non-empty subset for that
+machine's CLI, plugin, status-line, and local MCP lifecycle, but never changes projections. Sync
+reconciles projections in both directions, removing only generator-owned artifacts for a deselected
+shared Harness. Skills remain canonical under `.claude/skills`, with
 `.agents/skills` as a directory symlink for Codex discovery. Generated adapters cover agents,
 rules, hooks, workflows, MCP servers, plugins, and native status lines, and completion requires the
 non-destructive cross-Harness verification matrix.

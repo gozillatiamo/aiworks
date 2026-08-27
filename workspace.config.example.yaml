@@ -42,10 +42,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Agent harnesses ──────────────────────────────────────────────────────────
-# Organization-wide, never personal: `aiworks setup` opens a first-run multi-select when this
-# list is empty, then `aiworks sync` reconciles the selected projections at the workspace root and
-# in every repo. Existing workspaces without this key preserve the legacy `claude,cursor` set in
-# non-interactive runs. Deselecting a Harness removes only generator-owned files.
+# Organization-wide supported Harnesses: `aiworks setup` opens a first-run multi-select when this
+# list is empty, then `aiworks sync` reconciles every supported projection at the workspace root
+# and in every repo. Existing workspaces without this key preserve the legacy `claude,cursor` set
+# in non-interactive runs. A person may activate a non-empty subset locally; that never changes
+# projections or this shared file. Deselecting a shared Harness removes only generator-owned files.
 #
 # Add a future Harness through scripts/harnesses/registry.json and docs/agents/harnesses.md; do
 # not add another hard-coded setup branch. `hermes` is the planned next adapter.

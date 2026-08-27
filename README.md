@@ -224,9 +224,10 @@ the names to your setup:
 ./aiworks add --url <git-url> --product <product-id> --kind backend
 ./aiworks remove <repo-name>   # deregister (add --purge to delete the clone)
 ./aiworks config               # regen generated files after editing the config
-./aiworks harnesses list       # organization-wide selected Harnesses
+./aiworks harnesses list       # organization-wide supported Harnesses
+./aiworks harnesses list --active  # this machine's local active subset
 ./aiworks harnesses configure --reconfigure
-./aiworks harnesses check      # every selected projection matches .claude
+./aiworks harnesses check      # every supported projection matches .claude
 ./aiworks codex --check        # narrow Codex projection check
 ```
 

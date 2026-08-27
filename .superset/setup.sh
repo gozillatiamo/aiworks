@@ -9,8 +9,8 @@
 # -v/--verbose for the full step-by-step log when debugging. The first main-workspace run opens a
 # Harness multi-select when `harnesses` is absent/empty; worktrees never prompt.
 #
-# 0. Selects the organization-wide Agent harnesses in the main workspace; installs and
-#    authenticates selected CLIs, reconciles plugins and best-native status lines. A linked
+# 0. Selects the shared supported Agent Harnesses in the main workspace. The optional local
+#    active subset later controls CLI install/auth, plugins, and native status lines. A linked
 #    worktree reuses the main workspace and machine login state.
 # 1. Symlinks your PERSONAL, git-ignored local config from the root workspace FIRST — before
 #    host tooling / aiworks sync / anything else, so it's already linked if a later step aborts
@@ -93,9 +93,9 @@ else
   log "No separate root workspace — skipping the root state copy (this is the root/main worktree, or a standalone checkout). Set SUPERSET_ROOT_PATH=<path> to copy from a specific checkout."
 fi
 
-# ── 0. Organization-wide Agent harness selection ─────────────────────────────
-# Only the main workspace owns the first-run picker. Linked worktrees inherit the shared config
-# and must never open installers/login prompts during automated setup.
+# ── 0. Shared supported Agent Harness selection ───────────────────────────────
+# Only the main workspace owns the first-run picker. Linked worktrees inherit shared support and
+# must never open installers/login prompts during automated setup.
 if [[ "$has_root" == 0 ]]; then
   if [[ -n "$HARNESS_SELECTION" && "$RECONFIGURE_HARNESSES" == 1 ]]; then
     scripts/aiworks harnesses configure --harnesses "$HARNESS_SELECTION" --reconfigure
@@ -107,7 +107,7 @@ if [[ "$has_root" == 0 ]]; then
     scripts/aiworks harnesses configure
   fi
 else
-  log "Agent harnesses: reusing the root workspace's organization-wide selection."
+  log "Agent harnesses: reusing the root workspace's shared supported set."
 fi
 
 # ── 1. Personal, git-ignored LOCAL config FIRST — before host tooling / aiworks sync / anything
