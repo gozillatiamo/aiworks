@@ -1069,7 +1069,7 @@ EOF
 # on someone's behalf (node switches PATH, Docker Desktop is a GUI app).
 tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning "needs you"
   case "$1" in
-    jq|glab|gh|pnpm|dap|ngrok) printf './aiworks setup' ;;
+    jq|glab|gh|pnpm|uv|dap|ngrok) printf './aiworks setup' ;;
     mani|k6|yq)                printf 'brew install %s' "$1" ;;
     git|curl|awk)              printf 'see: %s is part of the base system — install Xcode CLT or coreutils' "$1" ;;
     node)                      printf 'see: nvm install --lts --reinstall-packages-from=current (a node switch moves the global bin dir)' ;;
@@ -1083,7 +1083,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
 
 check_tooling() {
   local g=tooling b
-  local hard="git jq curl awk mani"
+  local hard="git jq curl awk mani uv"
   local soft="node pnpm docker claude codegraph graphify dap k6 yq"
 
   local miss=""
@@ -1121,7 +1121,7 @@ check_tooling() {
   else
     local behind
     behind="$(brew outdated --quiet 2>/dev/null \
-              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
+              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|uv|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
     if [[ -n "$behind" ]]; then
       warn $g "brew-owned tool(s) behind" "$behind" "./aiworks update --only brew" slow
     else

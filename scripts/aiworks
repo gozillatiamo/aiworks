@@ -194,7 +194,7 @@ Examples:
   aiworks cursor <repo>                 # just one repo
   aiworks cursor --check                # verify only; exit 1 on drift (CI)
   # keep the host toolchain current (setup only ever installs what is missing):
-  aiworks update                        # every group: brew, rust, pnpm, gcloud, claude, …
+  aiworks update                        # every group: brew, rust, pnpm, uv, gcloud, claude, …
   aiworks update -n                     # preview — print each command, change nothing
   aiworks update --only claude,plugins  # just the Claude Code CLI + its plugins
   aiworks update --skip mcp --check-deps  # skip the image pull; report outdated repo deps

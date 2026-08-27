@@ -246,7 +246,7 @@ shared MCP images), and skips anything brew doesn't own rather than shadowing it
 ```sh
 ./aiworks update                        # every group; best-effort, one failure never aborts
 ./aiworks update -n                     # preview — print each command, change nothing
-./aiworks update --only claude,cursor,codex,plugins
+./aiworks update --only uv,claude,cursor,codex,plugins
 ./aiworks update --check-deps           # …and report outdated deps per repo (read-only)
 ```
 

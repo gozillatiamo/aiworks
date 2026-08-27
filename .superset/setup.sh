@@ -136,14 +136,15 @@ fi
 # ── 2. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
 # phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter;
-# pnpm so step 5 can install deps for the pnpm-based repos (else node_install skips them); dap
-# (Debug Adapter Protocol client) for the debugging-code skill. Best-effort — guarded so a failure
-# never aborts setup.
-log "Ensuring host tooling (jq, ngrok, glab, pnpm, dap, headroom)…"
+# pnpm so step 5 can install deps for the pnpm-based repos (else node_install skips them); uv for
+# Python-backed workspace tools and triage MCPs; dap (Debug Adapter Protocol client) for the
+# debugging-code skill. Best-effort — guarded so a failure never aborts setup.
+log "Ensuring host tooling (jq, ngrok, glab, pnpm, uv, dap, headroom)…"
 ensure_jq || true
 ensure_ngrok || true
 ensure_glab || true
 ensure_pnpm || true
+ensure_uv || true
 ensure_dap || true
 # Selected Harness CLIs are a hard prerequisite, unlike optional convenience tooling. The main
 # workspace may install/login interactively; worktrees reuse that machine state.

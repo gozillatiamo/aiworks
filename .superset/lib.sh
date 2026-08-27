@@ -328,6 +328,30 @@ ensure_jq() {
   return 0
 }
 
+# Ensure `uv` is available for the workspace's Python-backed tools and triage MCP servers.
+# The official installer owns standalone installs; setup only invokes it when uv is absent.
+ensure_uv() {
+  if command -v uv >/dev/null 2>&1; then
+    log "uv already installed ($(uv --version 2>/dev/null))."
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "uv not found and curl is unavailable — install it by hand: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    return 0
+  fi
+  log "uv not found — installing…"
+  run_glance "uv: official installer" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || true
+  if [[ -x "$HOME/.local/bin/uv" && ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    log "uv installed ($(uv --version 2>/dev/null))."
+  else
+    warn "uv still not on PATH after install — restart the shell, then re-run setup."
+  fi
+  return 0
+}
+
 # Install jq from the standard apt repos (Debian/Ubuntu). Returns non-zero (so the caller
 # can fall back to the static binary) when root/sudo is unavailable or any apt step fails.
 install_jq_apt() {
