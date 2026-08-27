@@ -125,10 +125,10 @@ Commands:
              1 for drift a reconcile closes, 2 for drift only a person can (a real path where
              the canonical link belongs, a generated file someone edited, a rules file with no
              frontmatter). A reconcile itself exits 0 and prints what it could not do.
-  harnesses  List, configure, reconcile, or check the organization-wide Harness set declared in
-             workspace.config.yaml. `aiworks setup` owns the first-run picker; this command is the
-             explicit reconfiguration/CI surface. The registry is data-driven so a future Harness
-             adds an adapter entry rather than another setup branch.
+  harnesses  List, configure, reconcile, or check the shared supported Harness set declared in
+             workspace.config.yaml. `list --active` shows this machine's optional local subset;
+             setup owns the first-run shared picker. The registry is data-driven so a future
+             Harness adds an adapter entry rather than another setup branch.
   workflow   Execute one canonical .claude/workflows script through a selected Harness adapter.
              Normal chat entry points are `$dev-cycle`/`$prd`/`$brd` in Codex and
              `/dev-cycle`/`/prd`/`/brd` in Cursor; this command is their deterministic runtime.

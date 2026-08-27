@@ -21,6 +21,27 @@ python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REG
 selected="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" | tr '\n' ' ')"
 test "$selected" = "codex claude "
 test "$(grep -c '^harnesses:$' "$FIXTURE/workspace.config.yaml")" -eq 1
+cat > "$FIXTURE/workspace.config.local.yaml" <<'EOF'
+harnesses:
+  - codex
+EOF
+active="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/workspace.config.local.yaml" --registry "$REGISTRY" | tr '\n' ' ')"
+test "$active" = "codex "
+printf 'harnesses:\n  - cursor\n' > "$FIXTURE/local-outside.yaml"
+if python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/local-outside.yaml" --registry "$REGISTRY" >/dev/null 2>&1; then
+  echo "a local Harness outside the shared set should fail" >&2
+  exit 1
+fi
+printf 'harnesses: []\n' > "$FIXTURE/local-empty.yaml"
+if python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/local-empty.yaml" --registry "$REGISTRY" >/dev/null 2>&1; then
+  echo "an empty local Harness set should fail" >&2
+  exit 1
+fi
+printf 'harnesses:\n  - hermes\n' > "$FIXTURE/local-unknown.yaml"
+if python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/local-unknown.yaml" --registry "$REGISTRY" >/dev/null 2>&1; then
+  echo "an unknown local Harness should fail" >&2
+  exit 1
+fi
 if python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses hermes >/dev/null 2>&1; then
   echo "unregistered Hermes should fail until its adapter entry exists" >&2
   exit 1
@@ -42,7 +63,15 @@ EOF
 done
 printf '# Fixture\n' > "$FIXTURE/CLAUDE.md"
 ln -s CLAUDE.md "$FIXTURE/AGENTS.md"
-python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses codex >/dev/null
+python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses codex,claude >/dev/null
+cat > "$FIXTURE/workspace.config.local.yaml" <<'EOF'
+harnesses:
+  - claude
+EOF
+shared="$("$FIXTURE/scripts/aiworks-harnesses.sh" list | tr '\n' ' ')"
+test "$shared" = "codex claude "
+active="$("$FIXTURE/scripts/aiworks-harnesses.sh" list --active | tr '\n' ' ')"
+test "$active" = "claude "
 "$FIXTURE/scripts/aiworks-harnesses.sh" sync
 grep -q '^cursor --remove$' "$FIXTURE/calls"
 grep -q '^codex $' "$FIXTURE/calls"
@@ -54,10 +83,16 @@ grep -q '^cursor --remove$' "$FIXTURE/calls"
 grep -q '^codex --remove$' "$FIXTURE/calls"
 test ! -e "$FIXTURE/AGENTS.md"
 
-# Cursor statusline setup writes the command only when absent and preserves a user's command.
-python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses cursor >/dev/null
+# Cursor statusline setup follows the active subset, not every shared projection.
+python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses cursor,codex >/dev/null
+printf 'harnesses:\n  - codex\n' > "$FIXTURE/workspace.config.local.yaml"
+AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.superset/lib.sh'; ensure_harness_statuslines" >/dev/null
+test ! -e "$FIXTURE/cursor-cli.json"
+printf 'harnesses:\n  - cursor\n' > "$FIXTURE/workspace.config.local.yaml"
 AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.superset/lib.sh'; ensure_harness_statuslines" >/dev/null
 jq -e '.statusLine.command | contains("caveman-statusline/statusline.sh")' "$FIXTURE/cursor-cli.json" >/dev/null
+mcp_selected="$(PYTHONPATH="$FIXTURE/scripts/harnesses" python3 -c 'from pathlib import Path; from triage_mcp import selected; print(" ".join(sorted(selected(Path(__import__("sys").argv[1])))))' "$FIXTURE")"
+test "$mcp_selected" = "cursor"
 jq '.statusLine.command = "my-status"' "$FIXTURE/cursor-cli.json" > "$FIXTURE/cursor-user.json"
 mv "$FIXTURE/cursor-user.json" "$FIXTURE/cursor-cli.json"
 AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.superset/lib.sh'; ensure_harness_statuslines" >/dev/null

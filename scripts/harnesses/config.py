@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read and update the organization-wide Harness set without a YAML dependency."""
+"""Read the shared Harness set and an optional machine-active subset without YAML."""
 
 from __future__ import annotations
 
@@ -67,6 +67,25 @@ def validate(values: list[str], entries: list[dict]) -> list[str]:
     return result
 
 
+def active(shared_path: Path, local_path: Path | None, entries: list[dict], fallback: bool) -> list[str] | None:
+    shared = configured(shared_path)
+    if not shared and fallback:
+        shared = [str(entry["id"]) for entry in entries if entry.get("default_selected")]
+    if shared is None:
+        return None
+    shared = validate(shared, entries)
+    if not local_path:
+        return shared
+    local = configured(local_path)
+    if local is None:
+        return shared
+    local = validate(local, entries)
+    unsupported = [value for value in local if value not in shared]
+    if unsupported:
+        raise ValueError(f"local Harnesses are not shared: {', '.join(unsupported)}")
+    return local
+
+
 def write_config(path: Path, values: list[str]) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     output: list[str] = []
@@ -97,6 +116,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("catalog", "list", "set"))
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--config-local", type=Path)
     parser.add_argument("--registry", type=Path, default=REGISTRY)
     parser.add_argument("--fallback", action="store_true")
     parser.add_argument("--harnesses", default="")
@@ -122,13 +142,11 @@ def main() -> int:
 
     if not args.config:
         parser.error("--config is required")
-    current = configured(args.config)
     if args.command == "list":
-        if not current and args.fallback:
-            current = [str(entry["id"]) for entry in entries if entry.get("default_selected")]
+        current = active(args.config, args.config_local, entries, args.fallback)
         if current is None:
             return 3
-        for value in validate(current, entries):
+        for value in current:
             print(value)
         return 0
 

@@ -202,7 +202,8 @@ if [[ "$ACTION" == "status" ]]; then
 fi
 
 command -v jq >/dev/null 2>&1 || die "jq is required (brew install jq)"
-HARNESS_SET="$(python3 "$ROOT/scripts/harnesses/config.py" list --config "$ROOT/workspace.config.yaml" --registry "$ROOT/scripts/harnesses/registry.json" --fallback 2>/dev/null || printf 'claude\ncursor\n')"
+HARNESS_SET="$(python3 "$ROOT/scripts/harnesses/config.py" list --config "$ROOT/workspace.config.yaml" --config-local "$ROOT/workspace.config.local.yaml" --registry "$ROOT/scripts/harnesses/registry.json" --fallback)" \
+  || die "active Harness configuration is invalid"
 CLAUDE_AVAILABLE=0
 if printf '%s\n' "$HARNESS_SET" | grep -qx claude && command -v claude >/dev/null 2>&1; then
   CLAUDE_AVAILABLE=1

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# aiworks-harnesses.sh — configure and reconcile organization Agent harnesses.
+# aiworks-harnesses.sh — configure shared Harnesses and inspect the active local subset.
 #
 # Usage:
-#   aiworks harnesses list
+#   aiworks harnesses list [--active]
 #   aiworks harnesses configure [--harnesses claude,cursor,codex] [--reconfigure]
 #   aiworks harnesses sync [--check|-n]
 set -uo pipefail
@@ -10,6 +10,7 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 CONFIG="$ROOT/workspace.config.yaml"
+CONFIG_LOCAL="$ROOT/workspace.config.local.yaml"
 REGISTRY="$DIR/harnesses/registry.json"
 HELPER="$DIR/harnesses/config.py"
 
@@ -17,7 +18,8 @@ die() { printf 'aiworks harnesses: %s\n' "$*" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 [[ -f "$HELPER" && -f "$REGISTRY" ]] || die "Harness registry/helper is missing"
 
-selected() { python3 "$HELPER" list --config "$CONFIG" --registry "$REGISTRY" "$@"; }
+shared_selected() { python3 "$HELPER" list --config "$CONFIG" --registry "$REGISTRY" "$@"; }
+active_selected() { python3 "$HELPER" list --config "$CONFIG" --config-local "$CONFIG_LOCAL" --registry "$REGISTRY" "$@"; }
 
 repo_dirs() {
   awk '
@@ -53,7 +55,16 @@ cleanup_agents_md() { # <targets-space> <mode-args-space>
 cmd="${1:-list}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
   list)
-    selected --fallback
+    active=0
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --active) active=1; shift ;;
+        -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) die "unknown list option: $1" ;;
+      esac
+    done
+    if [[ "$active" -eq 1 ]]; then active_selected --fallback
+    else shared_selected --fallback; fi
     ;;
   configure)
     [[ -f "$CONFIG" ]] || die "no workspace.config.yaml — author the organization config first"
@@ -67,7 +78,7 @@ case "$cmd" in
       esac
     done
     if [[ -z "$values" && "$reconfigure" -eq 0 ]]; then
-      existing="$(selected 2>/dev/null || true)"
+      existing="$(shared_selected 2>/dev/null || true)"
       if [[ -n "$existing" ]]; then printf '%s\n' "$existing"; exit 0; fi
     fi
     if [[ -z "$values" ]]; then
@@ -109,7 +120,7 @@ case "$cmd" in
         *) target_args="${target_args:+$target_args }$1"; shift ;;
       esac
     done
-    chosen=" $(selected --fallback | tr '\n' ' ') "
+    chosen=" $(shared_selected --fallback | tr '\n' ' ') "
     failed=0
     keep_agents=0
     while IFS='|' read -r id _display _default _cli projector _adapter guidance; do
