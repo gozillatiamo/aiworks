@@ -10,7 +10,8 @@ Some config is a personal preference, not a team default — most obviously `lan
 teammate may want `th` without switching it on for everyone. We support this with a git-ignored
 **`workspace.config.local.yaml`** (the analogue of `.claude/settings.local.json`): it overrides
 `workspace.config.yaml` for everything read **at runtime** — this chat, the Agent-tool agents,
-and interactive skills.
+and interactive skills. The one lifecycle exception is a local `harnesses` value: it activates a
+non-empty subset of the shared supported Harnesses for this machine only.
 
 The hard constraint comes from [0001](0001-headless-workflow-config-mirror.md): the workflow
 `AIWORKS:CONFIG` mirror is a **committed, tracked** file. So the local override must never reach
@@ -28,6 +29,10 @@ personal setting still be caught before anything leaves the runner's machine?
   standing. `planning.auto_approve` is the only member: skipping the plan gate changes how the
   runner spends their own time, and review, the cross-repo test-suite gate and the merge all still
   sit between that plan and anything shipping. Overridable.
+- **Machine-local activation** selects already-supported Harness CLIs, plugins, status lines, and
+  local MCP registrations. `harnesses` is overridable only as a non-empty subset of the shared
+  supported set; shared projection generation remains shared-only, so a local preference cannot
+  create, remove, or dirty tracked artifacts.
 - **Irreversible control flow** may never be overridden. `vcs.auto_merge` *publishes*; the status
   lifecycle and `REPOS` rewrite artifacts the whole team reads. A personal, git-ignored file must
   not be able to reach those.
@@ -52,6 +57,8 @@ self-resolve from disk can never diverge from the run.
   ON. The gate can be loosened by writing `auto_approve: true` on purpose, and by nothing else.
 - Your personal preference can **never** land in git via the generator — the committed mirror
   stays shared-only by construction.
+- The shared Harness set is the projection contract; the local active subset is the machine
+  lifecycle contract. `aiworks harnesses list` reports the former and `list --active` the latter.
 - `.superset/setup.sh` symlinks `workspace.config.local.yaml` (and `.claude/settings.local.json`)
   into each per-ticket worktree, so personal prefs follow you into a superset run (opt out with
   `SUPERSET_LOCAL=skip`).

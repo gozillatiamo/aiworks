@@ -18,6 +18,8 @@
 #   rust       rustup update — the toolchain behind agent-webservice and every Rust service.
 #   pnpm       corepack prepare pnpm@latest, but ONLY when brew does not own pnpm (else the brew
 #              group already handled it). Stays inside the CURRENT node; never switches node.
+#   uv         uv self update, but only for the standalone installer. Brew-owned uv is handled by
+#              the brew group so the updater never replaces a package-managed binary.
 #   gcloud     gcloud components update.
 #   claude     claude update — the Claude Code CLI.
 #   cursor     cursor-agent update — the Cursor CLI.
@@ -78,7 +80,7 @@ cd "$ROOT"
 # shellcheck source=/dev/null
 . "$ROOT/.superset/lib.sh"
 
-ALL_GROUPS="brew rust pnpm gcloud claude cursor codex codegraph graphify plugins skills mcp"
+ALL_GROUPS="brew rust pnpm uv gcloud claude cursor codex codegraph graphify plugins skills mcp"
 
 # ── args ─────────────────────────────────────────────────────────────────────────
 DRY=0 CHECK_DEPS=0 ONLY="" SKIP=""
@@ -172,7 +174,7 @@ conclude "aiworks update — $ROOT"
 # at `aiworks update --only brew`, so a name it flags but this list omits is a warn no command can
 # clear (gh and pnpm were both in that hole). A tool absent from this machine is skipped by
 # brew_owns, so listing one costs nothing.
-BREW_FORMULAE="mani glab gh jq dap k6 pnpm"
+BREW_FORMULAE="mani glab gh jq dap k6 pnpm uv"
 BREW_CASKS="ngrok"
 if want brew; then
   if ! command -v brew >/dev/null 2>&1; then
@@ -218,6 +220,17 @@ if want pnpm; then
   else
     warn "no corepack and no npm — cannot update pnpm."
     record "pnpm" "skipped" "$(tool_version pnpm)" "-"
+  fi
+fi
+
+# ── uv (only when the standalone installer owns it) ──────────────────────────────
+if want uv; then
+  if brew_owns uv; then
+    log "uv is brew-owned — handled by the brew group."
+  elif command -v uv >/dev/null 2>&1; then
+    upgrade "uv self update" "uv" uv self update
+  else
+    record "uv" "skipped" "absent" "-"
   fi
 fi
 

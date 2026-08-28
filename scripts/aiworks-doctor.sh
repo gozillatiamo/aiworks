@@ -846,10 +846,17 @@ check_per_repo() {
 check_agent_cfg() {
   local g=agent-cfg
   local settings="$ROOT/.claude/settings.json"
-  local harness_set=""
+  local shared_harnesses="" active_harnesses="" active_error="" active_rc=0
   if [[ -x "$DIR/aiworks-harnesses.sh" ]]; then
-    harness_set=" $($DIR/aiworks-harnesses.sh list 2>/dev/null | tr '\n' ' ') "
-    [[ -n "${harness_set// /}" ]] && pass $g "Agent harness set" "${harness_set# }"
+    shared_harnesses=" $($DIR/aiworks-harnesses.sh list 2>/dev/null | tr '\n' ' ') "
+    [[ -n "${shared_harnesses// /}" ]] && pass $g "Supported Harness set" "${shared_harnesses# }"
+    active_error="$("$DIR/aiworks-harnesses.sh" list --active 2>&1)"; active_rc=$?
+    if [[ $active_rc -eq 0 ]]; then
+      active_harnesses=" $(printf '%s\n' "$active_error" | tr '\n' ' ') "
+      pass $g "Active Harness set" "${active_harnesses# }"
+    else
+      fail $g "active Harness set is invalid" "$active_error" "\$EDITOR workspace.config.local.yaml"
+    fi
   fi
 
   if [[ ! -f "$settings" ]]; then
@@ -884,7 +891,7 @@ EOF
   # It walks every repo though, which costs ~8s: four times this whole command's budget. So
   # the default run answers the cheap half (is the projection even THERE?) and the real
   # comparison waits for --deep.
-  if [[ "$harness_set" == *" cursor "* ]]; then
+  if [[ "$shared_harnesses" == *" cursor "* ]]; then
     local nomirror="" r
     for r in $SELECTED; do
       repo_ready "$r" || continue
@@ -908,12 +915,12 @@ EOF
       skip $g "cursor drift" "--deep (aiworks cursor --check costs ~8s)"
     fi
   else
-    skip $g "cursor projection" "Cursor is not selected in workspace.config.yaml harnesses"
+    skip $g "cursor projection" "Cursor is not in the shared Harness set"
   fi
 
   # Codex is a generated Harness projection with its own strict drift check. Cheap presence is
   # checked on every run; full source-to-projection comparison waits for --deep like Cursor.
-  if [[ "$harness_set" == *" codex "* ]]; then
+  if [[ "$shared_harnesses" == *" codex "* ]]; then
     if [[ -f "$ROOT/.codex/config.toml" && -f "$ROOT/.codex/hooks.json" \
           && -L "$ROOT/.agents/skills" && -d "$ROOT/.codex/agents" ]]; then
       pass $g "codex projection present" "config + hooks + agents + canonical skill link"
@@ -941,7 +948,7 @@ EOF
       skip $g "codex drift" "--deep (aiworks codex --check)"
     fi
   else
-    skip $g "codex projection" "Codex is not selected in workspace.config.yaml harnesses"
+    skip $g "codex projection" "Codex is not in the shared Harness set"
   fi
 
   # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at USER scope on purpose
@@ -1068,7 +1075,7 @@ EOF
 # on someone's behalf (node switches PATH, Docker Desktop is a GUI app).
 tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning "needs you"
   case "$1" in
-    jq|glab|gh|pnpm|dap|ngrok) printf './aiworks setup' ;;
+    jq|glab|gh|pnpm|uv|dap|ngrok) printf './aiworks setup' ;;
     mani|k6|yq)                printf 'brew install %s' "$1" ;;
     git|curl|awk)              printf 'see: %s is part of the base system — install Xcode CLT or coreutils' "$1" ;;
     node)                      printf 'see: nvm install --lts --reinstall-packages-from=current (a node switch moves the global bin dir)' ;;
@@ -1082,7 +1089,7 @@ tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning 
 
 check_tooling() {
   local g=tooling b
-  local hard="git jq curl awk mani"
+  local hard="git jq curl awk mani uv"
   local soft="node pnpm docker claude codegraph graphify dap k6 yq"
 
   local miss=""
@@ -1120,7 +1127,7 @@ check_tooling() {
   else
     local behind
     behind="$(brew outdated --quiet 2>/dev/null \
-              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
+              | grep -xE 'mani|glab|gh|jq|dap|k6|pnpm|uv|ngrok' | tr '\n' ' ' | sed 's/ *$//')"
     if [[ -n "$behind" ]]; then
       warn $g "brew-owned tool(s) behind" "$behind" "./aiworks update --only brew" slow
     else

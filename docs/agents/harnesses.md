@@ -4,7 +4,7 @@ An **Agent harness** is the execution environment through which the agent team w
 Cursor, Codex, and later Hermes. It is not a Provider; Provider remains the concrete backend behind
 the VCS, tracker, and notification adapters.
 
-The organization-wide Harness set lives in `workspace.config.yaml`:
+The organization-wide **supported** Harness set lives in `workspace.config.yaml`:
 
 ```yaml
 harnesses:
@@ -13,9 +13,14 @@ harnesses:
   - codex
 ```
 
-`aiworks setup` owns the first-run picker. `aiworks sync` reconciles the selected set at the
-workspace root and in every declared repo. A deselected Harness loses only artifacts carrying a
-generator ownership proof; user-authored files are reported and preserved.
+`aiworks setup` owns the first-run picker. `aiworks sync` reconciles every supported projection at
+the workspace root and in every declared repo. A deselected shared Harness loses only artifacts
+carrying a generator ownership proof; user-authored files are reported and preserved.
+
+A person may set `harnesses:` in git-ignored `workspace.config.local.yaml` to activate a non-empty
+subset of the shared set on their machine. The active subset controls CLI install/authentication,
+native plugins and status lines, and machine-local MCP registrations. It never adds or removes
+projected files, so teammates' preferences cannot dirty a shared checkout.
 
 ## One canonical source
 
@@ -44,6 +49,7 @@ an unknown source event fails `aiworks codex --check`.
 
 ```sh
 aiworks harnesses list
+aiworks harnesses list --active
 aiworks harnesses configure --reconfigure
 aiworks harnesses configure --harnesses claude,cursor,codex
 aiworks harnesses sync
@@ -167,7 +173,7 @@ A registered Harness is incomplete until all three lifecycle owners know it:
    under `--deep`.
 
 Worktree setup never opens installers, login flows, or the first-run picker. It inherits the main
-workspace's shared Harness set and machine-global login state.
+workspace's shared supported set, symlinked local active subset, and machine-global login state.
 
 ## Verification gate
 

@@ -9,8 +9,8 @@
 # -v/--verbose for the full step-by-step log when debugging. The first main-workspace run opens a
 # Harness multi-select when `harnesses` is absent/empty; worktrees never prompt.
 #
-# 0. Selects the organization-wide Agent harnesses in the main workspace; installs and
-#    authenticates selected CLIs, reconciles plugins and best-native status lines. A linked
+# 0. Selects the shared supported Agent Harnesses in the main workspace. The optional local
+#    active subset later controls CLI install/auth, plugins, and native status lines. A linked
 #    worktree reuses the main workspace and machine login state.
 # 1. Symlinks your PERSONAL, git-ignored local config from the root workspace FIRST — before
 #    host tooling / aiworks sync / anything else, so it's already linked if a later step aborts
@@ -125,9 +125,9 @@ else
   log "No separate root workspace — skipping the root state copy (this is the root/main worktree, or a standalone checkout). Set SUPERSET_ROOT_PATH=<path> to copy from a specific checkout."
 fi
 
-# ── 0. Organization-wide Agent harness selection ─────────────────────────────
-# Only the main workspace owns the first-run picker. Linked worktrees inherit the shared config
-# and must never open installers/login prompts during automated setup.
+# ── 0. Shared supported Agent Harness selection ───────────────────────────────
+# Only the main workspace owns the first-run picker. Linked worktrees inherit shared support and
+# must never open installers/login prompts during automated setup.
 if [[ "$has_root" == 0 ]]; then
   if [[ -n "$HARNESS_SELECTION" && "$RECONFIGURE_HARNESSES" == 1 ]]; then
     scripts/aiworks harnesses configure --harnesses "$HARNESS_SELECTION" --reconfigure
@@ -139,7 +139,7 @@ if [[ "$has_root" == 0 ]]; then
     scripts/aiworks harnesses configure
   fi
 else
-  log "Agent harnesses: reusing the root workspace's organization-wide selection."
+  log "Agent harnesses: reusing the root workspace's shared supported set."
 fi
 
 # ── 1. Personal, git-ignored LOCAL config FIRST — before host tooling / aiworks sync / anything
@@ -202,14 +202,15 @@ fi
 # ── 3. Host CLI prerequisites (mac/linux). jq for aiworks itself (.code-workspace generation,
 # VS Code settings merge) + the tracker/notify adapters — so it comes first; ngrok so the run
 # phase's optional third-party hook can tunnel a local port; glab (GitLab CLI) for the VCS adapter;
-# pnpm so step 6 can install deps for the pnpm-based repos (else node_install skips them); dap
-# (Debug Adapter Protocol client) for the debugging-code skill. Best-effort — guarded so a failure
-# never aborts setup.
-log "Ensuring host tooling (jq, ngrok, glab, pnpm, dap, headroom)…"
+# pnpm so step 5 can install deps for the pnpm-based repos (else node_install skips them); uv for
+# Python-backed workspace tools and triage MCPs; dap (Debug Adapter Protocol client) for the
+# debugging-code skill. Best-effort — guarded so a failure never aborts setup.
+log "Ensuring host tooling (jq, ngrok, glab, pnpm, uv, dap, headroom)…"
 ensure_jq || true
 ensure_ngrok || true
 ensure_glab || true
 ensure_pnpm || true
+ensure_uv || true
 ensure_dap || true
 # Selected Harness CLIs are a hard prerequisite, unlike optional convenience tooling. The main
 # workspace may install/login interactively; worktrees reuse that machine state.

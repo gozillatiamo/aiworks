@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from config import configured, registry
+from config import active, registry
 
 
 SERVERS = {
@@ -22,10 +22,14 @@ SERVERS = {
 
 
 def selected(root: Path) -> set[str]:
-    values = configured(root / "workspace.config.yaml")
-    if not values:
-        values = [str(item["id"]) for item in registry() if item.get("default_selected")]
-    return set(values)
+    entries = registry()
+    values = active(
+        root / "workspace.config.yaml",
+        root / "workspace.config.local.yaml",
+        entries,
+        fallback=True,
+    )
+    return set(values or [])
 
 
 def expected(root: Path, relative: str) -> dict:

@@ -328,6 +328,30 @@ ensure_jq() {
   return 0
 }
 
+# Ensure `uv` is available for the workspace's Python-backed tools and triage MCP servers.
+# The official installer owns standalone installs; setup only invokes it when uv is absent.
+ensure_uv() {
+  if command -v uv >/dev/null 2>&1; then
+    log "uv already installed ($(uv --version 2>/dev/null))."
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "uv not found and curl is unavailable — install it by hand: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    return 0
+  fi
+  log "uv not found — installing…"
+  run_glance "uv: official installer" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || true
+  if [[ -x "$HOME/.local/bin/uv" && ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    log "uv installed ($(uv --version 2>/dev/null))."
+  else
+    warn "uv still not on PATH after install — restart the shell, then re-run setup."
+  fi
+  return 0
+}
+
 # Install jq from the standard apt repos (Debian/Ubuntu). Returns non-zero (so the caller
 # can fall back to the static binary) when root/sudo is unavailable or any apt step fails.
 install_jq_apt() {
@@ -522,13 +546,14 @@ ensure_headroom() {
   return 0
 }
 
-# ── selected Agent harness CLIs + authentication ─────────────────────────────
+# ── active Agent Harness CLIs + authentication ───────────────────────────────
 # Called only by the MAIN workspace setup. Superset worktrees reuse machine-global binaries and
 # login state and never open installers or browser auth flows.
 _selected_harnesses() {
   local root="${1:-$PWD}"
   python3 "$root/scripts/harnesses/config.py" list \
     --config "$root/workspace.config.yaml" \
+    --config-local "$root/workspace.config.local.yaml" \
     --registry "$root/scripts/harnesses/registry.json" \
     --fallback
 }
@@ -592,8 +617,9 @@ _login_harness() {
 }
 
 ensure_agent_harnesses() {
-  local root="$PWD" id failed=0
+  local root="$PWD" id failed=0 selected
   command -v python3 >/dev/null 2>&1 || { warn "python3 unavailable — cannot resolve the Harness set."; return 1; }
+  selected="$(_selected_harnesses "$root")" || { warn "active Harness configuration is invalid."; return 1; }
   export PATH="$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
@@ -623,7 +649,7 @@ ensure_agent_harnesses() {
     fi
     if _harness_authenticated "$id"; then log "$id Harness: installed and authenticated."
     else warn "$id Harness authentication is still incomplete."; failed=1; fi
-  done < <(_selected_harnesses "$root")
+  done <<< "$selected"
   return "$failed"
 }
 
@@ -703,7 +729,9 @@ ensure_codex_plugins() {
 }
 
 ensure_harness_plugins() {
-  local selected=" $(_selected_harnesses "$PWD" | tr '\n' ' ') "
+  local resolved selected
+  resolved="$(_selected_harnesses "$PWD")" || { warn "active Harness configuration is invalid."; return 1; }
+  selected=" $(printf '%s\n' "$resolved" | tr '\n' ' ') "
   case "$selected" in *" claude "*) ensure_claude_plugins || true ;; esac
   case "$selected" in *" codex "*) ensure_codex_plugins || true ;; esac
   # Cursor reads canonical/projected components directly. Its CLI currently manages marketplace
@@ -713,7 +741,9 @@ ensure_harness_plugins() {
 }
 
 ensure_harness_statuslines() {
-  local selected=" $(_selected_harnesses "$PWD" | tr '\n' ' ') "
+  local resolved selected
+  resolved="$(_selected_harnesses "$PWD")" || { warn "active Harness configuration is invalid."; return 1; }
+  selected=" $(printf '%s\n' "$resolved" | tr '\n' ' ') "
   command -v jq >/dev/null 2>&1 || { warn "jq unavailable — cannot configure Harness status lines."; return 0; }
   case "$selected" in
     *" cursor "*)

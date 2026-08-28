@@ -325,9 +325,14 @@ An execution environment through which the agent team works — `claude`, `curso
 _Avoid_: provider, agent provider, editor
 
 **Harness set**:
-The organization-wide selection of Agent harnesses that `setup` and `sync` keep supported across
-the workspace and its repos.
-_Avoid_: provider selection, personal harness preference
+The organization-wide **supported** selection of Agent Harnesses that `sync` projects across the
+workspace and its repos. A git-ignored local active subset controls one machine's lifecycle.
+_Avoid_: provider selection
+
+**Active Harness set**:
+The non-empty, git-ignored subset of the supported Harness set used for one machine's Harness CLI,
+plugin, status-line, and local MCP lifecycle.
+_Avoid_: shared projection selection
 
 **Harness projection**:
 A derived, harness-specific face of the canonical agent configuration. It uses symlinks where the
@@ -517,7 +522,8 @@ advisory check in `aiworks config`, and a stripped bootstrap copy in `aiworks ad
 
 **Personal override** / **`workspace.config.local.yaml`**:
 A git-ignored, per-user file (analogue of `.claude/settings.local.json`) that overrides the
-shared config at **runtime only**. → [ADR-0003](docs/adr/0003-personal-runtime-config-overrides.md)
+shared config at **runtime only**, plus a machine-local active Harness subset that never changes
+shared projections. → [ADR-0003](docs/adr/0003-personal-runtime-config-overrides.md)
 
 **Config mirror** / **`AIWORKS:CONFIG` block**:
 The generated `const` block `scripts/aiworks-config.sh` writes into `dev-cycle.js`/`prd.js` so

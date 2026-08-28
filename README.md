@@ -325,9 +325,10 @@ cursor ai-workspace.code-workspace
 ./aiworks add --url <git-url> --product ofb-platform --kind backend
 ./aiworks remove <repo-name>   # deregister (add --purge to delete the clone)
 ./aiworks config               # regen generated files after editing the config
-./aiworks harnesses list       # organization-wide selected Harnesses
+./aiworks harnesses list       # organization-wide supported Harnesses
+./aiworks harnesses list --active  # this machine's local active subset
 ./aiworks harnesses configure --reconfigure
-./aiworks harnesses check      # every selected projection matches .claude
+./aiworks harnesses check      # every supported projection matches .claude
 ./aiworks codex --check        # narrow Codex projection check
 ```
 
@@ -347,7 +348,7 @@ shared MCP images), and skips anything brew doesn't own rather than shadowing it
 ```sh
 ./aiworks update                        # every group; best-effort, one failure never aborts
 ./aiworks update -n                     # preview — print each command, change nothing
-./aiworks update --only claude,cursor,codex,plugins
+./aiworks update --only uv,claude,cursor,codex,plugins
 ./aiworks update --check-deps           # …and report outdated deps per repo (read-only)
 ```
 
