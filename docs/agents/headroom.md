@@ -5,6 +5,11 @@ it is the cheaper half: an output token you never emit saves one token, while a 
 never ingest saves ~16,000 — and keeps saving them on every subsequent turn, because everything
 already in the window is re-sent with each request.
 
+That last clause has a third consequence, and it is the largest of the three: **a turn you never
+take saves the entire window.** Not the bytes of one result — all of it, re-sent. Which is why the
+most expensive call in a transcript is routinely one whose result is four characters long
+(*The poll loop*, below).
+
 Two pieces, and it matters which is which:
 
 | Piece | What it is | Where it comes from |
@@ -71,6 +76,55 @@ So the enforcement is a **PreToolUse** hook, `pretool-bash-context-guard.sh`, wi
    about permission friction; this is about context cost, and for this one shape the cost is
    measured and large. Every other Bash edit still works.
 
+3. **The poll loop — the same file probe blocked on the 7th run** (`BASH_POLL_MAX`,
+   `BASH_POLL_WINDOW`, `BASH_POLL_GUARD=0`). Rules 1 and 2 both price a single call by its
+   bytes. This one prices the call that has almost no bytes and is still the most expensive
+   thing in the transcript, because the unit is the **turn**.
+
+### The poll loop
+
+One developer subagent on a Rust backend repo (2026-08-27) made **907 tool calls**, 806 of them
+foreground `Bash`. A single command —
+
+```
+grep -c " ok$" agent_logs/executed_verbose/test-<ts>.log
+```
+
+— ran **95 times verbatim**, in unbroken runs of about twenty back to back with no other tool
+call between them; thirteen consecutive probes returned the identical count. With its siblings on
+the same log (`grep -c "\.\.\. FAILED"`, `tail -5`, `wc -l`), roughly **400 of the 806 calls were
+one spin loop** waiting for `scripts/dev.sh test` to finish.
+
+| | that agent | every other agent in the same workflow run |
+|---|---|---|
+| tool calls | 907 | 74 – 136 |
+| turns | 1,409 | ~230 |
+| cache-read tokens | 690M | 48M |
+| cost | ~$30.51 | $3 – $7 |
+
+Output was only 217k tokens. Nearly all of the spend is one 490k-token window re-sent 1,409
+times — **~490,000 tokens billed to learn a number that had not changed.**
+
+**The remedy was already in hand and simply unknown.** `run_in_background` is a parameter of the
+`Bash` tool that agent already had, and the harness re-invokes you when the command exits. Wait in
+**one** call that ends when the condition is true:
+
+```
+Bash(run_in_background=true,
+     command="until grep -qE 'test result:|error: could not compile|panicked' run.log; do sleep 5; done")
+```
+
+Match the **failure** signatures too — a condition that only matches success is silent through a
+crash, and silence is indistinguishable from still-running. Want one notification *per event*
+rather than one at the end? That is the `Monitor` tool with a `--line-buffered` filter; for "tell
+me when it's done", background `Bash` is the whole answer.
+
+Scope is deliberately narrow, so an honest re-check never trips it: only a **read-only probe** of
+a file that **exists**, only the **byte-identical command**, only within a rolling five minutes.
+Two greps of one log with different patterns are two questions and both are allowed — it is the
+same question, asked seven times, that is never worth a turn. Repeating a *build* is work, not
+waiting, and is not counted; neither is the `until` loop the block message recommends.
+
 **Both guards' escape hatches are parsed out of the command string, not read from the environment.**
 A hook runs in its own process, so `BASH_READ_MAX_BYTES=… <command>` never reaches its env — the
 assignment applies to the command being judged, which has not run yet. `pretool-hcat-size-guard.sh`
@@ -79,8 +133,11 @@ both now honour the inline form. A documented override that does nothing is wors
 follow the instructions and get blocked again.
 
 Proof lives in `.claude/hooks/dev-wrapper/guards-selftest.sh` (never a scratchpad script) —
-19 cases covering both rules, the bounded forms, operand-position and heredoc false positives,
-and the inline overrides.
+64 cases covering all three rules, the bounded forms, operand-position and heredoc false positives,
+and the inline overrides. Rule 3's cases are the stateful ones: each gets its own `transcript_path`
+(parallel subagents can share a `session_id`, and a shared counter would charge agent B for agent
+A's probes) and its own `TMPDIR`, and one case asserts the recommended `until` loop never trips the
+guard that recommends it.
 
 ## The gate, and why its defaults are not our defaults
 

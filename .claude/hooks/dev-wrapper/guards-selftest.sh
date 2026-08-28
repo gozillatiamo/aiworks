@@ -758,6 +758,54 @@ $PAD
 feat: a long commit message is not a patch
 EOF")"
 
+# ── Rule 3, the poll loop. STATEFUL, unlike rules 1 and 2: the verdict depends on what this
+# same caller already ran. So the ledger gets its own TMPDIR (fresh, never the developer's),
+# and each case gets its own transcript_path so cases cannot contaminate each other.
+POLLTMP="$TMP/pollstate"; mkdir -p "$POLLTMP"
+export TMPDIR="$POLLTMP"
+LOG="$TMP/ctx/run.log"; printf 'test one ... ok\n' > "$LOG"
+jpoll() { jq -cn --arg c "$1" --arg d "$TMP/ctx" --arg t "$2" \
+  '{tool_name:"Bash",cwd:$d,transcript_path:$t,tool_input:{command:$c}}'; }
+
+# The measured shape: one probe, unchanged, over and over. Six get through, the seventh does not.
+for i in 1 2 3 4 5 6; do
+  t "poll $i of 6 allowed"               0 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/spin)"
+done
+t "the 7th identical probe blocked"      2 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/spin)"
+# ...and a DIFFERENT question about the same file is a different probe. This is the whole reason
+# the key is the command and not the path: an investigation greps one log many ways.
+t "different pattern, same file, allowed" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c FAILED $LOG" /t/spin)"
+
+# A second agent in the same workflow wave must start from zero. Keyed on session_id alone this
+# failed: parallel subagents can share one, and agent B's first call would inherit agent A's count.
+t "a parallel agent is not charged for it" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/other)"
+
+# Only READ-ONLY probes of an EXISTING file count. Repeating work is not waiting for work.
+for i in 1 2 3 4 5 6 7; do
+  t "non-probe verb x$i not counted"     0 pretool-bash-context-guard.sh "$(jpoll "git log --oneline -1 $LOG" /t/verb)"
+done
+for i in 1 2 3 4 5 6 7; do
+  t "probe of a missing file x$i allowed" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c x /nope/absent.log" /t/gone)"
+done
+
+# THE REMEDY MUST NEVER TRIP ITS OWN GUARD. The block message tells the agent to wait inside a
+# single backgrounded `until` loop — whose body is a grep of exactly the file it was polling.
+for i in 1 2 3 4 5 6 7; do
+  t "the until-loop remedy x$i allowed"  0 pretool-bash-context-guard.sh \
+    "$(jpoll "until grep -q 'test result:' $LOG; do sleep 5; done" /t/fix)"
+done
+
+# Same escape-hatch contract as rules 1 and 2: parsed out of the command, not the environment.
+for i in 1 2 3 4 5 6 7; do
+  t "inline BASH_POLL_GUARD=0 honoured $i" 0 pretool-bash-context-guard.sh \
+    "$(jpoll "BASH_POLL_GUARD=0 grep -c ' ok$' $LOG" /t/off)"
+done
+for i in 1 2 3 4 5 6 7; do
+  t "inline BASH_POLL_MAX raise honoured $i" 0 pretool-bash-context-guard.sh \
+    "$(jpoll "BASH_POLL_MAX=99 grep -c ' ok$' $LOG" /t/raised)"
+done
+unset TMPDIR
+
 echo "--- repo-health-check: say it once, then stop repeating it ---"
 # Asserted as a PROPERTY, not against a fixed message, so the case is meaningful whether this
 # worktree happens to be fully cloned or not: a second identical prompt must never cost MORE
