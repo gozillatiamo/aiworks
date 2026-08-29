@@ -172,9 +172,23 @@ ck "doctor reports the supported Harness set" "Supported Harness set" "$OUT"
 ck "doctor reports the active Harness set" "Active Harness set" "$OUT"
 ck "doctor checks shared Codex projection" "codex projection incomplete" "$OUT"
 
+# A Harness a person activates only on their machine is not an error. It drives the CLI, the
+# plugins, the status line and this machine's MCP registrations; `aiworks harnesses sync` reads
+# the SHARED set, so it can neither write nor delete a tracked projection. Failing it made the
+# doctor unusable for anyone running a Harness their team does not project.
+W="$T/local-only-harness"; make_ws "$W"; stage "$W"
+printf 'harnesses:\n  - claude\n  - cursor\n' >> "$W/workspace.config.yaml"
+printf 'harnesses:\n  - claude\n  - codex\n' > "$W/workspace.config.local.yaml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg 2>&1)"
+ck "a local-only Harness does not invalidate the set" "ABSENT:active Harness set is invalid" "$OUT"
+ck "…it is reported as local-only"                    "local-only Harness"                    "$OUT"
+ck "…naming which one"                                "codex"                                 "$OUT"
+ck "…and the shared set still drives the projections" "ABSENT:codex projection incomplete"    "$OUT"
+
+# An id no registry entry claims is still a typo in a file a person owns, and still fails.
 W="$T/invalid-local-harnesses"; make_ws "$W"; stage "$W"
 printf 'harnesses:\n  - claude\n  - cursor\n' >> "$W/workspace.config.yaml"
-printf 'harnesses:\n  - codex\n' > "$W/workspace.config.local.yaml"
+printf 'harnesses:\n  - nosuchharness\n' > "$W/workspace.config.local.yaml"
 OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg 2>&1)"; RC=$?
 ck_exit "an invalid local Harness set fails doctor" 1 "$RC"
 ck "doctor names the invalid active set" "active Harness set is invalid" "$OUT"
@@ -712,10 +726,57 @@ else
   MANUAL_SEC="$(printf '%s\n' "$OUT" | sed -n '/needs you/,$p')"
   PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
   ck "a drifted session is still reported"        "ran past 300k of context" "$OUT"
-  ck "…as something only a person can act on"     "ran past 300k of context" "$MANUAL_SEC"
   ck "…never as a command to run"                 "ABSENT:compact at ~150k"  "$PLAN_SEC"
   ck "…and nothing is fed to eval"                "ABSENT:syntax error"      "$OUT"
+  # It is advisory now, not a warning: the sessions it names have already ended, so no run of
+  # anything clears it and it leaves on its own when the transcript ages out of the window.
+  # Queued under "needs you" it was a permanent entry in front of the actionable findings.
+  ck "…nor queued as work for a person"           "ABSENT:ran past"          "$MANUAL_SEC"
 fi
+
+# ── 25 · an orphan gc refuses is not something --fix can clear ───────────────────
+# Measured: two orphans held uncommitted work, so `aiworks gc` skipped both and exited 0 —
+# refusing on purpose is not an error. `--fix` ran the registered command, printed `✓ ran`,
+# removed nothing, and the finding came back byte-identical on the re-check and on every run
+# after it. The count alone cannot tell the two cases apart; gc's own refusal lines can.
+fake_gc() {  # fake_gc <fixture-dir> <orphan-count> <blocked-count>
+  local w="$1" n="$2" b="$3" i
+  mkdir -p "$w/scripts"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'printf "\\n==> Superset worktrees under /tmp/wt\\n"\n'
+    printf 'printf "    live: 0   ·   orphaned: %s   ·   idle threshold: 3d\\n"\n' "$n"
+    printf 'printf "\\n==> Orphans — worktrees Superset no longer lists\\n"\n'
+    for ((i = 0; i < b; i++)); do
+      printf 'printf "    ! skip  a/w%s  — demo-repo has 3 uncommitted file(s)  (--force to override)\\n"\n' "$i"
+    done
+    # The artifact section prints `! skip` too. A whole-output grep counts these and calls a
+    # removable orphan un-removable, which is why the real check reads only gc's own section.
+    printf 'printf "\\n==> Build artifacts in idle worktrees\\n"\n'
+    printf 'printf "    ! skip  a/unrelated  — younger than 3d\\n"\n'
+  } > "$w/scripts/aiworks-gc.sh"
+  chmod +x "$w/scripts/aiworks-gc.sh"
+}
+
+W="$T/gc-all-blocked"; make_ws "$W"; stage "$W"; fake_gc "$W" 2 2
+OUT="$("$W/scripts/aiworks-doctor.sh" --only disk --deep --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+MANUAL_SEC="$(printf '%s\n' "$OUT" | sed -n '/needs you/,$p')"
+ck "orphans gc refuses are named as such"   "none of them removable"          "$OUT"
+ck "…and are not queued for --fix"          "ABSENT:gc --orphans"             "$PLAN_SEC"
+ck "…they go to the person instead"         "orphaned worktree"               "$MANUAL_SEC"
+
+W="$T/gc-removable"; make_ws "$W"; stage "$W"; fake_gc "$W" 2 0
+OUT="$("$W/scripts/aiworks-doctor.sh" --only disk --deep --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+ck "an orphan gc can remove keeps its fix"  "./aiworks gc --orphans --artifacts" "$PLAN_SEC"
+ck "…and is not called un-removable"        "ABSENT:none of them removable"      "$OUT"
+
+W="$T/gc-partly-blocked"; make_ws "$W"; stage "$W"; fake_gc "$W" 2 1
+OUT="$("$W/scripts/aiworks-doctor.sh" --only disk --deep --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+ck "a partly removable set still runs gc"   "./aiworks gc --orphans --artifacts" "$PLAN_SEC"
+ck "…and says how many it will refuse"      "1 of them gc will refuse"           "$OUT"
 
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"

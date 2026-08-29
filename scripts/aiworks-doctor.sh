@@ -855,7 +855,22 @@ check_agent_cfg() {
     if [[ $active_rc -eq 0 ]]; then
       active_harnesses=" $(printf '%s\n' "$active_error" | tr '\n' ' ') "
       pass $g "Active Harness set" "${active_harnesses# }"
+      # A Harness activated ONLY in workspace.config.local.yaml is a machine-local choice, and
+      # this is where it becomes visible rather than where it becomes an error. It reaches the
+      # CLI install, the native plugins, the status line and this machine's MCP registrations;
+      # it never reaches a tracked file, because every projection writer keys on the SHARED set
+      # (`aiworks harnesses sync` reads `list`, not `list --active`). So the one thing worth
+      # saying is that `aiworks sync` will not maintain a projection for it — advice, not a
+      # defect, and printed at the tier that says so.
+      local localonly="" hid
+      for hid in $active_harnesses; do
+        [[ "$shared_harnesses" == *" $hid "* ]] || localonly="${localonly:+$localonly }$hid"
+      done
+      [[ -n "$localonly" ]] && skip $g "local-only Harness" \
+        "$localonly — active on this machine, absent from the shared set, so aiworks sync projects nothing for it"
     else
+      # Reachable now only for a set that is broken on its own terms: an id no registry entry
+      # claims, or an empty list. Both are typos in a file a person owns, so both are theirs.
       fail $g "active Harness set is invalid" "$active_error" "\$EDITOR workspace.config.local.yaml"
     fi
   fi
@@ -1437,9 +1452,14 @@ check_headroom() {
     if [[ "$scanned" -eq 0 ]]; then
       skip $g "context window drift" "no session in the last 7 days carried usage data"
     elif [[ "$drifted" -gt 0 ]]; then
-      warn $g "$drifted of $scanned recent session(s) ran past $((alarm / 1000))k of context" \
-           "worst was $((worst / 1000))k; every turn there billed $((worst / 1000))k of cache read, ~$((worst / 150000))x a turn held at 150k" \
-           "see: compact at ~150k, or split the thread — a fresh session re-bases to the static prefix (docs/agents/headroom.md)" slow
+      # Advisory, not a warning, because the subject is already over: the sessions it names
+      # have ENDED. No command clears this, no habit change clears it today, and it leaves on
+      # its own when the transcript ages out of the 7-day window. As a warn it was a finding
+      # the report could never close and `--fix` could only ever file under "needs you" —
+      # standing noise in front of the findings that are still actionable. The number is worth
+      # printing; it is worth printing at the tier that says "this is advice".
+      skip $g "$drifted of $scanned recent session(s) ran past $((alarm / 1000))k of context" \
+           "worst was $((worst / 1000))k; every turn there billed $((worst / 1000))k of cache read, ~$((worst / 150000))x a turn held at 150k. Compact at ~150k or split the thread — a fresh session re-bases to the static prefix (docs/agents/headroom.md)"
     else
       pass $g "context window drift" "$scanned recent session(s) stayed under $((alarm / 1000))k"
     fi
@@ -1671,10 +1691,28 @@ check_disk() {
   # orphans on a workspace that has none.
   local out; out="$("$DIR/aiworks-gc.sh" 2>&1)"
   local orphans; orphans="$(printf '%s\n' "$out" | sed -n 's/.*orphaned:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+  # The count alone is not enough to know the registered fix can do anything. `aiworks gc`
+  # REFUSES an orphan that is in use, or that holds uncommitted work, and says so — one
+  # `! skip … (--force to override)` line each, inside its own Orphans section. It then exits
+  # 0, because refusing on purpose is not an error. Registered blind, the fix therefore ran,
+  # reported `✓ ran`, removed nothing, and the finding came back byte-identical on every
+  # re-check forever: the "reported fixed, nothing fixed" shape the referee exists to catch,
+  # arriving from the one direction the referee cannot repair — a command that was never
+  # capable of clearing it. Read gc's own refusals and register the honest owner instead.
+  # Section-scoped, not a whole-output grep: the artifact and dispatch sections print `! skip`
+  # of their own, and counting those would call a removable orphan un-removable.
+  local blocked; blocked="$(printf '%s\n' "$out" \
+    | awk '/^==> Orphans/{inb=1; next} /^==>/{inb=0} inb' | grep -c '! *skip' || true)"
+  blocked="${blocked//[^0-9]/}"; blocked="${blocked:-0}"
   if [[ -z "$orphans" ]]; then
     skip $g "worktree disk" "aiworks gc printed no orphan count to read"
+  elif [[ "$orphans" -gt 0 && "$blocked" -ge "$orphans" ]]; then
+    warn $g "$orphans orphaned worktree(s), none of them removable" \
+         "aiworks gc refuses every one — each is in use or holds uncommitted work, and it prints the reason per worktree. Rescue or discard that work, then re-run; --force overrides the refusal and discards it." \
+         "see: ./aiworks gc   (read the reasons, then ./aiworks gc --orphans --artifacts)" slow
   elif [[ "$orphans" -gt 0 ]]; then
-    warn $g "$orphans orphaned worktree(s)" "Superset no longer lists them but the directories remain" \
+    warn $g "$orphans orphaned worktree(s)" \
+         "Superset no longer lists them but the directories remain$( [[ "$blocked" -gt 0 ]] && printf ' · %d of them gc will refuse (in use, or uncommitted work)' "$blocked" )" \
          "./aiworks gc --orphans --artifacts" slow
   else
     pass $g "worktree disk" "nothing orphaned"
