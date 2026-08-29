@@ -373,7 +373,52 @@ ck_exit "a non-executable hook exits 1" 1 "$RC"
 ck "a non-executable hook is named" "demo-guard.sh" "$OUT"
 ck "a non-executable hook offers chmod" "chmod +x" "$OUT"
 
-# ── 18 · the live workspace, if this clone has one ────────────────────────────────
+# ── 18 · the compose port parser ──────────────────────────────────────────────────
+# `services` hardcodes no ports — it reads them from .superset/mcp-compose.yml, so a
+# workspace that renumbers its stack is still checked correctly. This parser already failed
+# once, silently: written as a two-expression sed split over a continued line, the second
+# expression carried leading whitespace, BSD sed rejected it, and the group cheerfully
+# reported "no host ports" against a compose publishing three. Parsing is pure text, so it
+# is cheap to pin — and a silent no-match is exactly the failure a green tick would hide.
+W="$T/ports"; make_ws "$W"; stage "$W"; mkdir -p "$W/.superset"
+cat > "$W/.superset/mcp-compose.yml" <<'YML'
+name: aiworks-mcp
+services:
+  a-mcp:
+    ports:
+      - "127.0.0.1:${MCP_A_PORT:-25432}:8000"
+  b-mcp:
+    ports:
+      - "127.0.0.1:25999:8000"
+  c-mcp:
+    expose:
+      - "8000"
+YML
+# -v, deliberately: without it a port that HAPPENS to be listening on the machine running
+# the suite collapses into the group's "N ok" count and its number never prints, so the
+# assertion would pass or fail on whether a stack is up rather than on what was parsed.
+OUT="$("$W/scripts/aiworks-doctor.sh" --deep --only services -v 2>&1)"
+ck "reads a \${VAR:-default} published port" "25432" "$OUT"
+ck "reads a literal published port"          "25999" "$OUT"
+# Anchored to "port 8000", not the bare number: doctor prints the workspace path in its
+# header, and a macOS mktemp dir (/var/folders/…/T/…vd380000gn/…) can contain the digits.
+# A substring assertion on a number alone is a coin flip on someone else's temp path.
+ck "ignores the container-side port"         "ABSENT:port 8000" "$OUT"
+# The speed marker is the only warning a person gets before answering `yes` to --fix, and
+# this fix is `compose up -d --quiet-pull`: on a machine that has not pulled these images it
+# is a download that prints nothing, under a runner that captures its output. Marked fast it
+# was a silent multi-minute wait indistinguishable from a hang. `nc` is stubbed so the ports
+# read closed whatever happens to be listening on the machine running the suite.
+mkdir -p "$W/bin"; printf '#!/usr/bin/env bash\nexit 1\n' > "$W/bin/nc"; chmod +x "$W/bin/nc"
+OUT="$(PATH="$W/bin:$PATH" "$W/scripts/aiworks-doctor.sh" --deep --only services --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+ck "a closed port still offers to start the stack" "mcp-services.sh up" "$PLAN_SEC"
+ck "…marked slow, because a cold run pulls images" "slow"              "$PLAN_SEC"
+: > "$W/.superset/mcp-compose.yml"
+OUT="$("$W/scripts/aiworks-doctor.sh" --deep --only services 2>&1)"
+ck "an empty compose says so, not a false pass" "publishes no host ports" "$OUT"
+
+# ── 19 · the live workspace, if this clone has one ────────────────────────────────
 if [[ -f "$ROOT/mani.yaml" && -f "$ROOT/workspace.config.yaml" ]]; then
   OUT="$("$SCRIPT" --skip mcp,services,credentials,disk 2>&1)"; RC=$?
   case "$RC" in 0|1) ok "runs on the live workspace (exit $RC)" ;;
