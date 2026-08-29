@@ -1,1 +1,59 @@
-../.mcp.json
+{
+  "mcpServers": {
+    "mcp-image": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/mcp-image.sh\""
+      ]
+    },
+    "sonarqube": {
+      "type": "http",
+      "url": "http://localhost:25434/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SONARQUBE_TOKEN}"
+      }
+    },
+    "postgres_main": {
+      "type": "sse",
+      "url": "http://localhost:25432/sse"
+    },
+    "postgres_secondary": {
+      "type": "sse",
+      "url": "http://localhost:25433/sse"
+    },
+    "redis": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "redis-mcp-server@latest",
+        "redis-mcp-server",
+        "--url",
+        "redis://localhost:6379"
+      ]
+    },
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": [
+        "serve",
+        "--mcp",
+        "--path",
+        "/Users/employee/projects/bluepi/ai-workspace"
+      ]
+    },
+    "graphify_docs": {
+      "type": "stdio",
+      "command": "graphify-mcp"
+    },
+    "n8n-mcp": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/n8n-mcp.sh\""
+      ]
+    }
+  }
+}
