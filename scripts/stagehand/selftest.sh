@@ -123,6 +123,10 @@ ndisp="$(printf '%s' "$disp" | grep -o '"x":' | wc -l | tr -d ' ')"
 for app in Cursor "Google Chrome"; do
   pgrep -x "$app" >/dev/null 2>&1 || { printf '  skip %s is not running\n' "$app"; continue; }
   res="$(osascript -l JavaScript "$DIR/place.js" "$app" --dry-run --protect iTerm2 2>/dev/null)"
+  # Running is not the same as having a window. An app whose windows are all closed answers
+  # "no window", which is this machine's state, not a broken coordinate flip — the same reason
+  # the parked-window case below skips on `pgrep`.
+  case "$res" in *'"no window'*) printf '  skip %s is running with no window\n' "$app"; continue ;; esac
   check "$app: dry placement succeeds" '"ok":true' "$res"
   inside="$(python3 - "$disp" "$res" <<'PY' 2>/dev/null
 import json,sys

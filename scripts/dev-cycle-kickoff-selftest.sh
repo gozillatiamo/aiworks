@@ -30,6 +30,42 @@ command -v python3 >/dev/null 2>&1 || { echo "python3 not found — cannot build
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 HARNESS="$TMP/harness.cjs"
 
+# dev-cycle.js is GENERATED from workspace.config.yaml, so the ticket prefix, the repo ids and
+# each repo's base branch are that workspace's — not fixture values. Hardcoded, they made every
+# scenario below fail on any workspace that had renamed them: the arg guard strips only
+# <PREFIX>-<n> from the argument string, so "FM-12" against a workspace that renamed the
+# prefix is left as residue, thrown out as an unrecognised argument before a scenario runs.
+# Read the four facts the fixtures need out of the file under test, and substitute them in.
+read -r TICKET APP SUITE SUITE_BASE <<<"$(awk '
+  /^const TICKET_PREFIX = / {
+    if (match($0, /\047[^\047]+\047/)) prefix = substr($0, RSTART + 1, RLENGTH - 2)
+    next
+  }
+  /^const REPOS = \{/ { inr = 1; next }
+  inr && /^\}/        { inr = 0; next }
+  inr && match($0, /^  \047[^\047]+\047:/) {
+    k = substr($0, RSTART + 3, RLENGTH - 5); order[++n] = k; next
+  }
+  inr && k != "" {
+    if ($0 ~ /testSuite: *true/) isSuite[k] = 1
+    if (base[k] == "" && match($0, /feature: *\047[^\047]+\047/)) {
+      m = substr($0, RSTART, RLENGTH); sub(/^feature: *\047/, "", m); sub(/\047$/, "", m)
+      base[k] = m
+    }
+  }
+  END {
+    for (i = 1; i <= n; i++) {
+      r = order[i]
+      if (isSuite[r]) { if (s == "") s = r } else if (a == "") a = r
+    }
+    print prefix "-12", a, s, base[s]
+  }
+' "$WORKFLOW")"
+for v in TICKET APP SUITE SUITE_BASE; do
+  [[ -n "${!v}" && "${!v}" != "-12" ]] || {
+    echo "could not read $v out of $WORKFLOW — has the generator's shape changed?" >&2; exit 1; }
+done
+
 # Same strip-and-wrap the compile probe uses, except EXPORTED (not self-invoked): the driver
 # below supplies the stubs and calls it itself.
 python3 - "$WORKFLOW" "$HARNESS" <<'PY'
@@ -42,7 +78,17 @@ open(sys.argv[2], 'w').write(
 PY
 
 DRIVER="$TMP/driver.cjs"
-cat > "$DRIVER" <<'NODE'
+# The driver below is written with the framework's own defaults so it stays readable; the names
+# are swapped for this workspace's on the way out. `develop` is matched only in the four shapes
+# it appears in as a BRANCH — a blanket substitution would also eat `development-planner`.
+sed -e "s/FM-12/$TICKET/g" \
+    -e "s/your-app/$APP/g" \
+    -e "s/your-tests/$SUITE/g" \
+    -e "s/'develop'/'$SUITE_BASE'/g" \
+    -e "s/→develop/→$SUITE_BASE/g" \
+    -e "s/→ develop/→ $SUITE_BASE/g" \
+    -e "s/--feature-base develop/--feature-base $SUITE_BASE/g" \
+    > "$DRIVER" <<'NODE'
 const HARNESS = process.env.HARNESS
 const SCENARIO = process.env.SCENARIO
 const FP = process.env.FP || ''
@@ -271,7 +317,7 @@ function report(name, ok, detail) {
 NODE
 
 run_scenario() {
-  local scenario="$1" fp="${2:-}" args="${3:-FM-12}"
+  local scenario="$1" fp="${2:-}" args="${3:-$TICKET}"
   HARNESS="$HARNESS" SCENARIO="$scenario" FP="$fp" ARGS="$args" node "$DRIVER" 2>&1
 }
 
@@ -303,12 +349,12 @@ outC="$(run_scenario C "$FP")"
 ingest "$outC"
 
 echo "── scenario D — --feature-base-repos scopes the override"
-outD="$(run_scenario D "" "FM-12 --feature-base release/1.4 --feature-base-repos your-app")"
+outD="$(run_scenario D "" "$TICKET --feature-base release/1.4 --feature-base-repos $APP")"
 [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outD" | sed 's/^/      /'
 ingest "$outD"
 
 echo "── scenario D2 — no regression: --feature-base alone still applies to every repo"
-outD2="$(run_scenario D2 "" "FM-12 --feature-base release/1.4")"
+outD2="$(run_scenario D2 "" "$TICKET --feature-base release/1.4")"
 [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outD2" | sed 's/^/      /'
 ingest "$outD2"
 
@@ -338,12 +384,12 @@ outG="$(run_scenario G "$FP")"
 ingest "$outG"
 
 echo "── scenario G2 — a disagreeing override stops instead of re-basing quietly"
-outG2="$(run_scenario G2 "$FP" "FM-12 --feature-base develop")"
+outG2="$(run_scenario G2 "$FP" "$TICKET --feature-base $SUITE_BASE")"
 [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outG2" | sed 's/^/      /'
 ingest "$outG2"
 
 echo "── scenario G3 — --accept-base-change re-bases and invalidates the old proof"
-outG3="$(run_scenario G3 "$FP" "FM-12 --feature-base develop --accept-base-change")"
+outG3="$(run_scenario G3 "$FP" "$TICKET --feature-base $SUITE_BASE --accept-base-change")"
 [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outG3" | sed 's/^/      /'
 ingest "$outG3"
 
