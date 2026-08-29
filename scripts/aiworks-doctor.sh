@@ -1410,7 +1410,11 @@ check_headroom() {
   # and the status line never says so, because it shows headroom REMAINING, not turn cost.
   # posttool-context-budget.sh nudges inside a live session; this is the after-the-fact view,
   # because the sessions that cost the most are the ones nobody noticed at the time.
-  local proj_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+  # Overridable for the same reason HEADROOM_STATE_DIR is: this is the one headroom check that
+  # reads a MACHINE-GLOBAL path unrelated to the workspace being diagnosed. A fixture run — the
+  # selftest, a CI clone — has to be able to point it somewhere empty, or a case asserting on a
+  # COUNT of findings passes or fails according to how the machine happened to be used that week.
+  local proj_dir="${AIWORKS_TRANSCRIPT_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
   local alarm="${AIWORKS_CONTEXT_ALARM:-300000}"
   local drifted=0 scanned=0 worst=0 tf tw
   if [[ ! -d "$proj_dir" ]]; then
