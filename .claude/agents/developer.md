@@ -146,7 +146,7 @@ tools:
   - mcp__k8s_triage__top_nodes
   - mcp__k8s_triage__disconnect
   # The ONE sanctioned path to persist prod-derived data locally — masks external PII, entity-
-  # scoped, into a throwaway ofb_repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
+  # scoped, into a throwaway repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
   - Bash(uv run *prod_repro_seed.py*)
   # The Redis counterpart: replays a capture_shape descriptor as SYNTHETIC keys into LOCAL Redis
   # under a `repro:<label>:` prefix, torn down by that prefix. Refuses a non-loopback URL.
