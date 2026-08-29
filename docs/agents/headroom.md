@@ -139,6 +139,53 @@ and the inline overrides. Rule 3's cases are the stateful ones: each gets its ow
 A's probes) and its own `TMPDIR`, and one case asserts the recommended `until` loop never trips the
 guard that recommends it.
 
+## The context floor — what every turn re-sends before it starts
+
+The guards above police what a turn *adds*. They cannot see what every turn already carries: the
+system prompt, the agent definition, the imported config, and — the part nobody budgets for — one
+schema per granted tool. That floor is re-sent on every single turn, so it is not a one-time cost;
+it is a multiplier on turn count.
+
+Measured across one `dev-cycle` run — 151 subagents, 12,746 turns, 2,374.6M cache-read tokens:
+
+| | tokens |
+|---|---|
+| total cache-read | 2,374.6M |
+| **fixed floor, re-sent every turn** | **749.3M (31.6%)** |
+
+The floor is not uniform, and the spread is almost entirely tool schemas:
+
+```
+role=general-purpose   floor =  9,975 tok
+role=developer         floor = 96,360 tok
+```
+
+Same workspace, same imported config. The brief explains ~4K of that 86K gap and the agent
+definition ~11K; the remaining ~70K is granted MCP tool schemas. Two `role=developer` agents from
+the same phase with byte-identical briefs measured 96,360 and 42,767 — a 53.6K swing decided by
+which MCP servers happened to be connected when they spawned. Half the context was not chosen.
+
+**And it went unread.** Those 151 subagents held several hundred MCP tool schemas across 12,746
+turns and made **154 MCP calls against 11 distinct tools** — nine of them the two Postgres servers,
+two `codegraph`. Every schema for Redis, the triage servers, SonarQube, the graph docs and Figma was
+paid for on every turn and never once called.
+
+So: **grant verbs, not servers.** A bare `mcp__<server>` entry is not a small line in the
+frontmatter — `mcp__redis` alone is ~53 schemas. Enumerate what the role uses, the way
+`code-reviewer` and `qa-runner` already enumerate their sixteen Redis read verbs. The audit is one
+command:
+
+```sh
+for a in .claude/agents/*.md; do
+  grep -oE '^\s*-\s*mcp__[a-zA-Z0-9_]+\s*$' "$a" | grep -v '__.*__' \
+    | sed "s|^|$(basename "$a" .md) |"
+done
+```
+
+Anything it prints is a whole-server grant; keep it only where the server *is* the role's job.
+Trimming is also a permission fix — a whole-server Redis grant hands a build agent `delete`,
+`hset`, `xdel`, `rename` and `json_del`, which no plan ever asks it to run.
+
 ## The gate, and why its defaults are not our defaults
 
 A `PreToolUse` hook watches `Read` and bare `cat`:

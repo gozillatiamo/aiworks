@@ -63,11 +63,31 @@ tools:
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context
-  # Full DB + cache access (read + write, all permissions) — execute_sql/DML and redis writes for
-  # local dev / seeding / debugging against the platform stores. Whole-server grants.
+  # Full DB access (read + write, all permissions) — execute_sql/DML for local dev, seeding and
+  # debugging against the platform stores. Whole-server grants.
   - mcp__postgres_main
   - mcp__postgres_secondary
-  - mcp__redis
+  # Read-only cache/session inspection (no writes/publish) — the same list code-reviewer and
+  # qa-runner carry. NOT a whole-server grant: `mcp__redis` alone is ~53 tool schemas re-sent on
+  # every turn of the highest-turn role in the pipeline, and it hands a build agent
+  # delete/hset/xdel/rename/json_del it has no reason to hold. Seed local stores through the
+  # repo's own harness, not by writing keys from here.
+  - mcp__redis__get
+  - mcp__redis__hget
+  - mcp__redis__hgetall
+  - mcp__redis__hexists
+  - mcp__redis__llen
+  - mcp__redis__lrange
+  - mcp__redis__smembers
+  - mcp__redis__zrange
+  - mcp__redis__type
+  - mcp__redis__scan_keys
+  - mcp__redis__scan_all_keys
+  - mcp__redis__dbsize
+  - mcp__redis__info
+  - mcp__redis__json_get
+  - mcp__redis__client_list
+  - mcp__redis__xrange
   # Deployed Postgres (staging + prod, `env` per call), READ-ONLY, on-demand — prod needs the machine's triage.prod opt-in — for a bug repro under /diagnosing-bugs only.
   # The server forces a read-only role + read-only transaction, so no write can slip through.
   # ALWAYS disconnect at the end.
