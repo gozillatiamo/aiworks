@@ -1611,8 +1611,12 @@ check_services() {
     if port_open "$p"; then
       pass $g "port $p" "127.0.0.1:$p answering"
     else
+      # `slow`, because on a machine that has not pulled these images yet this is a docker
+      # image pull — and `--quiet-pull` plus --fix's captured output means it prints nothing
+      # at all while it runs. Warm, it is seconds. The marker is the only warning a person
+      # gets before answering `yes`, so it has to describe the cold case, not the warm one.
       warn $g "declared port $p not listening" "published by .superset/mcp-compose.yml" \
-           ".superset/mcp-services.sh up"
+           ".superset/mcp-services.sh up" slow
     fi
   done
 }
