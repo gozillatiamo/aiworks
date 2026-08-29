@@ -22,7 +22,7 @@
   "20": "Extraction Subagent Prompt",
   "21": "graphify Skill Pipeline",
   "22": "coding-automate skill",
-  "23": "graph.json",
+  "23": "apply-human-review skill",
   "24": "Gitflow and Config Conventions",
   "25": "Deployed Root-Cause Method",
   "26": "qa-runner agent (Peter)",
@@ -97,5 +97,7 @@
   "95": "Diagnosing Bugs",
   "96": ".skills-upstream/grill-me/SKILL.md",
   "97": ".skills-upstream/grill-with-docs/SKILL.md",
-  "98": ".skills-upstream/grilling/SKILL.md"
+  "98": ".skills-upstream/grilling/SKILL.md",
+  "99": "Honesty Rules",
+  "100": "CLAUDE.md"
 }

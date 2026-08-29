@@ -1,16 +1,16 @@
-# Graph Report - ai-workspace  (2026-08-26)
+# Graph Report - ai-workspace  (2026-08-29)
 
 ## Corpus Check
-- 250 files · ~283,059 words
+- 252 files · ~285,357 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1183 nodes · 1545 edges · 99 communities (88 shown, 11 thin omitted)
+- 1185 nodes · 1546 edges · 101 communities (89 shown, 12 thin omitted)
 - Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 88 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f4be390c`
+- Built from commit: `f793356c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -38,7 +38,7 @@
 - Extraction Subagent Prompt
 - graphify Skill Pipeline
 - coding-automate skill
-- graph.json
+- apply-human-review skill
 - Gitflow and Config Conventions
 - Deployed Root-Cause Method
 - qa-runner agent (Peter)
@@ -104,6 +104,8 @@
 - 0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md
 - During the session
 - Diagnosing Bugs
+- Honesty Rules
+- CLAUDE.md
 
 ## God Nodes (most connected - your core abstractions)
 1. `qa-runner agent (Peter)` - 29 edges
@@ -120,13 +122,13 @@
 ## Surprising Connections (you probably didn't know these)
 - `Never Read .env Files (AGENTS.md)` --semantically_similar_to--> `Never Read .env Files`  [INFERRED] [semantically similar]
   AGENTS.md → CLAUDE.md
+- `Headroom Accuracy Contract` --semantically_similar_to--> `Honesty Rules`  [INFERRED] [semantically similar]
+  docs/agents/headroom.md → .claude/skills/graphify/SKILL.md
 - `env Guard hcat Coverage` --semantically_similar_to--> `Adapter Pipe Guard`  [INFERRED] [semantically similar]
   docs/agents/headroom.md → CLAUDE.md
 - `Graphify Stores A Map, Not The Text` --semantically_similar_to--> `Extraction Subagent Prompt`  [INFERRED] [semantically similar]
   docs/adr/0013-codegraph-keeps-the-code-graphify-maps-the-prose.md → .claude/skills/graphify/references/extraction-spec.md
-- `Accuracy Loss Is A Cost, Not A Saving` --semantically_similar_to--> `Honesty Rules`  [INFERRED] [semantically similar]
-  docs/adr/0014-compression-is-explicit-and-file-scoped.md → .claude/skills/graphify/SKILL.md
-- `Headroom Accuracy Contract` --semantically_similar_to--> `Honesty Rules`  [INFERRED] [semantically similar]
+- `Disposable Subagent For Huge Files` --semantically_similar_to--> `Parallel Subagent Dispatch`  [INFERRED] [semantically similar]
   docs/agents/headroom.md → .claude/skills/graphify/SKILL.md
 
 ## Import Cycles
@@ -155,7 +157,7 @@
 - **Provider-dispatch adapter pattern (lib.sh + swappable impls)** — scripts_tracker_readme_lib_sh, scripts_vcs_readme_lib_sh, scripts_tracker_readme_tracker_provider_interface, scripts_vcs_readme_vcs_provider_interface, scripts_voice_readme [INFERRED 0.85]
 - **Tracker-adapter ticket lifecycle (estimate → plan → automate → gate → PR → notify)** — _claude_skills_estimate_ticket_skill_estimate_ticket, _claude_skills_plan_testcases_skill_plan_testcases, _claude_skills_plan_automate_skill_plan_automate, _claude_skills_loadtest_baseline_gate_skill_loadtest_baseline_gate, _claude_skills_open_pr_skill_open_pr, _claude_skills_notify_skill_notify, _claude_skills_diagram_ticket_skill_diagram_ticket [INFERRED 0.85]
 
-## Communities (99 total, 11 thin omitted)
+## Communities (101 total, 12 thin omitted)
 
 ### Community 0 - "Agent Roster and Dev Harness"
 Cohesion: 0.07
@@ -163,7 +165,7 @@ Nodes (65): Michael — CEO Agent (conductor only), Daniel — Code Reviewer Age
 
 ### Community 1 - "hcat"
 Cohesion: 0.13
-Nodes (26): Honesty Rules, caveman Output Compression, Never Read .env Files, hcat For Big Data Files, Language And Compression Rules, Test-Suite Gate Never Fails Open, pretool-env-guard.sh, graphify extract Fails Open (+18 more)
+Nodes (27): Query Token Budget, Adapter Pipe Guard, caveman Output Compression, Never Read .env Files, Language And Compression Rules, pretool-env-guard.sh, Provider Adapters, Compression Is Explicit And File-Scoped (+19 more)
 
 ### Community 2 - "Prod PII Vault (HMAC digests only)"
 Cohesion: 0.08
@@ -214,8 +216,8 @@ Cohesion: 0.12
 Nodes (20): scripts/tracker/add-ticket-comment.sh, Board calibration set (10 recent Done), Dev+QA points written, total derived, estimate-ticket (skill), scripts/tracker/find-tickets.sh, scripts/tracker/get-ticket-comments.sh, scripts/tracker/get-ticket-details.sh, scripts/tracker/upsert-ticket-details.sh (+12 more)
 
 ### Community 14 - "clarifying-ticket skill"
-Cohesion: 0.17
-Nodes (19): Attachment embed-id vs numeric id, update-ticket skill, clarifying-ticket skill, Clarified ticket templates, decompose-ticket skill, Decomposition piece-spec templates, diagram-ticket skill, estimate-ticket skill (+11 more)
+Cohesion: 0.16
+Nodes (20): Attachment embed-id vs numeric id, update-ticket skill, clarifying-ticket skill, Clarified ticket templates, decompose-ticket skill, Decomposition piece-spec templates, diagram-ticket skill, estimate-ticket skill (+12 more)
 
 ### Community 15 - "Thai register (address mode)"
 Cohesion: 0.13
@@ -230,28 +232,28 @@ Cohesion: 0.17
 Nodes (15): PII provenance stays production-only, triage.prod — the one production opt-in, ADR-0005 — Triage covers every deployed env; only prod is gated, Targets derived from the GKE context name, Impersonation, not a key file, ADR-0007 — Kubernetes triage authenticates as a separate read-only identity, Bash(kubectl *) / Bash(gcloud *) denied to agents, LEGACY[] table swept by its own rename (+7 more)
 
 ### Community 18 - "Incremental Update"
-Cohesion: 0.18
-Nodes (14): URL Ingest (graphify add), Post-Commit Auto-Rebuild Hook, save-result Feedback Loop, Work Memory And LESSONS.md, Whisper Domain-Hint Prompt, Whisper Transcription, detect_incremental, Graph Diff After Update (+6 more)
+Cohesion: 0.14
+Nodes (17): URL Ingest (graphify add), Verbatim source_file Rule, Post-Commit Auto-Rebuild Hook, save-result Feedback Loop, Work Memory And LESSONS.md, Whisper Domain-Hint Prompt, Whisper Transcription, build_merge Replace-On-Re-Extract (+9 more)
 
 ### Community 19 - "ux-ui-designer agent (Jane)"
-Cohesion: 0.22
-Nodes (15): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, workspace.config.yaml, caveman skill (+7 more)
+Cohesion: 0.23
+Nodes (14): agent_logs/Mia_ux-ui-planner/<work-key>-design-plan.md, ux-ui-designer agent (Jane), ux-ui-planner agent (Mia), Caveman savings statusline, refresh-savings.sh (Stop hook), statusline.sh, caveman skill, designing-page skill (+6 more)
 
 ### Community 20 - "Extraction Subagent Prompt"
-Cohesion: 0.18
-Nodes (13): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Language Rule, Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, Extraction Subagent Prompt, Hyperedges, Node ID Format (+5 more)
+Cohesion: 0.13
+Nodes (18): Watch Debounce, Watch Mode Auto-Rebuild, Call Edge Direction And Language Rule, Discrete Confidence Score Rubric, EXTRACTED/INFERRED/AMBIGUOUS Taxonomy, DEEP_MODE Aggressive Inference, Extraction Subagent Prompt, Hyperedges (+10 more)
 
 ### Community 21 - "graphify Skill Pipeline"
-Cohesion: 0.18
-Nodes (13): Wiki Export, Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, cluster-only Rerun, Community Detection And Labeling, Cumulative Cost Tracker, Fast Path On Existing Graph (+5 more)
+Cohesion: 0.12
+Nodes (22): Wiki Export, Cross-Repo Graph Merge, Monorepo Subfolder Extraction, GitHub Repo Clone, BFS And DFS Traversal Modes, Constrained Query Expansion, Node Explanation, Graph Query Flow (+14 more)
 
 ### Community 22 - "coding-automate skill"
-Cohesion: 0.20
-Nodes (14): agent_logs/<KEY>-automation-plan.md, agent_logs/<KEY>-bugs.md, Submodule checkout write ban, Bug log template, coding-automate skill, coding-feature skill, Workspace coding style, Ground truth first (+6 more)
+Cohesion: 0.21
+Nodes (13): agent_logs/<KEY>-automation-plan.md, agent_logs/<KEY>-bugs.md, Submodule checkout write ban, Bug log template, coding-automate skill, coding-feature skill, Workspace coding style, Ground truth first (+5 more)
 
-### Community 23 - "graph.json"
-Cohesion: 0.15
-Nodes (14): Verbatim source_file Rule, BFS And DFS Traversal Modes, Constrained Query Expansion, Node Explanation, Graph Query Flow, Inline NetworkX Fallback, Shortest Path Between Concepts, Query Token Budget (+6 more)
+### Community 23 - "apply-human-review skill"
+Cohesion: 0.33
+Nodes (6): developer agent, development-planner agent, apply-human-review skill, Human: review directive convention, find-prs.sh, pr-threads.sh
 
 ### Community 24 - "Gitflow and Config Conventions"
 Cohesion: 0.24
@@ -262,20 +264,20 @@ Cohesion: 0.21
 Nodes (12): Step 1 — Base rate before any hypothesis, Step 3 — Discriminator, scripts/observability/find-traces.sh, scripts/observability/get-logs.sh, Step 2 — Hypothesis ledger, root-cause-deployed skill, Step 4 — Verdict tiers (CONFIRMED/LEADING/SPECULATIVE), diagnosing-bugs skill (local red loop) (+4 more)
 
 ### Community 26 - "qa-runner agent (Peter)"
-Cohesion: 0.18
-Nodes (15): agent_logs/<KEY>-report.md, developer agent, development-planner agent, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), apply-human-review skill, loadtest-baseline-gate skill, report-test-results skill (+7 more)
+Cohesion: 0.23
+Nodes (12): agent_logs/<KEY>-report.md, QA runner Bar (receipt-backed verdict), qa-runner agent (Peter), karpathy-guidelines skill, loadtest-baseline-gate skill, report-test-results skill, self-control-gitflow skill, telemetry-triage skill (+4 more)
 
 ### Community 27 - "qa-planner agent (Peter)"
-Cohesion: 0.18
-Nodes (14): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, karpathy-guidelines skill, plan-testcases skill (+6 more)
+Cohesion: 0.23
+Nodes (12): agent_logs/<KEY>-testcases.md (BDD test plan), QA planner delegation contract, qa-planner agent (Peter), Workspace config files carry no comments, workspace.config.example.yaml, workspace.config.local.yaml, workspace.config.yaml, plan-testcases skill (+4 more)
 
 ### Community 28 - "TDD and Test Design"
 Cohesion: 0.24
 Nodes (11): Deep modules, Interface design for testability, Mock at system boundaries only, Refactor candidates, Horizontal slices anti-pattern, Red-green-refactor vertical slice loop, tdd skill, Good and bad tests (+3 more)
 
 ### Community 29 - "The basis for a review verdict"
-Cohesion: 0.21
-Nodes (12): docs/agents/issue-tracker.md, scripts/dev.sh per-repo harness (why/artifacts), The basis for a review verdict, Codegraph callers/impact blast radius, §2 Coding standards are the bottom line, §5 Every claim carries a receipt, §3 The repo's knowledge is your instrument, §1 The requirements are the bar (+4 more)
+Cohesion: 0.27
+Nodes (10): docs/agents/issue-tracker.md, The basis for a review verdict, Codegraph callers/impact blast radius, §2 Coding standards are the bottom line, §3 The repo's knowledge is your instrument, §1 The requirements are the bar, §4 Review level (strict / thorough), review skill (+2 more)
 
 ### Community 30 - "graphify — operating the doc graph"
 Cohesion: 0.22
@@ -290,8 +292,8 @@ Cohesion: 0.22
 Nodes (9): case-report skill, k8s_triage, pg_triage (read-only deployed Postgres), redis_triage, root-cause-deployed skill, PII provenance convention, Case report template, Production troubleshooting guideline (+1 more)
 
 ### Community 33 - "report-test-results skill"
-Cohesion: 0.33
-Nodes (6): Test-results report template, scripts/tracker/add-ticket-comment.sh, coding-automate skill, scripts/pdf/render.sh, report-test-results skill, update-ticket skill
+Cohesion: 0.25
+Nodes (8): Test-results report template, scripts/tracker/add-ticket-comment.sh, coding-automate skill, scripts/dev.sh per-repo harness (why/artifacts), scripts/pdf/render.sh, report-test-results skill, update-ticket skill, §5 Every claim carries a receipt
 
 ### Community 34 - "Load Gate and Plan Artifacts"
 Cohesion: 0.25
@@ -326,8 +328,8 @@ Cohesion: 0.47
 Nodes (6): Advanced debugging techniques, Installing debug adapters, dap CLI (DAP debugger driver), debugging-code skill, Vendored plugin skills note, scripts/aiworks-cursor.sh (vendor sync)
 
 ### Community 42 - "Optional Export Flags"
-Cohesion: 0.18
-Nodes (12): FalkorDB Export, GraphML Export, graphify MCP Stdio Server, Neo4j Export, Optional Export Flags, SVG Export, Token Reduction Benchmark, agent_logs Excluded (+4 more)
+Cohesion: 0.40
+Nodes (6): FalkorDB Export, GraphML Export, Neo4j Export, Optional Export Flags, SVG Export, Token Reduction Benchmark
 
 ### Community 43 - "Ticket Approval Rules"
 Cohesion: 0.40
@@ -366,8 +368,8 @@ Cohesion: 0.09
 Nodes (19): ADR Format, Numbering, Optional sections, Template, What qualifies, When to offer an ADR, CONTEXT.md Format, Rules (+11 more)
 
 ### Community 62 - "bluePi Workspace CLAUDE.md"
-Cohesion: 0.13
-Nodes (19): Native CLAUDE.md Integration, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions, Adapter Pipe Guard, Known False-Reds, Multi-Repo Workspace, Notification Policy (+11 more)
+Cohesion: 0.14
+Nodes (18): Native CLAUDE.md Integration, Never Read .env Files (AGENTS.md), Multi-Repo Workspace (AGENTS.md), bluePi Workspace Agent Instructions, hcat For Big Data Files, Known False-Reds, Multi-Repo Workspace, Notification Policy (+10 more)
 
 ### Community 63 - "Obsidian — shared vault settings for the workspace meta-repo"
 Cohesion: 0.40
@@ -422,8 +424,8 @@ Cohesion: 0.40
 Nodes (4): A cross-repo finding escalates instead of looping, Consequences, Context, Decision
 
 ### Community 84 - "Codegraph Keeps The Code, Graphify Maps The Prose"
-Cohesion: 0.13
-Nodes (18): DEEP_MODE Aggressive Inference, Gemini Semantic Backend, No API Key Required, Parallel Subagent Dispatch, Semantic Extraction, Semantic Extraction Cache, codegraph Absolute -p Rule, claude-cli Backend (+10 more)
+Cohesion: 0.14
+Nodes (17): graphify MCP Stdio Server, No API Key Required, codegraph Absolute -p Rule, agent_logs Excluded, claude-cli Backend, codegraph, codegraph_explore, Codegraph Keeps The Code, Graphify Maps The Prose (+9 more)
 
 ### Community 85 - "A QA-attributed fix is quality-checked, not re-reviewed"
 Cohesion: 0.50
@@ -469,6 +471,10 @@ Nodes (19): ADR Format, Numbering, Optional sections, Template, What qualifies, 
 Cohesion: 0.13
 Nodes (14): Completion criterion: a tight loop that goes red, Diagnosing Bugs, Minimise, Non-deterministic bugs, Phase 1: Build a feedback loop, Phase 2: Reproduce + minimise, Phase 3: Hypothesise, Phase 4: Instrument (+6 more)
 
+### Community 99 - "Honesty Rules"
+Cohesion: 0.50
+Nodes (4): Honesty Rules, Test-Suite Gate Never Fails Open, graphify extract Fails Open, Accuracy Loss Is A Cost, Not A Saving
+
 ## Ambiguous Edges - Review These
 - `design (skill)` → `diagram-ticket (skill)`  [AMBIGUOUS]
   .claude/skills/diagram-ticket/SKILL.md · relation: conceptually_related_to
@@ -486,9 +492,9 @@ Nodes (14): Completion criterion: a tight loop that goes red, Diagnosing Bugs, M
   .claude/skills/graphify/references/hooks.md · relation: references
 
 ## Knowledge Gaps
-- **460 isolated node(s):** `Redact`, `Ways to construct one, in roughly this order`, `Tighten the loop`, `Non-deterministic bugs`, `When you genuinely cannot build a loop` (+455 more)
+- **461 isolated node(s):** `CodeGraph`, `Step 1 — Fix the defect and the entity set`, `Step 2 — Load the organization's ladder`, `Step 3 — Pick the rung, with the receipt`, `Step 4 — Generate` (+456 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **12 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
