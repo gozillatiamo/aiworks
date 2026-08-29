@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# PreToolUse(Bash) hook — the two Bash shapes that cost the most CONTEXT, blocked BEFORE
+# PreToolUse(Bash) hook — the three Bash shapes that cost the most CONTEXT, blocked BEFORE
 # they spend it.
 #
 # WHY A *PRE* HOOK. `posttool-output-warden.sh` already reports an oversized result, and it
@@ -35,6 +35,34 @@
 #   computed file, sed in place, a small patch — is still allowed. Set
 #   BASH_PATCH_GUARD=0 to disable this rule alone if the trade is not worth it for you.
 #
+# RULE 3 — a POLL LOOP: the same file probe, over and over, while something else runs.
+#   Rules 1 and 2 both price a SINGLE call — how many bytes its result lands, how many its
+#   payload carries. Rule 3 prices the call that costs nothing by either measure and is still
+#   the most expensive thing in the transcript, because the unit is the TURN: every request
+#   re-sends the whole window, so a probe returning `112` against a 490k-token context bills
+#   490k tokens to learn one number you already knew.
+#
+#   Measured, one developer subagent on a Rust backend repo (2026-08-27): 907 tool calls, 806
+#   of them foreground Bash, and ONE command —
+#   `grep -c " ok$" agent_logs/executed_verbose/test-<ts>.log` — repeated 95 times verbatim,
+#   in unbroken runs of ~20 back to back with no other tool call between them. Thirteen of
+#   those consecutive probes returned the identical count. Add its siblings on the same log
+#   (`grep -c "\.\.\. FAILED"`, `tail -5`, `wc -l`) and ~400 of the 806 calls are one spin
+#   loop waiting on a `dev.sh test` run. Session total: 1409 turns, 690M cache-read tokens,
+#   ~$30 — against 216k output tokens. Every other agent in the same workflow run finished
+#   in 74–136 tool calls.
+#
+#   The remedy was already in hand and simply unknown: `run_in_background` is a parameter of
+#   the Bash tool the agent already had, and the harness re-invokes you when the command
+#   exits. One call that ENDS when the condition is true costs one turn instead of four
+#   hundred. Monitor is the other half of the same answer, for a stream of events rather than
+#   a single "it finished" — but for "tell me when the suite is done", background Bash is it.
+#
+#   Scope is deliberately narrow: only a read-only FILE PROBE, only the identical command
+#   text, only within a rolling window. A legitimate investigation greps one file with
+#   DIFFERENT patterns; re-running one byte-identical probe six times in five minutes is a
+#   spin loop or it is nothing. BASH_POLL_GUARD=0 disables just this rule.
+#
 # Exit 0 = allow. Exit 2 = block, stderr is shown to the model as feedback.
 
 set -uo pipefail
@@ -45,6 +73,11 @@ MAX_BYTES="${BASH_READ_MAX_BYTES:-8192}"
 # Rule 2: below this the duplicated text is cheaper than the round trip, so let it through.
 PATCH_MIN_BYTES="${BASH_PATCH_MIN_BYTES:-2000}"
 PATCH_GUARD="${BASH_PATCH_GUARD:-1}"
+# Rule 3: identical probes allowed inside the window before it reads as a spin loop. Six is
+# well above any honest re-check and ~15x below the 95 the measured session actually ran.
+POLL_MAX="${BASH_POLL_MAX:-6}"
+POLL_WINDOW="${BASH_POLL_WINDOW:-300}"
+POLL_GUARD="${BASH_POLL_GUARD:-1}"
 
 input=$(cat)
 tool=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)
@@ -66,6 +99,9 @@ ovr() {
 v=$(ovr BASH_READ_MAX_BYTES);   [ -n "$v" ] && MAX_BYTES="$v"
 v=$(ovr BASH_PATCH_MIN_BYTES);  [ -n "$v" ] && PATCH_MIN_BYTES="$v"
 v=$(ovr BASH_PATCH_GUARD);      [ -n "$v" ] && PATCH_GUARD="$v"
+v=$(ovr BASH_POLL_MAX);         [ -n "$v" ] && POLL_MAX="$v"
+v=$(ovr BASH_POLL_WINDOW);      [ -n "$v" ] && POLL_WINDOW="$v"
+v=$(ovr BASH_POLL_GUARD);       [ -n "$v" ] && POLL_GUARD="$v"
 
 # ── RULE 2 first: it reads the heredoc BODY, which rule 1's stripping throws away.
 if [ "$PATCH_GUARD" = "1" ]; then
@@ -107,7 +143,7 @@ if [ "$PATCH_GUARD" = "1" ]; then
   fi
 fi
 
-# ── RULE 1 — an unbounded whole-file read.
+# ── Shared by rules 3 and 1.
 #
 # A HEREDOC BODY IS DATA, NOT COMMANDS (same lesson as pretool-adapter-pipe-guard.sh): prose
 # and scripts routinely contain the word `cat`, and this hook's own documentation does.
@@ -117,10 +153,6 @@ nobody=$(printf '%s' "$cmd" | awk '
     if (match(line, /<<-?[[:space:]]*'"'"'?[A-Za-z_][A-Za-z0-9_]*'"'"'?/)) {
       tag=substr(line, RSTART, RLENGTH); gsub(/^<<-?[[:space:]]*|'"'"'/, "", tag); intag=tag }
     print line }')
-
-# A redirect to a file means the bytes never reach the window — exactly what the warden asks
-# for. `cat big.json > /tmp/x` is the RIGHT move and must not be blocked.
-printf '%s' "$nobody" | grep -qE '>[[:space:]]*[^&[:space:]]' && exit 0
 
 # Readers that emit a WHOLE file by default. `hcat` is deliberately absent: it is the remedy
 # here, and pretool-hcat-size-guard.sh owns its own ceiling.
@@ -135,6 +167,92 @@ bounders='head|tail|wc|grep|egrep|rg|jq|awk|sed|uniq|md5|md5sum|shasum|sha1sum|d
 # only ends the subshell and this hook went on to exit 0. That is not a style preference — the
 # first version of this guard silently allowed every case it was written to block.
 pipelines=$(printf '%s' "$nobody" | tr ';\n' '\n\n' | sed -e 's/&&/\n/g' -e 's/||/\n/g')
+
+# ── RULE 3 — the same file probe, again, while something else is still running.
+#
+# Runs BEFORE rule 1's redirect allowance: a redirect spares the window the bytes, but it does
+# not spare it the turn, and the turn is what this rule prices.
+if [ "$POLL_GUARD" = "1" ]; then
+  # A probe is a READ-ONLY inspection of a named file. Anything that builds, writes, moves or
+  # runs is excluded by construction — repeating THOSE is work, not waiting.
+  probers="$readers|$bounders|stat|file|du|cksum"
+  probe=""
+  while IFS= read -r pipeline; do
+    [ -z "$pipeline" ] && continue
+    first=${pipeline%%|*}
+    head_tok=$(printf '%s' "$first" | sed -e 's/^[[:space:]]*//' \
+      -e 's/^\([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]\{1,\}\)*//' \
+      -e 's/^\(sudo\|env\|command\|time\|nohup\)[[:space:]]\{1,\}//')
+    verb=$(printf '%s' "$head_tok" | awk '{print $1}')
+    printf '%s' "$verb" | grep -qE "^($probers)$" || continue
+    # It only counts as a probe if it names a file that EXISTS. `grep -r pattern .`, a pipe fed
+    # from stdin, and a probe of a path not yet created are all just commands.
+    while IFS= read -r arg; do
+      [ -z "$arg" ] && continue
+      case "$arg" in -*) continue ;; esac
+      path=$(printf '%s' "$arg" | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")
+      case "$path" in /*) ;; *) [ -n "$cwd" ] && path="$cwd/$path" ;; esac
+      [ -f "$path" ] && { probe="$path"; break; }
+    done <<< "$(printf '%s' "$head_tok" | awk '{for (i=2;i<=NF;i++) print $i}')"
+    [ -n "$probe" ] && break
+  done <<< "$pipelines"
+
+  if [ -n "$probe" ]; then
+    # Keyed on the WHOLE command, normalised for whitespace only. Two greps of one file with
+    # different patterns are two questions; the identical grep twice is the same question.
+    key=$(printf '%s' "$cmd" | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//' | cksum | tr -d ' ')
+    # transcript_path FIRST: parallel subagents in one workflow wave can share a session_id, and
+    # a shared counter would let one agent's probes block another's first call.
+    who=$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // ""' 2>/dev/null | cksum | tr -d ' ')
+    dir="${TMPDIR:-/tmp}/aiworks-poll-guard"
+    ledger="$dir/$who"
+    mkdir -p "$dir" 2>/dev/null
+    now=$(date +%s)
+    cutoff=$(( now - POLL_WINDOW ))
+    # Prune to the window, then count what is left for THIS command. Pruning on every call is
+    # what keeps the ledger from growing without bound over a long session.
+    if [ -f "$ledger" ]; then
+      awk -v c="$cutoff" -F' ' '$1 >= c' "$ledger" > "$ledger.tmp" 2>/dev/null && mv "$ledger.tmp" "$ledger"
+    fi
+    seen=$(awk -v k="$key" -F' ' '$2 == k' "$ledger" 2>/dev/null | wc -l | tr -d ' ')
+    printf '%s %s\n' "$now" "$key" >> "$ledger" 2>/dev/null
+    if [ "${seen:-0}" -ge "$POLL_MAX" ]; then
+      mins=$(( POLL_WINDOW / 60 ))
+      {
+        echo "⛔ Blocked: this exact probe has already run ${seen} times in the last ${mins} min."
+        echo "   $cmd"
+        echo
+        echo "Polling a file costs almost nothing to READ and a full turn to ASK. Every request"
+        echo "re-sends your whole context, so a probe that returns one number against a 490k-token"
+        echo "window bills 490k tokens to learn something you already knew. The session that"
+        echo "motivated this rule ran one such grep 95 times: 1409 turns, 690M cache-read tokens,"
+        echo "~\$30 — while every sibling agent finished the same kind of work in ~100 tool calls."
+        echo
+        echo "Wait in ONE call instead of N. Bash takes a run_in_background parameter, and the"
+        echo "harness re-invokes you when the command exits — so give it a loop that ENDS when the"
+        echo "thing you are waiting for is true:"
+        echo "  Bash(run_in_background=true, command=\"until <the condition>; do sleep 5; done\")"
+        echo "e.g.  until grep -q 'test result:' <log>; do sleep 5; done"
+        echo "Make the condition match FAILURE too, or a crash looks identical to still-running:"
+        echo "  until grep -qE 'test result:|error: could not compile|panicked' <log>; do sleep 5; done"
+        echo
+        echo "Need a notification per event rather than one at the end (each failure as it lands)?"
+        echo "That is the Monitor tool, with a --line-buffered filter."
+        echo
+        echo "Already finished waiting and this really is a fresh question? Change the question —"
+        echo "a different pattern or region is not the same probe and is not counted."
+        echo "(Deliberate override: BASH_POLL_GUARD=0 <your command>.)"
+      } >&2
+      exit 2
+    fi
+  fi
+fi
+
+# ── RULE 1 — an unbounded whole-file read.
+#
+# A redirect to a file means the bytes never reach the window — exactly what the warden asks
+# for. `cat big.json > /tmp/x` is the RIGHT move and must not be blocked.
+printf '%s' "$nobody" | grep -qE '>[[:space:]]*[^&[:space:]]' && exit 0
 
 while IFS= read -r pipeline; do
   [ -z "$pipeline" ] && continue
