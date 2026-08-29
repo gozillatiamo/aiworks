@@ -1005,6 +1005,93 @@ else
   printf 'skip repo-health-check.sh not executable\n'
 fi
 
+# ── posttool-context-budget.sh ─────────────────────────────────────────────────────────
+# The hook reads the window off the transcript, so the fixtures below ARE transcripts: one
+# JSON line per usage row, exactly the shape Claude Code writes. Advisory like the
+# portability checker — it always exits 0 — so every assertion is on the TEXT, never the
+# exit code, or the suite would pass on a hook that had stopped measuring anything.
+CTX="$H/posttool-context-budget.sh"
+CTXCFG="$TMP/ctxcfg"; mkdir -p "$CTXCFG"
+
+mkjsonl() { # mkjsonl <name> <read> <write> <input>  -> path
+  local f="$TMP/tx-$1.jsonl"
+  jq -cn --argjson r "$2" --argjson w "$3" --argjson i "$4" \
+    '{type:"assistant",message:{usage:{cache_read_input_tokens:$r,cache_creation_input_tokens:$w,input_tokens:$i,output_tokens:10}}}' \
+    > "$f"
+  printf '%s' "$f"
+}
+
+tc() { # tc <name> <want: warn|alarm|quiet> <session-id> <transcript>
+  local name=$1 want=$2 sid=$3 tx=$4 err
+  err="$(jq -cn --arg t "$tx" --arg s "$sid" '{session_id:$s,transcript_path:$t,tool_name:"Bash"}' \
+         | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" 2>&1 >/dev/null)"
+  local got=quiet
+  printf '%s' "$err" | grep -q 'context window' && got=warn
+  printf '%s' "$err" | grep -q 'every further turn bills' && got=alarm
+  if [ "$got" = "$want" ]; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s, got %s)\n' "$name" "$want" "$got"
+  fi
+}
+
+# --check renders the verdict without a transcript; the bands are the contract.
+[ -z "$("$CTX" --check 149999)" ] \
+  && { pass=$((pass+1)); printf 'ok   under the warn threshold says nothing\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL under the warn threshold should be silent\n'; }
+"$CTX" --check 150000 | grep -q 'context window 150k' \
+  && { pass=$((pass+1)); printf 'ok   warn band names the window\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL warn band did not name the window\n'; }
+"$CTX" --check 299999 | grep -q 'every further turn bills' \
+  && { fail=$((fail+1)); printf 'FAIL just under alarm escalated early\n'; } \
+  || { pass=$((pass+1)); printf 'ok   just under alarm stays a warning\n'; }
+"$CTX" --check 300000 | grep -q 'every further turn bills' \
+  && { pass=$((pass+1)); printf 'ok   alarm band escalates\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL alarm band did not escalate\n'; }
+"$CTX" --check 709000 | grep -q '709k' \
+  && { pass=$((pass+1)); printf 'ok   alarm reports the measured size, not the threshold\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL alarm did not report the measured size\n'; }
+
+# The window is the SUM of the three billed input fields, not cache_read alone: a turn that
+# just wrote 90k of cache is as expensive as one that read it.
+tc "small window is quiet"      quiet ctx-a "$(mkjsonl a  40000    0     0)"
+tc "warn band fires"            warn  ctx-b "$(mkjsonl b 180000    0     0)"
+tc "alarm band fires"           alarm ctx-c "$(mkjsonl c 620000    0     0)"
+tc "cache write counts too"     warn  ctx-d "$(mkjsonl d  70000 90000     0)"
+tc "uncached input counts too"  warn  ctx-e "$(mkjsonl e  70000     0 90000)"
+
+# Regression: a cancelled or synthetic turn appends an all-zero usage row. Taking the
+# literally-last row read 0 there and the hook went silent on a 620k session — which is
+# exactly the session it exists to catch.
+Z="$TMP/tx-zero.jsonl"
+cat "$(mkjsonl z 620000 0 0)" > "$Z"
+jq -cn '{type:"assistant",message:{usage:{cache_read_input_tokens:0,cache_creation_input_tokens:0,input_tokens:0,output_tokens:0}}}' >> "$Z"
+tc "trailing zero row does not mask the window" alarm ctx-f "$Z"
+
+# Throttle: one line per 50k bucket per session, or a long session buries the warning under
+# its own repetitions. Same session + same window must go quiet the second time.
+tc "first crossing warns"          warn  ctx-g "$(mkjsonl g 180000 0 0)"
+tc "same bucket is throttled"      quiet ctx-g "$(mkjsonl g 180000 0 0)"
+tc "a new bucket warns again"      warn  ctx-g "$(mkjsonl g 260000 0 0)"
+tc "a different session is not throttled" warn ctx-h "$(mkjsonl h 180000 0 0)"
+
+# Never break the tool call it rides on, whatever it is handed.
+printf 'not json\n' | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" >/dev/null 2>&1 \
+  && { pass=$((pass+1)); printf 'ok   garbage payload exits 0\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL garbage payload did not exit 0\n'; }
+printf '{"session_id":"x","transcript_path":"/nonexistent"}\n' | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" >/dev/null 2>&1 \
+  && { pass=$((pass+1)); printf 'ok   missing transcript exits 0\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL missing transcript did not exit 0\n'; }
+E="$TMP/tx-empty.jsonl"; : > "$E"
+tc "empty transcript is quiet" quiet ctx-i "$E"
+
+# Thresholds are overridable, and the override has to actually move the band.
+if [ -n "$(AIWORKS_CONTEXT_WARN=30000 "$CTX" --check 40000)" ]; then
+  pass=$((pass+1)); printf 'ok   AIWORKS_CONTEXT_WARN lowers the band\n'
+else
+  fail=$((fail+1)); printf 'FAIL AIWORKS_CONTEXT_WARN was ignored\n'
+fi
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
