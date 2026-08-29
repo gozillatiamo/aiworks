@@ -860,6 +860,124 @@ t "k6 archive allowed"                0 pretool-steer-build.sh "$(j 'k6 archive 
 t "mycargo test is not cargo test"    0 pretool-steer-build.sh "$(j 'echo mycargo test')"
 t "npmtest is not npm test"           0 pretool-steer-build.sh "$(j './npmtest')"
 
+echo "--- pretool-cd-guard ---"
+# Only the LEADING cd is judged. Everything below is the hook's own documented contract,
+# turned into cases so the contract and the code cannot drift apart silently.
+t "cd relative blocked"               2 pretool-cd-guard.sh "$(j 'cd your-app')"
+t "cd ./x blocked"                    2 pretool-cd-guard.sh "$(j 'cd ./scripts')"
+t "cd ../x blocked"                   2 pretool-cd-guard.sh "$(j 'cd ../sibling && ls')"
+t "cd foo/bar blocked"                2 pretool-cd-guard.sh "$(j 'cd agent-db/scripts')"
+t "cd quoted relative blocked"        2 pretool-cd-guard.sh "$(j 'cd "agent-db/scripts"')"
+t "leading whitespace still blocked"  2 pretool-cd-guard.sh "$(j '   cd agent-db')"
+t "subagent cd relative blocked"      2 pretool-cd-guard.sh "$(jsub 'cd agent-db')"
+t "cd absolute allowed"               0 pretool-cd-guard.sh "$(j 'cd /Users/x/ws/agent-db && ls')"
+t "cd ~ allowed"                      0 pretool-cd-guard.sh "$(j 'cd ~/projects')"
+t "cd \$VAR allowed"                   0 pretool-cd-guard.sh "$(j 'cd "$CLAUDE_PROJECT_DIR/agent-db"')"
+t "cd \$HOME allowed"                  0 pretool-cd-guard.sh "$(j 'cd $HOME')"
+t "cd - allowed"                      0 pretool-cd-guard.sh "$(j 'cd -')"
+t "bare cd allowed"                   0 pretool-cd-guard.sh "$(j 'cd')"
+# The two that decide whether this guard is usable at all. A mid-chain cd runs from a cwd
+# established earlier in the SAME command, so it is deterministic; and `cd` must be a WORD,
+# or every cdk/cdn command in the workspace dies.
+t "mid-chain cd allowed"              0 pretool-cd-guard.sh "$(j 'cd /abs/repo && cd scripts && ./dev.sh test')"
+t "cdk is not cd"                     0 pretool-cd-guard.sh "$(j 'cdk deploy --all')"
+t "non-cd command allowed"            0 pretool-cd-guard.sh "$(j 'git -C /abs/repo status')"
+
+echo "--- posttool-bash-portability ---"
+# ADVISORY: this hook runs after the write and always exits 0, so an exit-code assertion
+# would pass on a hook that had stopped detecting anything. Assert on the WARNING instead.
+# macOS /bin/bash is 3.2.57 — every construct below is silent on the author's bash 5 and
+# fatal on a stock Mac, which is exactly the failure `aiworks sync` once shipped.
+PORT="$H/posttool-bash-portability.sh"
+mkport() { printf '%s\n' "$2" > "$TMP/$1"; printf '%s' "$TMP/$1"; }
+tp() { # tp <name> <want: warn|clean> <file>
+  local name=$1 want=$2 f=$3 err
+  err="$(jq -cn --arg p "$f" '{tool_name:"Write",tool_input:{file_path:$p}}' \
+         | "$PORT" 2>&1 >/dev/null)"
+  case "$want:$(printf '%s' "$err" | grep -c 'bash 4+ syntax')" in
+    warn:0)  fail=$((fail+1)); printf 'FAIL %s (expected a warning, got none)\n' "$name" ;;
+    clean:0) pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    warn:*)  pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    clean:*) fail=$((fail+1)); printf 'FAIL %s (warned on a 3.2-clean file)\n' "$name" ;;
+  esac
+}
+# These fixtures have to CONTAIN the banned constructs, and `--scan` — asserted green a few
+# lines below — reads THIS file like any other tracked script. Exempting the suite would be
+# the easy way out and would blind the scan to real bash-4 syntax written here later, so
+# each construct is assembled from parts instead: the fixture on disk is byte-exact, the
+# literal never appears in this source. Test NAMES avoid the literals for the same reason.
+SH='#!/usr/bin/env bash'
+AA='A'; LC=',,'; GS='globstar'; MF='map''file'
+tp "assoc array flagged"  warn  "$(mkport a.sh "$SH
+local -${AA} repo_owner=()")"
+tp "${MF} flagged"        warn  "$(mkport b.sh "$SH
+${MF} -t rows < in.txt")"
+tp "lowercase expansion flagged" warn "$(mkport c.sh "$SH
+echo \"\${name${LC}}\"")"
+tp "${GS} flagged"        warn  "$(mkport d.sh "$SH
+shopt -s ${GS}")"
+tp "clean script quiet"   clean "$(mkport e.sh "$SH
+while IFS= read -r r; do echo \"\$r\"; done < in.txt")"
+# The de-noising rule: this repo NAMES the banned constructs in prose all over the place.
+# A checker that cried wolf on its own documentation would be turned off within a day.
+tp "comment naming it quiet" clean "$(mkport f.sh "$SH
+# never use local -${AA} here; ${MF} is banned too")"
+# Extension gate: a .md that quotes the construct is documentation, not a script.
+tp "non-shell file ignored" clean "$(mkport g.md "use \`local -${AA} x\` on bash 4")"
+# No extension: the shebang is the only signal, so both directions are pinned.
+tp "shebang file flagged" warn "$(mkport h "$SH
+${MF} -t x < y")"
+tp "no-shebang file ignored" clean "$(mkport i "${MF} -t x < y")"
+# --scan is the CI entry point. It must pass on this repo AND say what it scanned: a scan
+# that found nothing to scan must never read as a scan that passed.
+scan="$(cd "$ROOT" && "$PORT" --scan 2>&1)"; scan_rc=$?
+if [ "$scan_rc" = 0 ] && printf '%s' "$scan" | grep -q '3.2-clean'; then
+  pass=$((pass+1)); printf 'ok   --scan is green on this repo (%s)\n' "$(printf '%s' "$scan" | grep -oE '[0-9]+ tracked')"
+else
+  fail=$((fail+1)); printf 'FAIL --scan rc=%s: %s\n' "$scan_rc" "$scan"
+fi
+
+echo "--- coverage: every wired dev-wrapper hook has cases ---"
+# THE META-CHECK, and the reason this section exists at all. pretool-steer-build.sh sat
+# wired in settings.json for months matching a stack no repo here uses — it ran on every
+# Bash call and enforced nothing. Nothing caught it, because nothing asserted that a wired
+# guard is a tested guard. This case is that assertion: wire a new dev-wrapper hook without
+# writing cases for it and this suite goes red on the next run.
+#
+# Scope is deliberately THIS directory. voice/, stagehand/ and the MCP and Slack hooks are
+# wired too and own their own suites; policing them from here would make this file the
+# gate for subsystems it does not own.
+> "$TMP/selftests.txt"
+find "$ROOT/.claude/hooks" "$ROOT/scripts" -name '*selftest*' -type f -print > "$TMP/selftests.txt" 2>/dev/null
+uncovered=""
+while IFS= read -r wired; do
+  [ -n "$wired" ] || continue
+  base="$(basename "$wired")"
+  # A hook is covered if any selftest in the repo names it — its own suite counts, so
+  # pretool-repo-context.sh and pretool-codegraph-guard.sh pass on their dedicated files.
+  # -print0/xargs is avoided on purpose: the file LIST is read line by line here, so a
+  # checkout path with a space cannot silently split it into two non-existent paths and
+  # turn a real gap into a green tick.
+  hit=0
+  while IFS= read -r stf; do
+    [ -n "$stf" ] || continue
+    grep -qF -- "$base" "$stf" 2>/dev/null && { hit=1; break; }
+  done < "$TMP/selftests.txt"
+  [ "$hit" = 1 ] || uncovered="${uncovered:+$uncovered }$base"
+done <<COV
+$(jq -r '.hooks // {} | to_entries[] | .value[] | .hooks[]? | .command // ""' "$ROOT/.claude/settings.json" 2>/dev/null \
+   | grep -oE '[^"]*dev-wrapper/[A-Za-z0-9_-]+\.sh' | sort -u)
+COV
+if [ ! -s "$TMP/selftests.txt" ]; then
+  # Never fail open. Finding no selftests at all means the search itself broke, not that
+  # coverage is perfect — a check that could not run must not report as a check that passed.
+  fail=$((fail+1)); printf 'FAIL coverage check found no selftest files to search\n'
+elif [ -z "$uncovered" ]; then
+  pass=$((pass+1)); printf 'ok   every wired dev-wrapper hook is named by a selftest\n'
+else
+  fail=$((fail+1)); printf 'FAIL wired dev-wrapper hook(s) with no selftest: %s\n' "$uncovered"
+fi
+
 echo "--- repo-health-check: say it once, then stop repeating it ---"
 # Asserted as a PROPERTY, not against a fixed message, so the case is meaningful whether this
 # worktree happens to be fully cloned or not: a second identical prompt must never cost MORE
