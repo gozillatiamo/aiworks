@@ -806,6 +806,60 @@ for i in 1 2 3 4 5 6 7; do
 done
 unset TMPDIR
 
+echo "--- pretool-steer-build: a suite run goes through scripts/dev.sh ---"
+# The rule this pins is not "less output" but "there is a RECEIPT". dev.sh writes
+# agent_logs/executed_verbose/<cmd>-<ts>.log and that is what `status`/`why` — and the
+# test-suite gate — read back; a raw run leaves nothing, and a gate that reads nothing
+# records NOT RUN (docs/agents/loadtest-gate.md). So the block cases below are the gate's
+# integrity, and the allow cases are what keeps the guard from being switched off.
+#
+# A subagent payload is asserted alongside the main-session one for every shape, because
+# the subagent is the party that actually runs the suites. The guard reads no
+# discriminator, so the pair must agree — a regression that exempted subagents would
+# leave the loudest caller unguarded while this suite still read green.
+jsub() { jq -cn --arg c "$1" \
+  '{tool_name:"Bash",agent_id:"agent-selftest",tool_input:{command:$c}}'; }
+
+# BLOCKED — the receipt-bearing suite runs, raw.
+t "raw cargo test blocked"            2 pretool-steer-build.sh "$(j 'cargo test')"
+t "raw cargo test --workspace blocked" 2 pretool-steer-build.sh "$(j 'cargo test --workspace --all-features')"
+t "cargo test after cd blocked"       2 pretool-steer-build.sh "$(j 'cd agent-webservice && cargo test')"
+t "raw npm test blocked"              2 pretool-steer-build.sh "$(j 'npm test')"
+t "raw pnpm run test:e2e blocked"     2 pretool-steer-build.sh "$(j 'pnpm run test:e2e')"
+t "raw yarn test blocked"             2 pretool-steer-build.sh "$(j 'yarn test --ci')"
+t "raw npx cypress run blocked"       2 pretool-steer-build.sh "$(j 'npx cypress run --spec cypress/e2e/login.cy.ts')"
+t "raw newman run blocked"            2 pretool-steer-build.sh "$(j 'newman run postman/collection.json')"
+t "raw k6 run blocked"                2 pretool-steer-build.sh "$(j 'k6 run scenarios/bet.js')"
+t "raw flutter test still blocked"    2 pretool-steer-build.sh "$(j 'flutter test')"
+
+# The same verbs from a SUBAGENT. Same verdict, or the rule has a hole where it matters.
+t "subagent cargo test blocked"       2 pretool-steer-build.sh "$(jsub 'cargo test')"
+t "subagent npm test blocked"         2 pretool-steer-build.sh "$(jsub 'npm test')"
+t "subagent cypress run blocked"      2 pretool-steer-build.sh "$(jsub 'npx cypress run')"
+t "subagent k6 run blocked"           2 pretool-steer-build.sh "$(jsub 'k6 run scenarios/bet.js')"
+
+# ALLOWED — the wrapper, and a deliberate capture to a file.
+t "dev.sh test allowed"               0 pretool-steer-build.sh "$(j 'scripts/dev.sh test')"
+t "dev.sh test allowed (subagent)"    0 pretool-steer-build.sh "$(jsub 'scripts/dev.sh test')"
+t "cargo test redirected allowed"     0 pretool-steer-build.sh "$(j 'cargo test > /tmp/out.log 2>&1')"
+t "2>&1 alone is not a redirect"      2 pretool-steer-build.sh "$(j 'cargo test 2>&1')"
+
+# ALLOWED — fast verbs no gate reads a receipt for. These are 30 of the 70 raw calls in
+# the measured corpus; blocking them would buy nothing and cost the guard its welcome.
+t "cargo check allowed"               0 pretool-steer-build.sh "$(j 'cargo check')"
+t "cargo fmt allowed"                 0 pretool-steer-build.sh "$(j 'cargo fmt --all -- --check')"
+t "cargo clippy allowed"              0 pretool-steer-build.sh "$(j 'cargo clippy --all-targets')"
+t "cargo build allowed"               0 pretool-steer-build.sh "$(j 'cargo build --release')"
+t "npm ci allowed"                    0 pretool-steer-build.sh "$(j 'npm ci')"
+t "pnpm install allowed"              0 pretool-steer-build.sh "$(j 'pnpm install --frozen-lockfile')"
+t "pnpm run lint allowed"             0 pretool-steer-build.sh "$(j 'pnpm run lint')"
+t "npm run storybook allowed"         0 pretool-steer-build.sh "$(j 'npm run storybook')"
+t "k6 archive allowed"                0 pretool-steer-build.sh "$(j 'k6 archive scenarios/bet.js')"
+
+# The verb must be a WORD. A substring match here would block half the workspace's tooling.
+t "mycargo test is not cargo test"    0 pretool-steer-build.sh "$(j 'echo mycargo test')"
+t "npmtest is not npm test"           0 pretool-steer-build.sh "$(j './npmtest')"
+
 echo "--- repo-health-check: say it once, then stop repeating it ---"
 # Asserted as a PROPERTY, not against a fixed message, so the case is meaningful whether this
 # worktree happens to be fully cloned or not: a second identical prompt must never cost MORE
