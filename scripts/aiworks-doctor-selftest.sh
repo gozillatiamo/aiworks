@@ -404,6 +404,16 @@ ck "reads a literal published port"          "25999" "$OUT"
 # header, and a macOS mktemp dir (/var/folders/…/T/…vd380000gn/…) can contain the digits.
 # A substring assertion on a number alone is a coin flip on someone else's temp path.
 ck "ignores the container-side port"         "ABSENT:port 8000" "$OUT"
+# The speed marker is the only warning a person gets before answering `yes` to --fix, and
+# this fix is `compose up -d --quiet-pull`: on a machine that has not pulled these images it
+# is a download that prints nothing, under a runner that captures its output. Marked fast it
+# was a silent multi-minute wait indistinguishable from a hang. `nc` is stubbed so the ports
+# read closed whatever happens to be listening on the machine running the suite.
+mkdir -p "$W/bin"; printf '#!/usr/bin/env bash\nexit 1\n' > "$W/bin/nc"; chmod +x "$W/bin/nc"
+OUT="$(PATH="$W/bin:$PATH" "$W/scripts/aiworks-doctor.sh" --deep --only services --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+ck "a closed port still offers to start the stack" "mcp-services.sh up" "$PLAN_SEC"
+ck "…marked slow, because a cold run pulls images" "slow"              "$PLAN_SEC"
 : > "$W/.superset/mcp-compose.yml"
 OUT="$("$W/scripts/aiworks-doctor.sh" --deep --only services 2>&1)"
 ck "an empty compose says so, not a false pass" "publishes no host ports" "$OUT"
