@@ -366,12 +366,13 @@ check_workspace() {
     warn $g "no root CLAUDE.md" "agents start this workspace with no instructions"
   fi
 
-  # The meta repo's doc graph (graphify — prose only, docs/adr/0013). This is the workspace's
-  # own half of the index: codegraph covers the product repos' code and indexes neither shell
-  # nor markdown, which is 63% of THIS repo. graph.json is committed, so a fresh clone should
-  # already have one — an absent graph means either the commit is missing or someone ran
-  # `graphify uninstall --purge`. Never offer a rebuild as a cheap fix: the semantic pass is
-  # ~1.3M input tokens, serialised, so the owner command is deliberately the explicit one.
+  # This repo's doc graph (graphify — prose only, docs/adr/0013). The workspace's own half
+  # of the index: codegraph covers the product repos' code and indexes neither shell nor
+  # markdown, which is most of what lives here. graph.json is committed, so a fresh clone
+  # should already have one — an absent graph means either the commit is missing or someone
+  # ran `graphify uninstall --purge`. Never offer a rebuild as a cheap fix: the semantic
+  # pass is the most expensive step in the toolchain and it is serialised, so the owner
+  # command is deliberately the explicit one.
   if [[ ! -f "$ROOT/.graphifyignore" ]]; then
     warn $g "no .graphifyignore" "the doc graph would index shell, config and generated mirrors" \
          "\$EDITOR .graphifyignore"
@@ -382,7 +383,7 @@ check_workspace() {
     local dn; dn="$(grep -o '"norm_label"' "$ROOT/graphify-out/graph.json" 2>/dev/null | grep -c . || true)"
     pass $g "doc graph" "${dn:-0} nodes"
   else
-    warn $g "no doc graph" "prose queries answer from nothing — 63% of this repo is invisible to codegraph" \
+    warn $g "no doc graph" "prose queries answer from nothing — codegraph indexes no shell and no markdown" \
          "graphify extract . --backend claude-cli" slow
   fi
 }
@@ -537,8 +538,8 @@ check_repos() {
 # ══════════════════════════════════════════════════════════════════════════════════
 # The required-var table mirrors each provider's own `*_require_config`, which is the single
 # authority on what that provider cannot start without:
-#   scripts/tracker/jira/impl.sh · tracker/notion/impl.sh · tracker/linear/impl.sh · notify/slack/impl.sh
-#   scripts/observability/signoz/impl.sh · vcs/gitlab.sh · vcs/github.sh
+#   scripts/tracker/jira/impl.sh · tracker/notion/impl.sh · tracker/linear/impl.sh
+#   notify/slack/impl.sh · observability/signoz/impl.sh · vcs/gitlab.sh · vcs/github.sh
 # Space-separated names are ALL required; `A|B` means either one satisfies it (slack takes a
 # bot token or a webhook). The selftest asserts this table still covers every provider dir,
 # so a new provider cannot be added without doctor learning about it.
@@ -1010,7 +1011,7 @@ INNER
 $(jq -r '(.enabledPlugins // {}) | keys[]' "$settings" 2>/dev/null)
 EOF
     # "Declared" reads as done and is not. `aiworks sync` converges enabledPlugins +
-    # extraKnownMarketplaces into the root and all 21 repos, and stops there — the install is
+    # extraKnownMarketplaces into the root and every declared repo, and stops there — the install is
     # `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls. Nothing else
     # reports the gap, and nothing looks broken while it is open: the skills still resolve,
     # because `aiworks cursor` vendors and links them independently of the plugin. What is
@@ -1193,7 +1194,7 @@ check_voice() {
 # any file it is given, so it is a .env read the guard must recognise. `\bcat\b` cannot match
 # "hcat" (no word boundary after the leading h), so the coverage is a separate alternative that
 # a future edit to that alternation could drop without any test going red here. Asserted at the
-# root AND in the per-repo copies, because the guard is mirrored into all 21 by aiworks-add's
+# root AND in the per-repo copies, because the guard is mirrored into every declared repo by aiworks-add's
 # WIRED_HOOKS and a stale copy is a live hole in that repo only.
 # Does the configured statusLine actually render our badge? EXECUTED, not parsed. A chain bridge
 # keeps the command it replaced in its own cache file, so following the string generalises to
@@ -1582,7 +1583,7 @@ check_services() {
   command -v nc >/dev/null 2>&1 || { skip $g "port probes" "nc not on PATH"; return; }
   # name:port:severity — the local development estate the repos and MCPs expect.
   local spec="postgres-master:5432:warn postgres-shard:5433:warn redis:6379:warn \
-              redis-dispatch:6370:skipmiss sonarqube-mcp:25434:skipmiss"
+              redis-dispatch:6370:skipmiss"
   local e name port sev
   for e in $spec; do
     name="${e%%:*}"; port="$(printf '%s' "$e" | cut -d: -f2)"; sev="$(printf '%s' "$e" | cut -d: -f3)"
@@ -1590,6 +1591,45 @@ check_services() {
       pass $g "$name" "127.0.0.1:$port"
     elif [[ "$sev" == skipmiss ]]; then
       skip $g "$name" "127.0.0.1:$port not listening (optional service)"
+    else
+      # `see:`, so this never reaches eval. `./aiworks run` is not the fix for a port probe —
+      # it is the whole product boot: agent-db's compose stack and its migrations, a
+      # `docker compose up -d --build` of the Rust backend, the Next.js dev servers, then
+      # seed_data. Under --fix its output is captured, so the run shows nothing for many
+      # minutes and reads as hung; and booting a stateful, data-seeding estate unattended is
+      # far more than "port 5432 is closed" asked for. The person picks the scope.
+      warn $g "$name not listening" "127.0.0.1:$port — repos that need it will fail to start" \
+           "see: ./aiworks run" slow
+    fi
+  done
+
+  # The MCP sidecars above the estate are not hardcoded — they are read from the compose file
+  # that publishes them, so a workspace that renumbers its stack is still checked correctly.
+  local compose="$ROOT/.superset/mcp-compose.yml"
+  [[ -f "$compose" ]] || { skip $g "port probes" "no .superset/mcp-compose.yml to read ports from"; return; }
+
+  # `- "127.0.0.1:${VAR:-25432}:8000"` → 25432, and a plain `- "127.0.0.1:25432:8000"` too.
+  # The default inside the parameter expansion is what a workspace gets when it overrides
+  # nothing, which is the case worth checking. awk, not sed: a two-expression sed split over
+  # a continued line leaves the second expression indented, and BSD sed rejects that silently
+  # enough that the group reported "no host ports" against a compose publishing three.
+  local ports; ports="$(awk '
+      match($0, /"[0-9.]*:\$\{[A-Z_]+:-[0-9]+\}:[0-9]+"/) {
+        s = substr($0, RSTART, RLENGTH); sub(/.*:-/, "", s); sub(/\}.*/, "", s); print s; next
+      }
+      match($0, /"[0-9.]*:[0-9]+:[0-9]+"/) {
+        s = substr($0, RSTART, RLENGTH); sub(/^"[0-9.]*:/, "", s); sub(/:.*/, "", s); print s
+      }
+    ' "$compose" | sort -un)"
+  if [[ -z "$ports" ]]; then
+    skip $g "port probes" "the compose file publishes no host ports"
+    return
+  fi
+  local p n=0
+  for p in $ports; do
+    n=$((n+1))
+    if port_open "$p"; then
+      pass $g "port $p" "127.0.0.1:$p answering"
     else
       # `slow`, because on a machine that has not pulled these images yet this is a docker
       # image pull — and `--quiet-pull` plus --fix's captured output means it prints nothing
@@ -1627,8 +1667,11 @@ check_credentials() {
     *)      skip $g "vcs" "no provider configured" ;;
   esac
 
-  if [[ -x "$ROOT/scripts/tracker/find-tickets.sh" ]]; then
-    probe $g "tracker ($(cfg tracker.provider))" "\$EDITOR scripts/tracker/.env" \
+  local tp; tp="$(cfg tracker.provider)"
+  if [[ -z "$tp" ]]; then
+    skip $g "tracker" "no provider configured"
+  elif [[ -x "$ROOT/scripts/tracker/find-tickets.sh" ]]; then
+    probe $g "tracker ($tp)" "\$EDITOR scripts/tracker/.env" \
           "$ROOT/scripts/tracker/find-tickets.sh" --limit 1
   else
     skip $g "tracker" "find-tickets.sh not present"
@@ -1639,7 +1682,8 @@ check_credentials() {
   # WOULD prove it posts a message, and a health check must not put noise in a team channel.
   # Reaching auth.test directly is out — adapters are the only sanctioned door to Slack. So
   # this stays honest and unproven: group 3 already confirmed the token is SET.
-  skip $g "notify ($(cfg notify.provider))" \
+  local np; np="$(cfg notify.provider)"
+  skip $g "notify${np:+ ($np)}" \
        "no read-only probe exists — a dry run never authenticates and a real send would post"
 
   # --since -5m, not find-traces' default -7d: an unfiltered count over seven days aggregates every
@@ -1650,6 +1694,8 @@ check_credentials() {
   cfg_bool observability.enabled false
   if [[ $? == 1 ]]; then
     skip $g "observability" "observability.enabled is false"
+  elif [[ -z "$op" ]]; then
+    skip $g "observability" "no provider configured"
   elif [[ -x "$ROOT/scripts/observability/find-traces.sh" ]]; then
     probe $g "observability ($op)" "\$EDITOR scripts/observability/.env" \
           "$ROOT/scripts/observability/find-traces.sh" --since -5m --limit 1
