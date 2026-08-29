@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,7 +14,14 @@ const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cli = path.join(root, "aiworks");
 
-for (const [name, input] of [["brd", "phase-1"], ["prd", "phase-1"], ["dev-cycle", "FM-1 --approve-plan"]]) {
+// dev-cycle is generated with this workspace's tracker.ticket_prefix baked in, and it throws on
+// any other key before it spawns anything — so a hardcoded "FM-1" fails every workspace that
+// renamed the prefix. Take it from the file the run will actually load.
+const devCycle = await readFile(path.join(root, ".claude/workflows/dev-cycle.js"), "utf8");
+const prefix = devCycle.match(/^const TICKET_PREFIX = '([^']+)'/m)?.[1];
+assert.ok(prefix, "no TICKET_PREFIX in .claude/workflows/dev-cycle.js");
+
+for (const [name, input] of [["brd", "phase-1"], ["prd", "phase-1"], ["dev-cycle", `${prefix}-1 --approve-plan`]]) {
   const { stdout } = await exec(cli, ["workflow", name, "--harness", "stub", input], { cwd: root, maxBuffer: 4_000_000 });
   assert.match(stdout, new RegExp(`Workflow ${name} complete`));
 }
