@@ -186,6 +186,52 @@ Anything it prints is a whole-server grant; keep it only where the server *is* t
 Trimming is also a permission fix — a whole-server Redis grant hands a build agent `delete`,
 `hset`, `xdel`, `rename` and `json_del`, which no plan ever asks it to run.
 
+## The window, not the hit rate
+
+A near-100% cache-hit rate is not a win to defend; it is the ceiling, and it says nothing about
+the bill. Cache read is charged per request at the **full window size**:
+
+```
+cache_read = Σ (window size) over every request
+```
+
+Hit rate only decides *which tier* that sum is billed at — the discounted one or the 10× one.
+It cannot shrink the sum. Two levers can: **fewer requests**, and a **smaller window**.
+
+Measured over one 7-day period on the workspace this was written for — 3,112 requests,
+730.7M cache read, mean window 234,805 tokens:
+
+| window at request time | share of requests | share of cache read |
+|---|---|---|
+| >300k | 28% | **52%** |
+| ≥150k | 53% | **84%** |
+| <100k | 18% | 6% |
+
+A single session that drifted to a 709k window was **56% of the whole week**. Capping every
+request at 150k would have cut cache read 44%; at 120k, 53%.
+
+Nothing in the normal loop surfaces this. The status-line badge shows headroom *remaining* — a
+percentage that looks fine at 400k on a large-context model — not what the last turn cost. So two
+checks make the number visible:
+
+- **`posttool-context-budget.sh`** (PostToolUse, advisory, never blocks) reads the window off the
+  live transcript and prints one line per 50k crossed: a warning at 150k, an escalation at 300k.
+  Thresholds move with `AIWORKS_CONTEXT_WARN` / `AIWORKS_CONTEXT_ALARM`.
+- **`aiworks doctor --only headroom`** samples recent transcripts and reports any session that ran
+  past 300k, because the expensive sessions are the ones nobody noticed at the time.
+
+What to do when one fires, in order of effect:
+
+1. **Compact at ~150k** rather than at exhaustion. Same work, ~4.7× less per turn than at 700k.
+2. **Split the thread.** A fresh session re-bases to the static floor above; a drifted one never
+   comes back down on its own.
+3. **Push fan-out reads into a subagent.** It reads 40 files in *its* window and returns a summary
+   to yours. Doing that inline inflates every later turn in the session, permanently — which is
+   how a mean window reaches 235k in the first place.
+
+Note that a subagent's own tokens are billed but do **not** appear in the parent transcript, so a
+per-session measurement like the one above is a floor, not a total.
+
 ## The gate, and why its defaults are not our defaults
 
 A `PreToolUse` hook watches `Read` and bare `cat`:

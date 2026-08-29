@@ -1402,6 +1402,44 @@ check_headroom() {
   else
     pass $g "badge price table" "every recorded saving is priced"
   fi
+
+  # ── context-window drift ────────────────────────────────────────────────────────
+  # Cache read is billed per request at the FULL window: cache_read = Σ window(turn). A high
+  # cache-hit rate does not shrink that sum, it only prices it at the discounted tier — so a
+  # session left to drift to 700k pays 4.7× per turn for the same work as one held at 150k,
+  # and the status line never says so, because it shows headroom REMAINING, not turn cost.
+  # posttool-context-budget.sh nudges inside a live session; this is the after-the-fact view,
+  # because the sessions that cost the most are the ones nobody noticed at the time.
+  local proj_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+  local alarm="${AIWORKS_CONTEXT_ALARM:-300000}"
+  local drifted=0 scanned=0 worst=0 tf tw
+  if [[ ! -d "$proj_dir" ]]; then
+    skip $g "context window drift" "no session transcripts on this machine yet"
+  else
+    # Bounded on purpose: a transcript tree is routinely ~1 GB, and this runs in `doctor`.
+    # 40 recent files × a 400 KB tail is the sample; a drifted session ends big, so the tail
+    # is where the evidence is.
+    for tf in $(find "$proj_dir" -type f -name '*.jsonl' -mtime -7 2>/dev/null | head -40); do
+      tw=$(tail -c 400000 "$tf" 2>/dev/null | jq -Rn '
+        [ inputs | try fromjson catch empty | .message.usage? // empty
+          | ( (.cache_read_input_tokens // 0)
+            + (.cache_creation_input_tokens // 0)
+            + (.input_tokens // 0) ) ] | max // 0' 2>/dev/null)
+      case "$tw" in ''|*[!0-9]*) continue ;; esac
+      scanned=$((scanned + 1))
+      [[ "$tw" -gt "$worst" ]] && worst="$tw"
+      [[ "$tw" -ge "$alarm" ]] && drifted=$((drifted + 1))
+    done
+    if [[ "$scanned" -eq 0 ]]; then
+      skip $g "context window drift" "no session in the last 7 days carried usage data"
+    elif [[ "$drifted" -gt 0 ]]; then
+      warn $g "$drifted of $scanned recent session(s) ran past $((alarm / 1000))k of context" \
+           "worst was $((worst / 1000))k; every turn there billed $((worst / 1000))k of cache read, ~$((worst / 150000))x a turn held at 150k" \
+           "compact at ~150k, or split the thread — a fresh session re-bases to the static prefix (docs/agents/headroom.md)" slow
+    else
+      pass $g "context window drift" "$scanned recent session(s) stayed under $((alarm / 1000))k"
+    fi
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
