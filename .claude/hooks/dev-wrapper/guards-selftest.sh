@@ -1092,6 +1092,76 @@ else
   fail=$((fail+1)); printf 'FAIL AIWORKS_CONTEXT_WARN was ignored\n'
 fi
 
+# ── pretool-codegraph-nudge.sh ─────────────────────────────────────────────────────────
+# Advisory like the two above — it always exits 0 — so every assertion is on the printed
+# text. The fixture repos get a .codegraph/ directory because that, not the repo name, is
+# what the hook keys on; `e2e` is deliberately left without one.
+NUDGE="$H/pretool-codegraph-nudge.sh"
+NUDGECFG="$TMP/nudgecfg"; mkdir -p "$NUDGECFG"
+mkdir -p "$TMP/svc/.codegraph" "$TMP/db/.codegraph"
+
+# n <name> <want: nudge|quiet> <session> <repeats> <command>
+# Runs the command <repeats> times in one session and asserts on the LAST result: the hook
+# fires on the third probe, so "did it nudge" is only answerable after a sequence.
+n() {
+  local name=$1 want=$2 sid=$3 reps=$4 cmd=$5 err i
+  for i in $(seq 1 "$reps"); do
+    err="$(jq -cn --arg c "$cmd" --arg s "$sid" \
+             '{session_id:$s,tool_name:"Bash",tool_input:{command:$c}}' \
+           | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" "$NUDGE" 2>&1 >/dev/null)"
+  done
+  local got=quiet
+  printf '%s' "$err" | grep -q 'has a codegraph index' && got=nudge
+  if [ "$got" = "$want" ]; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s, got %s)\n' "$name" "$want" "$got"
+  fi
+}
+
+n "first probe is quiet"            quiet ng-a 1 'grep -rn foo svc/src'
+n "second probe is quiet"           quiet ng-b 2 'grep -rn foo svc/src'
+n "third probe nudges"              nudge ng-c 3 'grep -rn foo svc/src'
+n "fourth is quiet again"           quiet ng-c 1 'grep -rn foo svc/src'
+n "a second repo counts separately" nudge ng-c 3 'cat db/src/main.rs'
+n "a new session starts over"       nudge ng-d 3 'grep -rn foo svc/src'
+
+# An unindexed directory has nothing to suggest, and a command already using the index is
+# the behaviour being asked for — nudging either one would be pure noise.
+n "unindexed path stays quiet"      quiet ng-e 4 'grep -rn foo e2e/src'
+n "a codegraph call stays quiet"    quiet ng-f 4 'codegraph query Foo -p svc'
+
+# Only search verbs. A repo name appearing in a build or a VCS command is not a probe.
+n "git is not a probe"              quiet ng-g 4 'git status svc'
+n "a test run is not a probe"       quiet ng-h 4 'scripts/dev.sh test svc'
+n "a word containing grep is not"   quiet ng-i 4 './mygrep svc'
+
+# The repo has to be recognised however the path is written, or the hook goes quiet on
+# exactly the sessions doing the most searching.
+n "bare path form"                  nudge ng-j 3 'grep -rn x svc/lib.rs'
+n "dot-slash form"                  nudge ng-k 3 'grep -rn x ./svc/lib.rs'
+n "quoted form"                     nudge ng-l 3 'grep -rn x "svc/lib.rs"'
+n "absolute form"                   nudge ng-m 3 "grep -rn x $TMP/svc/lib.rs"
+
+# The threshold is tunable, and the override has to actually move it.
+err="$(jq -cn '{session_id:"ng-n",tool_name:"Bash",tool_input:{command:"grep -rn x svc"}}' \
+       | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" \
+         AIWORKS_CODEGRAPH_NUDGE_AT=1 "$NUDGE" 2>&1 >/dev/null)"
+if printf '%s' "$err" | grep -q 'has a codegraph index'; then
+  pass=$((pass+1)); printf 'ok   AIWORKS_CODEGRAPH_NUDGE_AT lowers the threshold\n'
+else
+  fail=$((fail+1)); printf 'FAIL AIWORKS_CODEGRAPH_NUDGE_AT was ignored\n'
+fi
+
+# Never break the Bash call it rides in front of.
+for bad in 'not json' '{}' '{"tool_input":{"command":"grep -rn x svc"}}'; do
+  if printf '%s\n' "$bad" | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" "$NUDGE" >/dev/null 2>&1; then
+    pass=$((pass+1)); printf 'ok   exits 0 on payload: %s\n' "$bad"
+  else
+    fail=$((fail+1)); printf 'FAIL non-zero exit on payload: %s\n' "$bad"
+  fi
+done
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
