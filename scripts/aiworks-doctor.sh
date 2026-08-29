@@ -1438,7 +1438,7 @@ check_headroom() {
     elif [[ "$drifted" -gt 0 ]]; then
       warn $g "$drifted of $scanned recent session(s) ran past $((alarm / 1000))k of context" \
            "worst was $((worst / 1000))k; every turn there billed $((worst / 1000))k of cache read, ~$((worst / 150000))x a turn held at 150k" \
-           "compact at ~150k, or split the thread — a fresh session re-bases to the static prefix (docs/agents/headroom.md)" slow
+           "see: compact at ~150k, or split the thread — a fresh session re-bases to the static prefix (docs/agents/headroom.md)" slow
     else
       pass $g "context window drift" "$scanned recent session(s) stayed under $((alarm / 1000))k"
     fi
@@ -1795,8 +1795,14 @@ if [[ $FIX == 1 ]]; then
   manual_fix() {
     case "$1" in
       'see:'*|*'$EDITOR'*|'grep '*|*' grep -'*) return 0 ;;
-      *) return 1 ;;
     esac
+    # A fix that is prose rather than a command is advice, and advice must never reach eval.
+    # Measured: the context-drift finding shipped without its `see:` prefix, so the runner fed
+    # `compact at ~150k, … (docs/agents/headroom.md)` to eval and the run died on
+    # `syntax error near unexpected token ('`. The prefix convention is the first line of
+    # defence; this is the one that does not depend on anyone remembering it.
+    bash -n -c "$1" 2>/dev/null || return 0
+    return 1
   }
 
   # ── the referee ─────────────────────────────────────────────────────────────────

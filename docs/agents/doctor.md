@@ -49,7 +49,9 @@ A fix is only automatable when running it unattended is the whole answer. Anythi
 an editor, anything whose fix is to go read something, and anything printed as `see: …` (an
 install this script has no business performing on your machine — a node switch moves the
 global bin dir; Docker Desktop is a GUI app; `scripts/k8s/bootstrap-sa.sh` grants IAM on a GCP
-project and needs an owner to run it) is listed under **needs you** instead.
+project and needs an owner to run it) is listed under **needs you** instead. A fix that does
+not parse as a shell command lands there too, whatever it starts with: a finding whose fix is
+prose is advice, and advice must never reach `eval`.
 
 ### `aiworks fix`, and why `--fix` re-checks itself
 

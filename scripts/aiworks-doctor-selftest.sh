@@ -660,6 +660,28 @@ OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>
 ck "a file with no frontmatter at all is reported"    "rules file with no YAML frontmatter" "$OUT"
 ck "…naming the file"                                 "demo-repo/.claude/rules/bare.md"     "$OUT"
 
+# ── 24 · an advisory finding is never fed to eval ─────────────────────────────────
+# Measured: the context-window drift finding shipped without the `see:` prefix that routes a
+# finding to "needs you", so `--fix` planned its prose as a command and the run died on
+# `bash: eval: syntax error near unexpected token ('` — one malformed finding taking down every
+# fix behind it. A fix argument is either a command or advice; advice must never reach eval.
+if ! command -v jq >/dev/null 2>&1; then
+  skipc "an advisory fix is routed to the human, not to eval (needs jq)"
+else
+  W="$T/drift-advice"; make_ws "$W"; stage "$W"
+  mkdir -p "$T/drift-transcripts/proj"
+  printf '{"message":{"usage":{"cache_read_input_tokens":400000,"input_tokens":12}}}\n' \
+    > "$T/drift-transcripts/proj/session.jsonl"
+  OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/drift-transcripts" \
+         "$W/scripts/aiworks-doctor.sh" --only headroom --fix -n 2>&1)"
+  MANUAL_SEC="$(printf '%s\n' "$OUT" | sed -n '/needs you/,$p')"
+  PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+  ck "a drifted session is still reported"        "ran past 300k of context" "$OUT"
+  ck "…as something only a person can act on"     "ran past 300k of context" "$MANUAL_SEC"
+  ck "…never as a command to run"                 "ABSENT:compact at ~150k"  "$PLAN_SEC"
+  ck "…and nothing is fed to eval"                "ABSENT:syntax error"      "$OUT"
+fi
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]
