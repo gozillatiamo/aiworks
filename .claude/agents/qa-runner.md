@@ -40,6 +40,11 @@ tools:
   # way in: `test` runs the suite, `why <name>` explains a red, `artifacts` lists the run's
   # evidence. The npm entries below are a fallback for a repo whose harness delegates to
   # npm — several repos' `npm test` is a stub that exits 1, so never start there.
+  # ⚠️ A grant is not a route. pretool-steer-build.sh blocks a raw `npm test`: only dev.sh
+  # writes the receipt (agent_logs/executed_verbose/…) that `status`/`why` and the test-suite
+  # gate read back, and a gate with no receipt records NOT RUN however green the run was
+  # (docs/agents/loadtest-gate.md). Route the suite through `scripts/dev.sh test`. The grants
+  # below stay for `npm run why` and for a deliberate capture to a file, which the guard allows.
   - Bash(scripts/dev.sh *)
   - Bash(*scripts/dev.sh *)
   - Bash(npm test:*)
