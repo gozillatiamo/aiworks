@@ -647,7 +647,13 @@ ck_exit "…so the run exits non-zero"           1 "$RC"
 W="$T/refereed"; make_ws "$W"; stage "$W"
 chmod -x "$W/demo-repo/scripts/dev.sh"
 { printf '# repo\n'; for i in $(seq 1 130); do printf 'line %s\n' "$i"; done; } > "$W/demo-repo/CLAUDE.md"
-OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y 2>&1)"; RC=$?
+# AIWORKS_TRANSCRIPT_DIR is pinned at an empty fixture path because this case asserts on a
+# COUNT of surviving findings, and the context-window drift check samples the developer's own
+# session transcripts. Unpinned, the suite passed or failed by how the machine had been used
+# that week — which is not a test. HOME is deliberately NOT pinned: the sibling headroom checks
+# read the real plugin registry, so moving HOME just makes THOSE fire and breaks the same count.
+OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/no-transcripts" \
+       "$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y 2>&1)"; RC=$?
 ck "the runner says it RAN a command, not that it fixed one"  "✓ ran"        "$OUT"
 ck "a second pass re-checks the findings"                    "re-checked:"  "$OUT"
 ck "…counting the one that really cleared"                   "1 cleared"    "$OUT"
