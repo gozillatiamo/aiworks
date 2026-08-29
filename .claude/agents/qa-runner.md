@@ -59,12 +59,12 @@ tools:
   # — ground a deployed-env red in the real trace (app-fault vs env). Read-only; QA never edits code.
   - Bash(*scripts/observability/*)
   # Ground truth — inspect the REAL schema before seeding (structure only; no execute_sql / no data writes).
-  - mcp__postgres_ass__list_schemas
-  - mcp__postgres_ass__list_objects
-  - mcp__postgres_ass__get_object_details
-  - mcp__postgres_mad__list_schemas
-  - mcp__postgres_mad__list_objects
-  - mcp__postgres_mad__get_object_details
+  - mcp__postgres_secondary__list_schemas
+  - mcp__postgres_secondary__list_objects
+  - mcp__postgres_secondary__get_object_details
+  - mcp__postgres_main__list_schemas
+  - mcp__postgres_main__list_objects
+  - mcp__postgres_main__get_object_details
   # Read the ticket for context, then publish results onto it (report-test-results + update-ticket).
   - Bash(*scripts/tracker/*)
   - Bash(*scripts/observability/*)
@@ -76,10 +76,10 @@ tools:
   - mcp__claude_ai_Figma__get_design_context
   # DB query access — query plans + run SELECT via execute_sql (schema list/objects/details granted above). NOTE:
   # execute_sql is NOT verb-restricted at the tool layer; enforce true read-only with a read-only DB role.
-  - mcp__postgres_ass__explain_query
-  - mcp__postgres_ass__execute_sql
-  - mcp__postgres_mad__explain_query
-  - mcp__postgres_mad__execute_sql
+  - mcp__postgres_secondary__explain_query
+  - mcp__postgres_secondary__execute_sql
+  - mcp__postgres_main__explain_query
+  - mcp__postgres_main__execute_sql
   # Read-only cache/session inspection (no writes/publish).
   - mcp__redis__get
   - mcp__redis__hget

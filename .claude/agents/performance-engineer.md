@@ -43,20 +43,20 @@ tools:
   # DB performance profiling (READ-ONLY, structure + plans + workload) — the data layer is a
   # first-class perf surface: query plans, hot queries, and missing/unused indexes. No execute_sql
   # (perf profiles plans, it does not read rows); no write verbs.
-  - mcp__postgres_ass__list_schemas
-  - mcp__postgres_ass__list_objects
-  - mcp__postgres_ass__get_object_details
-  - mcp__postgres_ass__explain_query
-  - mcp__postgres_ass__analyze_query_indexes
-  - mcp__postgres_ass__analyze_workload_indexes
-  - mcp__postgres_ass__get_top_queries
-  - mcp__postgres_mad__list_schemas
-  - mcp__postgres_mad__list_objects
-  - mcp__postgres_mad__get_object_details
-  - mcp__postgres_mad__explain_query
-  - mcp__postgres_mad__analyze_query_indexes
-  - mcp__postgres_mad__analyze_workload_indexes
-  - mcp__postgres_mad__get_top_queries
+  - mcp__postgres_secondary__list_schemas
+  - mcp__postgres_secondary__list_objects
+  - mcp__postgres_secondary__get_object_details
+  - mcp__postgres_secondary__explain_query
+  - mcp__postgres_secondary__analyze_query_indexes
+  - mcp__postgres_secondary__analyze_workload_indexes
+  - mcp__postgres_secondary__get_top_queries
+  - mcp__postgres_main__list_schemas
+  - mcp__postgres_main__list_objects
+  - mcp__postgres_main__get_object_details
+  - mcp__postgres_main__explain_query
+  - mcp__postgres_main__analyze_query_indexes
+  - mcp__postgres_main__analyze_workload_indexes
+  - mcp__postgres_main__get_top_queries
   # Read-only cache/session inspection — key sizes, list/stream lengths, hit patterns.
   - mcp__redis__get
   - mcp__redis__hgetall

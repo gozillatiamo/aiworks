@@ -7,7 +7,7 @@ description: >-
   question - one master (MAD) plus 16 hex shards (0-f), a topology no local DB has; verifying or
   comparing a row, count or config value in prod, staging, a named shard, or across the fleet;
   what a migration or deploy did to STAGING data. Never writes or migrates. NOT for the local/dev
-  DB (postgres_ass/postgres_mad), migrations (agent-db), logs (telemetry-triage), cache or streams
+  DB (postgres_secondary/postgres_main), migrations (agent-db), logs (telemetry-triage), cache or streams
   (redis-triage).
 argument-hint: "[symptom / agency_id / shard hex / table / ticket-key] [staging|prod]"
 ---

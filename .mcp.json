@@ -15,11 +15,11 @@
         "Authorization": "Bearer ${SONARQUBE_TOKEN}"
       }
     },
-    "postgres_mad": {
+    "postgres_main": {
       "type": "sse",
       "url": "http://localhost:25432/sse"
     },
-    "postgres_ass": {
+    "postgres_secondary": {
       "type": "sse",
       "url": "http://localhost:25433/sse"
     },
