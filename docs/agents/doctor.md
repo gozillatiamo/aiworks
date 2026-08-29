@@ -100,9 +100,14 @@ Two rules follow for anyone adding a check:
 | `✓ pass` | fine |
 | `✗ fail` | work is blocked right now — a repo is missing, a token is unset, a hook lost `+x` |
 | `! warn` | degraded or stale but usable — an index is old, a budget is over, a worktree is orphaned |
-| `· skip` | deliberately off (`<feature>.enabled: false`) or `--deep`-only on a default run |
+| `· skip` | deliberately off (`<feature>.enabled: false`), `--deep`-only on a default run, or advisory |
 
 A switched-off feature is a decision, not a defect, and never scores against you.
+
+Advisory shares the `·` tier for the same reason. A warning is a claim that something can be
+put right; an observation about a session that has already ended, or about a Harness you chose
+to run only on this machine, cannot be. Scored as warnings they became permanent entries under
+`--fix`'s **needs you**, standing in front of the findings that were still actionable.
 
 **Exit 0** when nothing failed, **1** when something did, **2** on misuse (not a workspace, an
 unknown flag, an undeclared repo name, `--fix` with no TTY and no `-y`). `--strict` promotes
@@ -125,7 +130,7 @@ Groups 1–8 run offline by default. 9–12 need `--deep`.
 | 9 | `mcp` | `--deep` · the shared MCP compose stack is up |
 | 10 | `services` | `--deep` · every host port published by `.superset/mcp-compose.yml` answers |
 | 11 | `credentials` | `--deep` · each adapter's own reader authenticates against the live API |
-| 12 | `disk` | `--deep` · delegates `aiworks gc` and reads its orphan **count** |
+| 12 | `disk` | `--deep` · delegates `aiworks gc`, reads its orphan **count**, and reads its **refusals** — an orphan gc will not touch is not something `--fix` can clear |
 
 Narrow with `--only` / `--skip`, or pass a repo name (`aiworks doctor your-app`) to look at
 one repo — the groups that are not repo-scoped then report as skipped.

@@ -17,10 +17,18 @@ harnesses:
 the workspace root and in every declared repo. A deselected shared Harness loses only artifacts
 carrying a generator ownership proof; user-authored files are reported and preserved.
 
-A person may set `harnesses:` in git-ignored `workspace.config.local.yaml` to activate a non-empty
-subset of the shared set on their machine. The active subset controls CLI install/authentication,
+A person may set a non-empty `harnesses:` in git-ignored `workspace.config.local.yaml` to choose
+which Harnesses are active on their machine. The active set controls CLI install/authentication,
 native plugins and status lines, and machine-local MCP registrations. It never adds or removes
 projected files, so teammates' preferences cannot dirty a shared checkout.
+
+That guarantee is what makes the local set free: it may name a Harness the shared set does not
+carry. Every writer of a tracked projection reads the **shared** set — `aiworks harnesses sync`
+calls `list`, never `list --active` — so a local-only Harness gets the CLI, the plugins, the
+status line and this machine's MCP registrations, and no projection. `aiworks doctor` reports it
+as `local-only Harness`, at the advisory tier, so the missing projection is visible without
+being an error. The two ways to get the set genuinely wrong still fail: an id no registry entry
+claims, and an empty list.
 
 ## One canonical source
 

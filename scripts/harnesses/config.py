@@ -79,11 +79,17 @@ def active(shared_path: Path, local_path: Path | None, entries: list[dict], fall
     local = configured(local_path)
     if local is None:
         return shared
-    local = validate(local, entries)
-    unsupported = [value for value in local if value not in shared]
-    if unsupported:
-        raise ValueError(f"local Harnesses are not shared: {', '.join(unsupported)}")
-    return local
+    # A local entry outside the shared set is NOT an error. The active set reaches only
+    # machine-local surfaces — CLI install/authentication, native plugins, the status line,
+    # this machine's MCP registrations. Every writer of a tracked projection keys on the
+    # SHARED set instead (`aiworks harnesses sync` reads `list`, never `list --active`), so a
+    # local-only Harness can neither create nor delete a file a teammate would see.
+    #
+    # Refusing it bought nothing that guarantee did not already provide, and cost the one case
+    # it was most likely to meet: a person whose machine runs a Harness their team does not
+    # project got a hard failure out of every consumer of the active set, doctor included.
+    # `aiworks doctor` reports the difference instead — diffing `list` against `list --active`.
+    return validate(local, entries)
 
 
 def write_config(path: Path, values: list[str]) -> None:

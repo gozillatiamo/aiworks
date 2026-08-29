@@ -27,11 +27,12 @@ harnesses:
 EOF
 active="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/workspace.config.local.yaml" --registry "$REGISTRY" | tr '\n' ' ')"
 test "$active" = "codex "
+# A local Harness outside the shared set is a machine-local activation, not an error: the
+# active set drives only CLI/plugins/status line/local MCP, while every tracked projection is
+# written from the SHARED set. It must come back verbatim, not intersected away.
 printf 'harnesses:\n  - cursor\n' > "$FIXTURE/local-outside.yaml"
-if python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/local-outside.yaml" --registry "$REGISTRY" >/dev/null 2>&1; then
-  echo "a local Harness outside the shared set should fail" >&2
-  exit 1
-fi
+outside="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/local-outside.yaml" --registry "$REGISTRY" | tr '\n' ' ')"
+test "$outside" = "cursor "
 printf 'harnesses: []\n' > "$FIXTURE/local-empty.yaml"
 if python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/local-empty.yaml" --registry "$REGISTRY" >/dev/null 2>&1; then
   echo "an empty local Harness set should fail" >&2
