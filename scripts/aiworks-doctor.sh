@@ -1037,31 +1037,38 @@ EOF
   # serving the old one, because its SessionStart hook already injected that version's ruleset.
   # Nothing else reports this, and it is what team "caveman is misbehaving" reports turn out to
   # be — the old ruleset is missing the rule against dropping not/never/no and the strict
-  # language-preservation rule. caveman is checked by name rather than generically because it is
-  # the one plugin every session and all 16 agent definitions depend on, and because it is the
-  # one that leaves a per-activation marker to compare against: its activate hook rewrites
-  # $CLAUDE_CONFIG_DIR/.caveman-active every time it runs, so that file's mtime IS the last
-  # activation. Update newer than activation ⇒ no session since has picked the new rules up.
-  local flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.caveman-active"
-  if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$reg" ]]; then
-    : # already reported by the scope check above
-  elif [[ ! -f "$flag" ]]; then
-    skip $g "caveman restart" "no .caveman-active marker — caveman is off or has never activated"
-  else
-    local lu ue fm
-    lu="$(jq -r '(((.plugins // .)["caveman@caveman"]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
-    fm="$(stat -f %m "$flag" 2>/dev/null)"
-    ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
-    if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
-      skip $g "caveman restart" "cannot compare install time with last activation"
-    elif [[ "$ue" -gt "$fm" ]]; then
-      warn $g "caveman plugin updated since the last activation" \
-           "every running session is still serving the OLD ruleset" \
-           "see: restart Claude Code (a plugin update cannot reach a live session)"
+  # language-preservation rule. caveman and ponytail are checked BY NAME rather than
+  # generically, for two reasons: they are the pair every session and all 16 agent definitions
+  # depend on — caveman governs what an agent says, ponytail what it builds — and they are the
+  # only declared plugins that leave a per-activation marker to compare against. Each activate
+  # hook rewrites $CLAUDE_CONFIG_DIR/.<name>-active every time it runs, so that file's mtime IS
+  # the last activation. Update newer than activation ⇒ no session since has picked the new
+  # rules up. Reported one row per plugin, never a shared verdict: one ruleset can be stale
+  # while the other is current, and collapsing them would hide whichever lost.
+  local ruleset pk mk nm flag lu ue fm
+  for ruleset in "caveman@caveman:.caveman-active:caveman" \
+                 "ponytail@ponytail:.ponytail-active:ponytail"; do
+    pk="${ruleset%%:*}"; mk="${ruleset#*:}"; mk="${mk%%:*}"; nm="${ruleset##*:}"
+    flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/$mk"
+    if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$reg" ]]; then
+      : # already reported by the scope check above
+    elif [[ ! -f "$flag" ]]; then
+      skip $g "$nm restart" "no $mk marker — $nm is off or has never activated"
     else
-      pass $g "caveman ruleset current" "activated after the last plugin update"
+      lu="$(jq -r --arg k "$pk" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
+      fm="$(stat -f %m "$flag" 2>/dev/null)"
+      ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
+      if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
+        skip $g "$nm restart" "cannot compare install time with last activation"
+      elif [[ "$ue" -gt "$fm" ]]; then
+        warn $g "$nm plugin updated since the last activation" \
+             "every running session is still serving the OLD ruleset" \
+             "see: restart Claude Code (a plugin update cannot reach a live session)"
+      else
+        pass $g "$nm ruleset current" "activated after the last plugin update"
+      fi
     fi
-  fi
+  done
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
