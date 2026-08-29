@@ -743,6 +743,24 @@ PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
 ck "a partly removable set still runs gc"   "./aiworks gc --orphans --artifacts" "$PLAN_SEC"
 ck "…and says how many it will refuse"      "1 of them gc will refuse"           "$OUT"
 
+# ── 26 · a closed port does not queue the whole product boot ─────────────────────
+# Measured: `./aiworks run` was registered as the auto-fix for a closed 5432/5433/6379, so
+# `--fix` ran the six-phase boot — agent-db's compose stack and migrations, a
+# `docker compose up -d --build` of the Rust backend, the Next.js dev servers, seed_data —
+# with its output captured. Many silent minutes, indistinguishable from a hung run, and a
+# stateful estate seeded without anyone asking. A port probe hands this to the person.
+W="$T/services-down"; make_ws "$W"; stage "$W"
+mkdir -p "$W/bin"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$W/bin/nc"   # every port reads closed
+chmod +x "$W/bin/nc"
+OUT="$(PATH="$W/bin:$PATH" "$W/scripts/aiworks-doctor.sh" --only services --deep --fix -n 2>&1)"
+PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
+MANUAL_SEC="$(printf '%s\n' "$OUT" | sed -n '/needs you/,$p')"
+ck "a closed port is still reported"        "postgres-master not listening" "$OUT"
+ck "…but the product boot is not queued"    "ABSENT:aiworks run"            "$PLAN_SEC"
+ck "…it goes to the person"                 "not listening"                 "$MANUAL_SEC"
+ck "…and nothing is queued to run"          "nothing to run automatically"  "$OUT"
+
 # ── report ────────────────────────────────────────────────────────────────────────
 printf '\n  %d passed · %d failed · %d skipped\n\n' "$pass" "$fail" "$skip"
 [[ $fail -eq 0 ]]

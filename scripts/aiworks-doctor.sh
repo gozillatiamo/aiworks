@@ -1591,8 +1591,14 @@ check_services() {
     elif [[ "$sev" == skipmiss ]]; then
       skip $g "$name" "127.0.0.1:$port not listening (optional service)"
     else
+      # `see:`, so this never reaches eval. `./aiworks run` is not the fix for a port probe —
+      # it is the whole product boot: agent-db's compose stack and its migrations, a
+      # `docker compose up -d --build` of the Rust backend, the Next.js dev servers, then
+      # seed_data. Under --fix its output is captured, so the run shows nothing for many
+      # minutes and reads as hung; and booting a stateful, data-seeding estate unattended is
+      # far more than "port 5432 is closed" asked for. The person picks the scope.
       warn $g "$name not listening" "127.0.0.1:$port — repos that need it will fail to start" \
-           "./aiworks run"
+           "see: ./aiworks run" slow
     fi
   done
 }
