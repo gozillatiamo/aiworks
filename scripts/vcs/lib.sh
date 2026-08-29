@@ -168,6 +168,30 @@ esac
 # forge and the upstream as a second remote, so the branch would land on the wrong host.
 VCS_REMOTE="${VCS_REMOTE:-origin}"
 
+# Push HEAD's branch to the forge before opening the PR/MR — but ONLY from the target repo.
+#
+# VCS_REPO redirects every API call, and that was read as "the call is now cwd-independent". It
+# is not: `git push` has no --repo, so it acts on the CURRENT WORKING DIRECTORY whatever VCS_REPO
+# says. A parallel() wave of per-repo agents shares ONE Bash cwd, so `VCS_REPO=<other repo>
+# open-pr.sh` pushed THIS repo's branch to THIS repo's remote and then asked the forge to open an
+# MR from a branch that had never reached the target project. Pushing the wrong repo's branch is
+# a real side effect on a real forge, so SKIP rather than guess — vcs_open_pr then reports the
+# missing branch with the `git -C <repo> push` that fixes it, which is the actionable half.
+vcs_push_head() {
+  local head="$1" r url
+  r="$(vcs_repo_ref)"
+  if [[ -n "$r" ]]; then
+    url="$(git remote get-url "$VCS_REMOTE" 2>/dev/null || true)"
+    case "${url%.git}" in
+      *"/$r"|*":$r") : ;;
+      *) printf 'vcs: cwd remote (%s) is not %s — NOT pushing %s from here; it must already be on the target project\n' \
+           "${url:-<none>}" "$r" "$head" >&9
+         return 0 ;;
+    esac
+  fi
+  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
+}
+
 VCS_PROVIDER="${VCS_PROVIDER:-$(vcs_detect_provider)}"
 IMPL="$VCS_DIR/$VCS_PROVIDER.sh"
 [[ -f "$IMPL" ]] || die "unknown VCS_PROVIDER '$VCS_PROVIDER' (no $IMPL) — use 'github' or 'gitlab', or add $VCS_PROVIDER.sh"

@@ -1036,31 +1036,38 @@ EOF
   # serving the old one, because its SessionStart hook already injected that version's ruleset.
   # Nothing else reports this, and it is what team "caveman is misbehaving" reports turn out to
   # be — the old ruleset is missing the rule against dropping not/never/no and the strict
-  # language-preservation rule. caveman is checked by name rather than generically because it is
-  # the one plugin every session and all 16 agent definitions depend on, and because it is the
-  # one that leaves a per-activation marker to compare against: its activate hook rewrites
-  # $CLAUDE_CONFIG_DIR/.caveman-active every time it runs, so that file's mtime IS the last
-  # activation. Update newer than activation ⇒ no session since has picked the new rules up.
-  local flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.caveman-active"
-  if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$reg" ]]; then
-    : # already reported by the scope check above
-  elif [[ ! -f "$flag" ]]; then
-    skip $g "caveman restart" "no .caveman-active marker — caveman is off or has never activated"
-  else
-    local lu ue fm
-    lu="$(jq -r '(((.plugins // .)["caveman@caveman"]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
-    fm="$(stat -f %m "$flag" 2>/dev/null)"
-    ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
-    if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
-      skip $g "caveman restart" "cannot compare install time with last activation"
-    elif [[ "$ue" -gt "$fm" ]]; then
-      warn $g "caveman plugin updated since the last activation" \
-           "every running session is still serving the OLD ruleset" \
-           "see: restart Claude Code (a plugin update cannot reach a live session)"
+  # language-preservation rule. caveman and ponytail are checked BY NAME rather than
+  # generically, for two reasons: they are the pair every session and all 16 agent definitions
+  # depend on — caveman governs what an agent says, ponytail what it builds — and they are the
+  # only declared plugins that leave a per-activation marker to compare against. Each activate
+  # hook rewrites $CLAUDE_CONFIG_DIR/.<name>-active every time it runs, so that file's mtime IS
+  # the last activation. Update newer than activation ⇒ no session since has picked the new
+  # rules up. Reported one row per plugin, never a shared verdict: one ruleset can be stale
+  # while the other is current, and collapsing them would hide whichever lost.
+  local ruleset pk mk nm flag lu ue fm
+  for ruleset in "caveman@caveman:.caveman-active:caveman" \
+                 "ponytail@ponytail:.ponytail-active:ponytail"; do
+    pk="${ruleset%%:*}"; mk="${ruleset#*:}"; mk="${mk%%:*}"; nm="${ruleset##*:}"
+    flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/$mk"
+    if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$reg" ]]; then
+      : # already reported by the scope check above
+    elif [[ ! -f "$flag" ]]; then
+      skip $g "$nm restart" "no $mk marker — $nm is off or has never activated"
     else
-      pass $g "caveman ruleset current" "activated after the last plugin update"
+      lu="$(jq -r --arg k "$pk" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
+      fm="$(stat -f %m "$flag" 2>/dev/null)"
+      ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
+      if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
+        skip $g "$nm restart" "cannot compare install time with last activation"
+      elif [[ "$ue" -gt "$fm" ]]; then
+        warn $g "$nm plugin updated since the last activation" \
+             "every running session is still serving the OLD ruleset" \
+             "see: restart Claude Code (a plugin update cannot reach a live session)"
+      else
+        pass $g "$nm ruleset current" "activated after the last plugin update"
+      fi
     fi
-  fi
+  done
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -1393,6 +1400,48 @@ check_headroom() {
          "see: add that model's input \$/MTok to ~/.claude/headroom-model-prices.json (docs/agents/headroom.md)" slow
   else
     pass $g "badge price table" "every recorded saving is priced"
+  fi
+
+  # ── context-window drift ────────────────────────────────────────────────────────
+  # Cache read is billed per request at the FULL window: cache_read = Σ window(turn). A high
+  # cache-hit rate does not shrink that sum, it only prices it at the discounted tier — so a
+  # session left to drift to 700k pays 4.7× per turn for the same work as one held at 150k,
+  # and the status line never says so, because it shows headroom REMAINING, not turn cost.
+  # posttool-context-budget.sh nudges inside a live session; this is the after-the-fact view,
+  # because the sessions that cost the most are the ones nobody noticed at the time.
+  # Overridable for the same reason HEADROOM_STATE_DIR is: this is the one headroom check that
+  # reads a MACHINE-GLOBAL path unrelated to the workspace being diagnosed. A fixture run — the
+  # selftest, a CI clone — has to be able to point it somewhere empty, or a case asserting on a
+  # COUNT of findings passes or fails according to how the machine happened to be used that week.
+  local proj_dir="${AIWORKS_TRANSCRIPT_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
+  local alarm="${AIWORKS_CONTEXT_ALARM:-300000}"
+  local drifted=0 scanned=0 worst=0 tf tw
+  if [[ ! -d "$proj_dir" ]]; then
+    skip $g "context window drift" "no session transcripts on this machine yet"
+  else
+    # Bounded on purpose: a transcript tree is routinely ~1 GB, and this runs in `doctor`.
+    # 40 recent files × a 400 KB tail is the sample; a drifted session ends big, so the tail
+    # is where the evidence is.
+    for tf in $(find "$proj_dir" -type f -name '*.jsonl' -mtime -7 2>/dev/null | head -40); do
+      tw=$(tail -c 400000 "$tf" 2>/dev/null | jq -Rn '
+        [ inputs | try fromjson catch empty | .message.usage? // empty
+          | ( (.cache_read_input_tokens // 0)
+            + (.cache_creation_input_tokens // 0)
+            + (.input_tokens // 0) ) ] | max // 0' 2>/dev/null)
+      case "$tw" in ''|*[!0-9]*) continue ;; esac
+      scanned=$((scanned + 1))
+      [[ "$tw" -gt "$worst" ]] && worst="$tw"
+      [[ "$tw" -ge "$alarm" ]] && drifted=$((drifted + 1))
+    done
+    if [[ "$scanned" -eq 0 ]]; then
+      skip $g "context window drift" "no session in the last 7 days carried usage data"
+    elif [[ "$drifted" -gt 0 ]]; then
+      warn $g "$drifted of $scanned recent session(s) ran past $((alarm / 1000))k of context" \
+           "worst was $((worst / 1000))k; every turn there billed $((worst / 1000))k of cache read, ~$((worst / 150000))x a turn held at 150k" \
+           "compact at ~150k, or split the thread — a fresh session re-bases to the static prefix (docs/agents/headroom.md)" slow
+    else
+      pass $g "context window drift" "$scanned recent session(s) stayed under $((alarm / 1000))k"
+    fi
   fi
 }
 

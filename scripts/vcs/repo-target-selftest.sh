@@ -32,6 +32,7 @@ pass=0; fail=0
 ok()   { pass=$((pass+1)); printf '  %s✓%s %s\n' "$c_ok" "$c_off" "$1"; }
 bad()  { fail=$((fail+1)); printf '  %s✗%s %s\n     want %s\n     got  %s\n' "$c_err" "$c_off" "$1" "$2" "$3"; }
 has()  { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1" "contains: $2" "$3" ;; esac; }
+hasnt(){ case "$3" in *"$2"*) bad "$1" "must NOT contain: $2" "$3" ;; *) ok "$1" ;; esac; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 BIN="$TMP/bin"; mkdir -p "$BIN"
@@ -50,7 +51,10 @@ cat > "$BIN/glab" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CALLS"
 case "$*" in
-  *"mr create"*)   printf 'https://gitlab.com/group/sub/target-repo/-/merge_requests/42\n' ;;
+  # The create is an `api --method POST`, not `mr create` — the native verb resolves the SOURCE
+  # project from the cwd and no -R can override that (see gitlab.sh).
+  *"--method POST"*"/merge_requests"*) printf '{"web_url":"https://gitlab.com/group/sub/target-repo/-/merge_requests/42"}\n' ;;
+  *"repository/branches/"*) printf '{"name":"feature/X"}\n' ;;
   *"/approvals"*)  printf '{"approved":false,"approvals_required":1,"approved_by":[]}\n' ;;
   *"/notes"*)      printf '[{"body":"looks fine"}]\n' ;;
   *"merge_requests?source_branch"*) printf '[]\n' ;;
@@ -123,7 +127,9 @@ check() {
 
 for provider in gitlab github; do
   echo "── $provider: every native subcommand targets the resolved repo, not the cwd remote"
-  check "$provider" vcs_open_pr           vcs_open_pr main feature/X title body
+  # vcs_open_pr is asserted separately below: on GitLab it deliberately makes NO native call at
+  # all, which this check (correctly) reads as fail-open and would report as a regression.
+  [[ "$provider" == github ]] && check "$provider" vcs_open_pr vcs_open_pr main feature/X title body
   check "$provider" vcs_pr_comment_plain  vcs_pr_comment 7 "" "" body
   check "$provider" vcs_pr_comment_inline vcs_pr_comment 7 src/a.ts 12 body
   check "$provider" vcs_pr_comments       vcs_pr_comments 7
@@ -133,9 +139,16 @@ for provider in gitlab github; do
 done
 
 # The headline call, asserted by NAME rather than by a count — the count is what hid its absence.
+# GitLab's create carries the project in the REST path instead of an -R flag, and that is the
+# point: `glab mr create -R <target>` still read the SOURCE project off the cwd, so source and
+# target were different projects and GitLab answered 422 "Source project is not a fork of the
+# target project". The endpoint's own path is the only project in the request.
 echo "── the create call itself is on the wire, targeted"
-has "gitlab: mr create ran, targeted"   "mr create -R $TARGET"   "$(run gitlab vcs_open_pr main feature/X title body)"
-has "github: pr create ran, targeted"   "pr create --repo $TARGET" "$(run github vcs_open_pr main feature/X title body)"
+gl_log="$(run gitlab vcs_open_pr main feature/X title body)"
+has   "gitlab: the create ran, targeted"          "--method POST projects/group%2Fsub%2Ftarget-repo/merge_requests" "$gl_log"
+hasnt "gitlab: never the cwd-resolving native verb" "mr create"                                                     "$gl_log"
+hasnt "gitlab: and never pushes the cwd repo's branch" "push"                                                       "$gl_log"
+has   "github: pr create ran, targeted"   "pr create --repo $TARGET" "$(run github vcs_open_pr main feature/X title body)"
 
 # FAIL CLOSED when the target cannot be resolved. An untargeted `gh pr review --approve` or
 # `gh pr merge --squash` lands irreversibly on the cwd repo's PR of that number, and `_gh_nwo`'s

@@ -55,6 +55,12 @@ _gl_open_mr_url() {
     | jq -r '.[0].web_url // empty' 2>/dev/null || true
 }
 
+# Is BRANCH on the TARGET project? Project-explicit, so — unlike `git ls-remote`, which answers
+# for whatever repo the cwd happens to be — it answers for the project the MR is opened in.
+_gl_has_branch() {
+  glab api "projects/$(_gl_project)/repository/branches/$(vcs_urlencode_path "$1")" >/dev/null 2>&1
+}
+
 vcs_open_pr() {
   local base="$1" head="$2" title="$3" body="$4" dry="${5:-0}"
   # Reuse an open MR for this source branch (avoid duplicates).
@@ -65,27 +71,57 @@ vcs_open_pr() {
     printf '%s\nnumber=%s\n' "$existing" "$iid"
     return 0
   fi
+  local proj="${VCS_REPO:-<cwd git remote>}"
   if [[ "$dry" -eq 1 ]]; then
-    printf 'DRY RUN — git push -u %s %q && glab mr create -s %q -b %q -t %q -d <…> --squash-before-merge=true -y\n' "$VCS_REMOTE" "$head" "$head" "$base" "$title"
+    printf 'DRY RUN — git push -u %s %q && glab api --method POST projects/%s/merge_requests --raw-field source_branch=%q --raw-field target_branch=%q --raw-field title=%q --raw-field description=<…> --field squash=true\n' \
+      "$VCS_REMOTE" "$head" "$(_gl_project)" "$head" "$base" "$title"
     return 0
   fi
-  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
+  vcs_push_head "$head"
+  # THE BRANCH MUST BE ON THE TARGET PROJECT, and only the target project can say so. vcs_push_head
+  # deliberately declines to push from a cwd that is not this repo, and a push can fail for its own
+  # reasons besides; either way the create that follows would fail forge-side with an error about
+  # the FORGE ("422 Source project is not a fork of the target project" was the historical shape),
+  # and every reader spent their time on glab instead of on the branch. Say it here, in one read,
+  # naming the command that fixes it.
+  _gl_has_branch "$head" || die "branch '$head' is not on $proj, so no MR can be opened for it ($head -> $base).
+  Push it FROM THAT REPO's own checkout, as its own bare command:
+      git -C <path to the $proj clone> push -u $VCS_REMOTE $head
+  (a writer run with VCS_REPO set from a DIFFERENT repo's directory does not push for you — git
+  has no --repo, so the adapter skips the push rather than push the wrong repo's branch.)"
+  printf 'vcs[gitlab] mr create → %s\n' "$proj" >&9
   local out rc=0
-  # `|| rc=$?` is the other half of the fix in _gl_mr: without it a failing `glab mr create` makes
-  # this assignment non-zero, `set -e` kills the function HERE, and the caller sees exit 1 with no
-  # output at all — the silent failure that took a source read to diagnose. Keeping the STATUS as
-  # well as the output is what lets the diagnostic below name glab's own exit code, which is the
-  # single most useful fact about a create that failed and the one thing `|| true` threw away.
-  out="$(_gl_mr create --source-branch "$head" --target-branch "$base" --title "$title" --description "$body" --squash-before-merge=true --yes 2>&1)" || rc=$?
-  # `|| true` HERE, and it is not decoration — it is the bug this line used to BE. `grep` exits 1
-  # when it matches nothing, `set -o pipefail` promotes that to the pipeline's status, and an
+  # `glab api`, NOT `glab mr create`. `-R` sets only the TARGET project; `glab mr create` still
+  # resolves the SOURCE project from the CURRENT WORKING DIRECTORY's git remote. In a multi-repo
+  # run one Bash cwd is shared, so source and target were different projects and GitLab answered
+  # "422 {message: [Source project is not a fork of the target project]}" — ~50 times across 8
+  # repos in one audited run, read every time as a broken adapter. The REST endpoint carries the
+  # project in its own path and takes the branches as body fields, so there is no second, hidden
+  # project to disagree with it. `squash: true` is `--squash-before-merge=true`: see the contract
+  # above — a human merging from the web UI must still get one commit on the parent.
+  #
+  # `|| rc=$?` keeps the STATUS as well as the output: without it a failing create makes this
+  # assignment non-zero, `set -e` kills the function HERE, and the caller sees exit 1 with no
+  # output at all — the silent failure that took a source read to diagnose.
+  #
+  # `--raw-field`, not `--input -`: glab sends an --input body with NO Content-Type and GitLab
+  # answers `415 {"error":"The provided content-type '' is not supported."}`. The field flags let
+  # glab build the body, so it sets the header itself. RAW-field for every value that carries user
+  # text — plain `--field` re-reads a value starting with `@` as a filename and one starting with
+  # `{`/`[` as JSON, and a PR/MR title or description is neither.
+  out="$(glab api --method POST "projects/$(_gl_project)/merge_requests" \
+           --raw-field "source_branch=$head" \
+           --raw-field "target_branch=$base" \
+           --raw-field "title=$title" \
+           --raw-field "description=$body" \
+           --field squash=true 2>&1)" || rc=$?
+  # `|| true` HERE, and it is not decoration — it is the bug these lines used to BE. `jq`/`grep`
+  # exit non-zero on no match, `set -o pipefail` promotes that to the pipeline's status, and an
   # assignment from a failing command substitution is a failing simple command, so `set -e` killed
-  # the function ON THIS LINE. The diagnostic on the next line — the whole reason the output was
-  # captured — never ran. What the caller saw was exit 1 and ZERO bytes, for every failing create:
-  # not a glab that printed nothing (it had printed its error into `out`), but an adapter that
-  # exited before it could pass it on. Nine reproductions across two runs were read as a broken
-  # `glab`; the missing two words were here. github.sh:40 has carried them since it was written.
-  url="$(printf '%s' "$out" | grep -oE 'https?://[^ ]+/merge_requests/[0-9]+' | head -n1)" || true
+  # the function ON THIS LINE. The diagnostic below — the whole reason the output was captured —
+  # never ran. What the caller saw was exit 1 and ZERO bytes, for every failing create.
+  url="$(printf '%s' "$out" | jq -r '.web_url // empty' 2>/dev/null)" || true
+  [[ -n "$url" ]] || url="$(printf '%s' "$out" | grep -oE 'https?://[^ "]+/merge_requests/[0-9]+' | head -n1)" || true
   # A create that REPORTED failure may still have landed the MR (see _gl_open_mr_url). Ask the
   # forge before telling the caller nothing exists: the run that follows this call is deciding
   # whether to open one, and a false "nothing was created" is what makes it try forever.
@@ -93,7 +129,7 @@ vcs_open_pr() {
     url="$(_gl_open_mr_url "$head")"
     [[ -z "$url" ]] || printf 'vcs[gitlab] mr create exited %s, but %s already has an open MR on the forge — reusing %s\n' "$rc" "$head" "$url" >&9
   fi
-  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "glab mr create exited $rc and printed no MR URL — the MR was NOT created (project ${VCS_REPO:-<cwd git remote>}, $head -> $base). glab's own output is on the line above; an EMPTY line above means glab itself printed nothing."; }
+  [[ -n "$url" ]] || { printf '%s\n' "$out" >&2; die "the merge_requests POST exited $rc and returned no MR URL — the MR was NOT created (project $proj, $head -> $base). GitLab's own response is on the line above; an EMPTY line above means it returned nothing."; }
   iid="${url##*/}"
   printf '%s\nnumber=%s\n' "$url" "$iid"
 }

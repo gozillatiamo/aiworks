@@ -758,6 +758,226 @@ $PAD
 feat: a long commit message is not a patch
 EOF")"
 
+# ── Rule 3, the poll loop. STATEFUL, unlike rules 1 and 2: the verdict depends on what this
+# same caller already ran. So the ledger gets its own TMPDIR (fresh, never the developer's),
+# and each case gets its own transcript_path so cases cannot contaminate each other.
+POLLTMP="$TMP/pollstate"; mkdir -p "$POLLTMP"
+export TMPDIR="$POLLTMP"
+LOG="$TMP/ctx/run.log"; printf 'test one ... ok\n' > "$LOG"
+jpoll() { jq -cn --arg c "$1" --arg d "$TMP/ctx" --arg t "$2" \
+  '{tool_name:"Bash",cwd:$d,transcript_path:$t,tool_input:{command:$c}}'; }
+
+# The measured shape: one probe, unchanged, over and over. Six get through, the seventh does not.
+for i in 1 2 3 4 5 6; do
+  t "poll $i of 6 allowed"               0 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/spin)"
+done
+t "the 7th identical probe blocked"      2 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/spin)"
+# ...and a DIFFERENT question about the same file is a different probe. This is the whole reason
+# the key is the command and not the path: an investigation greps one log many ways.
+t "different pattern, same file, allowed" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c FAILED $LOG" /t/spin)"
+
+# A second agent in the same workflow wave must start from zero. Keyed on session_id alone this
+# failed: parallel subagents can share one, and agent B's first call would inherit agent A's count.
+t "a parallel agent is not charged for it" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c ' ok$' $LOG" /t/other)"
+
+# Only READ-ONLY probes of an EXISTING file count. Repeating work is not waiting for work.
+for i in 1 2 3 4 5 6 7; do
+  t "non-probe verb x$i not counted"     0 pretool-bash-context-guard.sh "$(jpoll "git log --oneline -1 $LOG" /t/verb)"
+done
+for i in 1 2 3 4 5 6 7; do
+  t "probe of a missing file x$i allowed" 0 pretool-bash-context-guard.sh "$(jpoll "grep -c x /nope/absent.log" /t/gone)"
+done
+
+# THE REMEDY MUST NEVER TRIP ITS OWN GUARD. The block message tells the agent to wait inside a
+# single backgrounded `until` loop — whose body is a grep of exactly the file it was polling.
+for i in 1 2 3 4 5 6 7; do
+  t "the until-loop remedy x$i allowed"  0 pretool-bash-context-guard.sh \
+    "$(jpoll "until grep -q 'test result:' $LOG; do sleep 5; done" /t/fix)"
+done
+
+# Same escape-hatch contract as rules 1 and 2: parsed out of the command, not the environment.
+for i in 1 2 3 4 5 6 7; do
+  t "inline BASH_POLL_GUARD=0 honoured $i" 0 pretool-bash-context-guard.sh \
+    "$(jpoll "BASH_POLL_GUARD=0 grep -c ' ok$' $LOG" /t/off)"
+done
+for i in 1 2 3 4 5 6 7; do
+  t "inline BASH_POLL_MAX raise honoured $i" 0 pretool-bash-context-guard.sh \
+    "$(jpoll "BASH_POLL_MAX=99 grep -c ' ok$' $LOG" /t/raised)"
+done
+unset TMPDIR
+
+echo "--- pretool-steer-build: a suite run goes through scripts/dev.sh ---"
+# The rule this pins is not "less output" but "there is a RECEIPT". dev.sh writes
+# agent_logs/executed_verbose/<cmd>-<ts>.log and that is what `status`/`why` — and the
+# test-suite gate — read back; a raw run leaves nothing, and a gate that reads nothing
+# records NOT RUN (docs/agents/loadtest-gate.md). So the block cases below are the gate's
+# integrity, and the allow cases are what keeps the guard from being switched off.
+#
+# A subagent payload is asserted alongside the main-session one for every shape, because
+# the subagent is the party that actually runs the suites. The guard reads no
+# discriminator, so the pair must agree — a regression that exempted subagents would
+# leave the loudest caller unguarded while this suite still read green.
+jsub() { jq -cn --arg c "$1" \
+  '{tool_name:"Bash",agent_id:"agent-selftest",tool_input:{command:$c}}'; }
+
+# BLOCKED — the receipt-bearing suite runs, raw.
+t "raw cargo test blocked"            2 pretool-steer-build.sh "$(j 'cargo test')"
+t "raw cargo test --workspace blocked" 2 pretool-steer-build.sh "$(j 'cargo test --workspace --all-features')"
+t "cargo test after cd blocked"       2 pretool-steer-build.sh "$(j 'cd svc && cargo test')"
+t "raw npm test blocked"              2 pretool-steer-build.sh "$(j 'npm test')"
+t "raw pnpm run test:e2e blocked"     2 pretool-steer-build.sh "$(j 'pnpm run test:e2e')"
+t "raw yarn test blocked"             2 pretool-steer-build.sh "$(j 'yarn test --ci')"
+t "raw npx cypress run blocked"       2 pretool-steer-build.sh "$(j 'npx cypress run --spec cypress/e2e/login.cy.ts')"
+t "raw newman run blocked"            2 pretool-steer-build.sh "$(j 'newman run postman/collection.json')"
+t "raw k6 run blocked"                2 pretool-steer-build.sh "$(j 'k6 run scenarios/bet.js')"
+t "raw flutter test still blocked"    2 pretool-steer-build.sh "$(j 'flutter test')"
+
+# The same verbs from a SUBAGENT. Same verdict, or the rule has a hole where it matters.
+t "subagent cargo test blocked"       2 pretool-steer-build.sh "$(jsub 'cargo test')"
+t "subagent npm test blocked"         2 pretool-steer-build.sh "$(jsub 'npm test')"
+t "subagent cypress run blocked"      2 pretool-steer-build.sh "$(jsub 'npx cypress run')"
+t "subagent k6 run blocked"           2 pretool-steer-build.sh "$(jsub 'k6 run scenarios/bet.js')"
+
+# ALLOWED — the wrapper, and a deliberate capture to a file.
+t "dev.sh test allowed"               0 pretool-steer-build.sh "$(j 'scripts/dev.sh test')"
+t "dev.sh test allowed (subagent)"    0 pretool-steer-build.sh "$(jsub 'scripts/dev.sh test')"
+t "cargo test redirected allowed"     0 pretool-steer-build.sh "$(j 'cargo test > /tmp/out.log 2>&1')"
+t "2>&1 alone is not a redirect"      2 pretool-steer-build.sh "$(j 'cargo test 2>&1')"
+
+# ALLOWED — fast verbs no gate reads a receipt for. These are 30 of the 70 raw calls in
+# the measured corpus; blocking them would buy nothing and cost the guard its welcome.
+t "cargo check allowed"               0 pretool-steer-build.sh "$(j 'cargo check')"
+t "cargo fmt allowed"                 0 pretool-steer-build.sh "$(j 'cargo fmt --all -- --check')"
+t "cargo clippy allowed"              0 pretool-steer-build.sh "$(j 'cargo clippy --all-targets')"
+t "cargo build allowed"               0 pretool-steer-build.sh "$(j 'cargo build --release')"
+t "npm ci allowed"                    0 pretool-steer-build.sh "$(j 'npm ci')"
+t "pnpm install allowed"              0 pretool-steer-build.sh "$(j 'pnpm install --frozen-lockfile')"
+t "pnpm run lint allowed"             0 pretool-steer-build.sh "$(j 'pnpm run lint')"
+t "npm run storybook allowed"         0 pretool-steer-build.sh "$(j 'npm run storybook')"
+t "k6 archive allowed"                0 pretool-steer-build.sh "$(j 'k6 archive scenarios/bet.js')"
+
+# The verb must be a WORD. A substring match here would block half the workspace's tooling.
+t "mycargo test is not cargo test"    0 pretool-steer-build.sh "$(j 'echo mycargo test')"
+t "npmtest is not npm test"           0 pretool-steer-build.sh "$(j './npmtest')"
+
+echo "--- pretool-cd-guard ---"
+# Only the LEADING cd is judged. Everything below is the hook's own documented contract,
+# turned into cases so the contract and the code cannot drift apart silently.
+t "cd relative blocked"               2 pretool-cd-guard.sh "$(j 'cd your-app')"
+t "cd ./x blocked"                    2 pretool-cd-guard.sh "$(j 'cd ./scripts')"
+t "cd ../x blocked"                   2 pretool-cd-guard.sh "$(j 'cd ../sibling && ls')"
+t "cd foo/bar blocked"                2 pretool-cd-guard.sh "$(j 'cd db/scripts')"
+t "cd quoted relative blocked"        2 pretool-cd-guard.sh "$(j 'cd "db/scripts"')"
+t "leading whitespace still blocked"  2 pretool-cd-guard.sh "$(j '   cd db')"
+t "subagent cd relative blocked"      2 pretool-cd-guard.sh "$(jsub 'cd db')"
+t "cd absolute allowed"               0 pretool-cd-guard.sh "$(j 'cd /Users/x/ws/db && ls')"
+t "cd ~ allowed"                      0 pretool-cd-guard.sh "$(j 'cd ~/projects')"
+t "cd \$VAR allowed"                   0 pretool-cd-guard.sh "$(j 'cd "$CLAUDE_PROJECT_DIR/db"')"
+t "cd \$HOME allowed"                  0 pretool-cd-guard.sh "$(j 'cd $HOME')"
+t "cd - allowed"                      0 pretool-cd-guard.sh "$(j 'cd -')"
+t "bare cd allowed"                   0 pretool-cd-guard.sh "$(j 'cd')"
+# The two that decide whether this guard is usable at all. A mid-chain cd runs from a cwd
+# established earlier in the SAME command, so it is deterministic; and `cd` must be a WORD,
+# or every cdk/cdn command in the workspace dies.
+t "mid-chain cd allowed"              0 pretool-cd-guard.sh "$(j 'cd /abs/repo && cd scripts && ./dev.sh test')"
+t "cdk is not cd"                     0 pretool-cd-guard.sh "$(j 'cdk deploy --all')"
+t "non-cd command allowed"            0 pretool-cd-guard.sh "$(j 'git -C /abs/repo status')"
+
+echo "--- posttool-bash-portability ---"
+# ADVISORY: this hook runs after the write and always exits 0, so an exit-code assertion
+# would pass on a hook that had stopped detecting anything. Assert on the WARNING instead.
+# macOS /bin/bash is 3.2.57 — every construct below is silent on the author's bash 5 and
+# fatal on a stock Mac, which is exactly the failure `aiworks sync` once shipped.
+PORT="$H/posttool-bash-portability.sh"
+mkport() { printf '%s\n' "$2" > "$TMP/$1"; printf '%s' "$TMP/$1"; }
+tp() { # tp <name> <want: warn|clean> <file>
+  local name=$1 want=$2 f=$3 err
+  err="$(jq -cn --arg p "$f" '{tool_name:"Write",tool_input:{file_path:$p}}' \
+         | "$PORT" 2>&1 >/dev/null)"
+  case "$want:$(printf '%s' "$err" | grep -c 'bash 4+ syntax')" in
+    warn:0)  fail=$((fail+1)); printf 'FAIL %s (expected a warning, got none)\n' "$name" ;;
+    clean:0) pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    warn:*)  pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    clean:*) fail=$((fail+1)); printf 'FAIL %s (warned on a 3.2-clean file)\n' "$name" ;;
+  esac
+}
+# These fixtures have to CONTAIN the banned constructs, and `--scan` — asserted green a few
+# lines below — reads THIS file like any other tracked script. Exempting the suite would be
+# the easy way out and would blind the scan to real bash-4 syntax written here later, so
+# each construct is assembled from parts instead: the fixture on disk is byte-exact, the
+# literal never appears in this source. Test NAMES avoid the literals for the same reason.
+SH='#!/usr/bin/env bash'
+AA='A'; LC=',,'; GS='globstar'; MF='map''file'
+tp "assoc array flagged"  warn  "$(mkport a.sh "$SH
+local -${AA} repo_owner=()")"
+tp "${MF} flagged"        warn  "$(mkport b.sh "$SH
+${MF} -t rows < in.txt")"
+tp "lowercase expansion flagged" warn "$(mkport c.sh "$SH
+echo \"\${name${LC}}\"")"
+tp "${GS} flagged"        warn  "$(mkport d.sh "$SH
+shopt -s ${GS}")"
+tp "clean script quiet"   clean "$(mkport e.sh "$SH
+while IFS= read -r r; do echo \"\$r\"; done < in.txt")"
+# The de-noising rule: this repo NAMES the banned constructs in prose all over the place.
+# A checker that cried wolf on its own documentation would be turned off within a day.
+tp "comment naming it quiet" clean "$(mkport f.sh "$SH
+# never use local -${AA} here; ${MF} is banned too")"
+# Extension gate: a .md that quotes the construct is documentation, not a script.
+tp "non-shell file ignored" clean "$(mkport g.md "use \`local -${AA} x\` on bash 4")"
+# No extension: the shebang is the only signal, so both directions are pinned.
+tp "shebang file flagged" warn "$(mkport h "$SH
+${MF} -t x < y")"
+tp "no-shebang file ignored" clean "$(mkport i "${MF} -t x < y")"
+# --scan is the CI entry point. It must pass on this repo AND say what it scanned: a scan
+# that found nothing to scan must never read as a scan that passed.
+scan="$(cd "$ROOT" && "$PORT" --scan 2>&1)"; scan_rc=$?
+if [ "$scan_rc" = 0 ] && printf '%s' "$scan" | grep -q '3.2-clean'; then
+  pass=$((pass+1)); printf 'ok   --scan is green on this repo (%s)\n' "$(printf '%s' "$scan" | grep -oE '[0-9]+ tracked')"
+else
+  fail=$((fail+1)); printf 'FAIL --scan rc=%s: %s\n' "$scan_rc" "$scan"
+fi
+
+echo "--- coverage: every wired dev-wrapper hook has cases ---"
+# THE META-CHECK, and the reason this section exists at all. pretool-steer-build.sh sat
+# wired in settings.json for months matching a stack no repo here uses — it ran on every
+# Bash call and enforced nothing. Nothing caught it, because nothing asserted that a wired
+# guard is a tested guard. This case is that assertion: wire a new dev-wrapper hook without
+# writing cases for it and this suite goes red on the next run.
+#
+# Scope is deliberately THIS directory. voice/, stagehand/ and the MCP and Slack hooks are
+# wired too and own their own suites; policing them from here would make this file the
+# gate for subsystems it does not own.
+> "$TMP/selftests.txt"
+find "$ROOT/.claude/hooks" "$ROOT/scripts" -name '*selftest*' -type f -print > "$TMP/selftests.txt" 2>/dev/null
+uncovered=""
+while IFS= read -r wired; do
+  [ -n "$wired" ] || continue
+  base="$(basename "$wired")"
+  # A hook is covered if any selftest in the repo names it — its own suite counts, so
+  # pretool-repo-context.sh and pretool-codegraph-guard.sh pass on their dedicated files.
+  # -print0/xargs is avoided on purpose: the file LIST is read line by line here, so a
+  # checkout path with a space cannot silently split it into two non-existent paths and
+  # turn a real gap into a green tick.
+  hit=0
+  while IFS= read -r stf; do
+    [ -n "$stf" ] || continue
+    grep -qF -- "$base" "$stf" 2>/dev/null && { hit=1; break; }
+  done < "$TMP/selftests.txt"
+  [ "$hit" = 1 ] || uncovered="${uncovered:+$uncovered }$base"
+done <<COV
+$(jq -r '.hooks // {} | to_entries[] | .value[] | .hooks[]? | .command // ""' "$ROOT/.claude/settings.json" 2>/dev/null \
+   | grep -oE '[^"]*dev-wrapper/[A-Za-z0-9_-]+\.sh' | sort -u)
+COV
+if [ ! -s "$TMP/selftests.txt" ]; then
+  # Never fail open. Finding no selftests at all means the search itself broke, not that
+  # coverage is perfect — a check that could not run must not report as a check that passed.
+  fail=$((fail+1)); printf 'FAIL coverage check found no selftest files to search\n'
+elif [ -z "$uncovered" ]; then
+  pass=$((pass+1)); printf 'ok   every wired dev-wrapper hook is named by a selftest\n'
+else
+  fail=$((fail+1)); printf 'FAIL wired dev-wrapper hook(s) with no selftest: %s\n' "$uncovered"
+fi
+
 echo "--- repo-health-check: say it once, then stop repeating it ---"
 # Asserted as a PROPERTY, not against a fixed message, so the case is meaningful whether this
 # worktree happens to be fully cloned or not: a second identical prompt must never cost MORE
@@ -784,6 +1004,163 @@ if [ -x "$RH" ]; then
 else
   printf 'skip repo-health-check.sh not executable\n'
 fi
+
+# ── posttool-context-budget.sh ─────────────────────────────────────────────────────────
+# The hook reads the window off the transcript, so the fixtures below ARE transcripts: one
+# JSON line per usage row, exactly the shape Claude Code writes. Advisory like the
+# portability checker — it always exits 0 — so every assertion is on the TEXT, never the
+# exit code, or the suite would pass on a hook that had stopped measuring anything.
+CTX="$H/posttool-context-budget.sh"
+CTXCFG="$TMP/ctxcfg"; mkdir -p "$CTXCFG"
+
+mkjsonl() { # mkjsonl <name> <read> <write> <input>  -> path
+  local f="$TMP/tx-$1.jsonl"
+  jq -cn --argjson r "$2" --argjson w "$3" --argjson i "$4" \
+    '{type:"assistant",message:{usage:{cache_read_input_tokens:$r,cache_creation_input_tokens:$w,input_tokens:$i,output_tokens:10}}}' \
+    > "$f"
+  printf '%s' "$f"
+}
+
+tc() { # tc <name> <want: warn|alarm|quiet> <session-id> <transcript>
+  local name=$1 want=$2 sid=$3 tx=$4 err
+  err="$(jq -cn --arg t "$tx" --arg s "$sid" '{session_id:$s,transcript_path:$t,tool_name:"Bash"}' \
+         | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" 2>&1 >/dev/null)"
+  local got=quiet
+  printf '%s' "$err" | grep -q 'context window' && got=warn
+  printf '%s' "$err" | grep -q 'every further turn bills' && got=alarm
+  if [ "$got" = "$want" ]; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s, got %s)\n' "$name" "$want" "$got"
+  fi
+}
+
+# --check renders the verdict without a transcript; the bands are the contract.
+[ -z "$("$CTX" --check 149999)" ] \
+  && { pass=$((pass+1)); printf 'ok   under the warn threshold says nothing\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL under the warn threshold should be silent\n'; }
+"$CTX" --check 150000 | grep -q 'context window 150k' \
+  && { pass=$((pass+1)); printf 'ok   warn band names the window\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL warn band did not name the window\n'; }
+"$CTX" --check 299999 | grep -q 'every further turn bills' \
+  && { fail=$((fail+1)); printf 'FAIL just under alarm escalated early\n'; } \
+  || { pass=$((pass+1)); printf 'ok   just under alarm stays a warning\n'; }
+"$CTX" --check 300000 | grep -q 'every further turn bills' \
+  && { pass=$((pass+1)); printf 'ok   alarm band escalates\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL alarm band did not escalate\n'; }
+"$CTX" --check 709000 | grep -q '709k' \
+  && { pass=$((pass+1)); printf 'ok   alarm reports the measured size, not the threshold\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL alarm did not report the measured size\n'; }
+
+# The window is the SUM of the three billed input fields, not cache_read alone: a turn that
+# just wrote 90k of cache is as expensive as one that read it.
+tc "small window is quiet"      quiet ctx-a "$(mkjsonl a  40000    0     0)"
+tc "warn band fires"            warn  ctx-b "$(mkjsonl b 180000    0     0)"
+tc "alarm band fires"           alarm ctx-c "$(mkjsonl c 620000    0     0)"
+tc "cache write counts too"     warn  ctx-d "$(mkjsonl d  70000 90000     0)"
+tc "uncached input counts too"  warn  ctx-e "$(mkjsonl e  70000     0 90000)"
+
+# Regression: a cancelled or synthetic turn appends an all-zero usage row. Taking the
+# literally-last row read 0 there and the hook went silent on a 620k session — which is
+# exactly the session it exists to catch.
+Z="$TMP/tx-zero.jsonl"
+cat "$(mkjsonl z 620000 0 0)" > "$Z"
+jq -cn '{type:"assistant",message:{usage:{cache_read_input_tokens:0,cache_creation_input_tokens:0,input_tokens:0,output_tokens:0}}}' >> "$Z"
+tc "trailing zero row does not mask the window" alarm ctx-f "$Z"
+
+# Throttle: one line per 50k bucket per session, or a long session buries the warning under
+# its own repetitions. Same session + same window must go quiet the second time.
+tc "first crossing warns"          warn  ctx-g "$(mkjsonl g 180000 0 0)"
+tc "same bucket is throttled"      quiet ctx-g "$(mkjsonl g 180000 0 0)"
+tc "a new bucket warns again"      warn  ctx-g "$(mkjsonl g 260000 0 0)"
+tc "a different session is not throttled" warn ctx-h "$(mkjsonl h 180000 0 0)"
+
+# Never break the tool call it rides on, whatever it is handed.
+printf 'not json\n' | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" >/dev/null 2>&1 \
+  && { pass=$((pass+1)); printf 'ok   garbage payload exits 0\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL garbage payload did not exit 0\n'; }
+printf '{"session_id":"x","transcript_path":"/nonexistent"}\n' | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" >/dev/null 2>&1 \
+  && { pass=$((pass+1)); printf 'ok   missing transcript exits 0\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL missing transcript did not exit 0\n'; }
+E="$TMP/tx-empty.jsonl"; : > "$E"
+tc "empty transcript is quiet" quiet ctx-i "$E"
+
+# Thresholds are overridable, and the override has to actually move the band.
+if [ -n "$(AIWORKS_CONTEXT_WARN=30000 "$CTX" --check 40000)" ]; then
+  pass=$((pass+1)); printf 'ok   AIWORKS_CONTEXT_WARN lowers the band\n'
+else
+  fail=$((fail+1)); printf 'FAIL AIWORKS_CONTEXT_WARN was ignored\n'
+fi
+
+# ── pretool-codegraph-nudge.sh ─────────────────────────────────────────────────────────
+# Advisory like the two above — it always exits 0 — so every assertion is on the printed
+# text. The fixture repos get a .codegraph/ directory because that, not the repo name, is
+# what the hook keys on; `e2e` is deliberately left without one.
+NUDGE="$H/pretool-codegraph-nudge.sh"
+NUDGECFG="$TMP/nudgecfg"; mkdir -p "$NUDGECFG"
+mkdir -p "$TMP/svc/.codegraph" "$TMP/db/.codegraph"
+
+# n <name> <want: nudge|quiet> <session> <repeats> <command>
+# Runs the command <repeats> times in one session and asserts on the LAST result: the hook
+# fires on the third probe, so "did it nudge" is only answerable after a sequence.
+n() {
+  local name=$1 want=$2 sid=$3 reps=$4 cmd=$5 err i
+  for i in $(seq 1 "$reps"); do
+    err="$(jq -cn --arg c "$cmd" --arg s "$sid" \
+             '{session_id:$s,tool_name:"Bash",tool_input:{command:$c}}' \
+           | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" "$NUDGE" 2>&1 >/dev/null)"
+  done
+  local got=quiet
+  printf '%s' "$err" | grep -q 'has a codegraph index' && got=nudge
+  if [ "$got" = "$want" ]; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s, got %s)\n' "$name" "$want" "$got"
+  fi
+}
+
+n "first probe is quiet"            quiet ng-a 1 'grep -rn foo svc/src'
+n "second probe is quiet"           quiet ng-b 2 'grep -rn foo svc/src'
+n "third probe nudges"              nudge ng-c 3 'grep -rn foo svc/src'
+n "fourth is quiet again"           quiet ng-c 1 'grep -rn foo svc/src'
+n "a second repo counts separately" nudge ng-c 3 'cat db/src/main.rs'
+n "a new session starts over"       nudge ng-d 3 'grep -rn foo svc/src'
+
+# An unindexed directory has nothing to suggest, and a command already using the index is
+# the behaviour being asked for — nudging either one would be pure noise.
+n "unindexed path stays quiet"      quiet ng-e 4 'grep -rn foo e2e/src'
+n "a codegraph call stays quiet"    quiet ng-f 4 'codegraph query Foo -p svc'
+
+# Only search verbs. A repo name appearing in a build or a VCS command is not a probe.
+n "git is not a probe"              quiet ng-g 4 'git status svc'
+n "a test run is not a probe"       quiet ng-h 4 'scripts/dev.sh test svc'
+n "a word containing grep is not"   quiet ng-i 4 './mygrep svc'
+
+# The repo has to be recognised however the path is written, or the hook goes quiet on
+# exactly the sessions doing the most searching.
+n "bare path form"                  nudge ng-j 3 'grep -rn x svc/lib.rs'
+n "dot-slash form"                  nudge ng-k 3 'grep -rn x ./svc/lib.rs'
+n "quoted form"                     nudge ng-l 3 'grep -rn x "svc/lib.rs"'
+n "absolute form"                   nudge ng-m 3 "grep -rn x $TMP/svc/lib.rs"
+
+# The threshold is tunable, and the override has to actually move it.
+err="$(jq -cn '{session_id:"ng-n",tool_name:"Bash",tool_input:{command:"grep -rn x svc"}}' \
+       | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" \
+         AIWORKS_CODEGRAPH_NUDGE_AT=1 "$NUDGE" 2>&1 >/dev/null)"
+if printf '%s' "$err" | grep -q 'has a codegraph index'; then
+  pass=$((pass+1)); printf 'ok   AIWORKS_CODEGRAPH_NUDGE_AT lowers the threshold\n'
+else
+  fail=$((fail+1)); printf 'FAIL AIWORKS_CODEGRAPH_NUDGE_AT was ignored\n'
+fi
+
+# Never break the Bash call it rides in front of.
+for bad in 'not json' '{}' '{"tool_input":{"command":"grep -rn x svc"}}'; do
+  if printf '%s\n' "$bad" | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_CONFIG_DIR="$NUDGECFG" "$NUDGE" >/dev/null 2>&1; then
+    pass=$((pass+1)); printf 'ok   exits 0 on payload: %s\n' "$bad"
+  else
+    fail=$((fail+1)); printf 'FAIL non-zero exit on payload: %s\n' "$bad"
+  fi
+done
 
 echo
 echo "pass=$pass fail=$fail"

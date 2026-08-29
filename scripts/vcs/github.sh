@@ -32,7 +32,7 @@ vcs_open_pr() {
     printf 'DRY RUN — git push -u %s %q && gh pr create --repo %q --base %q --head %q --title %q --body <…>\n' "$VCS_REMOTE" "$head" "$nwo" "$base" "$head" "$title"
     return 0
   fi
-  git push -u "$VCS_REMOTE" "$head" >/dev/null 2>&1 || true
+  vcs_push_head "$head"   # never pushes from a cwd that is not $nwo — see lib.sh
   local url out rc=0
   # `|| true` + an explicit check, for the reason spelled out in gitlab.sh: a failing create must
   # not kill this function before it can say what went wrong. Both lines need it — the second one

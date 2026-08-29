@@ -50,27 +50,40 @@ BIN="$TMP/bin"; mkdir -p "$BIN"
 #   fail_silent         create exits 1 printing NOTHING                 — the adapter is the reporter
 #   fail_but_created    create exits 1, the forge HAS the MR            — reported as success, not failure
 #   already_open        an open MR exists before we start               — create is never invoked
+#   wrong_cwd           the cwd is a DIFFERENT repo than VCS_REPO       — the wrong branch is never pushed,
+#                                                                         and the missing branch is named
 cat > "$BIN/glab" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CALLS"
-case "$1 $2" in
+case "$*" in
+  # Is the head branch on the TARGET project? Only `wrong_cwd` says no — the case where the
+  # branch lives in whatever repo the cwd happens to be and never reached the target.
+  *"repository/branches/"*)
+    case "$FIXTURE" in
+      wrong_cwd) exit 1 ;;
+      *)         printf '{"name":"feature/FM-1"}\n'; exit 0 ;;
+    esac ;;
+  # The create. `api --method POST …/merge_requests`, not `mr create`: see gitlab.sh for why
+  # the native verb cannot be used (it resolves the SOURCE project from the cwd).
+  "api --method POST"*)
+    case "$FIXTURE" in
+      ok)               printf '{"web_url":"https://gitlab.example.com/g/p/-/merge_requests/9"}\n'; exit 0 ;;
+      fail_loud)        printf '{"message":["the merge request description template is required"]}\n' >&2; exit 1 ;;
+      fail_silent)      exit 1 ;;
+      fail_but_created) exit 1 ;;
+      *)                exit 1 ;;
+    esac ;;
   "api projects"*)
     case "$FIXTURE" in
       already_open)     printf '[{"web_url":"https://gitlab.example.com/g/p/-/merge_requests/41"}]\n' ;;
       fail_but_created)
-        # FIRST call (the reuse probe, before create) answers empty; the SECOND (after the
-        # failed create) answers with the MR the server made anyway. The call log is the clock.
-        if [[ "$(grep -c '^api projects' "$CALLS")" -le 1 ]]; then printf '[]\n'
+        # FIRST reuse probe (before create) answers empty; the SECOND (after the failed create)
+        # answers with the MR the server made anyway. The call log is the clock — and it counts
+        # the reuse probe's OWN signature, not every `api projects` call, because the branch
+        # probe above shares that prefix.
+        if [[ "$(grep -c 'source_branch=' "$CALLS")" -le 1 ]]; then printf '[]\n'
         else printf '[{"web_url":"https://gitlab.example.com/g/p/-/merge_requests/77"}]\n'; fi ;;
       *)                printf '[]\n' ;;
-    esac ;;
-  "mr create")
-    case "$FIXTURE" in
-      ok)               printf 'https://gitlab.example.com/g/p/-/merge_requests/9\n'; exit 0 ;;
-      fail_loud)        printf 'GitLab: 403 Forbidden - the merge request description template is required\n' >&2; exit 1 ;;
-      fail_silent)      exit 1 ;;
-      fail_but_created) exit 1 ;;
-      *)                exit 1 ;;
     esac ;;
   *) printf '{}\n' ;;
 esac
@@ -102,9 +115,19 @@ STUB
 
 # The suite must never reach a real remote. `vcs_open_pr` pushes the head branch before it
 # creates anything, so `git` is a stub that logs and agrees.
+#
+# It answers `remote get-url` too, and that answer is the whole point of the `wrong_cwd` fixture:
+# vcs_push_head compares it against VCS_REPO and pushes only when the cwd IS the target repo.
 cat > "$BIN/git" <<'STUB'
 #!/usr/bin/env bash
 printf 'git %s\n' "$*" >> "$CALLS"
+case "$*" in
+  "remote get-url origin")
+    case "$FIXTURE" in
+      wrong_cwd) printf 'git@gitlab.example.com:some/other-repo.git\n' ;;
+      *)         printf 'git@gitlab.example.com:g/p.git\n' ;;
+    esac ;;
+esac
 exit 0
 STUB
 chmod +x "$BIN/glab" "$BIN/gh" "$BIN/git"
@@ -127,8 +150,8 @@ out="$(run gitlab fail_loud)"
 # THE regression. Before the fix this was zero bytes: `set -e` killed the function at the
 # url= assignment, one line before the code that prints all of this.
 isnt_empty "a failing create is never silent"            "$out"
-has        "glab's own reason reaches the caller"        "403 Forbidden"                  "$out"
-has        "names glab's exit code"                      "glab mr create exited 1"        "$out"
+has        "GitLab's own reason reaches the caller"      "description template is required" "$out"
+has        "names the exit code"                         "POST exited 1"                  "$out"
 has        "says plainly nothing was created"            "the MR was NOT created"         "$out"
 has        "names the project it acted on"               "project g/p"                    "$out"
 has        "names the branches"                          "feature/FM-1 -> develop"        "$out"
@@ -136,8 +159,8 @@ has        "names the branches"                          "feature/FM-1 -> develo
 echo "── gitlab: a create that fails printing NOTHING still gets a diagnostic"
 out="$(run gitlab fail_silent)"
 isnt_empty "the adapter reports even when glab won't" "$out"
-has        "still names the exit code"                   "glab mr create exited 1"        "$out"
-has        "tells the reader the blank line is glab's"   "glab itself printed nothing"    "$out"
+has        "still names the exit code"                   "POST exited 1"                  "$out"
+has        "tells the reader the blank line is the forge's" "it returned nothing"         "$out"
 
 echo "── gitlab: a create that failed AFTER the server made the MR is a success"
 out="$(run gitlab fail_but_created)"
@@ -149,10 +172,21 @@ echo "── gitlab: the happy path and the reuse short-circuit are unchanged"
 out="$(run gitlab ok)"
 has   "creates and prints the URL"    "/merge_requests/9" "$out"
 has   "and the number"                "number=9"          "$out"
+out="$(run gitlab ok)"; log="$(calls)"
+has   "the create names the project in its OWN url"  "projects/g%2Fp/merge_requests" "$log"
+hasnt "and never uses the cwd-resolving native verb" "mr create"                     "$log"
 out="$(run gitlab already_open)"; log="$(calls)"
 has   "an open MR is reused"          "number=41"         "$out"
-hasnt "create is NEVER invoked"       "mr create"         "$log"
+hasnt "create is NEVER invoked"       "--method POST"     "$log"
 hasnt "and nothing is pushed"         "git push"          "$log"
+
+echo "── gitlab: a cwd that is NOT the target repo (the 422 'not a fork' class)"
+out="$(run gitlab wrong_cwd)"; log="$(calls)"
+hasnt "the OTHER repo's branch is never pushed"      "git push"                       "$log"
+has   "and says why it declined to push"             "is not g/p"                     "$out"
+has   "the missing branch is named, not the forge"   "is not on g/p"                  "$out"
+has   "with the command that fixes it"               "push -u origin feature/FM-1"    "$out"
+hasnt "no MR create is attempted on a missing branch" "--method POST"                 "$log"
 
 echo "── github: the same two failure contracts (siblings of one bug, not one provider's)"
 out="$(run github fail_loud)"

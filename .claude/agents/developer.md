@@ -63,14 +63,34 @@ tools:
   - mcp__claude_ai_Figma__get_screenshot
   - mcp__claude_ai_Figma__get_metadata
   - mcp__claude_ai_Figma__get_design_context
-  # Full DB + cache access (read + write, all permissions) — execute_sql/DML and redis writes for
-  # local dev / seeding / debugging against the platform stores. Whole-server grants.
-  - mcp__postgres_mad
-  - mcp__postgres_ass
-  - mcp__redis
-  # Deployed Postgres (staging + prod, `env` per call), READ-ONLY, on-demand — for a bug repro
-  # under /diagnosing-bugs only: read the real offending row (transient), never write. Prefer
-  # env="staging" when it reproduces the bug. disconnect when done.
+  # Full DB access (read + write, all permissions) — execute_sql/DML for local dev, seeding and
+  # debugging against the platform stores. Whole-server grants.
+  - mcp__postgres_main
+  - mcp__postgres_secondary
+  # Read-only cache/session inspection (no writes/publish) — the same list code-reviewer and
+  # qa-runner carry. NOT a whole-server grant: `mcp__redis` alone is ~53 tool schemas re-sent on
+  # every turn of the highest-turn role in the pipeline, and it hands a build agent
+  # delete/hset/xdel/rename/json_del it has no reason to hold. Seed local stores through the
+  # repo's own harness, not by writing keys from here.
+  - mcp__redis__get
+  - mcp__redis__hget
+  - mcp__redis__hgetall
+  - mcp__redis__hexists
+  - mcp__redis__llen
+  - mcp__redis__lrange
+  - mcp__redis__smembers
+  - mcp__redis__zrange
+  - mcp__redis__type
+  - mcp__redis__scan_keys
+  - mcp__redis__scan_all_keys
+  - mcp__redis__dbsize
+  - mcp__redis__info
+  - mcp__redis__json_get
+  - mcp__redis__client_list
+  - mcp__redis__xrange
+  # Deployed Postgres (staging + prod, `env` per call), READ-ONLY, on-demand — prod needs the machine's triage.prod opt-in — for a bug repro under /diagnosing-bugs only.
+  # The server forces a read-only role + read-only transaction, so no write can slip through.
+  # ALWAYS disconnect at the end.
   - mcp__pg_triage__list_targets
   - mcp__pg_triage__resolve_shard
   - mcp__pg_triage__list_schemas
@@ -125,7 +145,7 @@ tools:
   - mcp__k8s_triage__top_nodes
   - mcp__k8s_triage__disconnect
   # The ONE sanctioned path to persist prod-derived data locally — masks external PII, entity-
-  # scoped, into a throwaway ofb_repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
+  # scoped, into a throwaway repro_<KEY> DB, DROP on --teardown. See "Prod data for a repro".
   - Bash(uv run *prod_repro_seed.py*)
   # The Redis counterpart: replays a capture_shape descriptor as SYNTHETIC keys into LOCAL Redis
   # under a `repro:<label>:` prefix, torn down by that prefix. Refuses a non-loopback URL.
