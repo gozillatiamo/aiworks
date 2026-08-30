@@ -28,24 +28,42 @@ async function call(root, prompt, plan, resume = "") {
   };
 }
 
+// The schema-correction loop is the only place the framework re-invokes an agent on its own account,
+// and every correction is a full call with a full bill. The bound was already here; what was missing
+// is that the paths which GIVE UP threw a bare error, and run.mjs charges `result.spent` only when a
+// call returns. So a definition that failed after three corrections reported the cost of none of
+// them: four agent calls, zero tokens on the run's budget, and a phase that quietly cost the most
+// showing as the phase that cost nothing. Carry the running total out on the error too, and name the
+// bound in the message so a reader of the failure knows how many attempts they are looking at.
+const CORRECTION_ATTEMPTS = 3;
+
 export async function run({ root, definition, prompt, schema }) {
   const plan = definition.data.permissionMode === "plan";
   let response = await call(root, prompt, plan);
   let spent = response.usage.tokens;
   let accounting = response.usage.accounting;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const value = jsonCandidate(response.text);
-      const errors = validate(value, schema);
-      if (!errors.length) return { value, spent, accounting };
-      if (attempt === 2) throw new Error(errors.join("\n"));
-      response = await call(root, `Your prior response failed JSON Schema validation:\n- ${errors.join("\n- ")}\nReturn only a corrected JSON object.`, plan, response.session);
-    } catch (error) {
-      if (attempt === 2) throw error;
-      response = await call(root, `Your prior response was not valid JSON: ${error.message}\nReturn only a corrected JSON object.`, plan, response.session);
+  try {
+    for (let attempt = 0; attempt < CORRECTION_ATTEMPTS; attempt += 1) {
+      const last = attempt === CORRECTION_ATTEMPTS - 1;
+      let correction;
+      try {
+        const value = jsonCandidate(response.text);
+        const errors = validate(value, schema);
+        if (!errors.length) return { value, spent, accounting };
+        if (last) throw new Error(errors.join("\n"));
+        correction = `Your prior response failed JSON Schema validation:\n- ${errors.join("\n- ")}\nReturn only a corrected JSON object.`;
+      } catch (error) {
+        if (last) throw error;
+        correction = `Your prior response was not valid JSON: ${error.message}\nReturn only a corrected JSON object.`;
+      }
+      response = await call(root, correction, plan, response.session);
+      spent += response.usage.tokens;
+      if (response.usage.accounting !== "reported") accounting = response.usage.accounting;
     }
-    spent += response.usage.tokens;
-    if (response.usage.accounting !== "reported") accounting = response.usage.accounting;
+    throw new Error(`Cursor schema correction exhausted after ${CORRECTION_ATTEMPTS} attempts`);
+  } catch (error) {
+    error.spent = spent;
+    error.accounting = accounting;
+    throw error;
   }
-  throw new Error("Cursor schema correction exhausted");
 }
