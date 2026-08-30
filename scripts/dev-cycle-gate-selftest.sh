@@ -126,9 +126,13 @@ async function runOnce(argsStr, canned, opts = {}) {
   const phase = (name) => { PHASES.push(name) }
   const log = (s) => LINES.push(String(s))
   const parallel = (fns) => Promise.all(fns.map((f) => f()))
+  // A label listed in opts.throwOn raises instead of answering — the one thing a canned table cannot
+  // express, and the only way to exercise what the workflow does when an agent returns nothing at all.
+  const throwOn = new Set(opts.throwOn || [])
   const agent = async (prompt, opts2) => {
     const label = opts2 && opts2.label
     if (label) { SPAWNED.push(label); PROMPTS[label] = prompt }
+    if (label && throwOn.has(label)) throw new Error(opts.throwMessage || 'selftest: forced non-convergence')
     // The target-branch gate (docs/adr/0025) runs on EVERY repo that opens or resumes a PR/MR, so
     // stubbing it per scenario would mean adding a row to twenty canned tables to say "yes, the
     // MR points where it should". Default it to agreement, derived from the base the prompt itself
@@ -149,6 +153,16 @@ async function runOnce(argsStr, canned, opts = {}) {
     // it every resume scenario would be testing this probe instead of what it is about.
     if (label && (label.startsWith('human-probe:') || label.startsWith('human-verify:')) && !(label in canned)) {
       return { directives: [], blind: false, command: 'scripts/vcs/pr-threads.sh' }
+    }
+    // The branch-base reconcile fires on EVERY repo that is about to build, for the same reason the
+    // two probes above fire on every repo that is about to review — so it gets the same treatment.
+    // Default it to the healthy answer: the branch stands where the run says it does and nothing was
+    // touched. A scenario that is ABOUT the base overrides the label. Without this default every
+    // build scenario would be testing this probe instead of what it is about.
+    if (label && label.startsWith('base-reconcile:') && !(label in canned)) {
+      const repo = label.split(':').pop()
+      return { repo, branch_exists: true, state: 'ok', ticket_commits: 1, foreign_commits: 0,
+               head_sha: 'sha-head', parked_at: null, rebase_command: null, detail: 'branch stands on the run base' }
     }
     if (!label || !(label in canned)) throw new Error('selftest: unstubbed agent label ' + label)
     return canned[label]
@@ -1695,6 +1709,72 @@ const BASE = {
         report('G43_blocked_brief_rules_out_the_cheap_classes', /YOU REPORTED BLOCKED/.test(PROMPTS['build-continue:FM-12:db#1'] || ''))
         report('G43_decline_reaches_the_handoff', JSON.stringify(result?.handoffs || result?.repoResults || {}).includes('declined this with evidence'))
       }
+    } else if (SCENARIO.startsWith('G45')) {
+      // The branch base is a fact of the run (ADR 0025) but nothing checked the work BRANCH against
+      // it before the build agent read both. A branch left standing on the wrong base made the
+      // repair the round's first slice: the whole slice budget and all of ADR 0032's continuation
+      // passes went on git surgery, and the round reported as "the build did not finish" with no
+      // sign that it never got to the feature at all. Five shapes: the healthy branch is untouched
+      // and costs nothing extra (G45_OK), a branch carrying only foreign commits is repaired as its
+      // OWN accounted step and the round keeps its budget (G45), a branch carrying BOTH this
+      // ticket's commits and foreign ones is refused rather than rebased over (G45_UNREPAIRABLE), a
+      // probe that fails leaves the repo exactly where it stood before the check existed AND has its
+      // reason recorded (G45_FLAKE), and a resumed build does not pay to re-probe (G45_RESUMED).
+      const DONE = { work_branch: 'feature/FM-12', summary: 'all slices landed', status: 'complete', fixed: ['db/src/x.ts'] }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: SCENARIO === 'G45_RESUMED' ? [builtRow('db')] : [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': DONE,
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { approved: true },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
+      }
+      if (SCENARIO === 'G45') {
+        canned['base-reconcile:FM-12:db'] = { repo: 'db', branch_exists: true, state: 'repaired', ticket_commits: 0, foreign_commits: 12,
+          head_sha: 'sha-repaired', parked_at: 'stash@{0}', rebase_command: null, detail: 're-pointed at origin/develop; 12 inherited commits dropped' }
+      }
+      if (SCENARIO === 'G45_UNREPAIRABLE') {
+        canned['base-reconcile:FM-12:db'] = { repo: 'db', branch_exists: true, state: 'unrepairable', ticket_commits: 3, foreign_commits: 12,
+          head_sha: 'sha-mixed', parked_at: null, rebase_command: 'git -C /tmp/ws/db rebase --onto origin/develop sha-fork feature/FM-12', detail: 'the branch carries this ticket\'s commits on top of 12 it inherited' }
+      }
+      const FLAKE = 'cursor-agent exited 1: Cursor stream ended without a successful result event'
+      const result = await runOnce(ARGS, canned, SCENARIO === 'G45_FLAKE' ? { throwOn: ['base-reconcile:FM-12:db'], throwMessage: FLAKE } : {})
+      const buildPrompt = PROMPTS['build:FM-12:db'] || ''
+      const repairAccounted = (result?.spend || []).some((s) => s && s.label === 'db:base-reconcile')
+      if (SCENARIO === 'G45') {
+        report('G45_repair_is_its_own_accounted_step', repairAccounted, `spend=${JSON.stringify((result?.spend || []).map((s) => s && s.label))}`)
+        report('G45_repair_is_not_a_continuation_pass', !SPAWNED.some((l) => l.startsWith('build-continue:')))
+        report('G45_round_still_builds', SPAWNED.includes('build:FM-12:db'))
+        report('G45_reported_distinctly_in_the_log', LINES.some((l) => l.includes('[db] BRANCH BASE REPAIRED as its own accounted step')))
+        report('G45_brief_tells_the_round_not_to_redo_it', /THE BRANCH BASE WAS ALREADY REPAIRED FOR YOU/.test(buildPrompt) && /not paid for out of your budget/.test(buildPrompt))
+        report('G45_repo_still_reaches_ready', !!result && result.status !== 'repo-unresolved')
+      } else if (SCENARIO === 'G45_UNREPAIRABLE') {
+        report('G45_mixed_history_is_refused_not_rebased_over', !SPAWNED.includes('build:FM-12:db'))
+        report('G45_ends_on_the_target_branch_halt', !!result && result.status === 'target-branch-halt', `status=${result && result.status}`)
+        report('G45_blocking_item_is_recorded', JSON.stringify(result?.blockingByRepo || []).includes('branch-base'))
+        report('G45_human_action_names_the_rebase', JSON.stringify(result?.blockingByRepo || []).includes('rebase --onto origin/develop'))
+        report('G45_no_pr_on_a_branch_that_cannot_be_diffed', !SPAWNED.includes('open-pr:FM-12:db'))
+      } else if (SCENARIO === 'G45_FLAKE') {
+        report('G45_flake_does_not_halt_the_repo', SPAWNED.includes('build:FM-12:db'))
+        report('G45_flake_says_it_is_proceeding_unchecked', LINES.some((l) => l.includes('branch-base reconcile did not converge') && l.includes('UNCHECKED')))
+        report('G45_reason_is_captured_not_swallowed', LINES.some((l) => l.includes(FLAKE)))
+        report('G45_reason_reaches_the_summary_brief', (PROMPTS['summary:FM-12'] || '').includes('AGENTS THAT RETURNED NOTHING') && (PROMPTS['summary:FM-12'] || '').includes(FLAKE))
+        report('G45_reason_reaches_the_run_result', JSON.stringify(result?.summary?.non_convergences || []).includes(FLAKE))
+      } else if (SCENARIO === 'G45_RESUMED') {
+        report('G45_resumed_build_does_not_re_probe', !SPAWNED.includes('base-reconcile:FM-12:db'))
+      } else {
+        report('G45_healthy_branch_costs_no_repair', !LINES.some((l) => l.includes('BRANCH BASE REPAIRED')))
+        report('G45_healthy_branch_is_still_probed', SPAWNED.includes('base-reconcile:FM-12:db'))
+        report('G45_healthy_brief_carries_no_repair_clause', !/THE BRANCH BASE WAS ALREADY REPAIRED FOR YOU/.test(buildPrompt))
+        report('G45_healthy_run_records_no_non_convergence', !(result?.summary?.non_convergences || []).length, `recorded=${JSON.stringify(result?.summary?.non_convergences || [])}`)
+        report('G45_healthy_repo_still_reaches_ready', !!result && result.status !== 'repo-unresolved')
+      }
     } else if (SCENARIO === 'G42_FP') {
       // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
       // THIS run's fp, so the assertion run needs the value this one logs.
@@ -2222,6 +2302,21 @@ out="$(run_scenario G43_STALL)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" 
 
 echo "── G43_DECLINE — an evidenced cannot_fix ends the passes rather than burning the budget"
 out="$(run_scenario G43_DECLINE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G45_OK — a branch that already stands on the run's base is probed and otherwise untouched"
+out="$(run_scenario G45_OK)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G45 — a base repair is its own accounted step, not the build round's first slice"
+out="$(run_scenario G45)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G45_UNREPAIRABLE — a branch carrying both the ticket's commits and foreign ones is refused"
+out="$(run_scenario G45_UNREPAIRABLE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G45_FLAKE — a probe that returns nothing proceeds unchecked, and its reason is captured"
+out="$(run_scenario G45_FLAKE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G45_RESUMED — a build that is skipped does not pay to re-probe the base it already stands on"
+out="$(run_scenario G45_RESUMED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G42 — the pin survives a resume, and the required re-pin ships even with auto-merge off"
 outFp42="$(run_scenario G42_FP)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outFp42" | sed 's/^/      /'; ingest "$outFp42"

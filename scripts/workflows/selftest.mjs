@@ -61,6 +61,21 @@ assert.deepEqual(cursorResult.value, { ok: true });
 assert.ok(cursorResult.spent >= 7);
 assert.equal(cursorResult.accounting, "conservative-estimate");
 
+// A CLI that never returns JSON exhausts the correction bound. The give-up path used to throw a bare
+// error, and run.mjs charges `result.spent` only when a call returns — so three real agent calls
+// (5 output tokens each here) landed on the run's budget as zero. The error must carry them out.
+const stubborn = path.join(fixture, "stubborn-cursor");
+await writeFile(stubborn, `#!/usr/bin/env bash
+printf '%s\\n' '{"type":"usage","usage":{"output_tokens":5}}'
+printf '%s\\n' '{"type":"result","is_error":false,"result":"not-json","session_id":"fixture"}'
+`);
+await chmod(stubborn, 0o755);
+process.env.AIWORKS_CURSOR_CLI = stubborn;
+await assert.rejects(
+  runCursor({ root, definition, prompt: "return JSON", schema }),
+  (error) => error.spent === 15 && error.accounting === "reported",
+);
+
 const codex = path.join(fixture, "codex");
 await writeFile(codex, `#!/usr/bin/env bash
 out=''

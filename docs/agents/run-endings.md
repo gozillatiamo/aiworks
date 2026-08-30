@@ -59,6 +59,7 @@ forgotten — and so the next person to widen this net starts here.
 | `pr-unresolved` | 2 (open-PR, then a bounded retry) | No PR/MR number exists, and every reviewer prompt is addressed to one. The branch is built and pushed; opening it by hand is one command, given in the handoff. |
 | `plan-missing` | 2 (Kickoff, then a bounded re-plan) | The build reads the plan file. A re-plan that also failed to write it is not a question a third ask answers. |
 | `target-branch-halt` | 0, deliberately | `git diff <base>...<head>` cannot be computed without the base on the remote, so reviewers would produce findings about the wrong comparison. Expensive garbage is still garbage (ADR 0025). |
+| `target-branch-halt`, from the base reconcile | 1 (the reconcile itself, which repairs what it can) | The work branch stands on the wrong base AND already carries this ticket's own commits, so re-pointing it at the run's base would delete work this run cannot re-derive. Where the branch carries no work of its own the reconcile re-points it and the run continues; where it carries both, only a person can say which commits survive the rebase. |
 
 ## The shape to keep
 
