@@ -138,6 +138,29 @@ vcs_media_asset_name() {
   printf '%s%s' "${key:+${key}-}" "$name"
 }
 
+# A VCS_REPO THAT IS NOT A PROJECT PATH. Every call addresses the project by its FULL forge path —
+# `owner/repo` on GitHub, `group/subgroup/project` on GitLab — and vcs_repo_ref echoes VCS_REPO back
+# verbatim. A caller that passes a clone's DIRECTORY NAME (`agent-ofb-cypress`) therefore builds
+# `projects/agent-ofb-cypress/merge_requests`, and the API answers 404. The MUTATING scripts surface
+# that; the READ-ONLY ones cannot — every query ends in `2>/dev/null || true` and vcs_pr_view answers
+# `state=UNKNOWN`, so a 404 prints exactly like "genuinely nothing found". Measured: a live run read
+# "no open MR" for two repos that each had one. The shape is checkable with no network call, so it is
+# checked here, once, for every script that sources this file.
+# Accepted: any value containing `/`, plus an all-digit GitLab numeric project id.
+case "${VCS_REPO:-}" in
+  '') : ;;
+  *://*|*@*:*|*.git)
+    die "VCS_REPO='$VCS_REPO' still carries a remote URL's host prefix or its .git suffix.
+  Strip them: from \`git -C <repo> remote get-url origin\`, drop the leading \`git@<host>:\` or \`https://<host>/\` and any trailing \`.git\`.
+  What remains — owner/repo, or group/subgroup/project — is VCS_REPO." ;;
+  */*) : ;;
+  *[!0-9]*)
+    die "VCS_REPO='$VCS_REPO' is not a forge project path — it has no '/'.
+  A clone's DIRECTORY NAME is not addressable: the API resolves it to nothing, answers 404, and the read-only scripts print that as EMPTY output — indistinguishable from 'nothing found'.
+  Resolve the real one: \`git -C <that repo> remote get-url origin\`, then strip the leading \`git@<host>:\`/\`https://<host>/\` and any trailing \`.git\` (e.g. bluepicode/qa/agent-ofb-cypress)." ;;
+  *) : ;;
+esac
+
 # A WRITER run from the META-REPO root targets the WORKSPACE repo — almost never what the
 # caller meant. The adapters are symlinked into every product repo (scripts/vcs -> ../../scripts/vcs),
 # so the same relative path works from anywhere and NOTHING signals which repo you are actually

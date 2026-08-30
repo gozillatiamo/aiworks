@@ -164,6 +164,24 @@ case "$(cat "$CALLS")" in
 esac
 has "github: it says why it refused" "refusing to run it against" "$out"
 
+# A BARE REPO NAME IS NOT A PROJECT PATH. This is the read-only half of the same wrong-target family
+# the rest of this file covers: `find-prs`/`pr-view` end in `2>/dev/null || true`, so a 404 from an
+# unresolvable project reads exactly like "nothing found" — and a run believed it.
+echo "── a VCS_REPO that is not a project path is refused, loudly, before any call"
+for bad in 'agent-ofb-cypress' 'git@gitlab.com:group/proj.git' 'https://gitlab.com/group/proj' 'group/proj.git'; do
+  CALLS="$TMP/calls.$$"; : > "$CALLS"
+  out="$( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$CALLS" VCS_PROVIDER=gitlab VCS_REPO="$bad" \
+      bash -c '. "$1"/lib.sh; vcs_pr_view 7' _ "$DIR" 2>&1 || true )"
+  has  "refused: $bad"                        "VCS_REPO='$bad'" "$out"
+  hasnt "…and nothing went on the wire for it" "merge_requests"  "$(cat "$CALLS")"
+done
+# …and the shapes that ARE valid still pass through untouched.
+for good in 'group/proj' 'group/sub/proj' '12345'; do
+  out="$( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$TMP/calls.$$" VCS_PROVIDER=gitlab VCS_REPO="$good" \
+      bash -c '. "$1"/lib.sh; vcs_pr_view 7' _ "$DIR" 2>&1 || true )"
+  hasnt "accepted: $good" "is not a forge project path" "$out"
+done
+
 # The wrapper announces the resolved target on stderr BEFORE the call. Several call sites capture
 # stderr (`err=$(… 2>&1)`) or discard it (`2>/dev/null`) — that is the point rather than a gap: a
 # capturing site folds the line into the error the caller then reports, which is exactly where a
