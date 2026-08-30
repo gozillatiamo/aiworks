@@ -1562,6 +1562,82 @@ Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUA
   )
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// A DECLARED FALSE RED IS SCREENED ONCE, NOT RETRIED UNTIL THE BUDGET IS GONE
+//
+// A repo declares its own `known_false_reds` because they are facts about ONE repo's harness — the
+// environment failures it produces that look like a real red. Every prose surface in this framework
+// already tells a reader what to do with them: rule one out before calling a failure real, and
+// re-run the scoped check in isolation against the base branch. The reviewers' brief says it, the
+// suite-repair brief says it, the continuation brief says it. The RETRY LOOP ITSELF never did it.
+//
+// So a round that hit a declared flake was continued the only way the loop knows: from scratch, by
+// an agent with no memory of the last attempt, which rebuilt the whole project, re-ran the same
+// check, and crashed the same way. A measured ticket did that six times back to back — 61 minutes,
+// one test, one declared entry that said in advance the suite shares a database and an unrelated
+// test can fail on ordering. Every pass was charged to `build.max_continuation_passes`, so a budget
+// ADR-0032 sized for FEATURE WORK went entirely on a failure the repo had already written down.
+//
+// The screen is therefore its own step, before the failure is charged: its own agent, its own
+// label, its own `tick`, exactly like the base reconcile above. Four outcomes:
+//
+//   no-match     — no declared entry plausibly covers this failure, or the round reported no failing
+//                  check at all. Nothing runs, nothing changes. A repo that declares none never
+//                  reaches this step, so the common path costs exactly what it costs today.
+//   pre-existing — it was re-run on the base, in isolation, and failed there TOO. The base does not
+//                  carry this ticket's change, so the failure is not this round's: it is recorded on
+//                  its own row, and it does not buy itself continuation passes.
+//   genuine      — it PASSES on the base. Today's behaviour, unchanged: charge the budget, continue.
+//   inconclusive — it could not be run on the base at all. Also today's behaviour, unchanged — a
+//                  screen with no receipt has not screened anything, and the safe direction is to
+//                  charge a red to the round rather than excuse one on a guess.
+//
+// WHY ONE GREEN ON THE BASE IS ENOUGH TO SAY "genuine". A non-deterministic test can pass on the
+// base by luck, so this is not proof. It does not need to be: `genuine` is the DEFAULT the workflow
+// already has, and the screen only ever moves a failure OFF the retry budget on positive evidence —
+// a failure watched happening on a tree that predates the change.
+const FALSE_RED_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['repo', 'state', 'sole_obstacle', 'detail'],
+  properties: {
+    repo: { type: 'string' },
+    state: { enum: ['no-match', 'pre-existing', 'genuine', 'inconclusive'] },
+    failing: { type: 'array', items: { type: 'string' } },  // the check(s) screened, as the runner names them
+    matched: { type: ['string', 'null'] },                  // the declared entry it matched, quoted
+    base_command: { type: ['string', 'null'] },             // what was run on the base — half the receipt
+    base_exit_code: { type: ['integer', 'null'] },          // and the other half
+    sole_obstacle: { type: 'boolean' },                     // true ⇒ the round owes nothing beyond this failure
+    detail: { type: 'string' },
+  },
+}
+// The cheapest possible filter, and it runs before the agent does: a repo with nothing declared gets
+// no screen, and neither does a round that never mentions a check that ran. A false positive here
+// costs one scoped probe; a false negative costs what it costs today, which is the thing being fixed.
+const reportsAFailedCheck = (h) =>
+  (h.commands_run || []).some((c) => c && Number(c.exit_code) !== 0)
+  || /\b(test|spec|suite|assert\w*|panic\w*|abort\w*|sigabrt|segfault|flak\w+)\b/i.test(`${h.remaining || ''} ${h.root_cause || ''} ${h.summary || ''}`)
+// Returns the verdict, or null when the screen did not converge. A null neither halts nor excuses:
+// without this step the round was charged for the failure, so that is where a non-convergence leaves it.
+async function screenKnownFalseRed(repoId, rp, desc, dev, phaseName) {
+  const absR = absOf(repoId)
+  const wt = `/tmp/${ticket}-${repoId}-false-red-screen`
+  return await safeAgent(
+    `${tag(repoId, 'general-purpose', 'false-red-screen')} ONE QUESTION, and nothing else: does the check that failed this round fail on the BASE BRANCH too? Write no feature code, fix nothing, run no formatter, touch no PR/MR and no tracker. You may READ the round's checkout at ${absR}; you may never write to it, switch its branch, stash it, or clean it. ${shellClauseFor(repoId)}
+THIS REPO DECLARES ITS OWN KNOWN FALSE REDS — the environment failures its harness produces that look like a real red: ${desc.knownFalseReds}
+WHAT THE ROUND REPORTED: ${String(dev.remaining || dev.summary || '(nothing)').slice(0, 700)}${dev.root_cause ? ` · the cause it measured: ${String(dev.root_cause).slice(0, 300)}` : ''}${(dev.commands_run || []).length ? ` · what it ran: ${JSON.stringify(dev.commands_run).slice(0, 500)}` : ''}
+1. NAME THE FAILING CHECK. From the report above, identify the specific test(s) that failed, as this repo's own runner names them, and list them in \`failing\`. If the round reported no failing check at all — it stopped for some other reason — return state:"no-match", run nothing, and say so: this step is about a red, not about unfinished work.
+2. MATCH IT, OR DO NOT. Hold that failure against the declared entries above: the same suite, the same shared fixture or database, the same failure class (an order-dependent test, a process abort or crash rather than an assertion, a port or lock already taken). If nothing plausibly matches, return state:"no-match" with your reasoning in detail and RUN NOTHING — a declared list is the whole benefit of the doubt on offer, and a failure outside it is judged on its own evidence.
+3. ONLY ON A MATCH, RE-RUN IT ON THE BASE, IN ISOLATION. \`git -C ${absR} fetch origin\`, then \`git -C ${absR} worktree add --detach ${wt} origin/${rp.base_branch}\` — a throwaway checkout of the base, so this round's branch, its build output and anything uncommitted on it are never touched.${baseIsSettled(rp.base_branch)} In ${wt}, run ONLY the failing test(s), scoped: this repo's own harness with whatever filter it takes (\`scripts/dev.sh test <name>\`), else the runner underneath it filtered to those tests. NOT the whole suite — the whole suite is what already cost this round its time.
+4. REPORT THE RECEIPT, THEN CLEAN UP. \`base_command\` gets the command verbatim and \`base_exit_code\` its exit code; then \`git -C ${absR} worktree remove --force ${wt}\` whatever the outcome was. Then decide:
+   • it FAILED or crashed on the base as well ⇒ state:"pre-existing" — quote in detail how it failed there. The base predates every line this ticket wrote, so the failure is not this round's to fix.
+   • it PASSED on the base ⇒ state:"genuine". A pass is not proof against a flaky test and does not need to be: "genuine" is this workflow's default, so it changes nothing.
+   • you could not run it there at all ⇒ state:"inconclusive", naming in detail what you tried and what refused. NEVER guess an exit code and never return "pre-existing" without having watched the failure happen on the base: an unscreened red charged to the round is today's behaviour, and it is the safe direction to fail in.
+5. SET \`sole_obstacle\`: true ONLY when the round's report names nothing it still owes beyond this one failure; false when other work remains. It decides whether the round is continued for the rest of its work or ends here, so read the report — do not assume either way.
+Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+    { agentType: 'general-purpose', model: 'sonnet', phase: phaseName, label: `false-red-screen:${ticket}:${repoId}`, schema: FALSE_RED_SCHEMA },
+  )
+}
+
 async function runRepoPipeline(rp, desc, branchKind) {
   const R = rp.repo
   const absR = absOf(R)
@@ -1857,9 +1933,42 @@ Uphold ONLY what all three support. Difficulty is NOT deferral: "this needs a bi
   // A pass that does not move the work is not spent again on the same words: the same `remaining` twice
   // escalates the brief exactly as a review stall does, because repeating an identical attempt is not
   // progress and five no-commit rounds were measured ending in the same human call.
+  //
+  // BUT A FAILURE THE REPO ALREADY DECLARED IS SCREENED BEFORE IT IS CHARGED (see
+  // screenKnownFalseRed). This is the one thing a continuation pass cannot discover for itself: each
+  // pass is a fresh agent with no memory of the last one, so it re-derives the same wrong conclusion
+  // from the same red and pays a full rebuild to do it.
+  let falseRed = null
+  let falseRedClause = ''
+  if (desc.knownFalseReds && dev && (dev.status === 'partial' || dev.status === 'blocked') && reportsAFailedCheck(dev)) {
+    falseRed = await screenKnownFalseRed(R, rp, desc, dev, 'Build')
+    tick(`${R}:false-red-screen`)
+  }
+  const screenedFailing = (falseRed?.failing || []).join(', ') || 'the failing check'
+  if (falseRed && falseRed.state === 'pre-existing') {
+    const why = `${R}'s round hit ${screenedFailing}, which this repo DECLARES as a known false red and which fails on ${rp.base_branch} too: \`${falseRed.base_command || '(no command reported)'}\` exit ${falseRed.base_exit_code ?? '(none reported)'} on a throwaway checkout of the base, which carries none of ${ticket}'s change. ${falseRed.detail}`
+    record('known-false-red', why, `stabilise ${screenedFailing} in ${R} — it is already red on ${rp.base_branch}, before this ticket touches anything — then re-run. Nothing in this run can prove the suite green over a check that fails without it.`)
+    log(`🟡 [${R}] KNOWN FALSE RED, CONFIRMED ON THE BASE — this is not this round's failure, so it does not buy itself any of the ${BUILD.maxContinuationPasses} continuation passes. ${why}`)
+    falseRedClause = ` ⚠️ DO NOT CHASE ${screenedFailing.toUpperCase()} — it was screened BEFORE this pass, as its own step, and it fails on ${rp.base_branch} in an isolated checkout that carries none of ${ticket}'s change (\`${falseRed.base_command || 'see the run log'}\` exit ${falseRed.base_exit_code ?? '?'}). ${falseRed.matched ? `It matches this repo's own declared known false red: ${falseRed.matched}. ` : ''}It is NOT evidence about your diff and it is NOT yours to fix in this ticket. Do not rebuild to reproduce it, do not wipe or recreate a local data directory to chase it, and do not re-run it hoping for a different answer. Work the REST of what you owe, and if there is nothing else, say so and hand off.`
+  } else if (falseRed && falseRed.state === 'genuine') {
+    log(`[${R}] known-false-red screen: ${screenedFailing} PASSES on ${rp.base_branch} (\`${falseRed.base_command || '(no command reported)'}\` exit ${falseRed.base_exit_code ?? '(none reported)'}), so it is this change's own regression and the round is charged for it exactly as before.`)
+    falseRedClause = ` ⚠️ ${screenedFailing} IS YOURS. It was re-run on ${rp.base_branch} in an isolated checkout before this pass — \`${falseRed.base_command || 'see the run log'}\` exit ${falseRed.base_exit_code ?? '?'} — and it PASSES there. So it is not the environment, not a flaky shared fixture, and not this repo's declared false red: it is a regression your diff introduced. Fix the code, not the harness.`
+  } else if (falseRed && falseRed.state === 'inconclusive') {
+    log(`⚠️ [${R}] known-false-red screen could not run ${screenedFailing} on ${rp.base_branch} at all — no receipt, so nothing is screened and the failure is charged to this round exactly as it would have been. ${falseRed.detail}`)
+  } else if (falseRed) {
+    log(`[${R}] known-false-red screen: nothing this repo declares covers this failure — judged on its own evidence, as before. ${falseRed.detail}`)
+  } else if (desc.knownFalseReds && dev && (dev.status === 'partial' || dev.status === 'blocked') && reportsAFailedCheck(dev)) {
+    log(`⚠️ [${R}] the known-false-red screen did not converge — the failure is charged to this round exactly as it would have been before this step existed. Check by hand against ${rp.base_branch}.`)
+  }
+  // A confirmed pre-existing failure that is ALL the round still owes gets no continuation pass. The
+  // pass would spawn a fresh agent, rebuild from scratch, re-run the declared flake and hand back the
+  // same answer; six of those were measured on one ticket. The repo does not reach 'ready' either —
+  // `record` above is what keeps it honest — but it stops paying to learn what it already knows.
+  const flakeIsTheWholeRound = falseRed?.state === 'pre-existing' && falseRed.sole_obstacle === true
+  if (flakeIsTheWholeRound) log(`⏭️ [${R}] the round's ONLY remaining obstacle is that pre-existing failure, so it is not continued: a fresh pass would rebuild, re-run the same declared flake and return the same handoff.`)
   let buildPass = 0
   let lastRemaining = null
-  while (dev && (dev.status === 'partial' || dev.status === 'blocked') && buildPass < BUILD.maxContinuationPasses) {
+  while (!flakeIsTheWholeRound && dev && (dev.status === 'partial' || dev.status === 'blocked') && buildPass < BUILD.maxContinuationPasses) {
     buildPass++
     const wasBlocked = dev.status === 'blocked'
     const fingerprint = String(dev.remaining || dev.summary || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300)
@@ -1873,7 +1982,7 @@ WHAT YOU SAID REMAINS: ${String(dev.remaining || '(you named nothing)').slice(0,
 ${dev.root_cause ? `THE CAUSE YOU MEASURED: ${String(dev.root_cause).slice(0, 400)}\n` : ''}${(dev.commands_run || []).length ? `WHAT YOU RAN: ${JSON.stringify(dev.commands_run).slice(0, 500)}\n` : ''}${dev.parked_at ? `WHERE YOU PARKED WORK: ${dev.parked_at} — recover it before you write anything new, so you do not implement it twice.\n` : ''}
 FIRST, RE-READ THE GROUND, not your memory of it: \`git -C ${absR} log --oneline origin/${rp.base_branch}..${rp.work_branch}\` for what actually landed, and \`git -C ${absR} status --porcelain\` for anything uncommitted. What is already committed is DONE — do not redo it, do not re-litigate it, and do not reshape it unless the plan says it is wrong.
 THEN FINISH THE REST. Same bar as before: /coding-feature test-first through /tdd, commit each slice conventionally (Refs ${ticket}), keep ${desc.green}.${wasBlocked ? ` YOU REPORTED BLOCKED, so the first question is whether the obstacle is real. Rule out the cheap classes before you accept it: the harness or toolchain itself · a dependency or service not standing up · a missing data precondition or fixture · a contract another repo owes that you can stub behind an interface for now and name in your handoff. Read this repo's declared known_false_reds before you call anything an environment problem. If it survives all of that, it is a real blocker and saying so IS the answer — but say it in \`cannot_fix\`, with the command and its exit code that proves it and what you ruled out first, because an unevidenced "blocked" is indistinguishable from not having tried.` : ''}${stalled ? ` ⚠️ YOUR LAST PASS MOVED NOTHING — the same "remaining" came back unchanged. Repeating it is not an option: treat your previous reading of the problem as a HYPOTHESIS TO DISPROVE, not as context. Re-derive it from the code and the commands, not from what you concluded last time, and if you still believe there is nothing to change then that is a claim about the WORK, so put it in \`cannot_fix\` with the evidence rather than returning the same sentence a third time.` : ''}
-RETURN CONTRACT: end by calling StructuredOutput with the DEV_SCHEMA handoff. "complete" when the Definition of Done is genuinely met; otherwise "partial"/"blocked" with what is LEFT in "remaining" — and make "remaining" describe the state as it is NOW, not as it was, because the next pass and a human both read it as the current truth.` + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
+RETURN CONTRACT: end by calling StructuredOutput with the DEV_SCHEMA handoff. "complete" when the Definition of Done is genuinely met; otherwise "partial"/"blocked" with what is LEFT in "remaining" — and make "remaining" describe the state as it is NOW, not as it was, because the next pass and a human both read it as the current truth.` + falseRedClause + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE,
       { agentType: desc.build, phase: 'Build', label: `build-continue:${ticket}:${R}#${buildPass}`, schema: DEV_SCHEMA },
     )
     if (!cont) {
@@ -1899,7 +2008,11 @@ RETURN CONTRACT: end by calling StructuredOutput with the DEV_SCHEMA handoff. "c
   }
   if (dev.status && dev.status !== 'complete' && dev.status !== 'deferred') {
     log(`⚠️ [${R}] build handoff status=${dev.status}: ${(dev.remaining || dev.summary || '(no detail)').slice(0, 140)} — repo not build-complete; downstream skipped.`)
-    return { repo: R, status: 'build-unresolved', plan: rp, base_repair: baseRepair, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining, root_cause: dev.root_cause, commands_run: dev.commands_run, decision_needed: dev.decision_needed, parked_at: dev.parked_at, base_repair: baseRepair ? `this round began with a branch-base repair, done as its OWN step before the build: ${baseRepair.foreign_commits} commit(s) that were not ${ticket}'s were dropped by re-pointing ${rp.work_branch} at ${rp.base_branch}. It did NOT come out of the round's slice budget or its ${BUILD.maxContinuationPasses} continuation passes, so what "remaining" names is genuinely what the feature work did not reach.` : null } }
+    // `blocking` rides the return because a recorded item that never reaches `blockingByRepo` is a
+    // silent degradation — the run summary, the ticket record and the incomplete-run DM all read it
+    // from there, and a known false red is precisely the thing a reader must not mistake for a
+    // broken diff.
+    return { repo: R, status: 'build-unresolved', plan: rp, blocking, base_repair: baseRepair, false_red: falseRed, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining, root_cause: dev.root_cause, commands_run: dev.commands_run, decision_needed: dev.decision_needed, parked_at: dev.parked_at, base_repair: baseRepair ? `this round began with a branch-base repair, done as its OWN step before the build: ${baseRepair.foreign_commits} commit(s) that were not ${ticket}'s were dropped by re-pointing ${rp.work_branch} at ${rp.base_branch}. It did NOT come out of the round's slice budget or its ${BUILD.maxContinuationPasses} continuation passes, so what "remaining" names is genuinely what the feature work did not reach.` : null, false_red: falseRed?.state === 'pre-existing' ? `NOT THIS ROUND'S FAILURE: ${screenedFailing} is a known false red this repo declares, and it was re-run in isolation on ${rp.base_branch} — which carries none of ${ticket}'s change — where it failed too (\`${falseRed.base_command || '(no command reported)'}\` exit ${falseRed.base_exit_code ?? '(none reported)'}). It was screened BEFORE the round could be charged for it, so it consumed none of the ${BUILD.maxContinuationPasses} continuation passes, and it is not evidence that this ticket's code is broken. What it does mean is that no run can prove this repo's suite green until that check is stable.` : null } }
   }
   log(`[${R}] initial build: ${dev.summary?.slice(0, 70) ?? 'done'}`)
   tick(`${R}:build`)

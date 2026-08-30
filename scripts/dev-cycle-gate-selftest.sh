@@ -61,7 +61,7 @@ const BUILD = { maxContinuationPasses: Number(process.env.FIXTURE_BUILD_MAX_CONT
 const DEV_CYCLE = { tokenBudget: Number(process.env.FIXTURE_TOKEN_BUDGET || 0) }
 const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", testing: "Testing", done: "Done" }
 const REPOS = {
-  db:  { path: "db",  kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "db green" },
+  db:  { path: "db",  kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "db green", knownFalseReds: "the suite shares one test database, so an unrelated test can fail on ordering" },
   svc: { path: "svc", kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "svc green" },
   app: { path: "app", kind: "frontend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: true, perf: true, green: "app green", guardianFocus: "secrets, data-protection" },
   e2e: { path: "e2e", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "e2e green", testSuite: true },
@@ -163,6 +163,15 @@ async function runOnce(argsStr, canned, opts = {}) {
       const repo = label.split(':').pop()
       return { repo, branch_exists: true, state: 'ok', ticket_commits: 1, foreign_commits: 0,
                head_sha: 'sha-head', parked_at: null, rebase_command: null, detail: 'branch stands on the run base' }
+    }
+    // The known-false-red screen fires on every FAILING round in a repo that declares any — which is
+    // 'db' in this fixture — so it gets the same default treatment as the three probes above: the
+    // healthy answer is "nothing this repo declares covers that failure", which is the outcome that
+    // changes nothing. A scenario that is ABOUT the screen overrides the label.
+    if (label && label.startsWith('false-red-screen:') && !(label in canned)) {
+      const repo = label.split(':').pop()
+      return { repo, state: 'no-match', failing: [], matched: null, base_command: null, base_exit_code: null,
+               sole_obstacle: false, detail: 'nothing declared covers this failure' }
     }
     if (!label || !(label in canned)) throw new Error('selftest: unstubbed agent label ' + label)
     return canned[label]
@@ -1775,6 +1784,75 @@ const BASE = {
         report('G45_healthy_run_records_no_non_convergence', !(result?.summary?.non_convergences || []).length, `recorded=${JSON.stringify(result?.summary?.non_convergences || [])}`)
         report('G45_healthy_repo_still_reaches_ready', !!result && result.status !== 'repo-unresolved')
       }
+    } else if (SCENARIO.startsWith('G46')) {
+      // A repo declares its own known_false_reds, every prose surface says to rule one out against
+      // the base before calling a red real, and the RETRY LOOP never did: it continued the round from
+      // scratch, with a fresh agent, which rebuilt everything and re-ran the same declared flake. Six
+      // shapes. It fails on the base too and is ALL the round owes, so it is recorded and bought no
+      // continuation pass (G46); the same, but the round owes real work as well, so it IS continued
+      // and the brief tells it not to chase the flake (G46_PARTIAL); it PASSES on the base, so it is
+      // a regression and nothing about today changes (G46_GENUINE); nothing declared covers it, same
+      // (G46_NO_MATCH); the repo declares none, so no screen is even spawned (G46_UNDECLARED); and a
+      // screen that returns nothing charges the round exactly as before (G46_FLAKE).
+      const REPO = SCENARIO === 'G46_UNDECLARED' ? 'svc' : 'db'
+      const sole = SCENARIO === 'G46'
+      const FLAKE46 = 'selftest: the screen itself fell over'
+      const FLAKY = (n) => ({ work_branch: 'feature/FM-12', summary: `slice ${n} landed`, status: 'partial',
+        remaining: sole ? 'nothing of my own — only the shared-database test aborting' : `slices ${n + 1}-11 remain, and the shared-database test aborts`,
+        root_cause: 'tests/orders:88 aborts when the shared test database is reused',
+        commands_run: [{ command: 'scripts/dev.sh test orders::settles', exit_code: 134 }] })
+      const SCREEN = (state) => ({ repo: REPO, state, failing: ['orders::settles'],
+        matched: 'the suite shares one test database', base_command: 'scripts/dev.sh test orders::settles',
+        base_exit_code: state === 'genuine' ? 0 : 134, sole_obstacle: sole, detail: `it is ${state} on the base` })
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: REPO }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk([REPO]),
+        [`kickoff:FM-12:${REPO}`]: REPO_PLAN(REPO, 'develop'),
+        [`build:FM-12:${REPO}`]: FLAKY(1),
+        [`build-continue:FM-12:${REPO}#1`]: FLAKY(2),
+        [`build-continue:FM-12:${REPO}#2`]: FLAKY(3),
+        'summary:FM-12': { path: 'x.md' },
+      }
+      if (SCENARIO === 'G46' || SCENARIO === 'G46_PARTIAL') canned[`false-red-screen:FM-12:${REPO}`] = SCREEN('pre-existing')
+      if (SCENARIO === 'G46_GENUINE') canned[`false-red-screen:FM-12:${REPO}`] = SCREEN('genuine')
+      const result = await runOnce(ARGS, canned, SCENARIO === 'G46_FLAKE' ? { throwOn: [`false-red-screen:FM-12:${REPO}`], throwMessage: FLAKE46 } : {})
+      const conts = SPAWNED.filter((l) => l.startsWith(`build-continue:FM-12:${REPO}`))
+      const blockingJson = JSON.stringify(result?.blockingByRepo || [])
+      if (SCENARIO === 'G46') {
+        report('G46_screen_is_its_own_accounted_step', (result?.spend || []).some((s) => s && s.label === `${REPO}:false-red-screen`), `spend=${JSON.stringify((result?.spend || []).map((s) => s && s.label))}`)
+        report('G46_confirmed_flake_buys_no_continuation_pass', conts.length === 0, `conts=${JSON.stringify(conts)}`)
+        report('G46_recorded_on_its_own_row', blockingJson.includes('known-false-red'), blockingJson.slice(0, 200))
+        report('G46_record_says_it_fails_on_the_base_too', blockingJson.includes('fails on develop too'))
+        report('G46_human_action_is_stabilise_not_fix_the_ticket', blockingJson.includes('stabilise orders::settles'))
+        report('G46_handoff_says_it_is_not_this_rounds_failure', JSON.stringify(result?.repoResults || {}).includes("NOT THIS ROUND'S FAILURE"))
+        report('G46_screen_verdict_rides_the_repo_result', JSON.stringify(result?.repoResults || {}).includes('"false_red"'))
+        report('G46_repo_still_not_ready', !!result && result.status === 'repo-unresolved', `status=${result && result.status}`)
+      } else if (SCENARIO === 'G46_PARTIAL') {
+        report('G46_round_with_real_work_left_is_still_continued', conts.length === 2, `conts=${JSON.stringify(conts)}`)
+        report('G46_brief_tells_the_pass_not_to_chase_it', /DO NOT CHASE ORDERS::SETTLES/.test(PROMPTS[`build-continue:FM-12:${REPO}#1`] || ''))
+        report('G46_brief_forbids_the_rebuild_and_the_data_wipe', /do not wipe or recreate a local data directory/.test(PROMPTS[`build-continue:FM-12:${REPO}#1`] || ''))
+        report('G46_flake_is_recorded_even_when_work_remains', blockingJson.includes('known-false-red'))
+      } else if (SCENARIO === 'G46_GENUINE') {
+        report('G46_a_pass_on_the_base_changes_nothing', conts.length === 2, `conts=${JSON.stringify(conts)}`)
+        report('G46_genuine_is_not_recorded_as_a_flake', !blockingJson.includes('known-false-red'), blockingJson.slice(0, 200))
+        report('G46_brief_says_the_regression_is_yours', /IS YOURS/.test(PROMPTS[`build-continue:FM-12:${REPO}#1`] || ''))
+      } else if (SCENARIO === 'G46_NO_MATCH') {
+        report('G46_no_match_is_still_screened', SPAWNED.includes(`false-red-screen:FM-12:${REPO}`))
+        report('G46_no_match_leaves_the_budget_alone', conts.length === 2, `conts=${JSON.stringify(conts)}`)
+        report('G46_no_match_carries_no_clause', !/DO NOT CHASE/.test(PROMPTS[`build-continue:FM-12:${REPO}#1`] || ''))
+        report('G46_no_match_records_nothing', !blockingJson.includes('known-false-red'))
+      } else if (SCENARIO === 'G46_UNDECLARED') {
+        report('G46_a_repo_declaring_none_pays_for_no_screen', !SPAWNED.some((l) => l.startsWith('false-red-screen:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('false-red-screen:')))}`)
+        report('G46_undeclared_round_runs_exactly_as_before', conts.length === 2, `conts=${JSON.stringify(conts)}`)
+      } else {
+        report('G46_screen_that_returns_nothing_does_not_halt', conts.length === 2, `conts=${JSON.stringify(conts)}`)
+        report('G46_non_convergence_says_the_round_is_charged', LINES.some((l) => l.includes('known-false-red screen did not converge') && l.includes('charged to this round')))
+        report('G46_non_convergence_excuses_nothing', !blockingJson.includes('known-false-red'))
+        report('G46_reason_reaches_the_run_result', JSON.stringify(result?.summary?.non_convergences || []).includes(FLAKE46))
+      }
     } else if (SCENARIO === 'G42_FP') {
       // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
       // THIS run's fp, so the assertion run needs the value this one logs.
@@ -2317,6 +2395,24 @@ out="$(run_scenario G45_FLAKE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" 
 
 echo "── G45_RESUMED — a build that is skipped does not pay to re-probe the base it already stands on"
 out="$(run_scenario G45_RESUMED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46 — a declared false red confirmed on the base is recorded, not retried"
+out="$(run_scenario G46)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46_PARTIAL — a round that still owes real work is continued, and told not to chase the flake"
+out="$(run_scenario G46_PARTIAL)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46_GENUINE — a check that passes on the base is a regression, and today's behaviour stands"
+out="$(run_scenario G46_GENUINE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46_NO_MATCH — a failure no declared entry covers is judged on its own evidence, as before"
+out="$(run_scenario G46_NO_MATCH)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46_UNDECLARED — a repo that declares no false reds pays for no screen at all"
+out="$(run_scenario G46_UNDECLARED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46_FLAKE — a screen that returns nothing charges the round exactly as before"
+out="$(run_scenario G46_FLAKE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G42 — the pin survives a resume, and the required re-pin ships even with auto-merge off"
 outFp42="$(run_scenario G42_FP)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outFp42" | sed 's/^/      /'; ingest "$outFp42"
