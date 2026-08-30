@@ -1576,8 +1576,27 @@ const absOf = (id) => (haveAbs ? `${WORKSPACE_ROOT}/${REPOS[id].path}` : REPOS[i
 // this run — same contract, different path.
 const shellClauseFor = (id) => {
   const abs = absOf(id)
-  return `Work in the ${id} repo — its path is ${abs}. Your shell starts at the workspace root, and a standalone \`cd\` does NOT carry into your NEXT tool call, so never assume you are still "in" a repo: name it in the command instead. PLAIN GIT — anchor it with \`-C\`: \`git -C ${abs} fetch origin\`, \`git -C ${abs} switch <branch>\`, \`git -C ${abs} rev-parse HEAD\`, \`git -C ${abs} status --porcelain\`, \`git -C ${abs} ls-remote …\`. ANYTHING ELSE THAT MUST RUN INSIDE THE REPO (this repo's harness, \`scripts/dev.sh …\`, a build step) goes as ONE call: \`cd ${abs} && <the command>\` — that compound is fine for every command EXCEPT an adapter writer. VCS ADAPTER CALLS: \`scripts/vcs/*.sh\` takes no \`-C\` and may not be compounded, so it is ROUTED, not navigated to. Resolve VCS_REPO ONCE, in its own command: \`git -C ${abs} remote get-url origin\`. From what it prints, strip the leading \`git@<host>:\` or \`https://<host>/\` and any trailing \`.git\` — what remains (\`owner/repo\` on GitHub, \`group/subgroup/project\` on GitLab) is this repo's VCS_REPO. Prefix EVERY \`scripts/vcs/*.sh\` call for the rest of this task with it, as a plain env-var on the SAME bare line as the writer — \`VCS_REPO=<that value> scripts/vcs/<script>.sh …\` — never inside \`$( )\`, a pipe, or \`&&\` (any of those denies the call silently, same as wrapping the writer itself). That prefix is what pins the target: several repos of this run share ONE Bash session, so cwd could never have told the adapter which repo you meant.`
+  const vr = REPOS[id]?.vcsRepo
+  const vcsResolveSentence = vr
+    ? `This repo's VCS_REPO is \`${vr}\` — the forge project path, already resolved; use it verbatim and never the repo id \`${id}\`, which is a directory name the API answers 404 for.`
+    : `Resolve VCS_REPO ONCE, in its own command: \`git -C ${abs} remote get-url origin\`. From what it prints, strip the leading \`git@<host>:\` or \`https://<host>/\` and any trailing \`.git\` — what remains (\`owner/repo\` on GitHub, \`group/subgroup/project\` on GitLab) is this repo's VCS_REPO. Never pass the repo id \`${id}\`: it is a directory name, the API answers 404 for it, and the read-only scripts print a 404 as empty.`
+  return `Work in the ${id} repo — its path is ${abs}. Your shell starts at the workspace root, and a standalone \`cd\` does NOT carry into your NEXT tool call, so never assume you are still "in" a repo: name it in the command instead. PLAIN GIT — anchor it with \`-C\`: \`git -C ${abs} fetch origin\`, \`git -C ${abs} switch <branch>\`, \`git -C ${abs} rev-parse HEAD\`, \`git -C ${abs} status --porcelain\`, \`git -C ${abs} ls-remote …\`. ANYTHING ELSE THAT MUST RUN INSIDE THE REPO (this repo's harness, \`scripts/dev.sh …\`, a build step) goes as ONE call: \`cd ${abs} && <the command>\` — that compound is fine for every command EXCEPT an adapter writer. VCS ADAPTER CALLS: \`scripts/vcs/*.sh\` takes no \`-C\` and may not be compounded, so it is ROUTED, not navigated to. ${vcsResolveSentence} Prefix EVERY \`scripts/vcs/*.sh\` call for the rest of this task with it, as a plain env-var on the SAME bare line as the writer — \`VCS_REPO=<that value> scripts/vcs/<script>.sh …\` — never inside \`$( )\`, a pipe, or \`&&\` (any of those denies the call silently, same as wrapping the writer itself). That prefix is what pins the target: several repos of this run share ONE Bash session, so cwd could never have told the adapter which repo you meant.`
 }
+
+// The forge PROJECT PATH the vcs adapter takes in VCS_REPO — `owner/repo` on GitHub,
+// `group/subgroup/project` on GitLab. It is NOT this workflow's repo id: the id is the clone's
+// DIRECTORY NAME, so `projects/<id>/merge_requests` resolves to nothing and the API answers 404 —
+// and every read-only adapter script ends its query in `2>/dev/null || true`, so that 404 prints
+// as EMPTY, indistinguishable from "genuinely nothing found". Measured: one run read "no open MR"
+// for two repos that each had one, because the prompt handed the id over as the value to use.
+// `aiworks config` projects vcsRepo from the same url REPOS is generated from; a dev-cycle.js
+// generated before that field existed has none, and then — and only then — the agent is told to
+// resolve it from the git remote. Never the id, on either path.
+const VCS_REPO_PLACEHOLDER = '<this repo\'s project path>'
+const vcsRepoFor = (id) => REPOS[id]?.vcsRepo || VCS_REPO_PLACEHOLDER
+const vcsRepoPreambleFor = (id) => (REPOS[id]?.vcsRepo
+  ? `THE VCS_REPO FOR ${id} IS \`${REPOS[id].vcsRepo}\` — the forge's project path, already resolved for you. Use it verbatim on every \`scripts/vcs/*.sh\` line below and do not re-derive it.`
+  : `RESOLVE VCS_REPO FIRST, in its own command: \`git -C ${absOf(id)} remote get-url origin\`, then strip the leading \`git@<host>:\` or \`https://<host>/\` and any trailing \`.git\`. What remains (\`owner/repo\`, \`group/subgroup/project\`) is this repo's VCS_REPO — substitute it for \`${VCS_REPO_PLACEHOLDER}\` on every \`scripts/vcs/*.sh\` line below. ⚠️ NEVER pass \`${id}\`: that is the clone's directory name, the API answers 404 for it, and the read-only scripts print a 404 as EMPTY — you would read "no open PR/MR" for a repo that has one.`)
 
 // C4 — shared "verify green" instruction. The code reviewer's own gate (inside
 // runRepoPipeline, below) and the test-suite gate's app-red triage loop (Test suite phase)
@@ -1638,10 +1657,11 @@ async function assertTargetBranch(repoId, rp, pr, { repair, phaseName }) {
   const v = await safeAgent(
     `${tag(repoId, 'general-purpose', 'target-branch-gate')} ASSERT ONLY — change no code, run no tests, review nothing. ${shellClauseFor(repoId)}
 THE BASE THIS RUN RECORDED FOR ${repoId} IS \`${rp.base_branch}\`. It is a fact of the run, not something to re-derive: do NOT consult origin/HEAD, default-branch.sh, the branch prefix or the repo's usual default, and do not form an opinion about whether it is the right base. Your job is to compare and report.
-1. List every OPEN PR/MR carrying this ticket: \`VCS_REPO=${repoId} scripts/vcs/find-prs.sh ${ticket}\`. It prints one web URL per line; the number is the URL's last path segment. Report EVERY one you find in open_prs — a second open PR/MR for one repo is itself the finding, even if the first one is correct.
-2. For PR/MR ${num}, read what it actually targets: \`VCS_REPO=${repoId} scripts/vcs/pr-view.sh ${num}\`. It prints \`target_branch=\` and \`source_branch=\` — use those lines verbatim, and never reach past the adapter to glab/gh/curl for them.
+${vcsRepoPreambleFor(repoId)}
+1. List every OPEN PR/MR carrying this ticket: \`VCS_REPO=${vcsRepoFor(repoId)} scripts/vcs/find-prs.sh ${ticket}\`. It prints one web URL per line; the number is the URL's last path segment. Report EVERY one you find in open_prs — a second open PR/MR for one repo is itself the finding, even if the first one is correct.
+2. For PR/MR ${num}, read what it actually targets: \`VCS_REPO=${vcsRepoFor(repoId)} scripts/vcs/pr-view.sh ${num}\`. It prints \`target_branch=\` and \`source_branch=\` — use those lines verbatim, and never reach past the adapter to glab/gh/curl for them.
 3. Compare: matches=true only when target_branch is EXACTLY \`${rp.base_branch}\`.${repair ? `
-4. IF IT DOES NOT MATCH, REPAIR IT — but prove the base exists on the remote first: \`git -C ${absR} ls-remote --exit-code --heads origin ${rp.base_branch}\`. If that fails, STOP: do NOT push the base, do NOT retarget, and return matches:false with the command and its exit code in detail. If it succeeds, run \`VCS_REPO=${repoId} scripts/vcs/retarget-pr.sh ${num} --base ${rp.base_branch}\` (BARE — no pipe, no &&), then re-read \`VCS_REPO=${repoId} scripts/vcs/pr-view.sh ${num}\` and report the target_branch THAT SECOND READ printed. Set retargeted:true only when the re-read confirms it. A retarget keeps existing approvals; closing and reopening does not, so never do that instead.
+4. IF IT DOES NOT MATCH, REPAIR IT — but prove the base exists on the remote first: \`git -C ${absR} ls-remote --exit-code --heads origin ${rp.base_branch}\`. If that fails, STOP: do NOT push the base, do NOT retarget, and return matches:false with the command and its exit code in detail. If it succeeds, run \`VCS_REPO=${vcsRepoFor(repoId)} scripts/vcs/retarget-pr.sh ${num} --base ${rp.base_branch}\` (BARE — no pipe, no &&), then re-read \`VCS_REPO=${vcsRepoFor(repoId)} scripts/vcs/pr-view.sh ${num}\` and report the target_branch THAT SECOND READ printed. Set retargeted:true only when the re-read confirms it. A retarget keeps existing approvals; closing and reopening does not, so never do that instead.
 5. Do NOT close, merge, approve or comment on anything. Repointing the one PR/MR at the run's own base is the ONLY write you are authorised to make.` : `
 4. Do NOT repair anything and do NOT write: this is the pre-approval assert. Report what you found.`}
 Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
@@ -1649,7 +1669,7 @@ Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUA
   )
   // NEVER FAIL OPEN: an assert that could not run is not a pass. Same rule as the test-suite
   // audit — the whole point of this gate is that "nobody checked" was the previous state.
-  if (!v) return { ok: false, why: `the target-branch assert did not converge for ${repoId} — the PR/MR's target is unknown, so it is not verified. Check by hand: VCS_REPO=${repoId} scripts/vcs/pr-view.sh ${num}` }
+  if (!v) return { ok: false, why: `the target-branch assert did not converge for ${repoId} — the PR/MR's target is unknown, so it is not verified. Check by hand: VCS_REPO=${vcsRepoFor(repoId)} scripts/vcs/pr-view.sh ${num}` }
   const others = (v.open_prs || []).filter((p) => String(p.number) !== String(num))
   if (others.length) {
     // `multipleOpen` matters to the caller: this run's own PR/MR still has a computable diff, so
@@ -1657,13 +1677,13 @@ Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUA
     // there is nothing to diff against at all.
     return {
       ok: false, multipleOpen: true,
-      why: `${repoId} has ${others.length + 1} OPEN PR/MR(s) for ${ticket}; exactly one is expected. This run owns #${num} (→ ${v.target_branch}); also open: ${others.map((p) => `#${p.number} → ${p.target_branch}`).join(', ')}. Close the ones that should not land — \`VCS_REPO=${repoId} scripts/vcs/close-pr.sh <number> --body "<why>"\` — then re-run. Closing an MR is a human call, so the run will not do it.`,
+      why: `${repoId} has ${others.length + 1} OPEN PR/MR(s) for ${ticket}; exactly one is expected. This run owns #${num} (→ ${v.target_branch}); also open: ${others.map((p) => `#${p.number} → ${p.target_branch}`).join(', ')}. Close the ones that should not land — \`VCS_REPO=${vcsRepoFor(repoId)} scripts/vcs/close-pr.sh <number> --body "<why>"\` — then re-run. Closing an MR is a human call, so the run will not do it.`,
     }
   }
   if (!v.matches) {
     return {
       ok: false,
-      why: `${repoId} PR/MR #${num} targets ${v.target_branch || '(unknown)'}, and this run's base is ${rp.base_branch}.${v.detail ? ` ${v.detail}` : ''} Repair it: \`VCS_REPO=${repoId} scripts/vcs/retarget-pr.sh ${num} --base ${rp.base_branch}\``,
+      why: `${repoId} PR/MR #${num} targets ${v.target_branch || '(unknown)'}, and this run's base is ${rp.base_branch}.${v.detail ? ` ${v.detail}` : ''} Repair it: \`VCS_REPO=${vcsRepoFor(repoId)} scripts/vcs/retarget-pr.sh ${num} --base ${rp.base_branch}\``,
     }
   }
   if (v.retargeted) log(`[${repoId}] target branch REPAIRED — PR/MR #${num} now targets ${v.target_branch} (this run's base); approvals are unaffected by a retarget.`)

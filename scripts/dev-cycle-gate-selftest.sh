@@ -61,7 +61,7 @@ const BUILD = { maxContinuationPasses: Number(process.env.FIXTURE_BUILD_MAX_CONT
 const DEV_CYCLE = { tokenBudget: Number(process.env.FIXTURE_TOKEN_BUDGET || 0) }
 const STATUS = { in_progress: "In progress", ready_to_test: "Ready to test", testing: "Testing", done: "Done" }
 const REPOS = {
-  db:  { path: "db",  kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "db green" },
+  db:  { path: "db", vcsRepo: process.env.FIXTURE_DB_VCS_REPO || "", kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "db green" },
   svc: { path: "svc", kind: "backend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: false, perf: false, green: "svc green" },
   app: { path: "app", kind: "frontend", base: { feature: "develop", fix: "main" }, plan: "development-planner", build: "developer", review: "code-reviewer", guard: true, perf: true, green: "app green", guardianFocus: "secrets, data-protection" },
   e2e: { path: "e2e", kind: "test-suite", base: { feature: "main", fix: "main" }, plan: "qa-planner", build: "qa-runner", review: null, guard: false, perf: false, green: "e2e green", testSuite: true },
@@ -1034,6 +1034,33 @@ const BASE = {
         report('G16a_before_any_reviewer_is_paid', !SPAWNED.some((l) => l.startsWith('review:') || l.startsWith('guard') || l.startsWith('perf')))
       }
       if (SCENARIO === 'G16b') report('G16b_offers_close_not_an_auto_close', LINES.some((l) => l.includes('close-pr.sh') && l.includes('human call')))
+    } else if (SCENARIO === 'G46' || SCENARIO === 'G46_FALLBACK') {
+      // THE PROMPT'S OWN VCS_REPO. The gate used to hand the agent `VCS_REPO=<repo id>` — a clone's
+      // directory name, which is not a forge project path: the API 404s and every read-only adapter
+      // script prints a 404 as EMPTY. Two repos of one live run therefore read "no open PR/MR" for an
+      // MR that existed, and the third read correctly only because the model resolved it unprompted.
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: [] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'target-gate:FM-12:db': { repo: 'db', target_branch: 'develop', matches: true, retargeted: true, detail: null,
+          open_prs: [{ number: 7, target_branch: 'develop', source_branch: 'feature/FM-12', url: 'https://x/7' }] },
+      }
+      await runOnce(ARGS, canned)
+      const p = PROMPTS['target-gate:FM-12:db'] || ''
+      report('G46_prompt_never_passes_the_repo_id', !/VCS_REPO=db\b/.test(p), p.slice(0, 400))
+      if (SCENARIO === 'G46') {
+        report('G46_prompt_carries_the_projected_project_path', p.includes('VCS_REPO=grp/sub/db'))
+        report('G46_does_not_ask_to_re_derive_a_known_value', !p.includes('remote get-url origin'))
+      } else {
+        report('G46_fallback_tells_it_to_resolve_from_the_git_remote', p.includes('remote get-url origin') && p.includes('trailing `.git`'))
+        report('G46_fallback_says_why_the_id_is_wrong', p.includes('404') && /EMPTY|empty/.test(p))
+      }
     } else if (SCENARIO === 'G18a' || SCENARIO === 'G18b') {
       // A ROUND BOUNDS ATTEMPTS, NOT HYPOTHESES. Measured: a wrong diagnosis ("a defect in the test
       // runner, fixable only by a repo-wide version bump") survived two rounds because round two
@@ -2213,6 +2240,12 @@ out="$(run_scenario G16c)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed
 
 echo "── G16d — an assert that did not converge is not a pass"
 out="$(run_scenario G16d)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46 — the target gate names the forge project path, never the workflow's repo id"
+out="$(FIXTURE_DB_VCS_REPO=grp/sub/db run_scenario G46)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G46_FALLBACK — with no projected path it resolves from the git remote, still never the id"
+out="$(run_scenario G46_FALLBACK)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G18a — an unchanged failure signature is briefed to re-derive, not re-confirm"
 out="$(run_scenario G18a)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
