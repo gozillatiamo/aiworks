@@ -155,7 +155,17 @@ async function main() {
     const schema = options.schema || { type: "object", additionalProperties: true };
     const prompt = buildPrompt(role, definition, task, schema, definition.data.maxTurns);
     if (cli.harness === "stub") return synthesize(schema);
-    const result = await adapter.run({ root, role, definition, prompt, schema, options });
+    let result;
+    try {
+      result = await adapter.run({ root, role, definition, prompt, schema, options });
+    } catch (error) {
+      // An adapter that gave up after its own bounded retries still spent what it spent. Charge it
+      // before the exception leaves, or the total the workflow reads back is short by every
+      // abandoned attempt, and the failures cost nothing exactly when they cost the most.
+      runtime.spent += Number(error.spent || 0);
+      if (error.accounting && error.accounting !== "reported") runtime.accounting = error.accounting;
+      throw error;
+    }
     runtime.spent += Number(result.spent || 0);
     if (result.accounting && result.accounting !== "reported") runtime.accounting = result.accounting;
     return result.value;

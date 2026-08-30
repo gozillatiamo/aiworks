@@ -1303,11 +1303,27 @@ const overBudget = () => TOKEN_BUDGET > 0 && budget.spent() > TOKEN_BUDGET
 // null so the caller can degrade gracefully (re-loop, or halt THIS repo with a clean
 // status) instead of killing the whole run. Generalizes the build-agent null-guard to
 // every fix/review/merge/etc. agent() call. (Finding ⑥, 2026-06-07.)
+//
+// EVERY NON-CONVERGENCE IS RECORDED, NOT ONLY LOGGED. The `log()` line below is the only trace a
+// swallowed agent has ever left, and it scrolls past: it reaches no run result, no summary file and
+// no ticket record. So an invocation could spend hours on agents that returned nothing, and the
+// artifacts a person actually reads afterwards — the summary, its token table — showed the tokens
+// with no way to attribute them. A measured audit had to count repeated task ids in the harness's
+// own journal to discover that a single step had been attempted six times, and even then the
+// journal's `failed` rows carried no reason, because the reason is here and was thrown away.
+//
+// `agent()` retries and nudges internally before it throws, so ONE row here can stand for several
+// attempts inside the harness — which is exactly why the diagnostic it carries is the only account
+// of them this workflow can give. The rows ride the run result beside `spend`, and the summary
+// renders them beside the token table, because "what did this cost" and "what did it buy" are the
+// same question.
+const nonConvergences = []
 const safeAgent = async (prompt, opts) => {
   try { return await agent(prompt, opts) }
   catch (e) {
-    const diagnostic = String(e?.stdout || e?.message || e).trim()
-    log(`⚠️ agent did not converge${opts?.label ? ` (${opts.label})` : ''} — treated as null: ${diagnostic.slice(-1200)}`)
+    const diagnostic = String(e?.stdout || e?.message || e).trim().slice(-1200)
+    nonConvergences.push({ label: opts?.label || '(unlabelled)', phase: opts?.phase || null, agent_type: opts?.agentType || null, reason: diagnostic || '(the engine reported no reason)' })
+    log(`⚠️ agent did not converge${opts?.label ? ` (${opts.label})` : ''} — treated as null: ${diagnostic}`)
     return null
   }
 }
@@ -1437,7 +1453,8 @@ async function writeSummary(runStatus, runResult, deferredScopeRun = [], satisfi
 1. Compose a short narrative: repos touched, per-repo gate/review rounds, the cross-repo test-suite gate result, distribution links, then merge order + SHAs (merge is the FINAL step) — from this run result: ${JSON.stringify(runResult).slice(0, 3000)}.${['repo-unresolved', 'review-unresolved', 'target-branch-halt', 'review-blocked-on'].includes(runStatus) ? ' Also state plainly, near the top, whether the cross-repo test-suite gate ran: on a stopped run it did NOT, so the change set is UNVALIDATED end-to-end and the run summary must not read as though it were.' : ''}
 ${(runResult?.blockingByRepo || []).length ? `1a. ⛔ BLOCKING ITEMS — this run WORKED these and could not close them (the review loop per code repo, or the cross-repo test-suite gate per suite repo), which is why it did not finish. Give them their own "## Blocking — needs a person" section ABOVE the narrative, one row per item: the repo, the kind, what it says, and the human action named. Do NOT soften them into "minor issues" and do NOT bury them in the per-repo narrative: each one is the reason a repo could not reach ready — or the reason a GREEN suite is still not a pass — and a reader who misses them will think the run merely ran out of rounds. Items: ${JSON.stringify(runResult.blockingByRepo).slice(0, 2000)}\n` : ''}${deferredScopeRun.length ? `1b. ⚠️ DEFERRED SCOPE — this run did NOT meet every acceptance criterion, by design, and NO follow-up ticket was filed for the gap: it is recorded here for a human to decide what happens to it. Give it its own "## Deferred scope — your decision" section near the TOP (above the narrative), one row per item: the criterion, the repo that deferred it, the owner who can do it, and the evidence given. Then one line naming the decision waiting: file a ticket for these, route them to those owners, or accept the ticket as-is. Items: ${JSON.stringify(deferredScopeRun)}\n` : ''}${satisfiedRun.length ? `1c. ✅ ALREADY SATISFIED — ${satisfiedRun.length} acceptance criterion/criteria needed NO code change: they are met by code that shipped before this ticket, and each citation was independently re-opened and confirmed. Give this its own "## Already satisfied — no change needed" section, one row per item: the criterion, the repo, the commit that shipped it and the file:line. Write it as a FINDING, not an apology: an empty diff here is the correct answer, and the repos involved opened no branch and no PR/MR by design — say that explicitly so nobody reads a missing MR as a missing step. Items: ${JSON.stringify(satisfiedRun).slice(0, 2000)}\n` : ''}
 ${trackerReachable ? '' : '2. ⚠️ The tracker was UNREACHABLE this run — put a prominent note at the TOP that ticket Status moves, comments, and /clarifying-ticket improvement tickets did NOT persist (best-effort only).\n'}${testSuiteGateUnavailable ? `2b. ⚠️ The cross-repo test-suite (QA) gate was REQUESTED for this ticket but did NOT run — put a prominent banner at the TOP (same treatment as the tracker-unreachable note): "${testSuiteGateUnavailable}" The ticket shipped WITHOUT its end-to-end validation, so do NOT describe this run as test-suite-validated.\n` : ''}${qualityGateUnavailable ? `2c. ⚠️ The configured quality/performance gate did NOT run this run — put a prominent banner at the TOP (same treatment as the tracker/test-suite notes): "${qualityGateUnavailable}" Do NOT describe this run as quality-gate-validated.\n` : ''}${loadtestGateUnavailable ? `2d. ⚠️ The load-test BASELINE comparison produced no verdict this run — put a prominent banner at the TOP (same treatment as the notes above): "${loadtestGateUnavailable}" The suite was green, but "no slower than the base branch" is UNPROVEN — do NOT describe this run as performance-validated, and state what would settle it (a run at the planned rate against a scaled environment).\n` : ''}${budgetStopped ? `2e. 🛑 BUDGET STOP — put this as the FIRST line of the file, as a prominent banner: "${budgetStopped}" Say plainly which phases did NOT run, so nobody reads this summary as a completed cycle.\n` : ''}3. WRITE that narrative with the Write tool TWICE, to two paths at the WORKSPACE (org) ROOT: agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r${RUN_SEQ}.md (this invocation's own record, which NOTHING may overwrite — it is how a later reader reconstructs what each round of a hard ticket actually did, and its absence is why one postmortem had to be rebuilt from a chat log) and agent_logs/${ticket}-DEV-CYCLE-SUMMARY.md (the LATEST pointer every other tool reads) — the workspace (org) ROOT — the workflow's launch directory, the dir that holds .claude/ — NEVER inside a product repo's agent_logs/. Do NOT cd into any repo first; if your cwd is not the workspace root, return there before writing (the root agent_logs dir already exists).
-4. RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write BOTH files AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. Under that heading also state, in one line each: this invocation is r${RUN_SEQ} of ${ticket}; it spent ${budget.spent()} OUTPUT tokens against a ceiling of ${TOKEN_BUDGET} (dev_cycle.token_budget counts OUTPUT tokens only — total run tokens have measured roughly 29x that, so do not present the ceiling as a total-token budget); and the per-ticket running total, which you get by adding this invocation's output tokens to the same figure in the newest agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md that already exists (grep it out with \`grep -h 'output tokens this invocation' agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md\`), so a reader can see what the WHOLE ticket has cost across every round rather than just the last one. Write the line as: "<n> output tokens this invocation · <total> across r1..r${RUN_SEQ}". If nothing earlier exists, this invocation IS the total. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.
+4. RUN:  python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py ${ticket}  — then Write BOTH files AGAIN as the narrative PLUS the parser's Markdown output appended VERBATIM under a "## Token & time usage" heading. Under that heading also state, in one line each: this invocation is r${RUN_SEQ} of ${ticket}; it spent ${budget.spent()} OUTPUT tokens against a ceiling of ${TOKEN_BUDGET} (dev_cycle.token_budget counts OUTPUT tokens only — total run tokens have measured roughly 29x that, so do not present the ceiling as a total-token budget); and the per-ticket running total, which you get by adding this invocation's output tokens to the same figure in the newest agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md that already exists (grep it out with \`grep -h 'output tokens this invocation' agent_logs/${ticket}-DEV-CYCLE-SUMMARY-r*.md\`), so a reader can see what the WHOLE ticket has cost across every round rather than just the last one. Write the line as: "<n> output tokens this invocation · <total> across r1..r${RUN_SEQ}". If nothing earlier exists, this invocation IS the total. If the parser exits non-zero (no transcripts), write that fact under the heading — never a placeholder.${nonConvergences.length ? `
+4a. AGENTS THAT RETURNED NOTHING — under that SAME "## Token & time usage" heading, and after the table, add a "### Agents that did not converge" sub-section listing all ${nonConvergences.length} of them, one row each: the label, the phase, and the reason VERBATIM (do not paraphrase an error string, and do not tidy a stack trace into prose). Open the sub-section with one line: these agents were spawned, spent tokens and returned no structured result, so their cost is inside the totals above while their work is not — and the engine retries each of them internally before giving up, so one row can stand for several attempts. This is the only account of that spend anyone gets; a reader comparing hours against output is reading it to find exactly this. Rows: ${JSON.stringify(nonConvergences).slice(0, 2500)}` : ''}
 5. ARM THE ORCHESTRATOR GUARD — the run is over, so this session's job from here is to orchestrate, not to implement (docs/adr/0019). Read the session id with \`printf '%s\\n' "$CLAUDE_CODE_SESSION_ID"\`, then with the Write tool REPLACE \`agent_logs/${ticket}-dev-cycle-state/orchestrator-guard.json\` with exactly {"session_id":"<what that printed>","ticket":"${ticket}","armed":true,"run_state":"ended","recorded_at":"<date -u +%Y-%m-%dT%H:%M:%SZ>"}. Write it whatever the run's status is. If the env var printed nothing, write "session_id":"" — the guard stays inert rather than arming against an unknown session.
 ${blockedRowClause(runResult)}
 Return summary_path (the file you actually wrote + confirmed exists via Read), token_table_appended:true ONLY if you ran the parser and appended its real table, and a one-line note.` + LANGUAGE_DIRECTIVE,
@@ -1447,6 +1464,11 @@ Return summary_path (the file you actually wrote + confirmed exists via Read), t
   if (s && s.token_table_appended === false) log('⚠️ Summary file written but the token/time table was NOT appended (parser empty/failed) — run parse_workflow_usage.py manually.')
   log(`Run summary: ${s?.summary_path ?? '(summary agent did not converge)'}`)
   const result = s ?? { summary_path: null, token_table_appended: false, note: 'summary agent did not converge' }
+  // Every terminal return in this workflow carries writeSummary's return as `summary`, so attaching
+  // the non-convergences here puts them on the run result by construction — the same reason the
+  // incomplete-run DM lives in this function rather than at nineteen return sites. A reader of the
+  // raw run result sees the reasons even when the summary file itself is what failed to be written.
+  if (nonConvergences.length) result.non_convergences = nonConvergences
   // C10 — every ending EXCEPT the two COMPLETE ones DMs the configured member instead of posting
   // to the channel; folded into writeSummary so every return path is covered by construction.
   // RESUME (docs/adr/0018) — keyed by run_status, not just "any DM ever sent": a run that ends the
@@ -1649,6 +1671,83 @@ Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUA
   return { ok: true, why: '' }
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// A BASE REPAIR IS ITS OWN STEP, NOT THE ROUND'S FIRST SLICE
+//
+// ADR-0025 made the run's base a FACT of the run. ADR-0032 gave the build a continuation budget for
+// work OF ITS OWN that did not finish. Nothing connected the two, and the gap has a shape: the base
+// is authoritative, the work BRANCH is not checked against it, and the first thing that reads both
+// is the build agent — after the round has already been paid for.
+//
+// A branch can stand on the wrong base for reasons that have nothing to do with the build: it was
+// cut from whatever was checked out rather than from `origin/<base>`, or `--accept-base-change`
+// moved the base underneath a branch that already existed. Either way the build agent opens the
+// repo, finds a history that is not the one the plan assumed, and does the git surgery — as its
+// first slice, out of the same budget and the same continuation passes ADR-0032 sized for feature
+// work. A measured round did exactly that: the round ended with two commits, both of them the
+// repair, no source file touched, and a handoff whose own `root_cause` was that the round had gone
+// on the base correction. Nothing in the result said "this round did base repair" — it had to be
+// inferred from a git log, because the accounting has no word for it.
+//
+// So the reconciliation happens BEFORE the build agent is dispatched, and it is accounted like any
+// other step: its own agent, its own label, its own `tick`. Three outcomes:
+//
+//   ok           — the branch carries nothing the base does not, or only this ticket's own commits.
+//                  The overwhelmingly common case, and NOTHING changes for it: no repair, no note
+//                  in the build brief, the round's budget is exactly what it was before.
+//   repaired     — the branch carried commits that are not this ticket's, and none of this ticket's
+//                  own work was at stake, so it was re-pointed at the base. The build brief says so
+//                  (do not do it twice), and the round's own budget goes to slices.
+//   unrepairable — the branch carries foreign commits AND this ticket's commits, so re-pointing
+//                  would delete work and rebasing could conflict half-way. That is the ADR-0032
+//                  terminal case verbatim — "a target branch that cannot be made right (no
+//                  computable diff)" — and it ends the repo the way the other one does, with the
+//                  rebase command a person can run.
+//
+// WHAT DECIDES "FOREIGN". Every commit this workflow asks for carries `Refs <ticket>`, so a commit
+// in `origin/<base>..<branch>` that does not name the ticket is one the branch inherited rather
+// than earned. That is a signal the framework itself creates, which is why it can be trusted here.
+const BASE_GATE_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['repo', 'branch_exists', 'state', 'ticket_commits', 'foreign_commits', 'detail'],
+  properties: {
+    repo: { type: 'string' },
+    branch_exists: { type: 'boolean' },      // false ⇒ the build creates it from the base; nothing to check
+    state: { enum: ['ok', 'repaired', 'unrepairable'] },
+    ticket_commits: { type: 'integer' },     // commits in base..branch that DO name this ticket
+    foreign_commits: { type: 'integer' },    // commits in base..branch that do NOT — the drift itself
+    head_sha: { type: ['string', 'null'] },
+    parked_at: { type: ['string', 'null'] }, // the stash ref uncommitted work went to, if any
+    rebase_command: { type: ['string', 'null'] }, // unrepairable only — what a person runs
+    detail: { type: 'string' },
+  },
+}
+// Returns the verdict, or null when the probe did not converge. A null does NOT halt: today this
+// step does not exist at all, so a flaky probe must leave the normal case exactly where it was.
+async function reconcileBranchBase(repoId, rp, phaseName) {
+  const absR = absOf(repoId)
+  return await safeAgent(
+    `${tag(repoId, 'general-purpose', 'base-reconcile')} GIT ONLY — assert, and repair only what rule 3 below allows. Write no feature code, run no tests, touch no PR/MR and no tracker. ${shellClauseFor(repoId)}
+THE BASE THIS RUN RECORDED FOR ${repoId} IS \`${rp.base_branch}\` and the work branch is \`${rp.work_branch}\`. The base is a fact of the run, not something to re-derive: do NOT consult origin/HEAD, default-branch.sh, the branch prefix or the repo's usual default, and do not form an opinion about whether it is the right base.${baseIsSettled(rp.base_branch)}
+1. \`git -C ${absR} fetch origin\`. If \`git -C ${absR} rev-parse --verify --quiet refs/remotes/origin/${rp.base_branch}\` prints nothing, the base is not on the remote: return state:"ok" saying so and change NOTHING — the open-PR step reports a missing base, and it is not this step's job to duplicate that. Then \`git -C ${absR} rev-parse --verify --quiet refs/heads/${rp.work_branch}\`; if THAT prints nothing the branch does not exist yet and the build creates it from the base, so return branch_exists:false, state:"ok", both counts 0.
+2. COUNT THE DRIFT — \`git -C ${absR} log --oneline --no-decorate origin/${rp.base_branch}..${rp.work_branch}\` lists every commit the branch carries that the base does not. Split that list in two. A commit whose message mentions \`${ticket}\` is THIS TICKET'S OWN WORK — count it in ticket_commits. Every other commit is FOREIGN: it is on this branch because the branch was cut from something other than \`origin/${rp.base_branch}\` — count it in foreign_commits and name them (sha + subject) in detail.
+3. DECIDE, and do only what your case says:
+   • foreign_commits == 0 ⇒ state:"ok". The branch stands on this run's base. Change NOTHING — a branch that already carries this ticket's own commits is a build in progress, which is correct and is not drift.
+   • foreign_commits > 0 AND ticket_commits == 0 ⇒ REPAIR IT with step 4. Nothing of this ticket's own is on the branch, so re-pointing loses no work.
+   • foreign_commits > 0 AND ticket_commits > 0 ⇒ state:"unrepairable". Do NOT re-point (it would delete this ticket's own commits) and do NOT rebase (a conflict half-way through leaves the tree worse than you found it, with nobody watching). Change nothing, and return in rebase_command the command a PERSON can run: \`git -C ${absR} rebase --onto origin/${rp.base_branch} <the oldest foreign commit>^ ${rp.work_branch}\`, with that sha filled in.
+4. THE REPAIR, in this order, every command anchored with \`-C\` (a standalone \`cd\` does not carry into your next tool call):
+   a. \`git -C ${absR} status --porcelain\`. If ANYTHING is uncommitted — tracked or untracked — park it FIRST: \`git -C ${absR} stash push -u -m "${ticket} base-repair"\`, and put the stash ref in parked_at. A clean tree leaves parked_at null.
+   b. \`git -C ${absR} checkout --detach origin/${rp.base_branch}\` — \`git branch -f\` refuses to move a branch that is checked out, so detach before you move it.
+   c. \`git -C ${absR} branch -f ${rp.work_branch} origin/${rp.base_branch}\`
+   d. \`git -C ${absR} switch ${rp.work_branch}\`
+   e. Only if you parked something in (a): \`git -C ${absR} stash pop\`. If the pop CONFLICTS, stop and leave the conflict exactly as it is — return state:"unrepairable" with parked_at naming the stash and the conflicting paths in detail, because resolving someone's uncommitted work against a different base is a person's call, not yours.
+   f. PROVE IT with a SECOND read: \`git -C ${absR} rev-parse HEAD\` and \`git -C ${absR} log --oneline origin/${rp.base_branch}..${rp.work_branch}\`. state:"repaired" ONLY when that log prints nothing but this ticket's own commits (here, none). Report the sha in head_sha and both readings in detail.
+⚠️ NEVER \`git reset --hard\`, \`git checkout .\`, \`git restore .\`, \`git clean\`, or a force-push. Uncommitted work is parked, never discarded: the ONE thing this step must not do is destroy work it was sent to protect. If you cannot complete the repair, saying so in state:"unrepairable" is the right answer and costs nothing.
+Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
+    { agentType: 'general-purpose', model: 'sonnet', phase: phaseName, label: `base-reconcile:${ticket}:${repoId}`, schema: BASE_GATE_SCHEMA },
+  )
+}
+
 async function runRepoPipeline(rp, desc, branchKind) {
   const R = rp.repo
   const absR = absOf(R)
@@ -1758,10 +1857,40 @@ async function runRepoPipeline(rp, desc, branchKind) {
   if (planStale) log(`[${R}] build row IGNORED — it was built from plan ${builtRowRaw.plan_sha}, and the plan is now ${rp.plan_sha}. A re-plan has superseded that build, so this repo builds again.`)
   if (planStale) degradeRows(R, `it was built from a plan that has since been re-written (${builtRowRaw.plan_sha} → ${rp.plan_sha})`, ['pr_open', 'reviewed', 'gate_review', 'gate_guard', 'gate_perf'])
   const builtRow = planStale ? null : builtRowRaw
+  // RECONCILE THE BRANCH BASE BEFORE THE ROUND, NOT INSIDE IT (see reconcileBranchBase). Skipped
+  // when the build itself is skipped: a `built` row whose head still matches was already reconciled
+  // by the invocation that wrote it, and re-probing it would spend an agent to learn nothing.
+  let baseRepair = null
+  if (!builtRow) {
+    const bs = await reconcileBranchBase(R, rp, 'Build')
+    tick(`${R}:base-reconcile`)
+    if (!bs) {
+      // Never halt on a probe that flaked: without this step the round simply carried the drift, so
+      // a non-converging probe leaves the repo exactly where it stood before this check existed.
+      log(`⚠️ [${R}] the branch-base reconcile did not converge — continuing to the build UNCHECKED, as this run would have before. Check by hand: \`git -C ${absR} log --oneline origin/${rp.base_branch}..${rp.work_branch}\`.`)
+    } else if (bs.state === 'unrepairable') {
+      const why = `${R}'s branch ${rp.work_branch} carries ${bs.foreign_commits} commit(s) that are not ${ticket}'s AND ${bs.ticket_commits} that are, so it cannot be re-pointed at ${rp.base_branch} without deleting this ticket's own work. ${bs.detail}`
+      record('branch-base', why, bs.rebase_command ? `rebase it yourself, then re-run: ${bs.rebase_command}` : `re-cut ${rp.work_branch} from origin/${rp.base_branch}, replay ${ticket}'s commits onto it, then re-run`)
+      log(`⛔ [${R}] BRANCH BASE UNREPAIRABLE — ${why} Nothing is built on it: \`git diff ${rp.base_branch}...${rp.work_branch}\` would show ${bs.foreign_commits} foreign commit(s), so every reviewer and every gate downstream would be judging the wrong comparison (docs/adr/0025).`)
+      return { repo: R, status: 'target-branch-halt', plan: rp, blocking, base_repair: bs, handoff: { status: 'blocked', summary: `the work branch does not stand on this run's base (${rp.base_branch})`, remaining: why, decision_needed: 'rebase this ticket\'s commits onto the run\'s base by hand, or change the run\'s base, then re-run' } }
+    } else if (bs.state === 'repaired') {
+      baseRepair = bs
+      log(`🔧 [${R}] BRANCH BASE REPAIRED as its own accounted step — ${rp.work_branch} carried ${bs.foreign_commits} commit(s) that were not ${ticket}'s and has been re-pointed at origin/${rp.base_branch}${bs.parked_at ? ` (uncommitted work parked at ${bs.parked_at} and restored)` : ''}. ${bs.detail} The build round below therefore starts on the right base and spends its WHOLE slice budget on ${ticket}'s own work — it is not one of the ${BUILD.maxContinuationPasses} continuation passes.`)
+    } else if (bs.branch_exists && bs.ticket_commits) {
+      log(`[${R}] branch base OK — ${rp.work_branch} stands on ${rp.base_branch} and already carries ${bs.ticket_commits} of ${ticket}'s own commit(s).`)
+    } else {
+      log(`[${R}] branch base OK — ${bs.branch_exists ? `${rp.work_branch} stands on ${rp.base_branch} with nothing on top` : `${rp.work_branch} does not exist yet; the build cuts it from ${rp.base_branch}`}.`)
+    }
+  }
+  // The repair is REPORTED to the round it protected, so the agent neither redoes the surgery nor
+  // mistakes a history it did not write for something it has to reconcile.
+  const baseRepairClause = baseRepair
+    ? ` ⚠️ THE BRANCH BASE WAS ALREADY REPAIRED FOR YOU, before this round and as its own step: ${rp.work_branch} carried ${baseRepair.foreign_commits} commit(s) that were not ${ticket}'s, and it has been re-pointed at origin/${rp.base_branch}${baseRepair.parked_at ? `, with the uncommitted work parked at ${baseRepair.parked_at} and restored` : ''}. That is why the branch's history is shorter than you may remember it. Do NOT redo that surgery, do not re-point anything, and do not spend a slice on it — it is done, and it was not paid for out of your budget. Say in your handoff summary that this round began on a repaired base, so the next reader knows why the history moved.`
+    : ''
   let dev = builtRow
     ? { work_branch: builtRow.work_branch || rp.work_branch, summary: `resumed from run state (head ${String(builtRow.head_sha).slice(0, 8)} unchanged)`, status: 'complete', fixed: [] }
     : await safeAgent(
-        buildPrompt + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE
+        buildPrompt + baseRepairClause + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE
           + stateWrite(R, 'built', `,"plan_sha":"<run 'shasum -a 256 ${rp.plan_path} | cut -c1-16' and put its output here — the fingerprint of the plan you BUILT FROM, so a later re-plan can tell this build is stale>"`) + ` If your handoff status is "deferred" or "already-satisfied", write that RUN-STATE file with "status":"in-progress" instead of "done" — neither is checkpointed as built, because what makes the claim (deferred[]/met_acceptance[], or satisfied_by[]) does not fit in a state row and must be re-derived and re-audited by the next invocation.`,
         { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
       )
@@ -1956,7 +2085,7 @@ RETURN CONTRACT: end by calling StructuredOutput with the DEV_SCHEMA handoff. "c
   }
   if (dev.status && dev.status !== 'complete' && dev.status !== 'deferred') {
     log(`⚠️ [${R}] build handoff status=${dev.status}: ${(dev.remaining || dev.summary || '(no detail)').slice(0, 140)} — repo not build-complete; downstream skipped.`)
-    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining, root_cause: dev.root_cause, commands_run: dev.commands_run, decision_needed: dev.decision_needed, parked_at: dev.parked_at } }
+    return { repo: R, status: 'build-unresolved', plan: rp, base_repair: baseRepair, handoff: { status: dev.status, summary: dev.summary, remaining: dev.remaining, root_cause: dev.root_cause, commands_run: dev.commands_run, decision_needed: dev.decision_needed, parked_at: dev.parked_at, base_repair: baseRepair ? `this round began with a branch-base repair, done as its OWN step before the build: ${baseRepair.foreign_commits} commit(s) that were not ${ticket}'s were dropped by re-pointing ${rp.work_branch} at ${rp.base_branch}. It did NOT come out of the round's slice budget or its ${BUILD.maxContinuationPasses} continuation passes, so what "remaining" names is genuinely what the feature work did not reach.` : null } }
   }
   log(`[${R}] initial build: ${dev.summary?.slice(0, 70) ?? 'done'}`)
   tick(`${R}:build`)
