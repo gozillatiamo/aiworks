@@ -143,7 +143,7 @@ const STATUS = {
 }
 const REPOS = {
   'agent-ofb-cypress': {
-    path: 'agent-ofb-cypress', kind: 'test-suite',
+    path: 'agent-ofb-cypress', vcsRepo: 'bluepicode/qa/agent-ofb-cypress', kind: 'test-suite',
     base: { feature: 'develop', fix: 'develop' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
@@ -152,7 +152,7 @@ const REPOS = {
     distribute: null,
   },
   'turnover-commission-batch': {
-    path: 'turnover-commission-batch', kind: 'backend',
+    path: 'turnover-commission-batch', vcsRepo: 'bluepicode/ofb/turnover-commission-batch', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -161,7 +161,7 @@ const REPOS = {
     distribute: null,
   },
   'agent-db': {
-    path: 'agent-db', kind: 'migration',
+    path: 'agent-db', vcsRepo: 'bluepicode/ofb/agent-db', kind: 'migration',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -170,7 +170,7 @@ const REPOS = {
     distribute: null,
   },
   'paotung-template': {
-    path: 'paotung-template', kind: 'web-app',
+    path: 'paotung-template', vcsRepo: 'bluepicode/ofb/paotung-template', kind: 'web-app',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -179,7 +179,7 @@ const REPOS = {
     distribute: null,
   },
   'customization-widget': {
-    path: 'customization-widget', kind: 'package',
+    path: 'customization-widget', vcsRepo: 'bluepicode/ofb/customization-widget', kind: 'package',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -188,7 +188,7 @@ const REPOS = {
     distribute: null,
   },
   'front-end': {
-    path: 'front-end', kind: 'web-app',
+    path: 'front-end', vcsRepo: 'bluepicode/ofb/front-end', kind: 'web-app',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -197,7 +197,7 @@ const REPOS = {
     distribute: null,
   },
   'agent-webservice': {
-    path: 'agent-webservice', kind: 'backend',
+    path: 'agent-webservice', vcsRepo: 'bluepicode/ofb/agent-webservice', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -207,7 +207,7 @@ const REPOS = {
     distribute: null,
   },
   'agent-paotung-cypress': {
-    path: 'agent-paotung-cypress', kind: 'test-suite',
+    path: 'agent-paotung-cypress', vcsRepo: 'bluepicode/qa/agent-paotung-cypress', kind: 'test-suite',
     base: { feature: 'develop', fix: 'develop' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
@@ -216,7 +216,7 @@ const REPOS = {
     distribute: null,
   },
   'backoffice': {
-    path: 'backoffice', kind: 'web-app',
+    path: 'backoffice', vcsRepo: 'bluepicode/ofb/backoffice', kind: 'web-app',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -225,7 +225,7 @@ const REPOS = {
     distribute: null,
   },
   'ofb-backoffice-cypress': {
-    path: 'ofb-backoffice-cypress', kind: 'test-suite',
+    path: 'ofb-backoffice-cypress', vcsRepo: 'bluepicode/qa/ofb-backoffice-cypress', kind: 'test-suite',
     base: { feature: 'develop', fix: 'develop' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
@@ -234,7 +234,7 @@ const REPOS = {
     distribute: null,
   },
   'mock-agency-api': {
-    path: 'mock-agency-api', kind: 'mock',
+    path: 'mock-agency-api', vcsRepo: 'bluepicode/ofb/mock-agency-api', kind: 'mock',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: false, perf: false,
@@ -243,7 +243,7 @@ const REPOS = {
     distribute: null,
   },
   'commission-batch': {
-    path: 'commission-batch', kind: 'backend',
+    path: 'commission-batch', vcsRepo: 'bluepicode/ofb/commission-batch', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -252,7 +252,7 @@ const REPOS = {
     distribute: null,
   },
   'seamless-api': {
-    path: 'seamless-api', kind: 'web-app',
+    path: 'seamless-api', vcsRepo: 'bluepicode/ofb/seamless-api', kind: 'web-app',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -261,7 +261,7 @@ const REPOS = {
     distribute: null,
   },
   'game': {
-    path: 'game', kind: 'package',
+    path: 'game', vcsRepo: 'bluepicode/ofb/game', kind: 'package',
     base: { feature: 'main', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -270,7 +270,7 @@ const REPOS = {
     distribute: null,
   },
   'cashback-batch': {
-    path: 'cashback-batch', kind: 'backend',
+    path: 'cashback-batch', vcsRepo: 'bluepicode/ofb/cashback-batch', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -279,7 +279,7 @@ const REPOS = {
     distribute: null,
   },
   'crypto-watcher': {
-    path: 'crypto-watcher', kind: 'backend',
+    path: 'crypto-watcher', vcsRepo: 'bluepicode/ofb/crypto-watcher', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -288,7 +288,7 @@ const REPOS = {
     distribute: null,
   },
   'bet-aggregator': {
-    path: 'bet-aggregator', kind: 'backend',
+    path: 'bet-aggregator', vcsRepo: 'bluepicode/ofb/bet-aggregator', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -297,7 +297,7 @@ const REPOS = {
     distribute: null,
   },
   'campaign-sub': {
-    path: 'campaign-sub', kind: 'backend',
+    path: 'campaign-sub', vcsRepo: 'bluepicode/ofb/campaign-sub', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -306,7 +306,7 @@ const REPOS = {
     distribute: null,
   },
   'live-sub': {
-    path: 'live-sub', kind: 'backend',
+    path: 'live-sub', vcsRepo: 'bluepicode/ofb/live-sub', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -315,7 +315,7 @@ const REPOS = {
     distribute: null,
   },
   'ofb-k6-loadtests': {
-    path: 'ofb-k6-loadtests', kind: 'test-suite',
+    path: 'ofb-k6-loadtests', vcsRepo: 'bluepicode/qa/ofb-k6-loadtests', kind: 'test-suite',
     base: { feature: 'main', fix: 'main' },
     plan: 'qa-planner', build: 'qa-runner', review: null,
     guard: false, perf: false,
@@ -325,7 +325,7 @@ const REPOS = {
     distribute: null,
   },
   'lotto-service': {
-    path: 'lotto-service', kind: 'backend',
+    path: 'lotto-service', vcsRepo: 'bluepicode/ofb/lotto-service', kind: 'backend',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,
@@ -334,7 +334,7 @@ const REPOS = {
     distribute: null,
   },
   'dev-script': {
-    path: 'dev-script', kind: 'script',
+    path: 'dev-script', vcsRepo: 'bluepicode/ofb/dev-script', kind: 'script',
     base: { feature: 'develop', fix: 'main' },
     plan: 'development-planner', build: 'developer', review: 'code-reviewer',
     guard: true, perf: true,

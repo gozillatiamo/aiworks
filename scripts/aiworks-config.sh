@@ -553,6 +553,18 @@ while IFS=$'\037' read -r url kind path dist green gf am sk kfr bf bx; do   # \0
   [[ -n "$url" ]] || continue
   name="${url%.git}"; name="${name##*/}"; name="${name##*:}"
   [[ -n "$name" ]] || { warn "could not derive a repo name from url '$url' — skipped"; continue; }
+
+  # The forge PROJECT PATH the vcs adapter takes in VCS_REPO — `owner/repo` on GitHub,
+  # `group/subgroup/project` on GitLab. Derived from the SAME url `name` comes from, because the
+  # name (a clone's directory) is NOT addressable: `projects/<name>/…` resolves to nothing and the
+  # API answers 404, which every read-only adapter script prints as empty output. Projecting it
+  # here is what stops each agent re-deriving it from a git remote, one prompt at a time.
+  slug="${url%.git}"
+  case "$slug" in
+    *://*) slug="${slug#*://}"; slug="${slug#*@}"; slug="${slug#*/}" ;;   # https://host/group/proj
+    *:*)   slug="${slug#*@}";   slug="${slug#*:}" ;;                      # git@host:group/proj
+  esac
+
   kind="${kind:-generic}"
   path="${path:-$name}"
 
@@ -578,7 +590,7 @@ while IFS=$'\037' read -r url kind path dist green gf am sk kfr bf bx; do   # \0
   [[ "$d_review" != null ]] && local_review="$(jsq "$d_review")"
 
   entry="  $(jsq "$name"): {"$'\n'
-  entry+="    path: $(jsq "$path"), kind: $(jsq "$kind"),"$'\n'
+  entry+="    path: $(jsq "$path"), vcsRepo: $(jsq "$slug"), kind: $(jsq "$kind"),"$'\n'
   entry+="    base: { feature: $(jsq "$d_basef"), fix: $(jsq "$d_basex") },"$'\n'
   entry+="    plan: $(jsq "$d_plan"), build: $(jsq "$d_build"), review: ${local_review},"$'\n'
   entry+="    guard: ${d_guard}, perf: ${d_perf},"$'\n'

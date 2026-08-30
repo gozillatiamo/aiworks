@@ -191,6 +191,8 @@ products:
         kind: backend
         feature_base: release/7.10
         fix_base: staging
+      - url: https://gitlab.com/grp/sub/web.git
+        kind: frontend
 YAML
 out="$(full "$T/bases.yaml" "$T/no-local.yaml")"
 
@@ -215,6 +217,16 @@ ck "…and its fix base is still fix_base"                         "main"       
 ck "a repo's own feature_base overrides branch_model"            "release/7.10" "$(proj odd-svc)"
 ck "…and so does its own fix_base"                              "staging"      "$(projfix odd-svc)"
 ck "an overriding repo does not leak its base to its neighbours" "develop"      "$(proj svc)"
+
+vcsrepo() { # vcsrepo <repo> → its projected vcsRepo
+  printf '%s' "$out" | awk -v want="  '$1':" '
+    index($0, want)==1 { inr=1; next }
+    inr && /vcsRepo:/ { if (match($0, /vcsRepo: \047[^\047]+\047/)) { s=substr($0, RSTART+10); gsub(/\047/,"",s); printf "%s", s } exit }
+    inr && index($0, "\047")==3 { exit }'
+}
+ck "an scp-form url projects group/project, not the bare name"  "acme/svc"    "$(vcsrepo svc)"
+ck "an https-form url drops the host, keeps every group level"  "grp/sub/web" "$(vcsrepo web)"
+ck "…and the repo KEY is still the bare name"                   "develop"     "$(proj web)"
 
 printf '\nREVIEW LOOP BOUNDS (docs/adr/0027)\n'
 
