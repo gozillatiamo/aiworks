@@ -1955,6 +1955,46 @@ const BASE = {
         report('G48_a_salvaged_round_records_no_missing_handoff', !blockingJson.includes('build-no-handoff'), blockingJson.slice(0, 300))
         report('G48_a_salvaged_round_still_opens_its_pr', SPAWNED.includes('open-pr:FM-12:db'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('open-pr:')))}`)
       }
+    } else if (SCENARIO.startsWith('G49')) {
+      // The cost of a cut-off attempt, not its record (G48). An external end arrives mid-sentence:
+      // there is no final step, so every durability rule in the build brief — park the tree, commit
+      // or stash, name where it went — is unreachable, and an attempt that spent 115 messages and
+      // ~8.4M cache-read tokens exploring leaves NOTHING on the branch. The relaunch then re-sends
+      // the identical brief into an empty context and pays for the same exploration again.
+      // Two things the workflow itself controls: tell the build to land slices AS IT GOES, so a
+      // cut-off costs the tail rather than the attempt; and tell a relaunch what its predecessor
+      // already landed, which `reconcileBranchBase` has measured and thrown away.
+      const ARGS = 'FM-12'
+      const DONE = { work_branch: 'feature/FM-12', summary: 'all slices landed', status: 'complete', fixed: ['db/src/x.ts'] }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'base-reconcile:FM-12:db': { repo: 'db', branch_exists: true, state: 'ok', foreign_commits: 0,
+          ticket_commits: SCENARIO === 'G49_CLEAN' ? 0 : 3,
+          head_sha: 'sha-partial', parked_at: null, rebase_command: null, detail: 'stands on develop' },
+        'build:FM-12:db': DONE,
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { approved: true },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
+      }
+      const result = await runOnce(ARGS, canned, {})
+      const buildPrompt = PROMPTS['build:FM-12:db'] || ''
+      if (SCENARIO === 'G49_CLEAN') {
+        report('G49_clean_branch_carries_no_prior_work_claim', !/WORK IS ALREADY ON THIS BRANCH/.test(buildPrompt))
+        report('G49_clean_brief_still_carries_the_durability_rule', /CAN END FROM OUTSIDE WITHOUT WARNING/.test(buildPrompt))
+      } else {
+        report('G49_brief_names_what_the_branch_already_carries', /WORK IS ALREADY ON THIS BRANCH/.test(buildPrompt) && /3 commit\(s\)/.test(buildPrompt), buildPrompt.slice(0, 200))
+        report('G49_brief_says_continue_not_redo', /CONTINUE from where they stop/.test(buildPrompt) && /do NOT rebuild/.test(buildPrompt))
+        report('G49_brief_gives_the_command_to_read_them', buildPrompt.includes('log --oneline develop..feature/FM-12'))
+        report('G49_every_brief_carries_the_cut_off_durability_rule', /CAN END FROM OUTSIDE WITHOUT WARNING/.test(buildPrompt) && /commit each slice the moment it is green/.test(buildPrompt))
+        report('G49_repo_still_reaches_ready', !!result && result.status !== 'repo-unresolved', `status=${result && result.status}`)
+      }
     } else if (SCENARIO === 'G42_FP') {
       // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
       // THIS run's fp, so the assertion run needs the value this one logs.
@@ -2506,6 +2546,12 @@ out="$(run_scenario G48_RUNAWAY)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out
 
 echo "── G48_SALVAGED — a cut-off the bounded continuation recovers records nothing and carries on"
 out="$(run_scenario G48_SALVAGED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G49 — a build is told to commit as it goes, and a relaunch is told what the last attempt landed"
+out="$(run_scenario G49)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G49_CLEAN — a branch with nothing on it is not told it carries prior work"
+out="$(run_scenario G49_CLEAN)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G46 — a declared false red confirmed on the base is recorded, not retried"
 out="$(run_scenario G46)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

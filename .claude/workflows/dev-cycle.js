@@ -444,6 +444,7 @@ const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory):
 • NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
 • BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.
 • LEAVE NO DIRTY TREE. The build ends in exactly ONE of two states: COMMITTED (your work is on the work branch as conventional commits) or PARKED. Ending with uncommitted changes and no record of them is a failure — the next run inherits them as an unexplained partial implementation and has to reverse-engineer your intent. If the work is not commit-ready, PARK it: prefer a WIP commit on the work branch (\`wip(<scope>): <what is unfinished> Refs ${ticket}\`); use \`git stash push -u -m "${ticket} <what>"\` only when a commit would break the branch for someone else. Then name WHICH you chose and WHERE the work now lives in "parked_at". \`git checkout .\`, \`git restore .\` and \`git reset --hard\` are FORBIDDEN — discarding work is a decision you were not asked to make. On ARRIVAL, if the tree is already dirty, account for it BEFORE writing new code (fold it into your plan or park it as above), and if the repo has a compile/typecheck step, get it passing before you add a new slice.
+• COMMIT AS YOU GO — YOUR ATTEMPT CAN END FROM OUTSIDE WITHOUT WARNING. Every rule above assumes you reach an ending you control. An interrupt, a timeout or a killed stream gives you none: the attempt stops mid-sentence, there is no last step to park in, and whatever is not already committed is gone. What replaces you starts from an EMPTY context and re-reads everything you read, so a plan batched into one commit at the end costs the whole attempt when it is cut, and costs it again on the next. So: land the FIRST slice as a commit early, before any exploration that slice does not need, and commit each slice the moment it is green rather than at the end. The work branch is the only thing that survives you — treat every commit as the handoff you might not get to write.
 • A NON-COMPLETE HANDOFF MUST BE ACTIONABLE. With status "partial"/"blocked", also fill "root_cause" (the MEASURED cause at file:line — never the word "unknown"), "commands_run" (each command you actually ran with its exit code), and "decision_needed" when the blocker is a fork only a human can settle. "needs human triage" on its own is not a handoff; it is the absence of one.`
 
 // Shared ADAPTER DISCIPLINE — appended to every prompt whose phase invokes a MUTATING adapter
@@ -1763,6 +1764,7 @@ async function runRepoPipeline(rp, desc, branchKind) {
   // when the build itself is skipped: a `built` row whose head still matches was already reconciled
   // by the invocation that wrote it, and re-probing it would spend an agent to learn nothing.
   let baseRepair = null
+  let priorWork = 0
   if (!builtRow) {
     const bs = await reconcileBranchBase(R, rp, 'Build')
     tick(`${R}:base-reconcile`)
@@ -1783,16 +1785,27 @@ async function runRepoPipeline(rp, desc, branchKind) {
     } else {
       log(`[${R}] branch base OK — ${bs.branch_exists ? `${rp.work_branch} stands on ${rp.base_branch} with nothing on top` : `${rp.work_branch} does not exist yet; the build cuts it from ${rp.base_branch}`}.`)
     }
+    // The reconcile has just COUNTED this ticket's own commits on the branch, and every caller threw
+    // that number away. It is the one fact a relaunched build needs: no `built` row means no build
+    // ever checkpointed, so commits sitting there are an attempt that ended before it could hand off.
+    if (bs && (bs.state === 'ok' || bs.state === 'repaired') && bs.ticket_commits > 0) priorWork = bs.ticket_commits
   }
   // The repair is REPORTED to the round it protected, so the agent neither redoes the surgery nor
   // mistakes a history it did not write for something it has to reconcile.
   const baseRepairClause = baseRepair
     ? ` ⚠️ THE BRANCH BASE WAS ALREADY REPAIRED FOR YOU, before this round and as its own step: ${rp.work_branch} carried ${baseRepair.foreign_commits} commit(s) that were not ${ticket}'s, and it has been re-pointed at origin/${rp.base_branch}${baseRepair.parked_at ? `, with the uncommitted work parked at ${baseRepair.parked_at} and restored` : ''}. That is why the branch's history is shorter than you may remember it. Do NOT redo that surgery, do not re-point anything, and do not spend a slice on it — it is done, and it was not paid for out of your budget. Say in your handoff summary that this round began on a repaired base, so the next reader knows why the history moved.`
     : ''
+  // An attempt that is ended from outside never writes a run-state row, so the relaunch that follows
+  // is handed the SAME brief into an empty context and re-derives everything — including work already
+  // sitting on the branch. Naming it turns a rebuild into a continuation, and stops the agent reading
+  // its own predecessor's commits as a stale prior run to reshape.
+  const priorWorkClause = priorWork
+    ? ` ⚠️ WORK IS ALREADY ON THIS BRANCH — ${rp.work_branch} carries ${priorWork} commit(s) of ${ticket}'s own, and no run state records a finished build, so they are an earlier attempt that ended before it could hand off. READ THEM FIRST: \`git -C ${absR} log --oneline ${rp.base_branch}..${rp.work_branch}\`, then \`git -C ${absR} show --stat\` on each. CONTINUE from where they stop: do NOT rebuild what they already implement, and do NOT treat them as a stale prior run to reshape — they were built from the plan you are holding. Name in your handoff which of them you inherited and which slices you added.`
+    : ''
   let dev = builtRow
     ? { work_branch: builtRow.work_branch || rp.work_branch, summary: `resumed from run state (head ${String(builtRow.head_sha).slice(0, 8)} unchanged)`, status: 'complete', fixed: [] }
     : await safeAgent(
-        buildPrompt + baseRepairClause + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE
+        buildPrompt + baseRepairClause + priorWorkClause + BUILD_DISCIPLINE + PONYTAIL_DIRECTIVE + ADAPTER_DISCIPLINE + FIGMA_DIRECTIVE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE + HEADROOM_DIRECTIVE
           + stateWrite(R, 'built', `,"plan_sha":"<run 'shasum -a 256 ${rp.plan_path} | cut -c1-16' and put its output here — the fingerprint of the plan you BUILT FROM, so a later re-plan can tell this build is stale>"`) + ` If your handoff status is "deferred" or "already-satisfied", write that RUN-STATE file with "status":"in-progress" instead of "done" — neither is checkpointed as built, because what makes the claim (deferred[]/met_acceptance[], or satisfied_by[]) does not fit in a state row and must be re-derived and re-audited by the next invocation.`,
         { agentType: desc.build, phase: 'Build', label: `build:${ticket}:${R}`, schema: DEV_SCHEMA },
       )
