@@ -141,6 +141,47 @@ The adapter must:
 - support parallel invocations without sharing mutable session state;
 - surface a Harness failure as a failed phase, never as permission to continue manually.
 
+### The byte budget
+
+Under Claude Code there is no adapter: the native Workflow tool runs the script itself, and it
+weighs the script **file** before it parses it. The cap was measured against the live runtime
+rather than read off a schema — a 524,288-byte script launches, a 524,289-byte one comes back
+`Workflow script file … exceeds 524288 bytes` — and **no delivery parameter is exempt**, `scriptPath`
+included. So a workflow that grows past it cannot be launched, resumed, or worked around from
+inside a session.
+
+`dev-cycle.js` reached that wall from underneath. Over 41 commits it went from 120,083 bytes to
+522,045, at a mean of **+5,189 bytes per fix**, because this framework keeps its rules in agent
+brief text and every fix adds prose. Nothing measured it, so the cap was found by a run that
+would not start, in a clone already 5,804 bytes over — and the only obvious remedy, deleting
+comments, would have spent the design record that stops the next regression in order to survive
+this one.
+
+The rule that replaces it: **the authored script is never what the runtime receives.**
+
+```
+node scripts/workflows/build.mjs [--check] [<name>…]
+```
+
+Default builds each workflow into `.claude/workflows/.build/<name>.js` — gitignored, disposable,
+rebuilt on demand — and prints the path to hand the Workflow tool. `--check` measures without
+writing. Both refuse to produce a file they cannot vouch for:
+
+- only a whole line whose first non-blank characters are `//`, and only in code state, is removed —
+  a comment-shaped line inside a template literal is an agent's brief text and stays;
+- `AIWORKS:CONFIG` markers stay, because `aiworks config` writes the generated registry between them;
+- every removed span is re-checked against the comment shape and must account for the entire byte
+  difference, so a scanner that lost its place cannot pass as a saving;
+- the output must parse as an async function body, and stripping it again must change nothing.
+
+The budget is the cap less a **65,536-byte reserve** — twelve commits at the measured growth rate —
+so `aiworks doctor` reports the number while there is still room to act on it rather than leaving
+it to the run that cannot start. Nothing can shrink a workflow for you, so that finding carries no
+fix command: it is a prompt to hoist repeated brief text into shared constants, which is where the
+next 100 KB is.
+
+`scripts/workflows/selftest.mjs` holds the assertions, including the budget itself.
+
 ## Agent compatibility contract
 
 A generated agent is available only when safety-relevant fields are mapped:
