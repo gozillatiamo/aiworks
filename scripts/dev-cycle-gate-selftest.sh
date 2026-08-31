@@ -169,7 +169,7 @@ async function runOnce(argsStr, canned, opts = {}) {
     // healthy answer is "nothing this repo declares covers that failure", which is the outcome that
     // changes nothing. A scenario that is ABOUT the screen overrides the label.
     if (label && label.startsWith('false-red-screen:') && !(label in canned)) {
-      const repo = label.split(':').pop()
+      const repo = label.split(':').pop().split('#')[0]   // the call site's stage rides the label as `#review`
       return { repo, state: 'no-match', failing: [], matched: null, base_command: null, base_exit_code: null,
                sole_obstacle: false, detail: 'nothing declared covers this failure' }
     }
@@ -1853,6 +1853,60 @@ const BASE = {
         report('G46_non_convergence_excuses_nothing', !blockingJson.includes('known-false-red'))
         report('G46_reason_reaches_the_run_result', JSON.stringify(result?.summary?.non_convergences || []).includes(FLAKE46))
       }
+    } else if (SCENARIO.startsWith('G47')) {
+      // G46 screened the BUILD round. It is not the only loop a declared flake can empty: the review
+      // gate re-runs this repo's WHOLE suite every round, its pass predicate requires tests_green,
+      // and a declared flake reds it every time — so the reviewer can never pass, and the loop grinds
+      // its rounds (14 by default, against the build round's 3) re-running a suite whose red the repo
+      // wrote down in advance. Every repo in a run has a review, so this one is not one repo's shape.
+      // Three shapes: it fails on the base too, so it is recorded and the gate is not asked again
+      // (G47); it PASSES there, so it is this diff's regression and the loop works it exactly as
+      // before, told the red is theirs (G47_GENUINE); the repo declares nothing, so no screen is
+      // spawned at all and the rounds run as they do today (G47_UNDECLARED).
+      const REPO = SCENARIO === 'G47_UNDECLARED' ? 'svc' : 'db'
+      const RED = { approved: false, tests_green: false, comments: [], resolved_threads: [], still_open: [],
+        tests_receipt: 'scripts/dev.sh test → orders::settles ABORTED (signal 6), exit 134',
+        conclusion: 'the repo suite is red on the PR head' }
+      const SCREEN = (state) => ({ repo: REPO, state, failing: ['orders::settles'],
+        matched: 'the suite shares one test database', base_command: 'scripts/dev.sh test orders::settles',
+        base_exit_code: state === 'genuine' ? 0 : 134, sole_obstacle: true, detail: `it is ${state} on the base` })
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: REPO }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk([REPO]),
+        [`kickoff:FM-12:${REPO}`]: REPO_PLAN(REPO, 'develop'),
+        [`build:FM-12:${REPO}`]: { work_branch: 'feature/FM-12', summary: 'the feature landed', status: 'complete', fixed: ['src/orders.rs'] },
+        [`open-pr:FM-12:${REPO}`]: { pr_url: 'https://x/8', pr_number: 8 },
+        [`review:FM-12:${REPO}#1`]: RED,
+        [`review:FM-12:${REPO}#2`]: SCENARIO === 'G47_GENUINE'
+          ? { approved: true, tests_green: true, tests_receipt: 'scripts/dev.sh test → 214 passed', comments: [], resolved_threads: ['t1'], still_open: [] }
+          : RED,
+        [`review:FM-12:${REPO}#3`]: RED,
+        [`pr-fix:FM-12:${REPO}#1`]: { work_branch: 'feature/FM-12', summary: 'fixed the regression the red named', status: 'complete', commits: 1, fixed: ['src/orders.rs'] },
+        'summary:FM-12': { path: 'x.md' },
+      }
+      if (SCENARIO !== 'G47_UNDECLARED') canned[`false-red-screen:FM-12:${REPO}#review`] = SCREEN(SCENARIO === 'G47_GENUINE' ? 'genuine' : 'pre-existing')
+      const result = await runOnce(ARGS, canned)
+      const reviews = SPAWNED.filter((l) => l.startsWith(`review:FM-12:${REPO}#`))
+      const blockingJson = JSON.stringify(result?.blockingByRepo || [])
+      if (SCENARIO === 'G47') {
+        report('G47_screen_is_its_own_accounted_step', (result?.spend || []).some((s) => s && s.label === `${REPO}:false-red-screen#review`), `spend=${JSON.stringify((result?.spend || []).map((s) => s && s.label))}`)
+        report('G47_confirmed_flake_does_not_burn_the_review_rounds', reviews.length === 1, `reviews=${JSON.stringify(reviews)}`)
+        report('G47_recorded_on_its_own_row', blockingJson.includes('known-false-red'), blockingJson.slice(0, 200))
+        report('G47_record_says_it_fails_on_the_base_too', blockingJson.includes('fails on develop too'), blockingJson.slice(0, 300))
+        report('G47_human_action_is_stabilise_not_fix_the_ticket', blockingJson.includes('stabilise orders::settles'))
+        report('G47_repo_still_not_ready', !!result && result.status === 'repo-unresolved', `status=${result && result.status}`)
+      } else if (SCENARIO === 'G47_GENUINE') {
+        report('G47_a_pass_on_the_base_changes_nothing', reviews.length === 2, `reviews=${JSON.stringify(reviews)}`)
+        report('G47_genuine_is_not_recorded_as_a_flake', !blockingJson.includes('known-false-red'), blockingJson.slice(0, 200))
+        report('G47_brief_says_the_red_suite_is_yours', /THE RED SUITE IS YOURS/.test(PROMPTS[`pr-fix:FM-12:${REPO}#1`] || ''))
+      } else {
+        report('G47_a_repo_declaring_none_pays_for_no_screen', !SPAWNED.some((l) => l.startsWith('false-red-screen:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('false-red-screen:')))}`)
+        report('G47_undeclared_rounds_run_exactly_as_before', reviews.length === 3, `reviews=${JSON.stringify(reviews)}`)
+        report('G47_undeclared_records_no_flake', !blockingJson.includes('known-false-red'))
+      }
     } else if (SCENARIO === 'G42_FP') {
       // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
       // THIS run's fp, so the assertion run needs the value this one logs.
@@ -2413,6 +2467,15 @@ out="$(run_scenario G46_UNDECLARED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$
 
 echo "── G46_FLAKE — a screen that returns nothing charges the round exactly as before"
 out="$(run_scenario G46_FLAKE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G47 — a declared false red at REVIEW is screened once and recorded, not ground at for every round"
+out="$(FIXTURE_RV_MAX_ROUNDS=3 run_scenario G47)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G47_GENUINE — a red that passes on the base is this diff's regression, and the loop works it as before"
+out="$(FIXTURE_RV_MAX_ROUNDS=3 run_scenario G47_GENUINE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G47_UNDECLARED — a repo that declares no false reds pays for no screen at review either"
+out="$(FIXTURE_RV_MAX_ROUNDS=3 run_scenario G47_UNDECLARED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G42 — the pin survives a resume, and the required re-pin ships even with auto-merge off"
 outFp42="$(run_scenario G42_FP)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outFp42" | sed 's/^/      /'; ingest "$outFp42"

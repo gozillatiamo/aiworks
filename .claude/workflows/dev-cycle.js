@@ -1618,7 +1618,10 @@ const reportsAFailedCheck = (h) =>
   || /\b(test|spec|suite|assert\w*|panic\w*|abort\w*|sigabrt|segfault|flak\w+)\b/i.test(`${h.remaining || ''} ${h.root_cause || ''} ${h.summary || ''}`)
 // Returns the verdict, or null when the screen did not converge. A null neither halts nor excuses:
 // without this step the round was charged for the failure, so that is where a non-convergence leaves it.
-async function screenKnownFalseRed(repoId, rp, desc, dev, phaseName) {
+// `labelSuffix` only distinguishes the two call sites in the journal — the build round's continuation
+// loop and the review round's suite gate can both screen the same repo in one run, and two agents
+// sharing a label would leave one `tick` row and one prompt for two different questions.
+async function screenKnownFalseRed(repoId, rp, desc, dev, phaseName, labelSuffix = '') {
   const absR = absOf(repoId)
   const wt = `/tmp/${ticket}-${repoId}-false-red-screen`
   return await safeAgent(
@@ -1634,7 +1637,7 @@ WHAT THE ROUND REPORTED: ${String(dev.remaining || dev.summary || '(nothing)').s
    • you could not run it there at all ⇒ state:"inconclusive", naming in detail what you tried and what refused. NEVER guess an exit code and never return "pre-existing" without having watched the failure happen on the base: an unscreened red charged to the round is today's behaviour, and it is the safe direction to fail in.
 5. SET \`sole_obstacle\`: true ONLY when the round's report names nothing it still owes beyond this one failure; false when other work remains. It decides whether the round is continued for the rest of its work or ends here, so read the report — do not assume either way.
 Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
-    { agentType: 'general-purpose', model: 'sonnet', phase: phaseName, label: `false-red-screen:${ticket}:${repoId}`, schema: FALSE_RED_SCHEMA },
+    { agentType: 'general-purpose', model: 'sonnet', phase: phaseName, label: `false-red-screen:${ticket}:${repoId}${labelSuffix}`, schema: FALSE_RED_SCHEMA },
   )
 }
 
@@ -2254,6 +2257,9 @@ Fix it (a genuine defect via /diagnosing-bugs first, code via /tdd — the same 
     return { repo: R, status: 'ready', plan: rp, pr, reviewRound: 0, verdict: {}, gatesUnavailable: {}, deferred: deferredScope, met_acceptance: dev.met_acceptance || [], build: { summary: dev.summary, fixed: [] } }
   }
   let reviewRound = 0, fixPasses = 0, lastFixed = []
+  // The review gate's own known-false-red screen (below): its verdict, and the fact that it has run.
+  // Once per repo, never once per round — the answer is about the base branch, which does not move.
+  let reviewFalseRed = null, falseRedScreened = false
   let lastFp = null, stalled = 0
   // Cross-repo escalation bookkeeping. xrepoDone: one attempt per (repo, finding) — a repeat means
   // the routed fix did not settle it, which is a human call, not a ping-pong. pendingSync: an
@@ -2506,6 +2512,56 @@ Keep ${desc.green}. If the regression and the original finding are genuinely in 
     const openFindings = openReviewers.reduce((n, rv) => n + (done[rv.key] || verdict[rv.key] == null ? 0 : rv.open(verdict[rv.key])), 0)
     log(`[${R}] review round ${reviewRound}${isRetest ? ' (re-visit)' : ' (first review)'}: ${reviewers.map((rv) => `${rv.key} ${done[rv.key] === 'unavailable' ? 'UNAVAILABLE' : done[rv.key] ? 'PASS' : crashed.includes(rv.key) ? 'ERRORED' : `${rv.open(verdict[rv.key])} open`}`).join(', ')}`)
     tick(`${R}:review#${reviewRound}`)
+
+    // A DECLARED FALSE RED EMPTIES THIS LOOP TOO — the same screen, at the other end of the run.
+    //
+    // The build round screens one before it is charged for it (screenKnownFalseRed above). That was
+    // never the only loop a declared flake can drain, and this one is worse. The review gate RUNS
+    // this repo's whole suite on the PR/MR head every round, and its pass predicate is
+    // `approved && tests_green` — so while a declared flake reds that suite, the reviewer CANNOT
+    // pass, whatever the developer does. Round after round: full suite, a fix pass chasing a red the
+    // repo wrote down in advance, another full suite. The stall detector does not catch it either,
+    // because a pass that touches code and commits is not a stall. Every repo in a run has a review
+    // and the round budget here is the largest in the workflow, so this is the biggest single way a
+    // run spends its budget without moving the ticket. Same screen, same four outcomes, same rule:
+    // it only ever moves a red OFF the loop on positive evidence — the failure watched happening on
+    // a tree that predates the change.
+    const suiteRed = openReviewers.find((rv) => rv.key === 'review'
+      && verdict[rv.key] && verdict[rv.key].gate_unavailable !== true && verdict[rv.key].tests_green === false)
+    if (suiteRed && desc.knownFalseReds && !falseRedScreened) {
+      falseRedScreened = true
+      const rv = verdict.review
+      reviewFalseRed = await screenKnownFalseRed(R, rp, desc, {
+        summary: `the ${R} repo suite is RED at review, on ${rp.work_branch}`,
+        remaining: `the reviewer ran this repo's own suite on the PR/MR head and it failed. Its receipt: ${rv.tests_receipt || '(it reported none)'}${rv.conclusion ? ` · what it concluded: ${rv.conclusion}` : ''}`,
+        root_cause: (rv.comments || []).map((c) => `${c?.file_line || ''} ${c?.issue || ''}`.trim()).filter(Boolean).join(' | '),
+        commands_run: [],
+      }, 'Review', '#review')
+      tick(`${R}:false-red-screen#review`)
+      const screenedFailing = (reviewFalseRed?.failing || []).join(', ') || 'the failing check'
+      if (reviewFalseRed?.state === 'pre-existing') {
+        // `done.review = 'unverified'` is the same mechanism the un-runnable suite above already
+        // uses, and for the same reason: a gate that cannot answer must stop being asked. The
+        // recorded item is what holds the line — the repo cannot reach 'ready' over it, and no run
+        // can call this suite green while the check that decides it is red without this ticket.
+        record('known-false-red', `${R}'s review gate is red on ${screenedFailing}, which this repo DECLARES as a known false red and which fails on ${rp.base_branch} too: \`${reviewFalseRed.base_command || '(no command reported)'}\` exit ${reviewFalseRed.base_exit_code ?? '(none reported)'} on a throwaway checkout of the base, which carries none of ${ticket}'s change. ${reviewFalseRed.detail}`,
+          `stabilise ${screenedFailing} in ${R} — it is already red on ${rp.base_branch}, before this ticket touches anything — then re-run. Nothing in this run can prove this repo's suite green over a check that fails without it.`)
+        done.review = 'unverified'
+        log(`🟡 [${R}] KNOWN FALSE RED AT REVIEW, CONFIRMED ON THE BASE — ${screenedFailing} fails on ${rp.base_branch} in an isolated checkout, so re-running this repo's suite cannot turn it green and the review gate is not asked again. Recorded; the repo does not reach 'ready'. ${reviewFalseRed.detail}`)
+        if (openFindings || extraMustFix.length) {
+          extraMustFix.push(`⚠️ DO NOT CHASE ${screenedFailing.toUpperCase()} — the suite red the reviewer reported was screened as its own step before this batch, and it fails on ${rp.base_branch} in an isolated checkout that carries none of ${ticket}'s change (\`${reviewFalseRed.base_command || 'see the run log'}\` exit ${reviewFalseRed.base_exit_code ?? '?'}).${reviewFalseRed.matched ? ` It matches this repo's own declared known false red: ${reviewFalseRed.matched}.` : ''} It is NOT evidence about your diff and NOT yours to fix in this ticket: do not rebuild to reproduce it, do not wipe or recreate a local data directory to chase it, and do not re-run it hoping for a different answer. Fix the findings below and nothing else.`)
+        }
+      } else if (reviewFalseRed?.state === 'genuine') {
+        log(`[${R}] known-false-red screen at review: ${screenedFailing} PASSES on ${rp.base_branch} (\`${reviewFalseRed.base_command || '(no command reported)'}\` exit ${reviewFalseRed.base_exit_code ?? '(none reported)'}), so the red is this change's own regression and the loop works it exactly as before.`)
+        extraMustFix.push(`⛔ THE RED SUITE IS YOURS — ${screenedFailing} was re-run on ${rp.base_branch} in an isolated checkout before this batch, \`${reviewFalseRed.base_command || 'see the run log'}\` exit ${reviewFalseRed.base_exit_code ?? '?'}, and it PASSES there. So it is not the environment, not a flaky shared fixture and not this repo's declared false red: it is a regression your diff introduced. Fix the code, not the harness, and it outranks every other finding in this batch.`)
+      } else if (reviewFalseRed?.state === 'inconclusive') {
+        log(`⚠️ [${R}] known-false-red screen at review could not run ${screenedFailing} on ${rp.base_branch} at all — no receipt, so nothing is screened and the red is worked by this loop exactly as it would have been. ${reviewFalseRed.detail}`)
+      } else if (reviewFalseRed) {
+        log(`[${R}] known-false-red screen at review: nothing this repo declares covers this red — judged on its own evidence, as before. ${reviewFalseRed.detail}`)
+      } else {
+        log(`⚠️ [${R}] the known-false-red screen at review did not converge — the red is worked by this loop exactly as it would have been before this step existed. Check by hand against ${rp.base_branch}.`)
+      }
+    }
 
     // Converge ONLY when EVERY reviewer has an explicit pass/approve (freeze-once-passed).
     // A recorded blocking item is NOT a pass, and the final return below is what enforces that —
