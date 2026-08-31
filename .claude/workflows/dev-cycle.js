@@ -291,6 +291,44 @@ const DEVCYCLE_VERSION = '2026-08-23.4'
 // "meta is not defined" live even though it type-checks in the offline compile probe (a
 // hand-rolled wrapper that keeps the literal source, meta included, in scope). Literal name.
 log(`dev-cycle v${DEVCYCLE_VERSION}`)
+
+// ── EVERY AGENT, EVERY PHASE: THE ATTEMPT CAN END FROM OUTSIDE ────────────────────────────────
+// An interrupt, a timeout or a killed stream ends an agent MID-SENTENCE. Measured twice, on two
+// repos in two different phases and roles: a build (115 messages, ~8.4M cache-read tokens) and a
+// QA suite runner (172 messages, ~12.5M) — each cut off with no structured result, each replaced
+// by a fresh attempt that re-read everything from an EMPTY context and paid for it again. The
+// cut-off originates in the runtime and no cap in this script can prevent it. What this script
+// does own is the brief, and the durability discipline lived in the BUILD prompt alone: every
+// other phase and role was told nothing, so batching work to an ending that never comes was the
+// reasonable reading everywhere else.
+//
+// It is applied HERE, around the engine's own agent(), and not around the safeAgent wrapper below,
+// because the Kickoff planners and the code/guard/perf reviewers call agent() directly with their
+// own try/catch — a fix at the wrapper would miss exactly the roles the second report named, and
+// would miss whatever call site is added next.
+const CUT_OFF_RE = /interrupted by user|request interrupted|stream ended without|timed out|timeout|deadline exceeded|SIGKILL|SIGTERM|killed/i
+const CUTOFF_DISCIPLINE = ` DURABILITY (mandatory, whatever your phase): YOUR ATTEMPT CAN END FROM OUTSIDE WITHOUT WARNING. An interrupt, a timeout or a killed stream stops you mid-sentence — there is no last step to tidy up in, no chance to summarise, and whatever you have not already made durable is gone. What replaces you starts from an EMPTY context and re-reads everything you read, so work batched to the end costs the whole attempt when it is cut, and costs it again on the next. So make progress durable AS YOU GO, in whatever form your task produces it: land the FIRST slice as a commit early, before any exploration that slice does not need, and commit each slice the moment it is green rather than at the end; post a review comment when you find it, not in one block at the finish; write a plan, report or ticket record as soon as it says something true, then refine it in place. Persist first and polish second, and prefer the smaller step that leaves something behind to the larger one that leaves nothing. This never licenses skipping your structured result — ending without it is still a failure — but what you have already made durable survives you either way.`
+// A step is (phase, repo): the two facts every label carries and every retry keeps. Labels are
+// `<key>:<ticket>:<repo>[#<round>]`, so the repo is the third segment with any round suffix cut;
+// phase comes from opts. Keying on the pair rather than the label means a phase's SECOND attempt
+// inherits the truth even when it is spawned under a different key (a gate and its audit, a review
+// and its next round), which is the whole point — no call site has to remember to pass it on.
+const cutOffs = []
+const stepKey = (opts) => `${opts?.phase || '-'}|${(String(opts?.label || '').split(':')[2] || '-').split('#')[0]}`
+const rawAgent = agent
+agent = async (prompt, opts) => {
+  const prior = cutOffs.filter((c) => c.key === stepKey(opts)).pop()
+  // The Build phase writes its own, richer version of this notice; do not say it twice.
+  const notice = prior && !/ENDED FROM OUTSIDE/.test(prompt)
+    ? ` ⚠️ AN EARLIER AGENT IN THIS PHASE FOR THIS REPO WAS ENDED FROM OUTSIDE mid-work (the engine reported: ${prior.reason}) — not by anything it did wrong, and usually before it wrote a line. Nothing it had not already made durable survived. So do NOT assume any work it may have started is on disk: check what is actually there — commits on the branch, files it would have written, threads it would have posted — before you build on it, and do not redo what IS there.`
+    : ''
+  try { return await rawAgent(prompt + notice + CUTOFF_DISCIPLINE, opts) }
+  catch (e) {
+    const reason = String(e?.stdout || e?.message || e).trim().slice(-300)
+    if (CUT_OFF_RE.test(reason)) cutOffs.push({ key: stepKey(opts), label: opts?.label || '(unlabelled)', phase: opts?.phase || null, reason })
+    throw e
+  }
+}
 // C14 — MECHANICAL STEPS run on haiku, explicitly, so it never depends on an agent file staying
 // haiku: this resolver, the status mover, the ws-root/plan-guard/publish-request kickoff steps, the
 // run-state loader, and the Summary phase's incomplete-run DM. Every judgment agent (planner,
@@ -444,7 +482,6 @@ const BUILD_DISCIPLINE = ` BUILD DISCIPLINE (mandatory):
 • NEVER run a repo-wide formatter or autofix — no \`cargo fmt\`/\`clippy --fix\`, \`eslint .\`/\`prettier --write .\`, \`dart format .\`, \`gofmt -w .\`, or any whole-repo reformat. Format/lint ONLY the files you actually touched for this ticket; leave pre-existing drift in untouched files ALONE. A 50-file reformat diff that drowns the ticket change is itself a failure.
 • BOUND RED-TEST TRIAGE. Cap fixes at ${MAX_BUILD_TRIAGE} attempts per failing test. Before chasing a red, decide whether it is a FLAKY HARNESS rather than a real code failure — symptoms: passes/fails non-deterministically on re-run, shared or dirty fixtures, a query like fetch_optional resolving against MORE than one matching row, missing FK/seed data, leaked testcontainer state between tests. If it is the harness: fix FIXTURE ISOLATION / seeding (make the query deterministic) — do NOT loop trying to green a non-deterministic suite. If you cannot isolate it within the cap, FLAG it (status:"partial"/"blocked", name the flaky suite + cause in "remaining") and hand off; do not thrash.
 • LEAVE NO DIRTY TREE. The build ends in exactly ONE of two states: COMMITTED (your work is on the work branch as conventional commits) or PARKED. Ending with uncommitted changes and no record of them is a failure — the next run inherits them as an unexplained partial implementation and has to reverse-engineer your intent. If the work is not commit-ready, PARK it: prefer a WIP commit on the work branch (\`wip(<scope>): <what is unfinished> Refs ${ticket}\`); use \`git stash push -u -m "${ticket} <what>"\` only when a commit would break the branch for someone else. Then name WHICH you chose and WHERE the work now lives in "parked_at". \`git checkout .\`, \`git restore .\` and \`git reset --hard\` are FORBIDDEN — discarding work is a decision you were not asked to make. On ARRIVAL, if the tree is already dirty, account for it BEFORE writing new code (fold it into your plan or park it as above), and if the repo has a compile/typecheck step, get it passing before you add a new slice.
-• COMMIT AS YOU GO — YOUR ATTEMPT CAN END FROM OUTSIDE WITHOUT WARNING. Every rule above assumes you reach an ending you control. An interrupt, a timeout or a killed stream gives you none: the attempt stops mid-sentence, there is no last step to park in, and whatever is not already committed is gone. What replaces you starts from an EMPTY context and re-reads everything you read, so a plan batched into one commit at the end costs the whole attempt when it is cut, and costs it again on the next. So: land the FIRST slice as a commit early, before any exploration that slice does not need, and commit each slice the moment it is green rather than at the end. The work branch is the only thing that survives you — treat every commit as the handoff you might not get to write.
 • A NON-COMPLETE HANDOFF MUST BE ACTIONABLE. With status "partial"/"blocked", also fill "root_cause" (the MEASURED cause at file:line — never the word "unknown"), "commands_run" (each command you actually ran with its exit code), and "decision_needed" when the blocker is a fork only a human can settle. "needs human triage" on its own is not a handoff; it is the absence of one.`
 
 // Shared ADAPTER DISCIPLINE — appended to every prompt whose phase invokes a MUTATING adapter
@@ -1154,7 +1191,6 @@ const safeAgent = async (prompt, opts) => {
 // working and hand off", the second gets the truth plus a human action that says re-run rather than
 // go read the branch. Conflated, a person is sent to audit a branch nobody ever touched.
 const reasonFor = (label) => nonConvergences.filter((n) => n.label === label).map((n) => n.reason).pop() || ''
-const CUT_OFF_RE = /interrupted by user|request interrupted|stream ended without|timed out|timeout|deadline exceeded|SIGKILL|SIGTERM|killed/i
 
 // ── Ticket status — OWNED BY THE WORKFLOW (option 2: decoupled from per-repo agents) ──
 // The single ticket is shared by every repo it touches, so NO per-repo agent writes its
