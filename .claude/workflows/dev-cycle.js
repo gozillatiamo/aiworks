@@ -1690,6 +1690,15 @@ Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUA
 // WHAT DECIDES "FOREIGN". Every commit this workflow asks for carries `Refs <ticket>`, so a commit
 // in `origin/<base>..<branch>` that does not name the ticket is one the branch inherited rather
 // than earned. That is a signal the framework itself creates, which is why it can be trusted here.
+// It is also a TRAILER — it lives below the blank line, and `git log --oneline` never prints it.
+// That gap is not theoretical: this step handed the probe a subject-only command for the whole of
+// its first life, and on a real branch carrying three commits with `Refs` in the trailer it read
+// back "0 ticket commits, 4 foreign" — which is not merely a wrong number, it is the input that
+// selects the arm re-pointing the branch and deleting them. The read is a full-message match now,
+// and the two things it used to decide from that reading — the counts, and the command a person
+// runs — are computed from the list it returns instead. A probe that omits the list is not failed
+// over: the counts stand as it gave them and the hand-off falls back to prose, because ending a
+// repo on a missing field would be a worse answer than the one this step replaced.
 const BASE_GATE_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['repo', 'branch_exists', 'state', 'ticket_commits', 'foreign_commits', 'detail'],
@@ -1699,36 +1708,84 @@ const BASE_GATE_SCHEMA = {
     state: { enum: ['ok', 'repaired', 'unrepairable'] },
     ticket_commits: { type: 'integer' },     // commits in base..branch that DO name this ticket
     foreign_commits: { type: 'integer' },    // commits in base..branch that do NOT — the drift itself
+    // THE DRIFT ITSELF, not a total arrived at from it: every commit in `origin/<base>..<branch>` in
+    // git log order (newest first). The counts above are recomputed from THIS list, and the command a
+    // person runs is built from it — see driftFrom(). The probe reads; the workflow decides.
+    commits: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['sha', 'subject', 'ticket'],
+        properties: { sha: { type: 'string' }, subject: { type: 'string' }, ticket: { type: 'boolean' } },
+      },
+    },
     head_sha: { type: ['string', 'null'] },
     parked_at: { type: ['string', 'null'] }, // the stash ref uncommitted work went to, if any
-    rebase_command: { type: ['string', 'null'] }, // unrepairable only — what a person runs
+    backup_ref: { type: ['string', 'null'] }, // repaired only — the ref holding the branch as it was
     detail: { type: 'string' },
   },
+}
+// The counts and the rebase command are computed HERE, from the list the probe returned, because
+// both are places an agent has been measured getting it wrong on a real branch: it reported "0
+// ticket commits" for three that carried `Refs <ticket>` in their trailers, and it authored a
+// hand-off command ending `<oldest foreign>^` whose caret puts the foreign commit back INTO the
+// range the rebase exists to exclude — so running it would have changed nothing, and the halt that
+// demanded it would have been unclearable. A probe that reports what it read cannot make either
+// mistake; deriving from its list is the only way to be sure the two agree.
+function driftFrom(bs, rp, absR) {
+  bs.rebase_command = null
+  const commits = Array.isArray(bs.commits) ? bs.commits : []
+  if (!commits.length) return bs
+  const foreign = commits.filter((c) => c && !c.ticket)
+  const own = commits.filter((c) => c && c.ticket)
+  bs.ticket_commits = own.length
+  bs.foreign_commits = foreign.length
+  if (!foreign.length || !own.length) return bs
+  const backup = `backup/${ticket}-${String(commits[0].sha).slice(0, 7)}`
+  const save = `git -C ${absR} branch ${backup} ${rp.work_branch}`
+  // git log order is newest first, so a SMALLER index is a NEWER commit. One `--onto <boundary>`
+  // expresses the repair only when every foreign commit sits UNDER every one of the ticket's.
+  const newestForeign = commits.indexOf(foreign[0])
+  const oldestOwn = commits.indexOf(own[own.length - 1])
+  bs.rebase_command = newestForeign > oldestOwn
+    // `--onto <newbase> <boundary> <branch>` replays <boundary>..<branch> — the commits ABOVE the
+    // boundary. The boundary is therefore the NEWEST foreign commit itself and never `<sha>^`.
+    ? `${save} && git -C ${absR} rebase --onto origin/${rp.base_branch} ${foreign[0].sha} ${rp.work_branch}`
+    // Interleaved: no boundary exists that keeps every ticket commit and drops every foreign one, so
+    // the ticket's commits are replayed one by one, oldest first, onto the base.
+    : `${save} && git -C ${absR} switch --detach origin/${rp.base_branch} && git -C ${absR} cherry-pick ${own.slice().reverse().map((c) => c.sha).join(' ')} && git -C ${absR} branch -f ${rp.work_branch} HEAD && git -C ${absR} switch ${rp.work_branch}`
+  return bs
 }
 // Returns the verdict, or null when the probe did not converge. A null does NOT halt: today this
 // step does not exist at all, so a flaky probe must leave the normal case exactly where it was.
 async function reconcileBranchBase(repoId, rp, phaseName) {
   const absR = absOf(repoId)
-  return await safeAgent(
+  const bs = await safeAgent(
     `${tag(repoId, 'general-purpose', 'base-reconcile')} GIT ONLY — assert, and repair only what rule 3 below allows. Write no feature code, run no tests, touch no PR/MR and no tracker. ${shellClauseFor(repoId)}
 THE BASE THIS RUN RECORDED FOR ${repoId} IS \`${rp.base_branch}\` and the work branch is \`${rp.work_branch}\`. The base is a fact of the run, not something to re-derive: do NOT consult origin/HEAD, default-branch.sh, the branch prefix or the repo's usual default, and do not form an opinion about whether it is the right base.${baseIsSettled(rp.base_branch)}
 1. \`git -C ${absR} fetch origin\`. If \`git -C ${absR} rev-parse --verify --quiet refs/remotes/origin/${rp.base_branch}\` prints nothing, the base is not on the remote: return state:"ok" saying so and change NOTHING — the open-PR step reports a missing base, and it is not this step's job to duplicate that. Then \`git -C ${absR} rev-parse --verify --quiet refs/heads/${rp.work_branch}\`; if THAT prints nothing the branch does not exist yet and the build creates it from the base, so return branch_exists:false, state:"ok", both counts 0.
-2. COUNT THE DRIFT — \`git -C ${absR} log --oneline --no-decorate origin/${rp.base_branch}..${rp.work_branch}\` lists every commit the branch carries that the base does not. Split that list in two. A commit whose message mentions \`${ticket}\` is THIS TICKET'S OWN WORK — count it in ticket_commits. Every other commit is FOREIGN: it is on this branch because the branch was cut from something other than \`origin/${rp.base_branch}\` — count it in foreign_commits and name them (sha + subject) in detail.
-3. DECIDE, and do only what your case says:
-   • foreign_commits == 0 ⇒ state:"ok". The branch stands on this run's base. Change NOTHING — a branch that already carries this ticket's own commits is a build in progress, which is correct and is not drift.
-   • foreign_commits > 0 AND ticket_commits == 0 ⇒ REPAIR IT with step 4. Nothing of this ticket's own is on the branch, so re-pointing loses no work.
-   • foreign_commits > 0 AND ticket_commits > 0 ⇒ state:"unrepairable". Do NOT re-point (it would delete this ticket's own commits) and do NOT rebase (a conflict half-way through leaves the tree worse than you found it, with nobody watching). Change nothing, and return in rebase_command the command a PERSON can run: \`git -C ${absR} rebase --onto origin/${rp.base_branch} <the oldest foreign commit>^ ${rp.work_branch}\`, with that sha filled in.
+2. READ THE DRIFT with TWO commands, not one.
+   a. \`git -C ${absR} log --format='%H %s' origin/${rp.base_branch}..${rp.work_branch}\` — every commit the branch carries that the base does not, newest first.
+   b. \`git -C ${absR} log --format=%H --grep=${ticket} --regexp-ignore-case origin/${rp.base_branch}..${rp.work_branch}\` — which of those name the ticket ANYWHERE in the message.
+   Return every commit (a) printed in \`commits\`, in that order, each with its sha, its subject, and ticket:true exactly when its sha also appeared in (b). Do not filter the list, do not re-order it, and do not put in it a commit (a) did not print. The counts and any command a person needs are computed by the workflow FROM this list, so the list is your whole answer here.
+   ⚠️ RUN (b) — this is the one step of this brief that has been measured going wrong. \`--oneline\` and \`%s\` print the SUBJECT ONLY, and every commit this framework asks for carries \`Refs ${ticket}\` in the TRAILER, below the blank line, where a subject never shows it. A subject-only reading marks every one of this ticket's own commits foreign, and that is precisely the reading which authorises deleting them in step 3: on a real branch it returned 0 ticket commits where three carried the trailer, and the re-point below would have dropped all three.
+3. DECIDE from the list you just built, and do only what your case says:
+   • nothing with ticket:false ⇒ state:"ok". The branch stands on this run's base. Change NOTHING — a branch that already carries this ticket's own commits is a build in progress, which is correct and is not drift.
+   • some ticket:false, and NONE with ticket:true ⇒ REPAIR IT with step 4. Nothing of this ticket's own is on the branch, so re-pointing loses no work — which is exactly why 2(b) is not optional.
+   • some of each ⇒ state:"unrepairable". Do NOT re-point (it would delete this ticket's own commits) and do NOT rebase (a conflict half-way through leaves the tree worse than you found it, with nobody watching). Change NOTHING and author NO git command anywhere in your answer: the workflow builds what a person runs out of \`commits\`, which is how it stays right about which commits survive.
 4. THE REPAIR, in this order, every command anchored with \`-C\` (a standalone \`cd\` does not carry into your next tool call):
-   a. \`git -C ${absR} status --porcelain\`. If ANYTHING is uncommitted — tracked or untracked — park it FIRST: \`git -C ${absR} stash push -u -m "${ticket} base-repair"\`, and put the stash ref in parked_at. A clean tree leaves parked_at null.
-   b. \`git -C ${absR} checkout --detach origin/${rp.base_branch}\` — \`git branch -f\` refuses to move a branch that is checked out, so detach before you move it.
-   c. \`git -C ${absR} branch -f ${rp.work_branch} origin/${rp.base_branch}\`
-   d. \`git -C ${absR} switch ${rp.work_branch}\`
-   e. Only if you parked something in (a): \`git -C ${absR} stash pop\`. If the pop CONFLICTS, stop and leave the conflict exactly as it is — return state:"unrepairable" with parked_at naming the stash and the conflicting paths in detail, because resolving someone's uncommitted work against a different base is a person's call, not yours.
-   f. PROVE IT with a SECOND read: \`git -C ${absR} rev-parse HEAD\` and \`git -C ${absR} log --oneline origin/${rp.base_branch}..${rp.work_branch}\`. state:"repaired" ONLY when that log prints nothing but this ticket's own commits (here, none). Report the sha in head_sha and both readings in detail.
+   a. \`git -C ${absR} ls-files -u\`. Anything it prints means the index carries unmerged stages, and NOTHING below — not the park, not the re-point — can run against it. Ask whether an operation is actually live: \`git -C ${absR} rev-parse --verify --quiet MERGE_HEAD REBASE_HEAD CHERRY_PICK_HEAD REVERT_HEAD\`. If that prints a sha, a merge or rebase is in progress and finishing it is a person's call — return state:"unrepairable" naming the paths in detail. If it prints NOTHING, the stages are debris left by an earlier park that failed half-way: clear them with \`git -C ${absR} reset -- <each path ls-files -u named>\`, which rewrites those index entries from HEAD and does not touch the files in the working tree, then re-read \`ls-files -u\` to prove it is empty and say in detail what you cleared.
+   b. \`git -C ${absR} status --porcelain\`. If ANYTHING is uncommitted — tracked or untracked — park it FIRST: \`git -C ${absR} stash push -u -m "${ticket} base-repair"\`, and put the stash ref in parked_at. If that command exits non-zero, STOP THERE: return state:"unrepairable" with its stderr in detail and parked_at null. Going on past a park that failed is how the re-point below destroys the very work the park was there to protect. A clean tree leaves parked_at null.
+   c. SAVE THE BRANCH BEFORE YOU MOVE IT: \`git -C ${absR} branch backup/${ticket}-<the first 7 characters of the branch tip> ${rp.work_branch}\`, and put that ref name in backup_ref. It costs one command and it is the whole difference between a misread of step 2 being an inconvenience and being unrecoverable.
+   d. \`git -C ${absR} checkout --detach origin/${rp.base_branch}\` — \`git branch -f\` refuses to move a branch that is checked out, so detach before you move it.
+   e. \`git -C ${absR} branch -f ${rp.work_branch} origin/${rp.base_branch}\`
+   f. \`git -C ${absR} switch ${rp.work_branch}\`
+   g. Only if you parked something in (b): \`git -C ${absR} stash pop\`. If the pop CONFLICTS, stop and leave the conflict exactly as it is — return state:"unrepairable" with parked_at naming the stash and the conflicting paths in detail, because resolving someone's uncommitted work against a different base is a person's call, not yours.
+   h. PROVE IT with a SECOND read: \`git -C ${absR} rev-parse HEAD\` and \`git -C ${absR} log --format='%H %s' origin/${rp.base_branch}..${rp.work_branch}\`. state:"repaired" ONLY when that log prints nothing at all (a repair is only allowed where none of this ticket's commits were at stake). Report the sha in head_sha, the backup ref in backup_ref, and both readings in detail.
 ⚠️ NEVER \`git reset --hard\`, \`git checkout .\`, \`git restore .\`, \`git clean\`, or a force-push. Uncommitted work is parked, never discarded: the ONE thing this step must not do is destroy work it was sent to protect. If you cannot complete the repair, saying so in state:"unrepairable" is the right answer and costs nothing.
 Return the structured result with repo=${repoId}.` + ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
     { agentType: 'general-purpose', model: 'sonnet', phase: phaseName, label: `base-reconcile:${ticket}:${repoId}`, schema: BASE_GATE_SCHEMA },
   )
+  return bs ? driftFrom(bs, rp, absR) : null
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1936,9 +1993,22 @@ async function runRepoPipeline(rp, desc, branchKind) {
       record('branch-base', why, bs.rebase_command ? `rebase it yourself, then re-run: ${bs.rebase_command}` : `re-cut ${rp.work_branch} from origin/${rp.base_branch}, replay ${ticket}'s commits onto it, then re-run`)
       log(`⛔ [${R}] BRANCH BASE UNREPAIRABLE — ${why} Nothing is built on it: \`git diff ${rp.base_branch}...${rp.work_branch}\` would show ${bs.foreign_commits} foreign commit(s), so every reviewer and every gate downstream would be judging the wrong comparison (docs/adr/0025).`)
       return { repo: R, status: 'target-branch-halt', plan: rp, blocking, base_repair: bs, handoff: { status: 'blocked', summary: `the work branch does not stand on this run's base (${rp.base_branch})`, remaining: why, decision_needed: 'rebase this ticket\'s commits onto the run\'s base by hand, or change the run\'s base, then re-run' } }
+    } else if (bs.state === 'repaired' && bs.ticket_commits > 0) {
+      // A repair is only ever allowed where NONE of this ticket's commits were at stake, so a
+      // "repaired" verdict whose own commit list contains this ticket's work is a self-contradiction
+      // — and the half that already happened is the destructive half. It is the exact shape of the
+      // measured near-miss: a subject-only reading called three of the ticket's commits foreign and
+      // the re-point arm was the one that reading selects. The work is in the backup ref and only a
+      // person can decide what to replay, so this stops here rather than building over an empty
+      // branch and opening a PR whose diff quietly lacks what was already written.
+      const recover = bs.backup_ref ? `git -C ${absR} branch -f ${rp.work_branch} ${bs.backup_ref}` : `git -C ${absR} reflog ${rp.work_branch}`
+      const why = `${R}'s branch base was re-pointed at ${rp.base_branch} as a repair, but the same probe reported ${bs.ticket_commits} of ${ticket}'s OWN commit(s) in the drift it repaired — a repair is only permitted where there are none, so that re-point dropped this ticket's work. ${bs.detail}`
+      record('branch-base', why, `restore the branch, then re-run: ${recover}`)
+      log(`⛔ [${R}] BRANCH BASE REPAIR CONTRADICTS ITSELF — ${why} Recover with \`${recover}\`${bs.backup_ref ? '' : ' (no backup ref was reported, so the tip has to come out of the reflog)'}.`)
+      return { repo: R, status: 'target-branch-halt', plan: rp, blocking, base_repair: bs, handoff: { status: 'blocked', summary: `a base repair dropped ${bs.ticket_commits} of ${ticket}'s own commit(s)`, remaining: why, decision_needed: `restore ${rp.work_branch} from ${bs.backup_ref || 'the reflog'} and re-run, or say which of those commits should not come back` } }
     } else if (bs.state === 'repaired') {
       baseRepair = bs
-      log(`🔧 [${R}] BRANCH BASE REPAIRED as its own accounted step — ${rp.work_branch} carried ${bs.foreign_commits} commit(s) that were not ${ticket}'s and has been re-pointed at origin/${rp.base_branch}${bs.parked_at ? ` (uncommitted work parked at ${bs.parked_at} and restored)` : ''}. ${bs.detail} The build round below therefore starts on the right base and spends its WHOLE slice budget on ${ticket}'s own work — it is not one of the ${BUILD.maxContinuationPasses} continuation passes.`)
+      log(`🔧 [${R}] BRANCH BASE REPAIRED as its own accounted step — ${rp.work_branch} carried ${bs.foreign_commits} commit(s) that were not ${ticket}'s and has been re-pointed at origin/${rp.base_branch}${bs.parked_at ? ` (uncommitted work parked at ${bs.parked_at} and restored)` : ''}${bs.backup_ref ? `; the branch as it was is kept at ${bs.backup_ref}` : ''}. ${bs.detail} The build round below therefore starts on the right base and spends its WHOLE slice budget on ${ticket}'s own work — it is not one of the ${BUILD.maxContinuationPasses} continuation passes.`)
     } else if (bs.branch_exists && bs.ticket_commits) {
       log(`[${R}] branch base OK — ${rp.work_branch} stands on ${rp.base_branch} and already carries ${bs.ticket_commits} of ${ticket}'s own commit(s).`)
     } else {
@@ -3121,12 +3191,32 @@ if (!scopeAttempt) {
 scope = scopeAttempt
 trackerReachable = scope.tracker_reachable !== false
 if (!trackerReachable) log('⚠️ TRACKER UNREACHABLE — ticket Status moves, comments, and /clarifying-ticket improvement tickets will NOT persist this run; all ticket-tracking is best-effort. Flagged in the run result + summary.')
-const scoped = (scope.repos || []).filter((r) => REPOS[r.repo])
+let scoped = (scope.repos || []).filter((r) => REPOS[r.repo])
+// This case used to end the run outright, reasoning that the scope had CONVERGED and merely named
+// repos the workspace does not register — a fact about the registry or the ticket that no re-ask
+// changes. The measurement says otherwise: a scope came back as `[{"repo":"<repo>_PLACEHOLDER",
+// "summary":"placeholder"}]`, which is schema-valid and is not an answer at all, it is a template.
+// SCHEMA-VALID IS NOT ANSWERED. A structured non-answer is the same non-convergence the retry above
+// exists for, and it costs the same one cheap agent to rule out — against a run that otherwise ends
+// before Kickoff and needs a person to notice and re-invoke it. If the second reading names nothing
+// registered either, the original reasoning holds and the stop below is the right ending.
 if (!scoped.length) {
-  // Same reasoning as the retry above: a report beats a stack trace. This one is not worth a second
-  // agent, though — the scope CONVERGED, it just named repos this workspace does not register, which
-  // is a fact about the registry or the ticket that no re-ask changes.
-  log(`⛔ [scope] the scoping stage named no REGISTERED repo for ${ticket} (it returned: ${JSON.stringify(scope.repos)}; registered: ${Object.keys(REPOS).join(', ')}). Nothing can be branched or planned.`)
+  log(`⚠️ [scope] the scoping stage named no REGISTERED repo for ${ticket} (it returned: ${JSON.stringify(scope.repos)}) — asking ONCE more before ending the run, because a well-formed answer naming nothing real is a non-answer, not a verdict.`)
+  const rescope = await safeAgent(
+    `${tag('all', 'cto', 'scope', 2)} Your scoping pass for ${ticket} returned ${JSON.stringify(scope.repos)} — not one of those is a repo this workspace holds, so the run cannot branch or plan anything from it. If any of those look like a template or a placeholder rather than a reading of the ticket, that is what happened: answer from the ticket this time. Read it ONCE via \`scripts/tracker/get-ticket-details.sh ${ticket}\` and choose ONLY from the registered repos, spelled exactly as listed here: ${Object.keys(REPOS).join(', ')}. The registered cross-repo test-suite repo(s) are ${testSuiteRepoIds.length ? testSuiteRepoIds.join(', ') : 'none'}. Return the structured scope: for each touched repo { repo, depends_on, summary }, plus test_suite.needed, tracker_reachable, out_of_reach (\`[]\` is the normal answer), deliverable_now, and \`title\` + \`acceptance\` copied VERBATIM from the ticket. If the ticket genuinely belongs to a repo not on that list, return \`repos: []\` and say so in the summary of nothing — do NOT invent an id to fill the field, and do NOT return a placeholder.`,
+    { agentType: 'cto', model: 'opus', effort: 'high', phase: 'Scope', label: `scope-registry-retry:${ticket}`, schema: SCOPE_SCHEMA },
+  )
+  if (rescope && (rescope.repos || []).some((r) => REPOS[r.repo])) {
+    scope = rescope
+    trackerReachable = scope.tracker_reachable !== false
+    scoped = (scope.repos || []).filter((r) => REPOS[r.repo])
+    log(`[scope] the second reading named ${scoped.map((r) => r.repo).join(', ')} — continuing.`)
+  }
+}
+if (!scoped.length) {
+  // Asked twice now. A report beats a stack trace, and this ending is a fact about the registry or
+  // the ticket rather than a flaky agent: two readings named nothing this workspace holds.
+  log(`⛔ [scope] the scoping stage named no REGISTERED repo for ${ticket} in 2 attempts (it returned: ${JSON.stringify(scope.repos)}; registered: ${Object.keys(REPOS).join(', ')}). Nothing can be branched or planned.`)
   const summary = await writeSummary('scope-unresolved', { ticket, returned: scope.repos, registered: Object.keys(REPOS), decision_needed: 'whether the ticket belongs to a repo this workspace does not hold, or the repo registry is missing one' })
   return { ticket, status: 'scope-unresolved', decision_needed: `${ticket} was scoped to repos this workspace does not register (${JSON.stringify(scope.repos)}); the registered set is ${Object.keys(REPOS).join(', ')}. Either the ticket belongs elsewhere, or a repo is missing from products[].repos[] in workspace.config.yaml. Nothing was branched, planned or written.`, summary, spend }
 }

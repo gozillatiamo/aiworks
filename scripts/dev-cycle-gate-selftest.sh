@@ -162,7 +162,8 @@ async function runOnce(argsStr, canned, opts = {}) {
     if (label && label.startsWith('base-reconcile:') && !(label in canned)) {
       const repo = label.split(':').pop()
       return { repo, branch_exists: true, state: 'ok', ticket_commits: 1, foreign_commits: 0,
-               head_sha: 'sha-head', parked_at: null, rebase_command: null, detail: 'branch stands on the run base' }
+               commits: [{ sha: 'sha-head', subject: 'feat(FM-12): a slice', ticket: true }],
+               head_sha: 'sha-head', parked_at: null, backup_ref: null, detail: 'branch stands on the run base' }
     }
     // The known-false-red screen fires on every FAILING round in a repo that declares any — which is
     // 'db' in this fixture — so it gets the same default treatment as the three probes above: the
@@ -1745,12 +1746,16 @@ const BASE = {
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
       }
       if (SCENARIO === 'G45') {
-        canned['base-reconcile:FM-12:db'] = { repo: 'db', branch_exists: true, state: 'repaired', ticket_commits: 0, foreign_commits: 12,
-          head_sha: 'sha-repaired', parked_at: 'stash@{0}', rebase_command: null, detail: 're-pointed at origin/develop; 12 inherited commits dropped' }
+        canned['base-reconcile:FM-12:db'] = { repo: 'db', branch_exists: true, state: 'repaired', ticket_commits: 0, foreign_commits: 2,
+          commits: [{ sha: 'sha-inh2', subject: 'chore: inherited', ticket: false }, { sha: 'sha-inh1', subject: 'chore: inherited', ticket: false }],
+          head_sha: 'sha-repaired', parked_at: 'stash@{0}', backup_ref: 'backup/FM-12-sha-inh', detail: 're-pointed at origin/develop; inherited commits dropped' }
       }
       if (SCENARIO === 'G45_UNREPAIRABLE') {
-        canned['base-reconcile:FM-12:db'] = { repo: 'db', branch_exists: true, state: 'unrepairable', ticket_commits: 3, foreign_commits: 12,
-          head_sha: 'sha-mixed', parked_at: null, rebase_command: 'git -C /tmp/ws/db rebase --onto origin/develop sha-fork feature/FM-12', detail: 'the branch carries this ticket\'s commits on top of 12 it inherited' }
+        canned['base-reconcile:FM-12:db'] = { repo: 'db', branch_exists: true, state: 'unrepairable', ticket_commits: 3, foreign_commits: 2,
+          commits: [{ sha: 'sha-t3', subject: 'feat: c', ticket: true }, { sha: 'sha-t2', subject: 'feat: b', ticket: true },
+            { sha: 'sha-t1', subject: 'feat: a', ticket: true }, { sha: 'sha-fork', subject: 'chore: inherited', ticket: false },
+            { sha: 'sha-fork0', subject: 'chore: inherited', ticket: false }],
+          head_sha: 'sha-mixed', parked_at: null, backup_ref: null, detail: 'the branch carries this ticket\'s commits on top of ones it inherited' }
       }
       const FLAKE = 'cursor-agent exited 1: Cursor stream ended without a successful result event'
       const result = await runOnce(ARGS, canned, SCENARIO === 'G45_FLAKE' ? { throwOn: ['base-reconcile:FM-12:db'], throwMessage: FLAKE } : {})
@@ -1783,6 +1788,112 @@ const BASE = {
         report('G45_healthy_brief_carries_no_repair_clause', !/THE BRANCH BASE WAS ALREADY REPAIRED FOR YOU/.test(buildPrompt))
         report('G45_healthy_run_records_no_non_convergence', !(result?.summary?.non_convergences || []).length, `recorded=${JSON.stringify(result?.summary?.non_convergences || [])}`)
         report('G45_healthy_repo_still_reaches_ready', !!result && result.status !== 'repo-unresolved')
+      }
+    } else if (SCENARIO.startsWith('G54')) {
+      // The branch-base probe returns FACTS and the workflow decides. Measured on one ticket, both
+      // halves went wrong at once: the probe was handed `git log --oneline`, which prints only the
+      // SUBJECT, while this framework's own convention puts `Refs <ticket>` in the commit TRAILER —
+      // so a branch carrying three of the ticket's commits read as "0 ticket, 4 foreign", which is
+      // the arm that re-points the branch and DELETES them. And the rebase command it handed a
+      // person for the other arm ended `<oldest foreign>^`, whose caret puts the foreign commit
+      // back INTO the range it is there to exclude, so running it changes nothing a re-run can see.
+      const commits = {
+        stacked: [   // git log order: newest first. Foreign sits UNDER this ticket's own work.
+          { sha: 'sha-t3', subject: 'docs(app): correct the documented line numbers', ticket: true },
+          { sha: 'sha-t2', subject: 'test(app): assert the panel stays confined', ticket: true },
+          { sha: 'sha-t1', subject: 'feat(app): show the instruction panel', ticket: true },
+          { sha: 'sha-f1', subject: 'chore: regenerate the generated mirror', ticket: false },
+        ],
+        interleaved: [   // a foreign commit ABOVE one of the ticket's — no single boundary expresses it
+          { sha: 'sha-t2', subject: 'test(app): assert the panel stays confined', ticket: true },
+          { sha: 'sha-f2', subject: 'chore: unrelated', ticket: false },
+          { sha: 'sha-t1', subject: 'feat(app): show the instruction panel', ticket: true },
+          { sha: 'sha-f1', subject: 'chore: regenerate the generated mirror', ticket: false },
+        ],
+      }
+      const DONE = { work_branch: 'feature/FM-12', summary: 'all slices landed', status: 'complete', fixed: ['db/src/x.ts'] }
+      const drift = SCENARIO === 'G54_INTERLEAVED' ? commits.interleaved : commits.stacked
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': DONE,
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { approved: true },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
+        // The probe reports what it READ. It no longer authors a command, and the two integers are
+        // deliberately the WRONG ones a subject-only read produced — the workflow must count the
+        // list it was given rather than trust a total the probe arrived at some other way.
+        'base-reconcile:FM-12:db': { repo: 'db', branch_exists: true, state: SCENARIO === 'G54_LOST' ? 'repaired' : 'unrepairable',
+          ticket_commits: 0, foreign_commits: 4, commits: drift, head_sha: 'sha-t3',
+          parked_at: null, backup_ref: 'backup/FM-12-sha-t3', detail: 'drift read off the branch' },
+      }
+      const result = await runOnce(ARGS, canned, {})
+      const blocking = JSON.stringify(result?.blockingByRepo || [])
+      const probePrompt = PROMPTS['base-reconcile:FM-12:db'] || ''
+      if (SCENARIO === 'G54') {
+        report('G54_the_boundary_is_the_newest_foreign_commit_with_no_caret',
+          blocking.includes('rebase --onto origin/develop sha-f1 feature/FM-12') && !blocking.includes('sha-f1^'),
+          blocking.slice(0, 400))
+        report('G54_the_branch_is_saved_before_the_person_rewrites_it', blocking.includes('branch backup/FM-12-sha-t3 feature/FM-12'))
+        report('G54_the_halt_counts_the_list_it_was_given_not_the_probes_total',
+          blocking.includes('3 that are') && !blocking.includes('0 that are'), blocking.slice(0, 300))
+      } else if (SCENARIO === 'G54_INTERLEAVED') {
+        report('G54_interleaved_history_is_not_given_a_single_boundary_rebase', !blocking.includes('rebase --onto'), blocking.slice(0, 300))
+        report('G54_interleaved_history_is_replayed_commit_by_commit_oldest_first', blocking.includes('cherry-pick sha-t1 sha-t2'), blocking.slice(0, 400))
+      } else if (SCENARIO === 'G54_LOST') {
+        report('G54_a_repair_that_dropped_the_tickets_own_commits_is_not_reported_as_success',
+          LINES.some((l) => l.includes('BRANCH BASE REPAIR CONTRADICTS ITSELF')), LINES.filter((l) => l.includes('BRANCH BASE')).join(' | ').slice(0, 300))
+        report('G54_the_backup_ref_is_named_so_the_work_can_be_recovered', blocking.includes('backup/FM-12-sha-t3'), blocking.slice(0, 300))
+      } else {
+        report('G54_probe_is_told_to_match_the_whole_message', /--grep=FM-12/.test(probePrompt))
+        report('G54_probe_is_told_where_the_reference_actually_lives', /TRAILER/.test(probePrompt) && /--oneline/.test(probePrompt))
+        report('G54_probe_no_longer_authors_the_rebase_command', !/rebase --onto/.test(probePrompt))
+        report('G54_repair_checks_for_an_index_a_failed_park_wedged', /ls-files -u/.test(probePrompt) && /MERGE_HEAD/.test(probePrompt))
+        report('G54_repair_stops_when_the_park_itself_fails', /exits non-zero/.test(probePrompt))
+        report('G54_repair_saves_the_branch_before_moving_it', /branch backup\//.test(probePrompt))
+      }
+    } else if (SCENARIO.startsWith('G55')) {
+      // The scoping stage got ONE bounded retry, for the case where it returned nothing structured,
+      // on the reasoning that a non-converging agent is the cheapest thing in the run to ask twice.
+      // The case where it returns a well-formed NON-ANSWER got none, because the code read "parsed"
+      // as "converged". Measured: a scope came back `[{"repo":"<repo>_PLACEHOLDER","summary":
+      // "placeholder"}]` — schema-valid, and a template rather than a reading of the ticket. The run
+      // ended before Kickoff and a person had to re-invoke it; the plain retry that fixed it is the
+      // one this stage already knows how to do.
+      const DONE = { work_branch: 'feature/FM-12', summary: 'all slices landed', status: 'complete', fixed: ['db/src/x.ts'] }
+      const goodScope = { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+        repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true }
+      const placeholderScope = { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+        repos: [{ repo: 'db_PLACEHOLDER', summary: 'placeholder' }], test_suite: { needed: false }, tracker_reachable: true }
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': placeholderScope,
+        'scope-registry-retry:FM-12': SCENARIO === 'G55_TWICE' ? placeholderScope : goodScope,
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': DONE,
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { approved: true },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
+      }
+      const result = await runOnce(ARGS, canned, {})
+      if (SCENARIO === 'G55_TWICE') {
+        report('G55_a_second_non_answer_still_stops_the_run', !!result && result.status === 'scope-unresolved', `status=${result && result.status}`)
+        report('G55_the_stop_says_what_came_back', JSON.stringify(result?.decision_needed || '').includes('db_PLACEHOLDER'))
+      } else {
+        report('G55_a_scope_naming_no_registered_repo_is_asked_once_more', SPAWNED.includes('scope-registry-retry:FM-12'))
+        report('G55_the_retry_is_told_which_repos_exist', /registered/.test(PROMPTS['scope-registry-retry:FM-12'] || '') && /db_PLACEHOLDER/.test(PROMPTS['scope-registry-retry:FM-12'] || ''))
+        report('G55_the_run_carries_on_instead_of_ending_before_kickoff', !!result && result.status !== 'scope-unresolved', `status=${result && result.status}`)
+        report('G55_and_it_plans_the_repo_the_retry_named', SPAWNED.includes('kickoff:FM-12:db'))
       }
     } else if (SCENARIO.startsWith('G46')) {
       // A repo declares its own known_false_reds, every prose surface says to rule one out against
@@ -2722,6 +2833,24 @@ out="$(run_scenario G50_CUT)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | 
 
 echo "── G53 — a probe of live state is re-asked on the next invocation; a producing step keeps its memo"
 out="$(run_scenario G53)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G54 — the branch-base probe reports what it read; the workflow decides what a person runs"
+out="$(run_scenario G54_BRIEF)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G54 — the rebase handed to a person drops the foreign commits and saves the branch first"
+out="$(run_scenario G54)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G54 — an interleaved history gets a replay, not a boundary that would swallow ticket commits"
+out="$(run_scenario G54_INTERLEAVED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G54 — a repair that dropped the ticket's own commits is caught, not reported as success"
+out="$(run_scenario G54_LOST)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G55 — a scope that names no registered repo is asked once more before the run ends"
+out="$(run_scenario G55)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G55 — a second non-answer still stops the run"
+out="$(run_scenario G55_TWICE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G46 — a declared false red confirmed on the base is recorded, not retried"
 out="$(run_scenario G46)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
