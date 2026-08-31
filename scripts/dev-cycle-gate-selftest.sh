@@ -2018,6 +2018,20 @@ const BASE = {
         const missing = Object.keys(PROMPTS).filter((k) => !RETURNS.test(PROMPTS[k] || ''))
         return { ok: Object.keys(PROMPTS).length > 0 && missing.length === 0, missing }
       }
+      // G51 told every brief to return before the ceiling, and named the wrong ceiling: a step
+      // count. Measured over 235 agents of this workflow's own runs, a step count barely predicts
+      // anything — the killed agents ran 22 to 411 steps and the survivors 4 to 527, and 64 of the
+      // 90 deaths happened before the 80 steps G51 warned at. Context does predict it: 84 of those
+      // 90 were past 160k input tokens, none ever got past 170,912, and the agents that finished
+      // averaged 71k. So the brief has to name the thing that actually fills — and the read
+      // discipline that controls how fast it fills, since 9% of results (the ones over 8 KB) were
+      // 56% of everything the killed agents spent.
+      const CONTEXT = /WHAT ACTUALLY ENDS YOU IS CONTEXT, NOT TURNS/
+      const READS = /grep the decisive lines/
+      const everyBriefKnowsTheUnit = () => {
+        const missing = Object.keys(PROMPTS).filter((k) => !CONTEXT.test(PROMPTS[k] || ''))
+        return { ok: Object.keys(PROMPTS).length > 0 && missing.length === 0, missing }
+      }
       if (SCENARIO === 'G50_ROLES') {
         // Empty run state, so the phases that spawn the widest set of roles all run: kickoff and
         // the reviewers reach the engine through raw agent() calls of their own, NOT through the
@@ -2045,6 +2059,10 @@ const BASE = {
         report('G51_every_brief_of_every_role_is_told_to_return_before_the_ceiling', early.ok, `missing: ${early.missing.join(', ')}`)
         report('G51_a_gate_brief_that_already_says_it_is_not_told_twice',
           ((PROMPTS['review:FM-12:db#1'] || '').match(/BEFORE YOU RUN OUT OF TURNS/g) || []).length === 1)
+        const unit = everyBriefKnowsTheUnit()
+        report('G52_every_brief_of_every_role_is_told_the_ceiling_is_context_not_turns', unit.ok, `missing: ${unit.missing.join(', ')}`)
+        report('G52_a_gate_hears_the_context_rule_even_though_its_return_rule_is_deduped',
+          CONTEXT.test(PROMPTS['review:FM-12:db#1'] || ''))
       } else {
         // Resumed repos, so the only thing left to run is the QA gate — the exact phase and role
         // the second report named (a suite runner, 172 messages in, ended from outside).
@@ -2078,6 +2096,14 @@ const BASE = {
           report('G51_the_qa_gate_brief_is_told_to_return_before_the_ceiling', RETURNS.test(PROMPTS['test-suite:FM-12:e2e'] || ''))
           report('G51_every_brief_of_every_phase_is_told_to_return_before_the_ceiling', early.ok, `missing: ${early.missing.join(', ')}`)
           report('G51_a_clean_run_narrows_nobodys_ask', !Object.keys(PROMPTS).some((k) => /SMALLEST USEFUL INCREMENT/.test(PROMPTS[k] || '')))
+          const unit = everyBriefKnowsTheUnit()
+          report('G52_every_brief_of_every_phase_is_told_the_ceiling_is_context_not_turns', unit.ok, `missing: ${unit.missing.join(', ')}`)
+          report('G52_every_brief_carries_the_read_discipline_that_controls_it',
+            READS.test(PROMPTS['test-suite:FM-12:e2e'] || ''))
+          report('G52_no_brief_still_names_the_step_count_the_measurement_disproved',
+            !Object.keys(PROMPTS).some((k) => /roughly 80 tool calls/.test(PROMPTS[k] || '')))
+          report('G52_a_partial_is_told_to_hand_over_what_it_learned',
+            /what you LEARNED/.test(PROMPTS['test-suite:FM-12:e2e'] || ''))
         }
       }
     } else if (SCENARIO === 'G42_FP') {
@@ -2638,10 +2664,10 @@ out="$(run_scenario G49)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 
 echo "── G49_CLEAN — a branch with nothing on it is not told it carries prior work"
 out="$(run_scenario G49_CLEAN)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
-echo "── G50/G51 — every brief carries the cut-off rule AND the return-before-the-ceiling rule; a clean run says nothing more"
+echo "── G50/G51/G52 — every brief carries the cut-off rule, the return rule, and the context (not turn) rule it is measured in"
 out="$(run_scenario G50)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
-echo "── G50_ROLES/G51 — both rules reach the planner and reviewer briefs that bypass the wrapper"
+echo "── G50_ROLES/G51/G52 — all three rules reach the planner and reviewer briefs that bypass the wrapper"
 out="$(run_scenario G50_ROLES)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G50_CUT/G51 — a QA gate ended from outside is told to the next agent, whose ask is NARROWED"

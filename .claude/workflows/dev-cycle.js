@@ -329,7 +329,35 @@ const CUTOFF_DISCIPLINE = ` DURABILITY (mandatory, whatever your phase): YOUR AT
 // workflow already CONTINUES a partial (build.maxContinuationPasses, review.max_rounds,
 // test_suite.max_fix_rounds). An honest partial plus a continuation is cheaper than one killed
 // attempt, and infinitely cheaper than the relaunch that follows it.
-const RETURN_DISCIPLINE = ` RETURN BEFORE YOU RUN OUT OF TURNS (mandatory, whatever your phase). Your turn budget is finite and your structured result is your LAST action, so it is the one thing you can lose by running long — and losing it scores this step as if you had never run, however good the work was. That is measured, not hypothetical: gate rounds have ended at 100, 101 and 100 tool calls with the verdict never returned, and a suite runner has been killed at 172 and again at 181 messages the same way. Past roughly 80 tool calls you are in that zone. So do not START anything new there: finish the step already in flight, make it durable, and RETURN. Return the structured result your schema requires, filled with what is TRUE so far — "partial, and here is exactly what remains", "approved:false, and here is what I could not finish", a gate reported unavailable with its reason. Every one of those is a real answer the workflow can act on and continue from. Silence is the only outcome that costs the whole attempt, and it is never the honest one. Returning early is NOT scored as failing and does not shorten the requirement: the workflow continues a partial from what you left behind, so the work still gets finished — just not all in your attempt. Investigating less is the wrong lesson; returning earlier is the right one.`
+const RETURN_DISCIPLINE = ` RETURN BEFORE YOU RUN OUT OF TURNS (mandatory, whatever your phase). Your room is finite and your structured result is your LAST action, so it is the one thing you can lose by running long — and losing it scores this step as if you had never run, however good the work was. That is measured, not hypothetical: 90 agents of this workflow have been killed that way, holding everything, and every one of them was scored as never having run. What you have to watch is NOT a step count — see CONTEXT DISCIPLINE below for the thing that actually runs out, and for how to keep it. When you are near it, do not START anything new: finish the step already in flight, make it durable, and RETURN. Return the structured result your schema requires, filled with what is TRUE so far — "partial, and here is exactly what remains", "approved:false, and here is what I could not finish", a gate reported unavailable with its reason. Every one of those is a real answer the workflow can act on and continue from. Silence is the only outcome that costs the whole attempt, and it is never the honest one. Returning early is NOT scored as failing and does not shorten the requirement: the workflow continues a partial from what you left behind, so the work still gets finished — just not all in your attempt. Investigating less is the wrong lesson; returning earlier is the right one. AND MAKE THE PARTIAL WORTH SOMETHING: whoever continues you starts from an EMPTY context and will otherwise re-read every file you read, paying your entire bill again to learn what you already know. So spend your closing lines on what you LEARNED, not on what you attempted — the paths and line numbers that matter, the one command that reproduces it, what you have already ruled out, the exact next step. A partial that hands over knowledge costs this run one cheap continuation; a partial that hands over nothing costs it a whole second attempt at full price.`
+
+// ── AND THE UNIT THE TWO RULES ABOVE WERE GETTING WRONG ───────────────────────────────────────────
+// Everything in this file that bounds an agent has been counting TURNS: "the canonical ceiling",
+// VERDICT_BEFORE_BUDGET's "three rounds ended at 100/101/100 tool calls", RETURN_DISCIPLINE's
+// "past roughly 80 tool calls". The transcripts of this workflow's own runs say a turn count barely
+// predicts anything. 235 agents, of which 90 were killed and 145 finished:
+//
+//   killed    context 95k..170,912  mean 163,953   steps  22..411
+//   finished  context 18k..167,327  mean  70,750   steps   4..527
+//
+// A step count separates those two populations almost not at all — an agent died at 22 steps and
+// another finished at 527 — and the rule this file shipped ("past roughly 80") misses 64 of the 90
+// deaths while cutting short 11 agents that were going to finish. Context separates them cleanly:
+// 84 of the 90 deaths are past 160k input tokens, and no agent in that set ever got past 170,912.
+// The wall itself is the runtime's, not this workspace's, and it tracks whatever window the session
+// was given — measure it with scripts/agent-context-ceiling.sh rather than trusting this number.
+//
+//   predictor            precision   recall
+//   context >= 160k        91.3%      93.3%
+//   steps >= 80            70.3%      28.9%
+//
+// So the number to hand an agent is a volume, not a count. And the volume is winnable, because the
+// spend is lopsided: of the 3,891 results those killed agents pulled in, the median was ~1 KB and
+// cost nothing, while the 9% over 8 KB were 56% of everything they spent. This workspace already
+// knows that rule — `docs/agents/headroom.md`, and the hooks that enforce it on a root session —
+// but a spawned agent gets no such hook on a command's output, and that is where its context goes.
+// Halving the fat reads moves a 165k death into the band where 145 agents finished.
+const CONTEXT_DISCIPLINE = ` CONTEXT DISCIPLINE — WHAT ACTUALLY ENDS YOU IS CONTEXT, NOT TURNS (mandatory, whatever your phase). Measured across 235 agents of this workflow's own runs: 90 were killed mid-work and 145 finished, and what separates them is not how many steps they took — the killed ones ran 22 to 411 steps, the survivors 4 to 527 — it is how much they had pulled into context. 84 of the 90 deaths were past 160,000 input tokens, no agent in that set ever got past 170,912, and the agents that finished averaged 71,000. Nothing is ever freed: every file, log and diff you read stays in front of you for the rest of your life and is re-sent on every step after it, so a big read is not paid once, it is paid again on every turn you have left. The spend is also lopsided, which is what makes this winnable — of 3,891 results those killed agents pulled in, the median was about 1 KB and cost nothing, while the 9% that were over 8 KB were 56% of everything they spent. So the whole game is the fat reads, and four habits win it. (1) Never read a whole file when a range or a grep answers the question — read the lines you need. (2) Send verbose command output to a file and grep the decisive lines out of it (\`<cmd> > /tmp/x.log 2>&1\`, then \`grep -n <pattern> /tmp/x.log\` or \`tail -n 30 /tmp/x.log\`) instead of letting it land whole. (3) Never re-read a file you have already read — you still have it. (4) Do not quote long output back in your own message; that pays for it a second time. Keep a rough running count of what you have pulled in: past roughly 100 KB of file and command output you are in the band these agents died in, and the right move is to finish what is in flight, make it durable, and RETURN — not to open anything new.`
 // A step is (phase, repo): the two facts every label carries and every retry keeps. Labels are
 // `<key>:<ticket>:<repo>[#<round>]`, so the repo is the third segment with any round suffix cut;
 // phase comes from opts. Keying on the pair rather than the label means a phase's SECOND attempt
@@ -356,7 +384,10 @@ agent = async (prompt, opts) => {
   // Suppressed where the brief already carries the gate-specific version (VERDICT_BEFORE_BUDGET),
   // so a reviewer hears the rule once, in the words written for its job.
   const returns = /BEFORE YOU RUN OUT OF TURNS/.test(prompt) ? '' : RETURN_DISCIPLINE
-  try { return await rawAgent(prompt + notice + narrowed + returns + CUTOFF_DISCIPLINE, opts) }
+  // Never deduped, unlike the rule above it. The gate wording it defers to is about WHEN to return;
+  // nothing anywhere in this file says what fills up, so a reviewer that keeps its own return
+  // wording would otherwise be the one role never told the unit — and reviewers read diffs.
+  try { return await rawAgent(prompt + notice + narrowed + returns + CONTEXT_DISCIPLINE + CUTOFF_DISCIPLINE, opts) }
   catch (e) {
     const reason = String(e?.stdout || e?.message || e).trim().slice(-300)
     if (CUT_OFF_RE.test(reason)) cutOffs.push({ key: stepKey(opts), label: opts?.label || '(unlabelled)', phase: opts?.phase || null, reason })
