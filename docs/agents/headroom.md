@@ -50,6 +50,17 @@ the bytes have landed, and says so itself: *"PostToolUse can't shrink output alr
 Over the same session the *blocking* guards fired 3 times and were obeyed 3 times. Same
 information, opposite timing, opposite outcome.
 
+**A spawned agent gets the hooks but not the whole habit, and it is the one that dies of this.**
+A hook can block an oversized `Read`; nothing can block a test run's output, which is where a
+workflow agent's context actually goes. Measured across 235 `dev-cycle` agents: 90 were killed
+mid-work, 84 of them past 160k input tokens, while the 145 that finished averaged 71k — and step
+count told the two apart almost not at all (killed 22–411 steps, finished 4–527). Of the 3,891
+results the killed agents pulled in, the median was ~1 KB and the **9% over 8 KB were 56% of
+everything they spent**. So this page's rule rides every agent brief (`CONTEXT_DISCIPLINE` in
+`.claude/workflows/dev-cycle.js`), and the ceiling is re-measured rather than assumed —
+`scripts/agent-context-ceiling.sh` derives it from the local transcripts, because the wall is the
+runtime's and moves with the window a session was given.
+
 So the enforcement is a **PreToolUse** hook, `pretool-bash-context-guard.sh`, with two rules:
 
 1. **An unbounded read of a file ≥ 8 KiB is blocked** (`BASH_READ_MAX_BYTES`). `cat`, `nl`,
