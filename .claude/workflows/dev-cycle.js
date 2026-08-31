@@ -1145,6 +1145,15 @@ const safeAgent = async (prompt, opts) => {
     return null
   }
 }
+// A swallowed agent leaves exactly one piece of evidence: the engine's own words, filed above under
+// the label it was called with. Callers need them BACK, because "returned nothing" has two causes
+// that need opposite handling. An agent that ran away triaging a red still has work in flight worth
+// parking; an agent ENDED FROM OUTSIDE — an interrupt, a timeout, a killed stream — did nothing
+// wrong and was simply stopped, usually before it wrote a line. Told apart, the first gets "stop
+// working and hand off", the second gets the truth plus a human action that says re-run rather than
+// go read the branch. Conflated, a person is sent to audit a branch nobody ever touched.
+const reasonFor = (label) => nonConvergences.filter((n) => n.label === label).map((n) => n.reason).pop() || ''
+const CUT_OFF_RE = /interrupted by user|request interrupted|stream ended without|timed out|timeout|deadline exceeded|SIGKILL|SIGTERM|killed/i
 
 // ── Ticket status — OWNED BY THE WORKFLOW (option 2: decoupled from per-repo agents) ──
 // The single ticket is shared by every repo it touches, so NO per-repo agent writes its
@@ -1793,16 +1802,35 @@ async function runRepoPipeline(rp, desc, branchKind) {
   // wave: retry ONCE with a bounded "stop working, hand off NOW" continuation, bumped to opus +
   // high so the wrap-up is reliable. It must emit DEV_SCHEMA with whatever state it reached
   // (status partial/blocked is fine) — no new work.
+  const buildCutOff = !dev && CUT_OFF_RE.test(reasonFor(`build:${ticket}:${R}`))
   if (!dev) {
+    if (buildCutOff) log(`⚠️ [${R}] build was ENDED FROM OUTSIDE mid-work, not by anything it did — ${reasonFor(`build:${ticket}:${R}`).slice(-200)}`)
     log(`⚠️ [${R}] build returned no structured handoff — retrying once (bounded: emit handoff now, no more work).`)
     dev = await safeAgent(
-      `${tag(R, desc.build, 'build', 1)} Your build of ${ticket} in the ${R} repo (branch ${rp.work_branch}, plan ${rp.plan_path}) did NOT return a structured handoff last time — you likely ran away triaging a red or reformatting. ${inRepo} STOP doing work now: run NO more tests, fixes, or formatters. Two things only, in ONE step. FIRST, leave no dirty tree: \`git -C ${absR} status --porcelain\` — if anything is uncommitted, PARK it (a \`wip(<scope>): … Refs ${ticket}\` commit on ${rp.work_branch}, or \`git -C ${absR} stash push -u -m "${ticket} …"\`) and record where it went; NEVER \`git checkout .\`/\`git restore .\`/\`git reset --hard\`. SECOND, END by calling StructuredOutput with the DEV_SCHEMA result — work_branch=${rp.work_branch}, a one-line summary, commit count, the files you touched in "fixed", status="complete" ONLY if the Definition of Done is genuinely met else "partial" (slices landed, work remains) or "blocked" (cannot proceed). For partial/blocked also fill "remaining" (what is left and why), "root_cause" (the MEASURED cause at file:line — never "unknown"), "commands_run" (each command you ran + its exit code), "decision_needed" if a human must settle a fork, and "parked_at" (the WIP commit sha or stash ref). Returning this handoff IS the task — emit it immediately.`,
+      `${tag(R, desc.build, 'build', 1)} Your build of ${ticket} in the ${R} repo (branch ${rp.work_branch}, plan ${rp.plan_path}) did NOT return a structured handoff last time — ${buildCutOff ? `your attempt was ENDED FROM OUTSIDE mid-work (the engine reported: ${reasonFor(`build:${ticket}:${R}`).slice(-300)}), not by anything you did wrong. Do not go looking for a mistake you made and do not re-audit the plan; assume only that whatever you had not committed is gone.` : 'you likely ran away triaging a red or reformatting.'} ${inRepo} STOP doing work now: run NO more tests, fixes, or formatters. Two things only, in ONE step. FIRST, leave no dirty tree: \`git -C ${absR} status --porcelain\` — if anything is uncommitted, PARK it (a \`wip(<scope>): … Refs ${ticket}\` commit on ${rp.work_branch}, or \`git -C ${absR} stash push -u -m "${ticket} …"\`) and record where it went; NEVER \`git checkout .\`/\`git restore .\`/\`git reset --hard\`. SECOND, END by calling StructuredOutput with the DEV_SCHEMA result — work_branch=${rp.work_branch}, a one-line summary, commit count, the files you touched in "fixed", status="complete" ONLY if the Definition of Done is genuinely met else "partial" (slices landed, work remains) or "blocked" (cannot proceed). For partial/blocked also fill "remaining" (what is left and why), "root_cause" (the MEASURED cause at file:line — never "unknown"), "commands_run" (each command you ran + its exit code), "decision_needed" if a human must settle a fork, and "parked_at" (the WIP commit sha or stash ref). Returning this handoff IS the task — emit it immediately.`,
       { agentType: desc.build, model: 'opus', effort: 'high', phase: 'Build', label: `build-handoff:${ticket}:${R}`, schema: DEV_SCHEMA },
     )
   }
+  // BOTH ATTEMPTS GONE — ADR-0027 §what a budget cannot close is RECORDED. This return used to
+  // carry no `blocking` at all, so a repo whose build agent never handed off reached
+  // `blockingByRepo` empty: no banner, no "needs a person" section in the summary, no detail in the
+  // incomplete-run DM, and nothing in the blocked run-state row that outlives the invocation. The
+  // status word `build-unresolved` was the whole account, and it does not say WHY — so a person
+  // read it as "it ran out of time", re-ran the same repo, and paid two more full-context attempts
+  // for the same external cut-off. The reason is the only thing that changes what they should do,
+  // so it is recorded verbatim rather than paraphrased.
   if (!dev) {
+    const why = reasonFor(`build-handoff:${ticket}:${R}`) || reasonFor(`build:${ticket}:${R}`)
+    const cutOff = buildCutOff || CUT_OFF_RE.test(why)
+    record('build-no-handoff',
+      cutOff
+        ? `${R}'s build agent was ENDED FROM OUTSIDE mid-work on both attempts — it never reached a structured handoff, and nothing it had not already committed survives. The engine's own words: ${why || '(it reported no reason)'}. Each attempt is a fresh full-context run of the same brief, so a blind re-run pays the same price again for the same cut-off.`
+        : `${R}'s build agent returned no structured handoff on either attempt, and the engine did not report an external interruption: ${why || '(it reported no reason)'}. Nothing is known about what landed.`,
+      cutOff
+        ? `re-run this repo alone (\`/dev-cycle ${ticket}\` resumes from run state, so nothing already checkpointed is re-paid) and give the attempt more room — a longer per-attempt ceiling, or a smaller plan slice. First check what survived: \`git -C ${desc.path} log --oneline ${rp.base_branch}..${rp.work_branch}\`. Do NOT re-plan; the plan was never the problem.`
+        : `read the branch before re-running, in ${desc.path}: \`git log --oneline ${rp.base_branch}..${rp.work_branch}\` for what was committed, \`git status --porcelain\` for work left uncommitted, \`git stash list\` for anything parked — then decide whether to keep it and continue or reset and build again from the plan.`)
     log(`⚠️ [${R}] build did not converge to a structured handoff even after the bounded retry — left mid-flight; downstream skipped.`)
-    return { repo: R, status: 'build-unresolved', plan: rp, handoff: { status: 'blocked', summary: 'build agent never returned a structured handoff (2 attempts)', remaining: `no handoff was produced, so nothing is known about what landed. Recover the state from the branch itself, in ${desc.path}: \`git log --oneline ${rp.base_branch}..${rp.work_branch}\` for what was committed, \`git status --porcelain\` for work left uncommitted, and \`git stash list\` for anything parked.`, decision_needed: 'whether to keep whatever is on the work branch and continue, or reset it and re-run the build from the plan' } }
+    return { repo: R, status: 'build-unresolved', plan: rp, blocking, handoff: { status: 'blocked', summary: `build agent never returned a structured handoff (2 attempts)${cutOff ? ', both ENDED FROM OUTSIDE mid-work' : ''}`, root_cause: why || null, remaining: `no handoff was produced, so nothing is known about what landed. Recover the state from the branch itself, in ${desc.path}: \`git log --oneline ${rp.base_branch}..${rp.work_branch}\` for what was committed, \`git status --porcelain\` for work left uncommitted, and \`git stash list\` for anything parked.`, decision_needed: cutOff ? 'whether to re-run this repo with more room per attempt, or to cut the plan into smaller slices so a single attempt can finish one' : 'whether to keep whatever is on the work branch and continue, or reset it and re-run the build from the plan' } }
   }
   // DEFERRED — the repo's own work is green and what remains belongs to another owner. The run
   // continues (docs/adr/0011), but the claim is audited first, because `deferred` is the one status
