@@ -2106,6 +2106,53 @@ const BASE = {
             /what you LEARNED/.test(PROMPTS['test-suite:FM-12:e2e'] || ''))
         }
       }
+    } else if (SCENARIO === 'G53') {
+      // A re-invoked run does not re-run its agents: the runtime memoises every completed agent()
+      // call and serves it back, keyed on the prompt and the options. That is right for a step that
+      // PRODUCES something and wrong for a step that READS THE WORLD, because a probe's answer is
+      // a function of the repo, the forge and the tracker at the moment it runs — and none of that
+      // is in the key. Measured on one ticket: a run reported "branch base OK, nothing on top" three
+      // and a half hours after four commits landed, and the next day's run halted on a foreign
+      // commit two minutes after a person rebased it away. So the property under test is about the
+      // BRIEF, which is the only half of that key this workflow writes: a probe's brief must differ
+      // between two invocations, and a producing step's must not.
+      const ARGS = 'FM-12'
+      const PROBE = /^(run-state|base-reconcile|target-gate|approval-probe|human-probe|human-verify|audit):/
+      const FRESH = /FRESH READING REQUIRED/
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: ['db/src/x.ts'] },
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { approved: true },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
+      }
+      await runOnce(ARGS, canned, {})
+      const first = { ...PROMPTS }
+      await runOnce(ARGS, canned, {})
+      const second = { ...PROMPTS }
+      const differs = (k) => !!first[k] && !!second[k] && first[k] !== second[k]
+      report('G53_the_branch_base_probe_is_asked_again_on_the_next_invocation', differs('base-reconcile:FM-12:db'))
+      // The loader is the one that must never be memoised: it exists to re-validate every checkpoint
+      // against the live branches, and it is also where the run reads its own ordinal. Answered from
+      // a memo, every `degraded` flag describes a world that has moved and RUN_SEQ stops advancing.
+      report('G53_the_run_state_loader_is_asked_again_too', differs('run-state:FM-12'))
+      const probes = Object.keys(second).filter((k) => PROBE.test(k))
+      const unstamped = probes.filter((k) => !FRESH.test(second[k] || ''))
+      report('G53_every_live_state_probe_is_told_to_read_the_world_now', probes.length > 0 && unstamped.length === 0, `missing: ${unstamped.join(', ')}`)
+      // The other half of the fix, and the half a careless widening would destroy: replaying a
+      // finished build is what a resume is FOR. A producing step's brief has to stay byte-identical
+      // across invocations or the memo stops paying and every re-run costs full price.
+      const same = (k) => !!first[k] && first[k] === second[k]
+      const producing = Object.keys(second).filter((k) => !PROBE.test(k))
+      const drifted = producing.filter((k) => !same(k))
+      report('G53_a_producing_step_keeps_its_memo_across_invocations', producing.length > 0 && drifted.length === 0, `drifted: ${drifted.join(', ')}`)
     } else if (SCENARIO === 'G42_FP') {
       // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
       // THIS run's fp, so the assertion run needs the value this one logs.
@@ -2672,6 +2719,9 @@ out="$(run_scenario G50_ROLES)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" 
 
 echo "── G50_CUT/G51 — a QA gate ended from outside is told to the next agent, whose ask is NARROWED"
 out="$(run_scenario G50_CUT)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G53 — a probe of live state is re-asked on the next invocation; a producing step keeps its memo"
+out="$(run_scenario G53)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G46 — a declared false red confirmed on the base is recorded, not retried"
 out="$(run_scenario G46)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"

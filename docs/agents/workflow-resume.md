@@ -91,6 +91,49 @@ prints `dev-cycle v<DEVCYCLE_VERSION>` first: compare it with the const at the t
 picks the change up. Invoke **by name**. (Measured: a stale copy predating the Kickoff skip-gate
 re-planned all 8 repos — 1.36M tokens — because the gate it needed did not exist in the copy.)
 
+## A run keeps its config; it must never keep its world
+
+Everything above is about state this workspace writes down. There is a second memory the workflow
+does not own: the runtime memoises every **completed** `agent()` call of a run and serves it back on
+the next invocation, keyed on the prompt text and the options and nothing else. That is right for a
+step that *produces* something — replaying a finished build is most of what makes a re-run cheap —
+and wrong for a step that *reads the world*, because a probe's answer is a function of the repos, the
+forge and the tracker at the moment it runs, and none of that is in the key. Two invocations a day
+apart, against two different worlds, ask a byte-identical question, so the second can be answered
+without looking.
+
+It has gone both ways on one ticket. A run reported `branch base OK — nothing on top` three and a
+half hours after four commits landed on the branch, and every gate under it then judged a diff
+carrying a commit that was not the ticket's — the exact failure [ADR
+0025](../adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md) exists to prevent. The
+next day, two minutes after a person rebased that branch clean, the run halted `target-branch-halt`
+citing the pre-rebase commits.
+
+The false halt is the one that cannot be escaped, and it goes to the heart of how this workflow ends.
+Almost every ending in [run-endings.md](run-endings.md) hands a person an action and asks to be
+re-invoked; the next invocation exists to **see that the action was taken**. A check answered from
+before the remediation cannot see it, so the halt is unclearable and each re-run is charged in full
+to end in the same place. The better the run halts, the more certainly the re-run ignores the answer.
+
+So `dev-cycle.js` mints an invocation id and stamps it on every live-state probe — the run-state
+loader, the branch-base reconcile, the target gate, the approval and human-directive probes, the
+test-report audit. The prompt differs, the memo misses, the probe looks again; the producing steps
+are left alone and a resume stays as cheap as it was. Two consequences for anyone working on this:
+
+- **A new probe belongs on that list** (`LIVE_STATE_PROBE`). One forgotten is a verdict that can be
+  years stale and reads exactly like a fresh one. `scripts/dev-cycle-gate-selftest.sh` §G53 keeps its
+  own copy of the list and fails when a probe's brief does not differ between two invocations.
+- **`open-pr` is deliberately not a probe.** Replaying "PR #841 is open" is correct, and re-asking it
+  risks opening a second one. The test is not "does it read anything" but "would a stale answer be
+  wrong" — and for a step whose re-run would *create* something, the stale answer is the safe one.
+
+The loader is the case worth naming twice. `run-state` exists to re-validate every checkpoint against
+the live branches — it is *defined* as a fresh reading — and its prompt was entirely static, so it
+was the call most certain to be memoised. When it is, every `degraded` flag describes a world that
+has moved and `invocations_before` stops advancing: `RUN_SEQ` freezes, a second invocation calls
+itself `r3` like the first, overwrites the `r3` summary that nothing may overwrite, and the
+test-report audit matches this run's claim against the previous run's stamp.
+
 ## Never hand-edit the persisted script
 
 An agent must not edit a persisted run script to change a constant — not to disable a
