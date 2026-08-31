@@ -365,6 +365,56 @@ const CONTEXT_DISCIPLINE = ` CONTEXT DISCIPLINE — WHAT ACTUALLY ENDS YOU IS CO
 // and its next round), which is the whole point — no call site has to remember to pass it on.
 const cutOffs = []
 const stepKey = (opts) => `${opts?.phase || '-'}|${(String(opts?.label || '').split(':')[2] || '-').split('#')[0]}`
+// ── AND THE OTHER CACHE, THE ONE THIS FILE DOES NOT OWN ──────────────────────────────────────────
+// A re-invoked run does not re-run this workflow's agents. The runtime memoises every COMPLETED
+// agent() call and serves it back, keyed on the prompt text and the options and nothing else. For a
+// step that PRODUCES something — a build, a fix, a review — that is exactly right, and it is most of
+// what makes a re-run cheap. For a step that READS THE WORLD and returns a verdict it is a trap,
+// because such a call is not a function of its prompt: its answer is a function of the repos, the
+// forge and the tracker AT THE MOMENT IT RUNS, and none of that appears in the key. Two runs a day
+// apart, against two different worlds, ask a byte-identical question — so the second can be answered
+// without looking.
+//
+// Measured on one ticket's own runs, twice, in both directions (times local, from the branch reflog
+// and the runtime's own run manifests):
+//
+//   08-30 15:47  four commits land on that repo's work branch, one of them foreign to the ticket
+//   08-30 19:12  a run reports "branch base OK — stands on the run base with NOTHING on top",
+//                true only before 15:47. A FALSE GREEN: every gate under it then judged a diff
+//                carrying a commit that was not the ticket's, which is the one thing ADR-0025 exists
+//                to prevent.
+//   08-31 19:41  a person rebases the branch clean — the exact remediation a halt had asked for
+//   08-31 19:43  the next run halts `target-branch-halt` citing the pre-rebase tip and "1 foreign +
+//                3 ticket commits", a state two minutes dead. A FALSE HALT.
+//
+// The false halt is the one that cannot be escaped. This workflow's whole recovery model is: record
+// what blocks, tell the person what to do, end, be re-invoked (docs/agents/run-endings.md). Every
+// one of those endings hands somebody an action, and the next invocation exists to SEE that the
+// action was taken. If the check that demanded the remediation is answered from before it, the
+// remediation is invisible, the halt is unclearable, and each re-run is charged in full to end in
+// the same place. The better this workflow halts, the more certainly the re-run ignores the answer.
+//
+// The worst case is the loader itself. `run-state` exists to validate every checkpoint against the
+// LIVE branches — it is defined as a fresh reading — and its prompt is entirely static, so it is the
+// call most certain to be served from a memo. Everything downstream inherits that: every `degraded`
+// flag then describes a world that has moved, and `invocations_before` never advances, so RUN_SEQ
+// freezes, a second invocation calls itself r3 like the first, overwrites the r3 summary that
+// "NOTHING may overwrite", and the test-report audit matches this run's claim against the previous
+// run's stamp.
+//
+// The fix is the only one available against a key we do not control: make the key differ. Each
+// invocation mints an id, and every live-state probe carries it — so a probe is always re-asked
+// while the producing steps keep their memo untouched and a resume stays exactly as cheap as it was.
+// One small probe re-run per invocation is a rounding error against a re-run that ends in a false
+// halt, and a bargain against a gate that passes on a diff it never saw.
+const INVOCATION = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+// The probes: every call whose answer is a reading of something free to change underneath this run —
+// the checkpoint files, a branch, what a PR/MR targets, an approval, a human's review directive, a
+// posted test report. `open-pr` is deliberately NOT one: replaying "PR #841 is open" is correct, and
+// re-asking it risks opening a second one. A new probe belongs on this list, and the selftest keeps
+// its own copy so the one that gets forgotten fails a test rather than a ticket.
+const LIVE_STATE_PROBE = /^(run-state|base-reconcile|target-gate|approval-probe|human-probe|human-verify|audit):/
+const FRESH_READING = ` FRESH READING REQUIRED — INVOCATION ${INVOCATION}. What you are being asked for is a reading of live state, not a conclusion to reason your way to. The repos, the forge and the tracker have all been free to change since anything last looked at them, and a person may have been ASKED to change them by the run that ended before this one — so what you are checking may have been fixed already, or may have broken since. Run the commands and report WHAT THEY PRINT NOW. Do not answer from an earlier verdict on this ticket, from what the run state or an existing comment says was true, or from what you would expect to find; where any of those disagree with the live reading, the live reading is the answer and the disagreement is itself worth reporting.`
 const rawAgent = agent
 agent = async (prompt, opts) => {
   const priorCuts = cutOffs.filter((c) => c.key === stepKey(opts)).length
@@ -387,7 +437,11 @@ agent = async (prompt, opts) => {
   // Never deduped, unlike the rule above it. The gate wording it defers to is about WHEN to return;
   // nothing anywhere in this file says what fills up, so a reviewer that keeps its own return
   // wording would otherwise be the one role never told the unit — and reviewers read diffs.
-  try { return await rawAgent(prompt + notice + narrowed + returns + CONTEXT_DISCIPLINE + CUTOFF_DISCIPLINE, opts) }
+  // Appended ONLY to a live-state probe, and it is what gets that probe re-asked: the runtime keys
+  // its memo on the prompt, so an id that changes every invocation is the whole difference between
+  // re-reading the world and being told what it looked like last time.
+  const fresh = LIVE_STATE_PROBE.test(String(opts?.label || '')) ? FRESH_READING : ''
+  try { return await rawAgent(prompt + notice + narrowed + returns + CONTEXT_DISCIPLINE + CUTOFF_DISCIPLINE + fresh, opts) }
   catch (e) {
     const reason = String(e?.stdout || e?.message || e).trim().slice(-300)
     if (CUT_OFF_RE.test(reason)) cutOffs.push({ key: stepKey(opts), label: opts?.label || '(unlabelled)', phase: opts?.phase || null, reason })
