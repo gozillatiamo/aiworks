@@ -17,7 +17,10 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
   `docs/adr/` — why the workspace is shaped this way (`0001`–`0032`).
 - `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
-  (Hermes is next) · `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`): author on
+  (Hermes is next). ⚠️ The Workflow tool weighs the script **FILE** before parsing it — 524,288 bytes, no delivery
+  parameter exempt — so under Claude Code a workflow is ALWAYS delivered comment-stripped: `node
+  scripts/workflows/build.mjs <name>`, then `scriptPath` at the path it prints. Never the authored `.claude/workflows/*.js`,
+  never `name:` · `docs/agents/cursor.md` — under **Cursor** everything works through a GENERATED mirror (`aiworks cursor`): author on
   the Claude side, never hand-edit `.cursor/`, open the `.code-workspace` **file**, not the folder · `language.md` ·
   `register.md` · `caveman.md` · `ponytail.md` · `voice.md` · `stagehand.md` — always-on conventions, own sections
   below · `issue-tracker.md` — tickets: the adapter, status names, id format, and the marker table: everything a run

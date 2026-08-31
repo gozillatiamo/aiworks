@@ -1084,6 +1084,23 @@ EOF
       fi
     fi
   done
+
+  # A workflow script reaches the Workflow tool as a FILE, weighed before it is parsed:
+  # 524,288 bytes launches, one byte more comes back `exceeds 524288 bytes`, and no delivery
+  # parameter is exempt. dev-cycle.js walked from 120,083 bytes to 522,045 over 41 commits at
+  # a mean of +5,189 each, and nothing in this workspace measured it — so the wall was found
+  # by a run that would not start, in a clone that was already 5,804 bytes over. Nothing here
+  # can shrink a workflow for you, so there is no owner command: this exists so the number is
+  # seen while there is still room to act on it. See docs/agents/harnesses.md.
+  if command -v node >/dev/null 2>&1 && [[ -x "$DIR/workflows/build.mjs" ]]; then
+    local wstat wname wdetail
+    while IFS=$'\t' read -r wstat wname wdetail; do
+      if [[ "$wstat" == ok ]]; then pass $g "workflow $wname within its byte budget" "$wdetail"
+      else warn $g "workflow $wname over its byte budget" "$wdetail"
+      fi
+    done < <(node "$DIR/workflows/build.mjs" --check 2>/dev/null |
+             awk '{ st=$1; nm=$2; $1=""; $2=""; sub(/^ +/,""); print st"\t"nm"\t"$0 }')
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════

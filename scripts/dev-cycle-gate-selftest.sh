@@ -17,7 +17,7 @@
 # Usage: scripts/dev-cycle-gate-selftest.sh [-v]
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WORKFLOW="$DIR/.claude/workflows/dev-cycle.js"
+WORKFLOW="${WORKFLOW:-$DIR/.claude/workflows/dev-cycle.js}"
 VERBOSE=0; [[ "${1:-}" == "-v" ]] && VERBOSE=1
 
 c_ok=$'\033[1;32m'; c_err=$'\033[1;31m'; c_off=$'\033[0m'
