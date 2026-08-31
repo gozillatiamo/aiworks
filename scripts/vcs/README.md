@@ -64,6 +64,16 @@ Handled by the provider CLI, not this adapter:
 
 ## Notes
 
+- **Naming the repo (`VCS_REPO`).** Every call acts on the current directory's `origin`
+  remote unless `VCS_REPO` names another repo — which it must in a multi-repo run, where
+  several agents share one shell and the cwd cannot say which repo was meant. The forge
+  wants a **project path** (`group/subgroup/project` on GitLab, `owner/repo` on GitHub),
+  and the adapter accepts any of the three forms a caller actually has in hand: that path,
+  a clone URL (`git@host:group/project.git`, `https://host/owner/repo.git` — what
+  `git remote get-url origin` and `workspace.config.yaml`'s `repos[].url` print), or the
+  **bare repo id**, which it resolves through the `repos[].url` declared for that id. A
+  bare id nothing declares is refused **before** the call — sent to the forge it returns
+  `404 Project Not Found`, which reads like a broken adapter rather than a wrong argument.
 - **Attaching visual results.** `open-pr.sh --media <ref>` (repeatable: file, directory,
   or http(s) URL) hosts each item and appends a **## Visual results** section to the body.
   Hosting differs by provider: **GitLab** uses the project uploads API (images and video

@@ -92,7 +92,12 @@ run() {
   CALLS="$TMP/calls.$$"; : > "$CALLS"
   # Whole-subshell stderr redirect, not just the call's: lib.sh dups stderr to fd 9 at SOURCE time,
   # so anything narrower leaves the diagnostic channel pointed at this test's own output.
-  ( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$CALLS" VCS_PROVIDER="$provider" VCS_REPO="$TARGET" \
+  # REPO_REF is what the CALLER puts in VCS_REPO — the project path by default, but a clone URL or
+  # a bare repo id in the normalization cases below. CLAUDE_PROJECT_DIR is pinned to a fixture (an
+  # empty dir unless a case names one) so a bare id is never resolved against the REAL workspace
+  # config of whatever checkout this harness happens to run in.
+  ( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$CALLS" VCS_PROVIDER="$provider" VCS_REPO="${REPO_REF:-$TARGET}" \
+      CLAUDE_PROJECT_DIR="${WS_FIXTURE:-$TMP/no-workspace}" \
       bash -c '. "$1"/lib.sh; shift; "$@" >/dev/null 2>&1' _ "$DIR" "$@" ) 2>/dev/null
   cat "$CALLS" 2>/dev/null
 }
@@ -169,6 +174,49 @@ has "github: it says why it refused" "refusing to run it against" "$out"
 # capturing site folds the line into the error the caller then reports, which is exactly where a
 # wrong-target call needs to be readable. `vcs_close_pr` leaves stderr alone, so it is where the
 # line itself can be asserted.
+# WHAT THIS CATCHES. VCS_REPO must name the PROJECT PATH the forge knows — `group/subgroup/project`
+# on GitLab, `owner/repo` on GitHub. What a caller actually has in hand is almost never that:
+# `git remote get-url origin` and workspace.config.yaml's `repos[].url` both print a CLONE URL, and
+# the workspace names its repos by a BARE id everywhere else. Both used to reach the API verbatim
+# and come back `{"message":"404 Project Not Found"}`, which reads exactly like a broken adapter.
+echo "── a clone URL in VCS_REPO resolves to the project path"
+has "gitlab: scp-style url (git@host:path.git)" "mr close -R $TARGET" \
+    "$(REPO_REF="git@gitlab.example.com:$TARGET.git" run gitlab vcs_close_pr 7)"
+has "github: https url (https://host/path.git)" "pr close --repo $TARGET" \
+    "$(REPO_REF="https://github.example.com/$TARGET.git" run github vcs_close_pr 7)"
+
+# A BARE repo id is what the workspace calls a repo everywhere else — in `products[].repos[]`, in
+# every prompt that interpolates one — so `VCS_REPO=<repo id>` is the form callers reach for, and
+# it carries no namespace at all. The declared clone URL is the one place the namespace is written
+# down, so resolve the id through it rather than asking every caller to know the group.
+echo "── a bare repo id in VCS_REPO resolves through workspace.config.yaml"
+mkdir -p "$TMP/ws"
+cat > "$TMP/ws/workspace.config.yaml" <<YAML
+products:
+  - id: demo
+    repos:
+      - url: git@gitlab.example.com:$TARGET.git
+        kind: frontend
+      - url: https://github.example.com/group/other-repo.git
+        kind: test-suite
+YAML
+has "gitlab: bare id resolved to its declared path" "mr close -R $TARGET" \
+    "$(WS_FIXTURE="$TMP/ws" REPO_REF="${TARGET##*/}" run gitlab vcs_close_pr 7)"
+
+# And an id nothing declares must not travel. Sent to the forge it comes back 404 — the failure
+# every caller reads as "the adapter is broken" — so it is refused HERE, before the wire, with the
+# command that produces the right value. Refusing is also why the resolution happens once at source
+# time and not inside vcs_repo_ref: a `die` in a command substitution kills only that subshell.
+echo "── a bare id nothing declares refuses before the wire, not as a 404 from the forge"
+CALLS="$TMP/calls.$$"; : > "$CALLS"
+out="$( cd "$CWD" && PATH="$BIN:$PATH" CALLS="$CALLS" VCS_PROVIDER=gitlab VCS_REPO=undeclared-repo \
+    CLAUDE_PROJECT_DIR="$TMP/ws" bash -c '. "$1"/lib.sh; vcs_close_pr 7' _ "$DIR" 2>&1 || true )"
+case "$(cat "$CALLS")" in
+  ?*) bad "nothing went on the wire" "no glab call at all" "$(cat "$CALLS")" ;;
+  *)  ok  "nothing went on the wire" ;;
+esac
+has "it says what to pass instead" "full project path" "$out"
+
 echo "── the resolved target is announced, so a wrong-repo call is readable in the transcript"
 for provider in gitlab github; do
   CALLS="$TMP/calls.$$"; : > "$CALLS"

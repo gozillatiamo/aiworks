@@ -62,8 +62,26 @@ fi
 [[ -n "$_vcs_arg_repo" ]] && VCS_REPO="$_vcs_arg_repo"
 unset _vcs_arg_provider _vcs_arg_remote _vcs_arg_repo
 
+# A VCS_REPO value reduced to the PROJECT PATH the forge knows — `group/subgroup/project` on
+# GitLab, `owner/repo` on GitHub. That path is what every API call needs, and it is not what a
+# caller has in hand: `git remote get-url origin` and workspace.config.yaml's `repos[].url` both
+# print a CLONE URL. Sent verbatim, a URL reaches the API as a project id and comes back
+# `{"message":"404 Project Not Found"}` — indistinguishable from a broken adapter, which is how a
+# real run spent three rounds on it. A path with no host in it is already the answer and is left
+# alone, so no existing caller changes.
+vcs_normalize_repo_ref() {
+  local r="${1%.git}"
+  case "$r" in
+    *://*) r="${r#*://}"; r="${r#*@}"; r="${r#*/}" ;;   # scheme URL: drop scheme, userinfo, host
+    *@*:*) r="${r#*@}"; r="${r#*:}" ;;                  # scp-style git@host:group/project
+  esac
+  r="${r#/}"; printf '%s' "${r%/}"
+}
+
 # Project/repo the call acts on: explicit VCS_REPO wins, else the provider's own cwd-derived
-# default (unchanged behaviour for every existing caller that never sets VCS_REPO).
+# default (unchanged behaviour for every existing caller that never sets VCS_REPO). VCS_REPO is
+# resolved to a project path ONCE, below — not here, because this runs inside `$( )` at every call
+# site and a `die` in a command substitution kills only that subshell.
 vcs_repo_ref() { printf '%s' "${VCS_REPO:-}"; }
 
 # A DIAGNOSTIC CHANNEL that a command substitution cannot swallow. The providers' mutation calls
@@ -84,6 +102,67 @@ vcs_urlencode_path() { printf '%s' "$1" | sed 's@/@%2F@g'; }
 
 die() { echo "error: $*" >&2; exit 1; }
 command -v git >/dev/null || die "git is required"
+
+# The workspace config that declares the repos, when this adapter runs inside a workspace. The
+# adapters are SYMLINKED into every product repo, so the script's own logical path says nothing
+# about where the workspace root is; `cd -P` resolves the symlink and lands on the real one.
+_vcs_workspace_config() {
+  local d
+  for d in "${CLAUDE_PROJECT_DIR:-}" "$(cd -P "$VCS_DIR/../.." 2>/dev/null && pwd)"; do
+    [[ -n "$d" && -f "$d/workspace.config.yaml" ]] && { printf '%s' "$d/workspace.config.yaml"; return 0; }
+  done
+  return 1
+}
+
+# Bare repo id -> the project path declared for it. `products[].repos[].url` is the ONE place the
+# namespace is written down, and its last segment is the repo id the rest of the workspace uses
+# (the same derivation aiworks-config.sh makes), so the lookup is: normalize every declared url,
+# match on its last segment. Ambiguity is refused rather than guessed — two products may each
+# declare a repo of the same name, and picking one at random writes to a stranger's project.
+_vcs_path_for_repo_id() {
+  local id="$1" cfg url path hit=''
+  cfg="$(_vcs_workspace_config)" || return 1
+  while IFS= read -r url; do
+    path="$(vcs_normalize_repo_ref "$url")"
+    [[ "${path##*/}" == "$id" ]] || continue
+    if [[ -n "$hit" && "$hit" != "$path" ]]; then printf '%s\n%s' "$hit" "$path"; return 2; fi
+    hit="$path"
+  done < <(sed -n 's/^[[:space:]]*-\{0,1\}[[:space:]]*url:[[:space:]]*//p' "$cfg" | sed 's/[[:space:]]*#.*$//; s/["'"'"']//g')
+  [[ -n "$hit" ]] || return 1
+  printf '%s' "$hit"
+}
+
+# VCS_REPO IS RESOLVED HERE, ONCE, FOR EVERY PROVIDER AND EVERY SCRIPT. Three things get passed in
+# it and only one of them is what the API wants:
+#   • the project path (`group/subgroup/project`, `owner/repo`) — already correct, untouched;
+#   • a clone URL — what `git remote get-url origin` and `repos[].url` print;
+#   • a bare repo id (`project`) — what the workspace calls a repo everywhere else, so it is what
+#     an agent reaches for and what the workflow's own prompts interpolate.
+# The last two used to travel to the forge verbatim and come back `404 Project Not Found`, which
+# reads like a broken adapter rather than a wrong argument. Fix it once, at the choke point every
+# caller routes through, and fail LOUD (naming the config) when an id resolves to nothing.
+if [[ -n "${VCS_REPO:-}" ]]; then
+  VCS_REPO="$(vcs_normalize_repo_ref "$VCS_REPO")"
+  case "$VCS_REPO" in
+    */*) ;;
+    *)
+      _vcs_id="$VCS_REPO"
+      if _vcs_hit="$(_vcs_path_for_repo_id "$_vcs_id")"; then
+        VCS_REPO="$_vcs_hit"
+      elif [[ "$?" -eq 2 ]]; then
+        die "VCS_REPO='$_vcs_id' matches more than one repo declared in workspace.config.yaml:
+$(printf '%s' "$_vcs_hit" | sed 's/^/      /')
+  Pass the full project path of the one you mean."
+      else
+        _vcs_cfg="$(_vcs_workspace_config || true)"
+        die "VCS_REPO='$_vcs_id' is a bare repo name, and the forge needs the full project path (group/subgroup/project on GitLab, owner/repo on GitHub) — sent as-is it returns '404 Project Not Found'.
+  ${_vcs_cfg:+No repo with that name is declared in $_vcs_cfg}${_vcs_cfg:-No workspace.config.yaml was found (this checkout is not inside a workspace)}, so resolve it from the repo itself:
+      git -C <the repo> remote get-url origin
+  and pass what it prints (this adapter strips the git@host:/https://host/ prefix and the .git suffix for you)."
+      fi
+      unset _vcs_id _vcs_hit ;;
+  esac
+fi
 
 # Resolve the provider: explicit VCS_PROVIDER wins; else sniff the origin remote host.
 vcs_detect_provider() {
