@@ -308,6 +308,28 @@ log(`dev-cycle v${DEVCYCLE_VERSION}`)
 // would miss whatever call site is added next.
 const CUT_OFF_RE = /interrupted by user|request interrupted|stream ended without|timed out|timeout|deadline exceeded|SIGKILL|SIGTERM|killed/i
 const CUTOFF_DISCIPLINE = ` DURABILITY (mandatory, whatever your phase): YOUR ATTEMPT CAN END FROM OUTSIDE WITHOUT WARNING. An interrupt, a timeout or a killed stream stops you mid-sentence — there is no last step to tidy up in, no chance to summarise, and whatever you have not already made durable is gone. What replaces you starts from an EMPTY context and re-reads everything you read, so work batched to the end costs the whole attempt when it is cut, and costs it again on the next. So make progress durable AS YOU GO, in whatever form your task produces it: land the FIRST slice as a commit early, before any exploration that slice does not need, and commit each slice the moment it is green rather than at the end; post a review comment when you find it, not in one block at the finish; write a plan, report or ticket record as soon as it says something true, then refine it in place. Persist first and polish second, and prefer the smaller step that leaves something behind to the larger one that leaves nothing. This never licenses skipping your structured result — ending without it is still a failure — but what you have already made durable survives you either way.`
+// ── AND THE OTHER HALF: RETURN BEFORE THE CEILING TAKES THE ONE THING THAT MATTERS ────────────
+// Durability saves the COMMITS. It does not save the STRUCTURED RESULT, and that is what the
+// workflow reads: no result means the step is scored as if it never ran, so the whole attempt is
+// re-spawned against the same brief and dies at the same place. Three measured attempts, and the
+// giveaway is how CLOSE they are: 115 messages / ~8.4M cache-read for a build, then 172 / ~12.5M
+// and 181 / ~12.9M for the same suite-runner job. A random outside interrupt does not land twice
+// within 5% of the same volume. It is a CEILING, and an agent with no reason to stop early walks
+// into it every time.
+//
+// This file had already found that once and written down the right lesson — see
+// VERDICT_BEFORE_BUDGET below, and the measurement in its comment: three gate rounds ending at
+// 100, 101 and 100 tool calls with the verdict never returned. "Investigating less is the wrong
+// lesson; returning EARLIER is the right one." That answer was then appended to three gate call
+// sites out of two dozen, so every other role — the builders and suite runners that actually run
+// longest — was never told. The rule is not gate-specific and never was; it goes where every
+// agent passes.
+//
+// Returning early loses nothing, which is why this does not trade accuracy for survival: the
+// workflow already CONTINUES a partial (build.maxContinuationPasses, review.max_rounds,
+// test_suite.max_fix_rounds). An honest partial plus a continuation is cheaper than one killed
+// attempt, and infinitely cheaper than the relaunch that follows it.
+const RETURN_DISCIPLINE = ` RETURN BEFORE YOU RUN OUT OF TURNS (mandatory, whatever your phase). Your turn budget is finite and your structured result is your LAST action, so it is the one thing you can lose by running long — and losing it scores this step as if you had never run, however good the work was. That is measured, not hypothetical: gate rounds have ended at 100, 101 and 100 tool calls with the verdict never returned, and a suite runner has been killed at 172 and again at 181 messages the same way. Past roughly 80 tool calls you are in that zone. So do not START anything new there: finish the step already in flight, make it durable, and RETURN. Return the structured result your schema requires, filled with what is TRUE so far — "partial, and here is exactly what remains", "approved:false, and here is what I could not finish", a gate reported unavailable with its reason. Every one of those is a real answer the workflow can act on and continue from. Silence is the only outcome that costs the whole attempt, and it is never the honest one. Returning early is NOT scored as failing and does not shorten the requirement: the workflow continues a partial from what you left behind, so the work still gets finished — just not all in your attempt. Investigating less is the wrong lesson; returning earlier is the right one.`
 // A step is (phase, repo): the two facts every label carries and every retry keeps. Labels are
 // `<key>:<ticket>:<repo>[#<round>]`, so the repo is the third segment with any round suffix cut;
 // phase comes from opts. Keying on the pair rather than the label means a phase's SECOND attempt
@@ -317,12 +339,24 @@ const cutOffs = []
 const stepKey = (opts) => `${opts?.phase || '-'}|${(String(opts?.label || '').split(':')[2] || '-').split('#')[0]}`
 const rawAgent = agent
 agent = async (prompt, opts) => {
+  const priorCuts = cutOffs.filter((c) => c.key === stepKey(opts)).length
   const prior = cutOffs.filter((c) => c.key === stepKey(opts)).pop()
   // The Build phase writes its own, richer version of this notice; do not say it twice.
   const notice = prior && !/ENDED FROM OUTSIDE/.test(prompt)
     ? ` ⚠️ AN EARLIER AGENT IN THIS PHASE FOR THIS REPO WAS ENDED FROM OUTSIDE mid-work (the engine reported: ${prior.reason}) — not by anything it did wrong, and usually before it wrote a line. Nothing it had not already made durable survived. So do NOT assume any work it may have started is on disk: check what is actually there — commits on the branch, files it would have written, threads it would have posted — before you build on it, and do not redo what IS there.`
     : ''
-  try { return await rawAgent(prompt + notice + CUTOFF_DISCIPLINE, opts) }
+  // The notice above tells the replacement what happened. This tells it to do something DIFFERENT
+  // about it. Re-asking the identical question is what turned one cut-off into three: the killed
+  // attempt was walking into a ceiling, and an identical brief walks into the same one. So the ask
+  // itself shrinks — and the build's own richer notice does not do this, which is why the narrowing
+  // is appended even where that notice is suppressed.
+  const narrowed = prior
+    ? ` AND BECAUSE OF THAT, YOUR ASK IS NARROWED. ${priorCuts} attempt(s) at this step have now been ended from outside, each while working the whole task in one go — doing it the same way ends the same way. So do the SMALLEST USEFUL INCREMENT of it and nothing more: one slice, one file, one check. Make it durable, then RETURN a partial that names precisely what remains. Do not try to finish the whole task in this attempt — the workflow will continue you from what you leave behind, and a small increment that returns beats a large one that is killed holding everything.`
+    : ''
+  // Suppressed where the brief already carries the gate-specific version (VERDICT_BEFORE_BUDGET),
+  // so a reviewer hears the rule once, in the words written for its job.
+  const returns = /BEFORE YOU RUN OUT OF TURNS/.test(prompt) ? '' : RETURN_DISCIPLINE
+  try { return await rawAgent(prompt + notice + narrowed + returns + CUTOFF_DISCIPLINE, opts) }
   catch (e) {
     const reason = String(e?.stdout || e?.message || e).trim().slice(-300)
     if (CUT_OFF_RE.test(reason)) cutOffs.push({ key: stepKey(opts), label: opts?.label || '(unlabelled)', phase: opts?.phase || null, reason })
@@ -1083,6 +1117,10 @@ const RESULT_AUDIT_SCHEMA = {
 // scored as if it had never run. Measured: three rounds in a row ended at 100/101/100 tool calls
 // with the verdict never returned. Investigating less is the wrong lesson; returning EARLIER is
 // the right one — an honest partial verdict is worth infinitely more than a perfect unreturned one.
+//
+// That lesson is not gate-specific and this is only its gate-specific WORDING: every role now hears
+// it, through RETURN_DISCIPLINE at the top of this file. The shim keys its dedup on the phrase
+// "BEFORE YOU RUN OUT OF TURNS" — keep that phrase here, or reviewers start hearing both versions.
 const VERDICT_BEFORE_BUDGET = `
 RETURN YOUR VERDICT BEFORE YOU RUN OUT OF TURNS. Your turn budget is finite and the structured verdict is your LAST action, so it is the one thing you can lose by running long — and if you lose it, this whole round counts as if you never ran, no matter how good the review was. So: as soon as you have enough to judge, stop investigating and return. If you notice you are deep into your budget with threads still open, do NOT keep digging — post what you have to the PR/MR, then return the verdict with what you did not get to named in it. "approved:false, and here is what I could not finish" is a real, useful answer. Silence is not.`
 
