@@ -1907,6 +1907,54 @@ const BASE = {
         report('G47_undeclared_rounds_run_exactly_as_before', reviews.length === 3, `reviews=${JSON.stringify(reviews)}`)
         report('G47_undeclared_records_no_flake', !blockingJson.includes('known-false-red'))
       }
+    } else if (SCENARIO.startsWith('G48')) {
+      // A build agent ENDED FROM OUTSIDE mid-work — the engine's own `[Request interrupted by user]`,
+      // a timeout, a killed stream — never reaches StructuredOutput, so the round sees exactly what a
+      // runaway agent leaves: nothing. Measured on one repo: three sequential attempts, the same
+      // prompt re-sent from zero context each time (~6.3M then ~9.6M cumulative tokens), each cut off
+      // during exploration before a single line landed. The run said `build-unresolved` and recorded
+      // NOTHING — no blocking row, so no banner, no "needs a person" section in the summary, no line
+      // in the incomplete-run DM — and the engine's reason, the one string that separates an external
+      // cut-off from a broken plan, reached only the token table. So the next person re-ran it from
+      // zero and paid for it again. The two causes need opposite continuations and opposite human
+      // actions, which is why the reason has to be read rather than assumed.
+      const ARGS = 'FM-12'
+      const CUT = 'agent ended without a structured result: [Request interrupted by user]'
+      const SCHEMA_ERR = 'schema validation failed: required property "work_branch" missing'
+      const canned = {
+        ...BASE,
+        'run-state:FM-12': { rows: [] },
+        'scope:FM-12': { ticket: 'FM-12', title: 'T', type: 'feature', acceptance: ['A1'],
+          repos: [{ repo: 'db' }], test_suite: { needed: false }, tracker_reachable: true },
+        'plan-guard:FM-12': planGuardOk(['db']),
+        'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
+        'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
+        'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
+        'approve:FM-12:db': { approved: true },
+        'notify:FM-12': { sent: true },
+        'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
+      }
+      // The bounded continuation is the run's one chance to salvage a cut-off attempt: here it lands.
+      if (SCENARIO === 'G48_SALVAGED') canned['build-handoff:FM-12:db'] = { work_branch: 'feature/FM-12', summary: 'parked the slice and handed off', status: 'complete', fixed: ['a.rs'], commits: 1 }
+      const throwOn = SCENARIO === 'G48_SALVAGED' ? ['build:FM-12:db'] : ['build:FM-12:db', 'build-handoff:FM-12:db']
+      const result = await runOnce(ARGS, canned, { throwOn, throwMessage: SCENARIO === 'G48_RUNAWAY' ? SCHEMA_ERR : CUT })
+      const blockingJson = JSON.stringify(result?.blockingByRepo || [])
+      const handoffPrompt = PROMPTS['build-handoff:FM-12:db'] || ''
+      if (SCENARIO === 'G48') {
+        report('G48_a_build_that_never_hands_off_is_recorded', blockingJson.includes('build-no-handoff'), blockingJson.slice(0, 300))
+        report('G48_record_carries_the_engine_reason_verbatim', blockingJson.includes('[Request interrupted by user]'), blockingJson.slice(0, 300))
+        report('G48_named_as_a_cut_off_not_a_runaway', blockingJson.includes('ENDED FROM OUTSIDE'), blockingJson.slice(0, 300))
+        report('G48_human_action_is_re_run_not_read_the_branch_yourself', /re-run/i.test(blockingJson), blockingJson.slice(0, 300))
+        report('G48_second_attempt_is_told_it_was_cut_off', /ENDED FROM OUTSIDE/.test(handoffPrompt) && !/ran away/.test(handoffPrompt), handoffPrompt.slice(0, 240))
+        report('G48_repo_does_not_reach_ready', !!result && result.status !== 'ready', `status=${result && result.status}`)
+      } else if (SCENARIO === 'G48_RUNAWAY') {
+        report('G48_a_runaway_is_recorded_too', blockingJson.includes('build-no-handoff'), blockingJson.slice(0, 300))
+        report('G48_a_runaway_is_not_called_a_cut_off', !blockingJson.includes('ENDED FROM OUTSIDE'), blockingJson.slice(0, 300))
+        report('G48_a_runaway_keeps_todays_framing', /ran away/.test(handoffPrompt), handoffPrompt.slice(0, 240))
+      } else {
+        report('G48_a_salvaged_round_records_no_missing_handoff', !blockingJson.includes('build-no-handoff'), blockingJson.slice(0, 300))
+        report('G48_a_salvaged_round_still_opens_its_pr', SPAWNED.includes('open-pr:FM-12:db'), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('open-pr:')))}`)
+      }
     } else if (SCENARIO === 'G42_FP') {
       // Fingerprint probe, same idiom as G11_FP: a `planned` row is skippable only when it carries
       // THIS run's fp, so the assertion run needs the value this one logs.
@@ -2449,6 +2497,15 @@ out="$(run_scenario G45_FLAKE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" 
 
 echo "── G45_RESUMED — a build that is skipped does not pay to re-probe the base it already stands on"
 out="$(run_scenario G45_RESUMED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G48 — a build cut off from outside is recorded with its reason, not silently re-run"
+out="$(run_scenario G48)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G48_RUNAWAY — a build that returns nothing for its own reasons is recorded, but not as a cut-off"
+out="$(run_scenario G48_RUNAWAY)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── G48_SALVAGED — a cut-off the bounded continuation recovers records nothing and carries on"
+out="$(run_scenario G48_SALVAGED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G46 — a declared false red confirmed on the base is recorded, not retried"
 out="$(run_scenario G46)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
