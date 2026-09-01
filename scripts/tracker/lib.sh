@@ -119,7 +119,7 @@ tracker_require_config
 # whole body, which is how a parallel sibling's section gets silently dropped.
 #
 # A section runs from its heading line to the next heading at the SAME level or shallower, so a
-# writer is free to use deeper headings (`#### Status`, `#### Regression`) inside its own block.
+# writer is free to use deeper headings (`#### Regression`, `#### History`) inside its own block.
 # Heading match is exact, ignoring trailing whitespace. Both helpers are pure text.
 
 # tracker_section_extract BODY HEADING — print the section (heading line included), or nothing.

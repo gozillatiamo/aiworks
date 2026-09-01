@@ -246,7 +246,7 @@ Some data bugs only reproduce against the *actual* offending prod rows (a fixed-
    - **🛑 MUST DO — prove it runs first.** QA tests the running app/service, not your branch; a stale or unverified artifact stalls the gate (a stale build handed to QA burns whole review rounds on a "bug" that was never in your code). Before `Status → Ready to test`: confirm current HEAD is green (`scripts/dev.sh analyze` + `scripts/dev.sh test`) and actually launches via `scripts/dev.sh run`, and record in the `/handoff` the SHA + exactly how to run it (command, port/URL, any seed/migration/env steps). If it genuinely can't run in this environment (e.g. missing external dep), say so explicitly — never leave QA a missing or stale artifact.
    - **Leave nothing behind.** Run `git status --porcelain` — the working tree must be clean. (`agent_logs/` is git-ignored, so plans/logs never appear here.) Commit or remove any stray artifact (no scratch files, no uncommitted generated/build output).
    - Invoke **`/handoff`** (OS temp dir) describing what was built, how to run it, acceptance criteria covered, and which tests exist. Suggested next agent: `qa-planner` (authors the BDD test plan; `qa-runner` then executes it).
-   - **Write your ONE dev record — status + regression scope in a single comment, and nothing
+   - **Write your ONE dev record — the regression scope, and nothing
      else.** The ticket carries exactly one `**[dev · <KEY>]**` record for the whole ticket, with
      one `### <this repo>` section per repo inside it (`docs/adr/0026`). You own your section and
      only your section: `--section` splices your block in and leaves every sibling repo's block
@@ -257,10 +257,6 @@ Some data bugs only reproduce against the *actual* offending prod rows (a fixed-
      scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[dev · <KEY>]" --section "### <this repo>" < /tmp/<KEY>-dev.md
      ```
      Your section, in this order and nothing more:
-     - `#### Status` — one line naming the work branch and the PR/MR, then one line per `deferred`
-       acceptance criterion with its owner. That is all. **No "dev done", no "build finished", no
-       commit list, no summary of what you implemented** — the PR/MR is the code story, and a
-       comment restating it is noise on a ticket someone is trying to read.
      - `#### Regression` — **you own this scope.** You changed the code, so **you** are the one who
        knows what it could affect; QA does **not** guess it for you. A bullet list of which
        EXISTING features QA must re-test (shared components/modules, touched `core/`-or-shared
@@ -273,6 +269,13 @@ Some data bugs only reproduce against the *actual* offending prod rows (a fixed-
        The blocks above are always rewritten to *current* truth; the ledger is where earlier rounds
        survive. Never carry old lines forward by hand out of the previous body — that is what
        produced records contradicting their own runs.
+
+     **No status block.** The work branch, the PR/MR, and every `deferred` acceptance criterion
+     with its owner belong to the PR/MR — its title, its diff, and the Deferred scope block its
+     body carries verbatim. A ticket comment restating them is noise on a ticket someone is trying
+     to read. A repo that needed **no change** has no PR/MR to carry that story, so its
+     criterion-by-criterion evidence goes in the one-off "already implemented" comment from step 0
+     (`add-ticket-comment.sh`), never as a block in this record.
 
      `upsert --section`, never `add`: you refresh this after every bug-fix batch (below), and with
      `add` a hard ticket ends up carrying five dev notes with no way to tell which is current. Run

@@ -37,16 +37,22 @@ writer bug was still live.
 
 | Marker | Owner | Contents |
 |---|---|---|
-| `[dev · <KEY>]` | build role | one `### <repo>` **section** per repo: `#### Status` (work branch, PR/MR, deferred criteria + owner), `#### Regression` (the scope only the author of the change can know), `#### History` |
+| `[dev · <KEY>]` | build role | one `### <repo>` **section** per repo: `#### Regression` (the scope only the author of the change can know), `#### History` |
 | `[qa-plan · <repo>]` | QA planner | the BDD plan, current revision, plus a revision ledger |
 | `[test-report · <repo>]` | `/report-test-results` | the run's verdict, with its own evidence |
 | `[plans · <KEY>]` | main session | plan Artifact links, ticket-wide |
 
 Four consequences worth stating outright:
 
-**No "dev done" or "dev build" note.** The PR/MR is the code story — its diff, its title, its body,
-its review threads. A comment restating it is noise on a ticket a human is trying to read. Deleted,
-not reworded.
+**No "dev done" or "dev build" note — and, since 2026-09-01, no dev STATUS block either.** The
+PR/MR is the code story — its diff, its title, its body, its review threads. A comment restating it
+is noise on a ticket a human is trying to read. The `#### Status` block said the same thing one
+level quieter (work branch, PR/MR, deferred criteria) while the PR/MR already carried all three —
+its body carries the Deferred scope verbatim — so it is gone too: the dev record is now the
+`#### Regression` scope, which nothing else knows, plus its `#### History` ledger. The one case with
+no PR/MR to point at is a repo that needed **no change**; its criterion-by-criterion citations stay
+where they already were, in the one-off "already implemented" comment (`add-ticket-comment.sh`).
+Deleted, not reworded.
 
 **A plan travels as a link, never as a body.** A plan is a working artifact superseded by the next
 planning pass, and `agent_logs/` is git-ignored for exactly that reason. When `planning.to_html` and

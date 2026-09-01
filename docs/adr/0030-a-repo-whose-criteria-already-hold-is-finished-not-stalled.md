@@ -98,5 +98,6 @@ rule was never wrong; it was only ever load-bearing for the case it could not na
   carefully not, and whose count now includes criteria met by earlier work.
 - [ADR 0027](0027-the-review-loop-does-not-halt-on-a-finding.md) — the same argument for a repo that
   cannot finish. This one is for a repo that has nothing to finish.
-- `docs/agents/issue-tracker.md` — the repo's durable `dev-status` record, which on a satisfied repo
-  names the commit and file:line instead of a branch and a PR/MR.
+- `docs/agents/issue-tracker.md` — where a satisfied repo's evidence lands. The dev record carries no
+  status block ([ADR 0026](0026-a-ticket-is-a-record-not-a-transcript.md)), so the criterion-by-criterion
+  commit and file:line go in the one-off "already implemented" comment, not in a record block.
