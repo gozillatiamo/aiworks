@@ -132,7 +132,7 @@ function scopeFor(scenario) {
 }
 
 function rowsFor(scenario, fp) {
-  if (scenario === 'A') {
+  if (scenario === 'A' || scenario === 'I') {
     // No 'planned' row at all (first-run path) — but ONE 'artifact_published' row, to prove
     // C11's URL-threading fires even when C10's skip does not (they are independent rows).
     return [{ repo: 'your-app', milestone: 'artifact_published', status: 'done', artifact_url: 'https://claude.ai/public/artifacts/abc' }]
@@ -150,7 +150,10 @@ function rowsFor(scenario, fp) {
 
 function cannedFor(scenario, fp) {
   return {
-    'resolve-runtime-config': { language: 'en', plan_to_html: true, artifacts_enabled: true },
+    // I — artifacts OFF: the HTML still renders (a personal output preference) but nothing is
+    // published, so nothing may reach the ticket. A plan link record over an unpublished page is
+    // a link nobody can open.
+    'resolve-runtime-config': { language: 'en', plan_to_html: true, artifacts_enabled: scenario !== 'I' },
     'run-state:FM-12': { rows: rowsFor(scenario, fp) },
     'scope:FM-12': scopeFor(scenario),
     'status:FM-12:in_progress': { moved: true },
@@ -306,6 +309,13 @@ function report(name, ok, detail) {
       const result = await runOnce(ARGS, canned)
       const plan = (result && (result.plans || []).find((p) => p.repo === 'your-app')) || null
       report('scenario-H_reused-plan-carries-plan-sha', !!plan && plan.plan_sha === 'aaaaaaaaaaaaaaaa', plan ? `got=${plan.plan_sha}` : 'no plan')
+    } else if (SCENARIO === 'I') {
+      // ADR-0026 — with artifacts OFF no page is published, so the ticket gets NO plan record at
+      // all: not an empty one, not a local path. Scenario A is the same run with artifacts ON.
+      await runOnce(ARGS, cannedFor('I', ''))
+      report('scenario-I_artifacts-off_no-publish-request-spawned', !SPAWNED.includes('publish-request:FM-12'), `spawned=${SPAWNED.join(',')}`)
+      report('scenario-I_artifacts-off_no-plan-record-asked-of-any-agent', !Object.values(PROMPTS).some((p) => String(p).includes('[plans · FM-12]')))
+      report('scenario-I_artifacts-off_logged', LINES.some((l) => l.includes('artifacts.enabled is false')))
     } else {
       throw new Error('unknown scenario ' + SCENARIO)
     }
@@ -397,6 +407,11 @@ echo "── scenario H — a reused plan carries the live plan's fingerprint"
 outH="$(run_scenario H "$FP")"
 [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outH" | sed 's/^/      /'
 ingest "$outH"
+
+echo "── scenario I — artifacts off: no publish, and no plan record on the ticket"
+outI="$(run_scenario I)"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$outI" | sed 's/^/      /'
+ingest "$outI"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

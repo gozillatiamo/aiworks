@@ -32,10 +32,10 @@ is an ordinary comment. That is the whole test. Full reasoning:
 
 | Marker | Written by | Contents |
 |---|---|---|
-| `[dev · <KEY>]` | the build role | ONE ticket-wide record, one `### <repo>` **section** per repo: `#### Status` (work branch, PR/MR, deferred criteria + owner), `#### Regression` (the scope QA must cover — QA never guesses it), `#### History` |
+| `[dev · <KEY>]` | the build role | ONE ticket-wide record, one `### <repo>` **section** per repo: `#### Regression` (the scope QA must cover — QA never guesses it), `#### History`. **No status block** — the branch, the PR/MR and the deferred scope are the PR/MR's own story |
 | `[qa-plan · <repo>]` | the QA planner | the BDD plan (current revision) + a revision ledger |
 | `[test-report · <repo>]` | `/report-test-results` | the run's verdict, screenshots and video |
-| `[plans · <KEY>]` | the main session | plan Artifact links, one line per repo — omitted entirely when artifacts are off |
+| `[plans · <KEY>]` | the main session | ONE ticket-wide record holding every repo's plan Artifact link, one line each — never a comment per repo, and omitted entirely when no page was published (artifacts off, or `planning.to_html` off) |
 
 **One record, several writers — `--section`.** A record co-written by more than one agent (the
 `[dev · <KEY>]` one: a `### <repo>` section per repo) is **spliced**, never rewritten whole. Each
