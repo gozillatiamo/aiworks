@@ -105,6 +105,7 @@ Commands:
   remove     Offboard a repo (or every repo, with --all): deregister it from
              workspace.config.yaml products[].repos[], mani.d/<product>.yaml, mani.yaml and
              the .gitignore, unlink the workspace adapters (optionally --purge the clone).
+             `--harnesses <id>[,<id>]` removes a Harness projection instead (→ harnesses remove).
   config     Regenerate the dev-cycle workflow's CONFIG block (.claude/workflows/dev-cycle.js)
              FROM workspace.config.yaml — the workflow can't read the FS at runtime, so it keeps
              an in-source mirror — AND the multi-root <workspace>.code-workspace `folders` array
@@ -125,10 +126,13 @@ Commands:
              1 for drift a reconcile closes, 2 for drift only a person can (a real path where
              the canonical link belongs, a generated file someone edited, a rules file with no
              frontmatter). A reconcile itself exits 0 and prints what it could not do.
-  harnesses  List, configure, reconcile, or check the shared supported Harness set declared in
-             workspace.config.yaml. `list --active` shows this machine's optional local subset;
-             setup owns the first-run shared picker. The registry is data-driven so a future
-             Harness adds an adapter entry rather than another setup branch.
+  harnesses  List, configure, reconcile, check, or remove Harnesses. `list` is the shared set in
+             workspace.config.yaml; `list --active` is what this machine runs — the local file
+             wins outright when it names any. `sync` projects the ACTIVE set and only ever
+             adds/updates: dropping an id from a config file deletes nothing. `remove <id>` is
+             the one path that does (generator-owned files only) and drops the id from both
+             config files. The registry is data-driven so a future Harness adds an adapter
+             entry rather than another setup branch.
   workflow   Execute one canonical .claude/workflows script through a selected Harness adapter.
              Normal chat entry points are `$dev-cycle`/`$prd`/`$brd` in Codex and
              `/dev-cycle`/`/prd`/`/brd` in Cursor; this command is their deterministic runtime.
@@ -189,6 +193,7 @@ Examples:
   aiworks remove your-api --purge    # deregister + delete the clone (refuses if dirty/unpushed)
   aiworks remove --all                  # offboard EVERY onboarded repo (config-only; keeps clones)
   aiworks remove --all --purge --force  # …and delete every clone too (force past dirty/unpushed)
+  aiworks remove --harnesses codex      # delete the Codex projection (sync never does this)
   # Cursor face of the same config (add / sync already do this for you):
   aiworks cursor                        # root + every repo
   aiworks cursor <repo>                 # just one repo

@@ -13,22 +13,32 @@ harnesses:
   - codex
 ```
 
-`aiworks setup` owns the first-run picker. `aiworks sync` reconciles every supported projection at
-the workspace root and in every declared repo. A deselected shared Harness loses only artifacts
-carrying a generator ownership proof; user-authored files are reported and preserved.
+`aiworks setup` owns the first-run picker. `aiworks sync` reconciles the projection of every
+**active** Harness at the workspace root and in every declared repo — and only ever adds or
+updates. A Harness absent from the set is left exactly as it is on disk.
 
-A person may set a non-empty `harnesses:` in git-ignored `workspace.config.local.yaml` to choose
-which Harnesses are active on their machine. The active set controls CLI install/authentication,
-native plugins and status lines, and machine-local MCP registrations. It never adds or removes
-projected files, so teammates' preferences cannot dirty a shared checkout.
+A person may set a non-empty `harnesses:` in git-ignored `workspace.config.local.yaml`. When
+present, that file **wins outright**: it is the highest-priority source for every consumer —
+`aiworks sync`, `aiworks doctor`, CLI install/authentication, native plugins and status lines,
+machine-local MCP registrations. It may name a Harness the shared file does not carry; the
+projection it produces is this machine's to commit and share.
 
-That guarantee is what makes the local set free: it may name a Harness the shared set does not
-carry. Every writer of a tracked projection reads the **shared** set — `aiworks harnesses sync`
-calls `list`, never `list --active` — so a local-only Harness gets the CLI, the plugins, the
-status line and this machine's MCP registrations, and no projection. `aiworks doctor` reports it
-as `local-only Harness`, at the advisory tier, so the missing projection is visible without
-being an error. The two ways to get the set genuinely wrong still fail: an id no registry entry
-claims, and an empty list.
+What makes that safe is the rule that **sync never removes a projection**. Dropping an id from
+either config file deletes nothing, so a teammate whose local file omits a Harness cannot tear a
+committed projection out of a shared checkout on their next `aiworks sync`. Deletion is an
+explicit act:
+
+```bash
+aiworks remove --harnesses codex        # or: aiworks harnesses remove codex[,cursor] [<repo>…] [-n]
+```
+
+It runs the projector's `--remove` (generator-owned artifacts only; user-authored files are
+reported and preserved), drops the id from **both** config files so the next sync does not
+project it straight back, and clears the generator-owned `AGENTS.md` once no remaining active
+Harness reads it. Removing the last Harness is refused. `aiworks doctor` reports a Harness the
+shared file names but the local file omits as `shared-only Harness`, at the advisory tier: sync
+neither refreshes nor removes it here. The two ways to get the set genuinely wrong still fail:
+an id no registry entry claims, and an empty list. (`docs/adr/0033`.)
 
 ## One canonical source
 
@@ -85,7 +95,7 @@ the workflow from prose.
 | `cli` | Binary `setup`, `update`, and `doctor` verify |
 | `projector` | Repo-relative projection command, or `null` for the canonical Harness |
 | `workflow_adapter` | Module name under `scripts/workflows/adapters/`, or `native` |
-| `project_guidance` | `claude` or `agents-md`; lets deselection clean a shared `AGENTS.md` safely |
+| `project_guidance` | `claude` or `agents-md`; lets `harnesses remove` clean a shared `AGENTS.md` safely |
 
 Do not add a Harness-specific branch to `aiworks sync`. Register the adapter, then let
 `aiworks-harnesses.sh` dispatch it.
@@ -97,7 +107,7 @@ Every non-canonical projector must accept:
 ```text
 <projector> [<repo> ...]           reconcile selected projection
 <projector> --check [<repo> ...]   write nothing; nonzero on drift
-<projector> --remove [<repo> ...]  remove only generator-owned artifacts
+<projector> --remove [<repo> ...]  remove only generator-owned artifacts (reached via `harnesses remove`, never by sync)
 <projector> --dry-run              preview without writing or failing on expected drift
 ```
 

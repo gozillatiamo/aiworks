@@ -20,7 +20,13 @@
 #   aiworks remove <repo> [--purge] [--force] [-y]
 #   aiworks remove --all  [--purge] [--force] [-y]      # offboard EVERY onboarded repo
 #   aiworks remove all    [--purge] [--force] [-y]      # …same as --all
+#   aiworks remove --harnesses <id>[,<id>…] [-n]        # remove a Harness PROJECTION instead
 #
+#   --harnesses <ids> Not a repo at all: delete the generator-owned projection of these
+#                 Harnesses (cursor, codex, …) and drop them from both config files. This is
+#                 the ONLY command that does — `aiworks sync` adds and updates projections
+#                 but never removes one, so unlisting a Harness in config deletes nothing.
+#                 Forwards to `aiworks harnesses remove`; -n previews.
 #   <repo>        Repo id / dir name as onboarded (the mani key, e.g. your-api).
 #   --all, all    Offboard every repo declared in workspace.config.yaml products[].repos[]
 #                 / mani.d/*.yaml (the union, de-duplicated). Mutually exclusive with <repo>.
@@ -52,10 +58,13 @@ remove_line() {
 }
 
 # ── args ───────────────────────────────────────────────────────────────────────
-REPO="" ALL=0 PURGE=0 FORCE=0 YES=0
+REPO="" ALL=0 PURGE=0 FORCE=0 YES=0 HARNESSES="" DRY=""
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --harnesses) HARNESSES="${2:-}"; [[ -n "$HARNESSES" ]] || die "--harnesses needs a value"; shift 2 ;;
+    --harnesses=*) HARNESSES="${1#--harnesses=}"; shift ;;
+    -n|--dry-run) DRY="--dry-run"; shift ;;
     --all)     ALL=1; shift ;;
     --purge)   PURGE=1; shift ;;
     --force)   FORCE=1; shift ;;
@@ -66,6 +75,11 @@ while [[ $# -gt 0 ]]; do
     *)         [[ -z "$REPO" ]] || die "unexpected argument: $1 (one <repo> only)"; REPO="$1"; shift ;;
   esac
 done
+if [[ -n "$HARNESSES" ]]; then
+  [[ "$ALL" -eq 0 && -z "$REPO" && "$PURGE" -eq 0 ]] || die "--harnesses takes no <repo>, --all or --purge   (see -h)"
+  exec "$(dirname "$0")/aiworks-harnesses.sh" remove "$HARNESSES" $DRY
+fi
+[[ -z "$DRY" ]] || die "-n applies to --harnesses only   (see -h)"
 [[ "$ALL" -eq 1 && -n "$REPO" ]] && die "give either a <repo> or --all, not both   (see -h)"
 if [[ "$ALL" -ne 1 ]]; then
   [[ -n "$REPO" ]] || die "usage: aiworks remove <repo>|--all [--purge] [--force] [-y]   (see -h)"

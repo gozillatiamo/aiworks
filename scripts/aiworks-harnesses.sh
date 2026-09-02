@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# aiworks-harnesses.sh — configure shared Harnesses and inspect the active local subset.
+# aiworks-harnesses.sh — configure shared Harnesses, reconcile the active set, remove one on request.
 #
 # Usage:
 #   aiworks harnesses list [--active]
 #   aiworks harnesses configure [--harnesses claude,cursor,codex] [--reconfigure]
-#   aiworks harnesses sync [--check|-n]
+#   aiworks harnesses sync [<repo>…] [--check|-n]       # active set (local wins); adds/updates only
+#   aiworks harnesses remove <id>[,<id>…] [<repo>…] [-n] # the ONLY path that deletes a projection
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -59,7 +60,7 @@ case "$cmd" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --active) active=1; shift ;;
-        -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown list option: $1" ;;
       esac
     done
@@ -73,7 +74,7 @@ case "$cmd" in
       case "$1" in
         --harnesses) values="${2:-}"; shift 2 ;;
         --reconfigure) reconfigure=1; shift ;;
-        -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown configure option: $1" ;;
       esac
     done
@@ -84,7 +85,7 @@ case "$cmd" in
     if [[ -z "$values" ]]; then
       if [[ ! -t 0 ]] && ! { true </dev/tty; } 2>/dev/null; then
         printf 'aiworks harnesses: no interactive terminal; preserving legacy defaults (claude,cursor).\n' >&2
-        selected --fallback
+        shared_selected --fallback
         exit 0
       fi
       printf 'Select Agent harnesses (comma-separated numbers or ids):\n' >/dev/tty
@@ -109,6 +110,12 @@ case "$cmd" in
     python3 "$HELPER" set --config "$CONFIG" --registry "$REGISTRY" --harnesses "$values"
     ;;
   sync|check)
+    # Reconciles the ACTIVE set — workspace.config.local.yaml wins over the shared file — and
+    # only ever ADDS or UPDATES. A Harness absent from the set is left exactly as it is on disk:
+    # dropping an id from either config file must never delete a projection a teammate committed,
+    # and a teammate whose local file omits it must never see `aiworks sync` tear it out of a
+    # shared checkout. Deletion is an explicit act — `aiworks harnesses remove <id>` (also reached
+    # as `aiworks remove --harnesses <id>`).
     mode_args=""
     target_args=""
     [[ "$cmd" == check ]] && mode_args="--check"
@@ -120,19 +127,63 @@ case "$cmd" in
         *) target_args="${target_args:+$target_args }$1"; shift ;;
       esac
     done
-    chosen=" $(shared_selected --fallback | tr '\n' ' ') "
+    chosen=" $(active_selected --fallback | tr '\n' ' ') "
     failed=0
-    keep_agents=0
-    while IFS='|' read -r id _display _default _cli projector _adapter guidance; do
-      if [[ "$guidance" == agents-md && "$chosen" == *" $id "* ]]; then keep_agents=1; fi
+    while IFS='|' read -r id _display _default _cli projector _adapter _guidance; do
+      [[ -n "$projector" && "$chosen" == *" $id "* ]] || continue
+      script="$ROOT/$projector"
+      [[ -x "$script" ]] || { printf 'aiworks harnesses: missing projector %s\n' "$projector" >&2; failed=1; continue; }
+      "$script" $target_args $mode_args || failed=1
+    done < <(python3 "$HELPER" catalog --registry "$REGISTRY")
+    exit "$failed"
+    ;;
+  remove)
+    # The ONLY path that deletes a projection. Runs the projector's --remove (generator-owned
+    # files only — its own contract), drops the id from BOTH config files so the next sync does
+    # not project it straight back, and clears the generator-owned AGENTS.md once no remaining
+    # active Harness reads it.
+    mode_args=""
+    target_args=""
+    ids=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -n|--dry-run) mode_args="--dry-run"; shift ;;
+        -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) die "unknown remove option: $1" ;;
+        *) if [[ -z "$ids" ]]; then ids="$(printf '%s' "$1" | tr ',' ' ')"
+           else target_args="${target_args:+$target_args }$1"; fi; shift ;;
+      esac
+    done
+    [[ -n "$ids" ]] || die "usage: aiworks harnesses remove <id>[,<id>…] [<repo>…] [--dry-run]"
+    catalog="$(python3 "$HELPER" catalog --registry "$REGISTRY")"
+    for id in $ids; do
+      printf '%s\n' "$catalog" | grep -q "^$id|" || die "unknown Harness '$id'"
+    done
+    remaining=" $(active_selected --fallback 2>/dev/null | tr '\n' ' ') "
+    failed=0
+    for id in $ids; do
+      # Config first: `drop` refuses to empty a set, and a refused drop must not delete files.
+      if [[ "$mode_args" == --dry-run ]]; then
+        printf 'aiworks harnesses: would drop %s from workspace.config.yaml / workspace.config.local.yaml\n' "$id"
+      else
+        dropped=1
+        for f in "$CONFIG" "$CONFIG_LOCAL"; do
+          python3 "$HELPER" drop --config "$f" --registry "$REGISTRY" --harnesses "$id" >/dev/null || dropped=0
+        done
+        [[ "$dropped" -eq 1 ]] || { failed=1; continue; }
+      fi
+      remaining="${remaining// $id / }"
+      projector="$(printf '%s\n' "$catalog" | awk -F'|' -v id="$id" '$1==id{print $5}')"
       [[ -n "$projector" ]] || continue
       script="$ROOT/$projector"
       [[ -x "$script" ]] || { printf 'aiworks harnesses: missing projector %s\n' "$projector" >&2; failed=1; continue; }
-      case "$chosen" in
-        *" $id "*) "$script" $target_args $mode_args || failed=1 ;;
-        *) "$script" --remove $target_args $mode_args || failed=1 ;;
-      esac
-    done < <(python3 "$HELPER" catalog --registry "$REGISTRY")
+      "$script" --remove $target_args $mode_args || failed=1
+    done
+    # The generator-owned AGENTS.md goes only once nothing left in the active set reads it.
+    keep_agents=0
+    while IFS='|' read -r id _display _default _cli _projector _adapter guidance; do
+      [[ "$guidance" == agents-md && "$remaining" == *" $id "* ]] && keep_agents=1
+    done <<< "$catalog"
     [[ "$keep_agents" -eq 1 ]] || cleanup_agents_md "$target_args" "$mode_args" || failed=1
     exit "$failed"
     ;;

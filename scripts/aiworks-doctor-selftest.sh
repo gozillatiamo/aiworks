@@ -162,28 +162,30 @@ OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk 2>&1)
 ck_exit "healthy fixture exits 0" 0 "$RC"
 ck "healthy fixture reports no failure" "0 fail" "$OUT"
 
-# ── 1b · shared projections and local active Harnesses are distinct ──────────────
+# ── 1b · the ACTIVE set (local over shared) drives the projection checks ─────────
+# A Harness the shared file names but this machine's local file omits is advisory only: sync
+# neither refreshes nor removes its projection here, so its absence is not a finding.
 W="$T/local-harnesses"; make_ws "$W"; stage "$W"
 printf 'harnesses:\n  - claude\n  - cursor\n  - codex\n' >> "$W/workspace.config.yaml"
 printf 'harnesses:\n  - claude\n' > "$W/workspace.config.local.yaml"
 OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg -v 2>&1)"; RC=$?
-ck_exit "shared Codex projection is still checked" 1 "$RC"
+ck_exit "a shared-only Codex is not a failure" 0 "$RC"
 ck "doctor reports the supported Harness set" "Supported Harness set" "$OUT"
 ck "doctor reports the active Harness set" "Active Harness set" "$OUT"
-ck "doctor checks shared Codex projection" "codex projection incomplete" "$OUT"
+ck "doctor reports the shared-only Harnesses" "shared-only Harness" "$OUT"
+ck "…naming them" "cursor codex" "$OUT"
+ck "…and does not check their projections" "ABSENT:codex projection incomplete" "$OUT"
 
-# A Harness a person activates only on their machine is not an error. It drives the CLI, the
-# plugins, the status line and this machine's MCP registrations; `aiworks harnesses sync` reads
-# the SHARED set, so it can neither write nor delete a tracked projection. Failing it made the
-# doctor unusable for anyone running a Harness their team does not project.
+# A Harness a person activates only on their machine IS projected by sync (the local file wins),
+# so the doctor checks that projection like any other — and it is not an error to name one.
 W="$T/local-only-harness"; make_ws "$W"; stage "$W"
 printf 'harnesses:\n  - claude\n  - cursor\n' >> "$W/workspace.config.yaml"
 printf 'harnesses:\n  - claude\n  - codex\n' > "$W/workspace.config.local.yaml"
-OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg 2>&1)"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only agent-cfg 2>&1)"; RC=$?
+ck_exit "a local-only Codex projection is checked" 1 "$RC"
 ck "a local-only Harness does not invalidate the set" "ABSENT:active Harness set is invalid" "$OUT"
-ck "…it is reported as local-only"                    "local-only Harness"                    "$OUT"
-ck "…naming which one"                                "codex"                                 "$OUT"
-ck "…and the shared set still drives the projections" "ABSENT:codex projection incomplete"    "$OUT"
+ck "…the active set drives the projection check"      "codex projection incomplete"           "$OUT"
+ck "…and cursor, shared-only here, is advisory"       "shared-only Harness"                   "$OUT"
 
 # An id no registry entry claims is still a typo in a file a person owns, and still fails.
 W="$T/invalid-local-harnesses"; make_ws "$W"; stage "$W"

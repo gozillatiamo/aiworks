@@ -57,8 +57,10 @@ self-resolve from disk can never diverge from the run.
   ON. The gate can be loosened by writing `auto_approve: true` on purpose, and by nothing else.
 - Your personal preference can **never** land in git via the generator — the committed mirror
   stays shared-only by construction.
-- The shared Harness set is the projection contract; the local active subset is the machine
-  lifecycle contract. `aiworks harnesses list` reports the former and `list --active` the latter.
+- The Harness set is the one exception to "personal never lands in git": the local file wins
+  outright for `aiworks sync` too, and the projection it produces is yours to commit. That is safe
+  only because sync never removes a projection (`docs/adr/0033`). `aiworks harnesses list` reports
+  the shared set and `list --active` the effective one.
 - `.superset/setup.sh` symlinks `workspace.config.local.yaml` (and `.claude/settings.local.json`)
   into each per-ticket worktree, so personal prefs follow you into a superset run (opt out with
   `SUPERSET_LOCAL=skip`).

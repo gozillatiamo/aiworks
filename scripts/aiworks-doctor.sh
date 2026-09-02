@@ -855,19 +855,17 @@ check_agent_cfg() {
     if [[ $active_rc -eq 0 ]]; then
       active_harnesses=" $(printf '%s\n' "$active_error" | tr '\n' ' ') "
       pass $g "Active Harness set" "${active_harnesses# }"
-      # A Harness activated ONLY in workspace.config.local.yaml is a machine-local choice, and
-      # this is where it becomes visible rather than where it becomes an error. It reaches the
-      # CLI install, the native plugins, the status line and this machine's MCP registrations;
-      # it never reaches a tracked file, because every projection writer keys on the SHARED set
-      # (`aiworks harnesses sync` reads `list`, not `list --active`). So the one thing worth
-      # saying is that `aiworks sync` will not maintain a projection for it — advice, not a
-      # defect, and printed at the tier that says so.
-      local localonly="" hid
-      for hid in $active_harnesses; do
-        [[ "$shared_harnesses" == *" $hid "* ]] || localonly="${localonly:+$localonly }$hid"
+      # The ACTIVE set — workspace.config.local.yaml over the shared file — is what `aiworks sync`
+      # projects and what the projection checks below key on. A Harness the shared file names
+      # but this machine's local file omits is therefore the one thing worth saying: sync will
+      # not refresh its projection here, and will not remove it either (only `aiworks remove
+      # --harnesses` does). Advice, not a defect, printed at the tier that says so.
+      local sharedonly="" hid
+      for hid in $shared_harnesses; do
+        [[ "$active_harnesses" == *" $hid "* ]] || sharedonly="${sharedonly:+$sharedonly }$hid"
       done
-      [[ -n "$localonly" ]] && skip $g "local-only Harness" \
-        "$localonly — active on this machine, absent from the shared set, so aiworks sync projects nothing for it"
+      [[ -n "$sharedonly" ]] && skip $g "shared-only Harness" \
+        "$sharedonly — in the shared set, not this machine's active set: aiworks sync leaves its projection untouched"
     else
       # Reachable now only for a set that is broken on its own terms: an id no registry entry
       # claims, or an empty list. Both are typos in a file a person owns, so both are theirs.
@@ -907,7 +905,7 @@ EOF
   # It walks every repo though, which costs ~8s: four times this whole command's budget. So
   # the default run answers the cheap half (is the projection even THERE?) and the real
   # comparison waits for --deep.
-  if [[ "$shared_harnesses" == *" cursor "* ]]; then
+  if [[ "$active_harnesses" == *" cursor "* ]]; then
     local nomirror="" r
     for r in $SELECTED; do
       repo_ready "$r" || continue
@@ -931,12 +929,12 @@ EOF
       skip $g "cursor drift" "--deep (aiworks cursor --check costs ~8s)"
     fi
   else
-    skip $g "cursor projection" "Cursor is not in the shared Harness set"
+    skip $g "cursor projection" "Cursor is not in the active Harness set"
   fi
 
   # Codex is a generated Harness projection with its own strict drift check. Cheap presence is
   # checked on every run; full source-to-projection comparison waits for --deep like Cursor.
-  if [[ "$shared_harnesses" == *" codex "* ]]; then
+  if [[ "$active_harnesses" == *" codex "* ]]; then
     if [[ -f "$ROOT/.codex/config.toml" && -f "$ROOT/.codex/hooks.json" \
           && -L "$ROOT/.agents/skills" && -d "$ROOT/.codex/agents" ]]; then
       pass $g "codex projection present" "config + hooks + agents + canonical skill link"
@@ -964,7 +962,7 @@ EOF
       skip $g "codex drift" "--deep (aiworks codex --check)"
     fi
   else
-    skip $g "codex projection" "Codex is not in the shared Harness set"
+    skip $g "codex projection" "Codex is not in the active Harness set"
   fi
 
   # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at USER scope on purpose

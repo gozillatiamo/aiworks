@@ -27,9 +27,9 @@ harnesses:
 EOF
 active="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/workspace.config.local.yaml" --registry "$REGISTRY" | tr '\n' ' ')"
 test "$active" = "codex "
-# A local Harness outside the shared set is a machine-local activation, not an error: the
-# active set drives only CLI/plugins/status line/local MCP, while every tracked projection is
-# written from the SHARED set. It must come back verbatim, not intersected away.
+# A local Harness outside the shared set is not an error: the local file is the highest-priority
+# source and drives sync, doctor and the machine-local surfaces alike. It must come back
+# verbatim, not intersected away.
 printf 'harnesses:\n  - cursor\n' > "$FIXTURE/local-outside.yaml"
 outside="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --config-local "$FIXTURE/local-outside.yaml" --registry "$REGISTRY" | tr '\n' ' ')"
 test "$outside" = "cursor "
@@ -49,8 +49,10 @@ if python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$
 fi
 python3 "$HELPER" catalog --registry "$REGISTRY" | grep -q '^codex|Codex|'
 
-# Registry dispatch: selected projector updates; deselected projector removes; shared AGENTS.md
-# disappears only when no selected Harness consumes agents-md guidance.
+# Registry dispatch: sync projects the ACTIVE set (local wins) and NEVER removes — a Harness
+# absent from the set keeps whatever is on disk. `remove` is the only path that deletes: it runs
+# the projector's --remove, drops the id from both config files, and clears the shared AGENTS.md
+# only once no remaining active Harness consumes agents-md guidance.
 mkdir -p "$FIXTURE/scripts/harnesses" "$FIXTURE/.claude/skills"
 cp "$ROOT/scripts/aiworks-harnesses.sh" "$FIXTURE/scripts/"
 cp "$HELPER" "$REGISTRY" "$FIXTURE/scripts/harnesses/"
@@ -73,16 +75,53 @@ shared="$("$FIXTURE/scripts/aiworks-harnesses.sh" list | tr '\n' ' ')"
 test "$shared" = "codex claude "
 active="$("$FIXTURE/scripts/aiworks-harnesses.sh" list --active | tr '\n' ' ')"
 test "$active" = "claude "
+# Local names only claude: nothing is projected, and NOTHING is removed — not codex (shared-only),
+# not cursor (in neither file), not the AGENTS.md link.
 "$FIXTURE/scripts/aiworks-harnesses.sh" sync
-grep -q '^cursor --remove$' "$FIXTURE/calls"
-grep -q '^codex $' "$FIXTURE/calls"
+test ! -s "$FIXTURE/calls"
 test -L "$FIXTURE/AGENTS.md"
+# Local names codex too (a local-only entry is a projection this machine maintains): projected.
+printf 'harnesses:\n  - claude\n  - codex\n' > "$FIXTURE/workspace.config.local.yaml"
+"$FIXTURE/scripts/aiworks-harnesses.sh" sync
+test "$(cat "$FIXTURE/calls")" = "codex "
 : > "$FIXTURE/calls"
+# Dropping codex from the SHARED file changes nothing on disk while the local file still has it…
 python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses claude >/dev/null
 "$FIXTURE/scripts/aiworks-harnesses.sh" sync
-grep -q '^cursor --remove$' "$FIXTURE/calls"
+test "$(cat "$FIXTURE/calls")" = "codex "
+: > "$FIXTURE/calls"
+# …and dropping it from the LOCAL file too still deletes nothing: sync only adds and updates.
+printf 'harnesses:\n  - claude\n' > "$FIXTURE/workspace.config.local.yaml"
+"$FIXTURE/scripts/aiworks-harnesses.sh" sync
+test ! -s "$FIXTURE/calls"
+test -L "$FIXTURE/AGENTS.md"
+# `remove` is the explicit path: -n previews without touching config, the real run calls the
+# projector's --remove, drops the id from both files, and clears AGENTS.md once nothing reads it.
+python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses claude,codex >/dev/null
+printf 'harnesses:\n  - claude\n  - codex\n' > "$FIXTURE/workspace.config.local.yaml"
+preview="$("$FIXTURE/scripts/aiworks-harnesses.sh" remove codex -n)"
+printf '%s\n' "$preview" | grep -q 'would drop codex'
+grep -q '^codex --remove --dry-run$' "$FIXTURE/calls"
+grep -q '^  - codex$' "$FIXTURE/workspace.config.yaml"
+test -L "$FIXTURE/AGENTS.md"
+: > "$FIXTURE/calls"
+"$FIXTURE/scripts/aiworks-harnesses.sh" remove codex
 grep -q '^codex --remove$' "$FIXTURE/calls"
+! grep -q 'codex' "$FIXTURE/workspace.config.yaml"
+! grep -q 'codex' "$FIXTURE/workspace.config.local.yaml"
 test ! -e "$FIXTURE/AGENTS.md"
+: > "$FIXTURE/calls"
+# Removing the last Harness is refused — config untouched, projector not called.
+if "$FIXTURE/scripts/aiworks-harnesses.sh" remove claude 2>/dev/null; then
+  echo "removing the last Harness should fail" >&2
+  exit 1
+fi
+grep -q '^  - claude$' "$FIXTURE/workspace.config.yaml"
+test ! -s "$FIXTURE/calls"
+if "$FIXTURE/scripts/aiworks-harnesses.sh" remove hermes 2>/dev/null; then
+  echo "removing an unregistered Harness should fail" >&2
+  exit 1
+fi
 
 # Cursor statusline setup follows the active subset, not every shared projection.
 python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses cursor,codex >/dev/null
