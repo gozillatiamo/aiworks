@@ -79,16 +79,12 @@ def active(shared_path: Path, local_path: Path | None, entries: list[dict], fall
     local = configured(local_path)
     if local is None:
         return shared
-    # A local entry outside the shared set is NOT an error. The active set reaches only
-    # machine-local surfaces — CLI install/authentication, native plugins, the status line,
-    # this machine's MCP registrations. Every writer of a tracked projection keys on the
-    # SHARED set instead (`aiworks harnesses sync` reads `list`, never `list --active`), so a
-    # local-only Harness can neither create nor delete a file a teammate would see.
-    #
-    # Refusing it bought nothing that guarantee did not already provide, and cost the one case
-    # it was most likely to meet: a person whose machine runs a Harness their team does not
-    # project got a hard failure out of every consumer of the active set, doctor included.
-    # `aiworks doctor` reports the difference instead — diffing `list` against `list --active`.
+    # The local file WINS outright — it is the highest-priority source for every consumer,
+    # `aiworks sync` and `aiworks doctor` included. A local entry outside the shared set is
+    # therefore not an error: it is a projection this machine maintains and may commit. That is
+    # safe because reconciliation only adds or updates — a Harness missing from a set is never
+    # removed by sync, so a teammate whose local file omits it cannot tear a committed
+    # projection out of a shared checkout. Deletion is `aiworks harnesses remove`, on purpose.
     return validate(local, entries)
 
 
@@ -118,9 +114,24 @@ def write_config(path: Path, values: list[str]) -> None:
     temp.replace(path)
 
 
+def drop(path: Path, values: list[str], entries: list[dict]) -> list[str]:
+    """Remove ids from one file's `harnesses:` list. A file without the key is a no-op; a drop
+    that would empty the set is refused, so a workspace can never be left with no Harness."""
+    current = configured(path)
+    if not current:
+        return []
+    remaining = [value for value in current if value not in values]
+    if remaining == current:
+        return current
+    if not remaining:
+        raise ValueError(f"{path.name}: removing {', '.join(values)} would empty the Harness set — keep at least one")
+    write_config(path, validate(remaining, entries))
+    return remaining
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("catalog", "list", "set"))
+    parser.add_argument("command", choices=("catalog", "list", "set", "drop"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--config-local", type=Path)
     parser.add_argument("--registry", type=Path, default=REGISTRY)
@@ -157,6 +168,10 @@ def main() -> int:
         return 0
 
     values = validate(re.split(r"[\s,]+", args.harnesses), entries)
+    if args.command == "drop":
+        for value in drop(args.config, values, entries):
+            print(value)
+        return 0
     if not args.config.is_file():
         raise ValueError(f"configuration file does not exist: {args.config}")
     write_config(args.config, values)

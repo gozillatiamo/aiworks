@@ -1065,9 +1065,11 @@ if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle h
   else "$SUPGEN" >/dev/null || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi   # quiet by default
 fi
 
-# ── reconcile every selected Agent harness ────────────────────────────────────
-# The Harness registry owns dispatch. Selected projections update; deselected projections remove
-# only generator-owned files. This is the extension seam for future Harnesses such as Hermes.
+# ── reconcile every active Agent harness ──────────────────────────────────────
+# The Harness registry owns dispatch. The ACTIVE set (workspace.config.local.yaml over the shared
+# file) is projected; a Harness absent from it is left untouched — sync never deletes a
+# projection, `aiworks remove --harnesses <id>` does. This is the extension seam for future
+# Harnesses such as Hermes.
 HARGEN="$DIR/aiworks-harnesses.sh"
 if [[ -x "$HARGEN" ]]; then
   step "Reconcile selected Agent harnesses"
