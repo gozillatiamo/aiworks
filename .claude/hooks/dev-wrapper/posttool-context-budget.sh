@@ -55,29 +55,19 @@ fi
 
 payload="$(cat)"
 tp="$(printf '%s' "$payload" | jq -r '.transcript_path // ""' 2>/dev/null)"
-[ -n "$tp" ] && [ -f "$tp" ] || exit 0
+aid="$(printf '%s' "$payload" | jq -r '.agent_id // ""' 2>/dev/null)"
 
-# Read only the tail: a transcript is routinely hundreds of MB, and the newest usage row is
-# always at the end. The first (possibly severed) line is dropped before parsing.
-# The LAST usage row is not always the newest real one: a cancelled or synthetic turn
-# writes an all-zero row after it. Take the last row that actually billed something.
-# No `tail -n +2`: the tail can sever the first line, but `try fromjson catch empty`
-# already drops it — and skipping line 1 unconditionally would blind the hook to any
-# transcript short enough to fit in one tail window.
-win="$(tail -c 400000 "$tp" 2>/dev/null | jq -Rn '
-  [ inputs | try fromjson catch empty | .message.usage? // empty
-    | ( (.cache_read_input_tokens // 0)
-      + (.cache_creation_input_tokens // 0)
-      + (.input_tokens // 0) )
-    | select(. > 0) ] | last // 0' 2>/dev/null)"
-
-case "$win" in ''|*[!0-9]*) exit 0 ;; esac
+# The payload names the MAIN transcript even inside a subagent; the resolver finds the caller's
+# own file, and the measurement is the newest row that actually billed (lib-context-window.sh).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-context-window.sh"
+win="$(window_of "$(own_transcript "$tp" "$aid")")"
 [ "$win" -ge "$WARN" ] || exit 0
 
 # Throttle: one line per bucket crossed, per session. Without this the same warning would
 # print on every tool call for the rest of a long session and become invisible.
 sid="$(printf '%s' "$payload" | jq -r '.session_id // "unknown"' 2>/dev/null)"
-state="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.context-budget-${sid//[^A-Za-z0-9_-]/_}"
+key="${sid}-${aid:-main}"
+state="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.context-budget-${key//[^A-Za-z0-9_-]/_}"
 now=$((win / BUCKET))
 last=0
 [ -f "$state" ] && read -r last < "$state" 2>/dev/null

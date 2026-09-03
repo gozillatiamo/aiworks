@@ -228,6 +228,9 @@ checks make the number visible:
 - **`posttool-context-budget.sh`** (PostToolUse, advisory, never blocks) reads the window off the
   live transcript and prints one line per 50k crossed: a warning at 150k, an escalation at 300k.
   Thresholds move with `AIWORKS_CONTEXT_WARN` / `AIWORKS_CONTEXT_ALARM`.
+- **`context-handoff.sh`** (PostToolUse, `decision: block`) does not advise — at 140k it demands a
+  handoff document the agent writes for *itself*, hands it back after the compaction, and re-arms.
+  Inside a subagent both hooks measure the subagent's own transcript. `docs/agents/context-handoff.md`.
 - **`aiworks doctor --only headroom`** samples recent transcripts and reports any session that ran
   past 300k, because the expensive sessions are the ones nobody noticed at the time.
 
