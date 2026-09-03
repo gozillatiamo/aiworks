@@ -1162,6 +1162,154 @@ for bad in 'not json' '{}' '{"tool_input":{"command":"grep -rn x svc"}}'; do
   fi
 done
 
+# ── context-handoff.sh ─────────────────────────────────────────────────────────────────
+# The self-handoff loop: at the handoff threshold the hook DEMANDS a handoff document at a
+# path it names; once the document exists it goes quiet; when the window collapses (a
+# compaction) it hands the document back; then the cycle re-arms. The fixtures are the
+# on-disk transcript layout Claude Code writes — main transcript `<proj>/<sid>.jsonl`, a
+# subagent's own at `<proj>/<sid>/subagents/agent-<id>.jsonl`, a workflow agent's under
+# `subagents/workflows/<run>/` — because the payload's transcript_path names the MAIN
+# transcript even inside a subagent (scripts/hook-signal-probe.sh), so measuring the wrong
+# file is the bug this section pins.
+HO="$H/context-handoff.sh"
+HDIR="$TMP/handoff"
+PROJ="$TMP/proj"; mkdir -p "$PROJ"
+
+usage_row() { jq -cn --argjson r "$1" '{type:"assistant",message:{usage:{cache_read_input_tokens:$r,cache_creation_input_tokens:0,input_tokens:0,output_tokens:10}}}'; }
+# mkctx <sid> <main-window> [<agent-id> <agent-window> [wf]] — builds the layout, prints nothing.
+mkctx() {
+  local sid=$1 mainw=$2 aid=${3:-} aw=${4:-} wf=${5:-}
+  usage_row "$mainw" > "$PROJ/$sid.jsonl"
+  [ -n "$aid" ] || return 0
+  local d="$PROJ/$sid/subagents"; [ -n "$wf" ] && d="$d/workflows/wf_$wf"
+  mkdir -p "$d"; usage_row "$aw" > "$d/agent-$aid.jsonl"
+}
+# Re-point a transcript's window without rebuilding the layout.
+setwin() { usage_row "$2" > "$1"; }
+# ho <sid> [<agent-id>] — runs the PostToolUse leg, prints stdout.
+ho() {
+  jq -cn --arg s "$1" --arg t "$PROJ/$1.jsonl" --arg a "${2:-}" \
+    '{hook_event_name:"PostToolUse",session_id:$s,transcript_path:$t,tool_name:"Bash"} + (if $a != "" then {agent_id:$a,agent_type:"developer"} else {} end)' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" 2>/dev/null
+}
+hoc() { # hoc <name> <want: quiet|block|context> <stdout>  (+ optional <substring the text must carry>)
+  local name=$1 want=$2 out=$3 must=${4:-} got=quiet text=""
+  if [ -n "$out" ]; then
+    text="$(printf '%s' "$out" | jq -r '(.reason // "") + (.hookSpecificOutput.additionalContext // "")' 2>/dev/null)"
+    [ "$(printf '%s' "$out" | jq -r '.decision // ""' 2>/dev/null)" = "block" ] && got=block || got=context
+  fi
+  if [ "$got" = "$want" ] && { [ -z "$must" ] || printf '%s' "$text" | grep -qF -- "$must"; }; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail+1)); printf 'FAIL %s (wanted %s%s, got %s)\n' "$name" "$want" "${must:+ carrying $must}" "$got"
+  fi
+}
+
+mkctx h1 139999
+hoc "under the handoff threshold is silent"        quiet "$(ho h1)"
+mkctx h2 145000
+hoc "main crossing demands the handoff by path"    block "$(ho h2)" "$HDIR/h2/main.md"
+hoc "the demand names the skill"                   block "$(ho h2)" "handoff"
+# A subagent's window is ITS transcript, never the parent's.
+mkctx h3 200000 a3 50000
+hoc "subagent under threshold stays quiet despite a fat parent" quiet "$(ho h3 a3)"
+mkctx h4 50000 a4 145000
+hoc "subagent crossing demands its own document"   block "$(ho h4 a4)" "$HDIR/h4/a4.md"
+mkctx h5 50000 w5 145000 wf
+hoc "workflow agent layout is resolved"            block "$(ho h5 w5)" "$HDIR/h5/w5.md"
+mkctx h6 200000
+hoc "an agent with no transcript on disk measures nothing" quiet "$(ho h6 ghost)"
+
+# The nag has a budget: an agent without a Write tool cannot comply, and a demand that never
+# ends is the one that gets ignored. Default 3 — the two above were 1 and 2.
+hoc "third demand still fires"                     block "$(ho h2)" "(3/3)"
+hoc "the fourth is silent — budget spent"          quiet "$(ho h2)"
+
+# The document must be NEWER than the demand: a stale file from a previous cycle proves nothing.
+mkctx h7 145000; ho h7 >/dev/null
+mkdir -p "$HDIR/h7"; printf '# old\n' > "$HDIR/h7/main.md"; touch -t 200001010000 "$HDIR/h7/main.md"
+hoc "a stale document does not satisfy the demand" block "$(ho h7)" "(2/3)"
+printf '# Handoff h7\n\nNext: finish the thing.\n' > "$HDIR/h7/main.md"
+hoc "a fresh document is recorded, not blocked"    context "$(ho h7)" "Handoff recorded at $HDIR/h7/main.md"
+hoc "recorded tells a subagent to return a partial" quiet "$(ho h7)"   # said once, then quiet
+setwin "$PROJ/h7.jsonl" 160000
+hoc "written and still growing stays quiet"        quiet "$(ho h7)"
+# A window never shrinks between two calls except across a compaction — so a drop IS one.
+setwin "$PROJ/h7.jsonl" 90000
+hoc "the collapse hands the document back"         context "$(ho h7)" "Next: finish the thing."
+hoc "the document is handed back once"             quiet "$(ho h7)"
+setwin "$PROJ/h7.jsonl" 141000
+hoc "resumed re-arms: the next crossing demands again" block "$(ho h7)" "(1/3)"
+
+# Compaction without a document: nothing to hand back, the cycle just re-arms.
+mkctx h8 145000; ho h8 >/dev/null
+setwin "$PROJ/h8.jsonl" 90000
+hoc "collapse while requested is silent"           quiet "$(ho h8)"
+setwin "$PROJ/h8.jsonl" 150000
+hoc "and re-arms"                                  block "$(ho h8)" "(1/3)"
+
+# SessionStart(compact) is the documented re-injection point — it fires BEFORE the first tool
+# call after a compaction, so it wins over the collapse detection above, which then stays quiet.
+ss() { jq -cn --arg s "$1" '{hook_event_name:"SessionStart",source:"compact",session_id:$s}' | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" 2>/dev/null; }
+mkctx h9 145000; ho h9 >/dev/null
+mkdir -p "$HDIR/h9"; printf '# Handoff h9\n\nResume at step 4.\n' > "$HDIR/h9/main.md"; ho h9 >/dev/null
+out="$(ss h9)"
+if printf '%s' "$out" | grep -qF 'Resume at step 4.' && printf '%s' "$out" | grep -qF 'YOUR OWN handoff'; then
+  pass=$((pass+1)); printf 'ok   SessionStart(compact) re-injects the document\n'
+else fail=$((fail+1)); printf 'FAIL SessionStart(compact) did not re-inject the document\n'; fi
+setwin "$PROJ/h9.jsonl" 90000
+hoc "after SessionStart the collapse says nothing twice" quiet "$(ho h9)"
+[ -z "$(ss h1)" ] \
+  && { pass=$((pass+1)); printf 'ok   SessionStart with nothing written is silent\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL SessionStart with nothing written spoke\n'; }
+# A workflow agent's brief carries `HANDOFF_KEY: <ticket>/<step>` (the dev-cycle/brd/prd agent
+# wrappers append it), so the document is keyed by the STEP, not the agent: a replacement spawned
+# for the same step — after a partial, or after the runtime killed its predecessor with no result
+# at all — finds the document at a path the workflow could name in its brief without knowing any
+# agent id. The key is read off the first user message of the agent's own transcript.
+keyed() { # keyed <sid> <aid> <window> <key> — a subagent transcript whose brief carries the key
+  local d="$PROJ/$1/subagents/workflows/wf_k"; mkdir -p "$d"
+  { jq -cn --arg k "$4" '{type:"user",message:{role:"user",content:("Do the work.\n… HANDOFF_KEY: " + $k + ". CONTINUITY …")}}'
+    usage_row "$3"; } > "$d/agent-$2.jsonl"
+  usage_row 30000 > "$PROJ/$1.jsonl"
+}
+keyed h12 k1 145000 'FM-9/build|svc'
+hoc "a keyed brief puts the document under by-key, sanitised" block "$(ho h12 k1)" "$HDIR/by-key/FM-9_build_svc.md"
+mkdir -p "$HDIR/by-key"; printf '# Handoff k1\n' > "$HDIR/by-key/FM-9_build_svc.md"
+hoc "and records it there"                          context "$(ho h12 k1)" "recorded at $HDIR/by-key/FM-9_build_svc.md"
+# The replacement is a NEW agent on the SAME key: its own state starts armed, and the predecessor's
+# document — older than its demand — is not mistaken for its own.
+keyed h12 k2 145000 'FM-9/build|svc'
+touch -t 200001010000 "$HDIR/by-key/FM-9_build_svc.md"
+hoc "a replacement on the same key is asked for its own document" block "$(ho h12 k2)" "$HDIR/by-key/FM-9_build_svc.md"
+hoc "the predecessor's document does not satisfy it" block "$(ho h12 k2)" "(2/3)"
+# Array-shaped content (text blocks) carries the key too.
+d="$PROJ/h13/subagents"; mkdir -p "$d"
+{ jq -cn '{type:"user",message:{role:"user",content:[{type:"text",text:"HANDOFF_KEY: phase-1/research:phase-1 …"}]}}'; usage_row 145000; } > "$d/agent-k3.jsonl"
+usage_row 30000 > "$PROJ/h13.jsonl"
+hoc "a key in a text block is read too"             block "$(ho h13 k3)" "$HDIR/by-key/phase-1_research_phase-1.md"
+
+# The advisory budget hook shares the resolver: inside a subagent it must read the subagent's
+# window, not the parent's — before this it warned about the wrong agent, or not at all.
+mkctx h11 40000 a11 180000
+err="$(jq -cn --arg t "$PROJ/h11.jsonl" '{session_id:"h11",agent_id:"a11",transcript_path:$t,tool_name:"Bash"}' \
+       | CLAUDE_CONFIG_DIR="$CTXCFG" "$CTX" 2>&1 >/dev/null)"
+printf '%s' "$err" | grep -q 'context window 180k' \
+  && { pass=$((pass+1)); printf 'ok   budget hook measures the subagent, not its parent\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL budget hook did not measure the subagent window\n'; }
+
+mkctx h10 145000; ho h10 >/dev/null
+[ -z "$(ss h10)" ] \
+  && { pass=$((pass+1)); printf 'ok   SessionStart while merely requested is silent\n'; } \
+  || { fail=$((fail+1)); printf 'FAIL SessionStart handed back a document that was never written\n'; }
+for bad in 'not json' '{}' '{"hook_event_name":"PostToolUse","session_id":"x"}'; do
+  if printf '%s\n' "$bad" | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" >/dev/null 2>&1; then
+    pass=$((pass+1)); printf 'ok   handoff hook exits 0 on payload: %s\n' "$bad"
+  else
+    fail=$((fail+1)); printf 'FAIL handoff hook non-zero exit on payload: %s\n' "$bad"
+  fi
+done
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]

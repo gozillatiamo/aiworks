@@ -415,6 +415,16 @@ const INVOCATION = String(args).replace(/[^a-zA-Z0-9]+/g, '').slice(-12) || 'run
 // its own copy so the one that gets forgotten fails a test rather than a ticket.
 const LIVE_STATE_PROBE = /^(run-state|base-reconcile|target-gate|approval-probe|human-probe|human-verify|audit):/
 const FRESH_READING = ` FRESH READING REQUIRED — INVOCATION ${INVOCATION}. What you are being asked for is a reading of live state, not a conclusion to reason your way to. The repos, the forge and the tracker have all been free to change since anything last looked at them, and a person may have been ASKED to change them by the run that ended before this one — so what you are checking may have been fixed already, or may have broken since. Run the commands and report WHAT THEY PRINT NOW. Do not answer from an earlier verdict on this ticket, from what the run state or an existing comment says was true, or from what you would expect to find; where any of those disagree with the live reading, the live reading is the answer and the disagreement is itself worth reporting.`
+// ── CONTINUITY ACROSS THE CEILING ──────────────────────────────────────────────────────────────
+// Measured here: 2,552 workflow agents, 13 ever compacted (142k–167k), 191 killed — so a workflow
+// agent's "compaction" is a death and a re-spawn from an EMPTY context. context-handoff.sh demands
+// a self-handoff at 140k; this wrapper adds only the KEY that lets the replacement find it: the hook
+// reads `HANDOFF_KEY:` off the brief and files the document under by-key/<key>.md, and the
+// replacement (same ticket, same stepKey) is told to look there first. Stable across invocations on
+// purpose — agent() is memoised on the prompt (see INVOCATION above). docs/agents/context-handoff.md.
+// ponytail: two rounds of one gate share a key; round 2 is told to verify before trusting.
+const handoffFile = (k) => String(k).replace(/[^A-Za-z0-9_.-]/g, '_')
+const HANDOFF_DISCIPLINE = (key) => ` HANDOFF_KEY: ${key}. CONTINUITY (mandatory, whatever your phase): that key names the handoff document for THIS step — \`\${TMPDIR:-/tmp}/aiworks-handoff/by-key/${handoffFile(key)}.md\`. Before anything else, \`test -f\` it: if it exists, an earlier attempt at this very step wrote it for you — read it, verify what it claims against the branch (commits, files, threads) before trusting it, and continue from its next steps instead of re-reading what it already knows. While you run, when your context crosses 140k a hook DEMANDS that you write that document (\`handoff\` skill, \`self <path>\`): comply at once, then finish the slice in flight, make it durable, and RETURN your structured result as a partial that names the path. Whatever ends you after that, the document survives and your replacement starts from it.`
 const rawAgent = agent
 agent = async (prompt, opts) => {
   const priorCuts = cutOffs.filter((c) => c.key === stepKey(opts)).length
@@ -441,7 +451,7 @@ agent = async (prompt, opts) => {
   // its memo on the prompt, so an id that changes every invocation is the whole difference between
   // re-reading the world and being told what it looked like last time.
   const fresh = LIVE_STATE_PROBE.test(String(opts?.label || '')) ? FRESH_READING : ''
-  try { return await rawAgent(prompt + notice + narrowed + returns + CONTEXT_DISCIPLINE + CUTOFF_DISCIPLINE + fresh, opts) }
+  try { return await rawAgent(prompt + notice + narrowed + returns + CONTEXT_DISCIPLINE + CUTOFF_DISCIPLINE + fresh + HANDOFF_DISCIPLINE(`${ticket}/${stepKey(opts)}`), opts) }
   catch (e) {
     const reason = String(e?.stdout || e?.message || e).trim().slice(-300)
     if (CUT_OFF_RE.test(reason)) cutOffs.push({ key: stepKey(opts), label: opts?.label || '(unlabelled)', phase: opts?.phase || null, reason })

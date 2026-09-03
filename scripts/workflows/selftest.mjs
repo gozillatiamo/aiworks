@@ -25,6 +25,11 @@ assert.ok(prefix, "no TICKET_PREFIX in .claude/workflows/dev-cycle.js");
 for (const [name, input] of [["brd", "phase-1"], ["prd", "phase-1"], ["dev-cycle", `${prefix}-1 --approve-plan`]]) {
   const { stdout } = await exec(cli, ["workflow", name, "--harness", "stub", input], { cwd: root, maxBuffer: 4_000_000 });
   assert.match(stdout, new RegExp(`Workflow ${name} complete`));
+  // Every workflow wraps agent() so each brief carries the HANDOFF_KEY that context-handoff.sh
+  // reads off the transcript; a workflow that loses the wrapper loses continuity across the ceiling.
+  const src = await readFile(path.join(root, `.claude/workflows/${name}.js`), "utf8");
+  assert.match(src, /HANDOFF_KEY: \$\{key\}/, `${name}.js has no HANDOFF_DISCIPLINE`);
+  assert.match(src, /rawAgent\(prompt[^\n]*HANDOFF_DISCIPLINE\(/, `${name}.js does not append HANDOFF_DISCIPLINE to every agent()`);
 }
 
 const fixture = await mkdtemp(path.join(tmpdir(), "aiworks-workflow-selftest-"));

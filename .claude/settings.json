@@ -123,6 +123,16 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -350,6 +360,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-context-budget.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
+            "timeout": 10
           }
         ]
       }
@@ -499,6 +514,7 @@
     }
   },
   "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75",
     "HCAT_GATE_BYTES": "65536",
     "HCAT_GATE_NO_SNIFF": "1",
     "DANGI_NO_NOTIFY": "1",

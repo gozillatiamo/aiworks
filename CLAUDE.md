@@ -58,7 +58,8 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   `headroom.md` — `hcat` for a big file, never a bare `cat`: an unbounded read ≥8 KiB is hook-BLOCKED, as is a read-modify-write
   heredoc patch (`Edit` ships only the delta) — and so is the **7th identical probe of one file**, because a turn costs the whole
   window re-sent, not its own bytes: wait for a long run in ONE `Bash(run_in_background=true, "until <done or failed>; do sleep 5;
-  done")`, never a `grep`/`tail` loop.
+  done")`, never a `grep`/`tail` loop · `context-handoff.md` — at 140k a hook DEMANDS a handoff document you write
+  for yourself (`handoff` skill, `self <path>`), hands it back after the compaction, and re-arms until the work is done.
 - `scripts/k8s/README.md` — READ-ONLY Kubernetes triage (`k8s_triage` MCP) through a `view`-only impersonated identity,
   so the **API server** rejects writes. ⚠️ `Bash(kubectl *)`/`Bash(gcloud *)` denied — ask for `!kubectl`.
 - **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in
