@@ -18,6 +18,8 @@ MODEL_MAP = {
     "opus": "gpt-5.6-sol",
     "sonnet": "gpt-5.6-terra",
     "haiku": "gpt-5.6-luna",
+    # ponytail: fable has no Codex-side counterpart yet, fall back to the sonnet-equivalent
+    "fable": "gpt-5.6-terra",
 }
 SUPPORTED_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 

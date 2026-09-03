@@ -4,7 +4,8 @@ import path from "node:path";
 import process from "node:process";
 import { parseJsonLines, runProcess } from "./common.mjs";
 
-const modelMap = { opus: "gpt-5.6-sol", sonnet: "gpt-5.6-terra", haiku: "gpt-5.6-luna" };
+// ponytail: fable has no Codex-side counterpart yet, fall back to the sonnet-equivalent
+const modelMap = { opus: "gpt-5.6-sol", sonnet: "gpt-5.6-terra", haiku: "gpt-5.6-luna", fable: "gpt-5.6-terra" };
 
 export function strictOutputSchema(schema) {
   if (Array.isArray(schema)) return schema.map(strictOutputSchema);
