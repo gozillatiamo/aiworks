@@ -14,16 +14,22 @@
 #              cask). Each is upgraded ONLY if brew actually owns it here, so a jq from /usr/bin or
 #              a pnpm from nvm is left alone rather than shadowed by a second copy. The list is the
 #              one `aiworks doctor` reports currency for, so the command it names can actually fix
-#              what it flagged — keep the two in step.
+#              what it flagged — keep the two in step. A tool brew does not own is triaged rather
+#              than blanket-skipped: OS-shipped (/usr/bin) is reported "system" because the vendor
+#              updates it, and one with a group of its own (pnpm, uv) is left to that group.
 #   rust       rustup update — the Rust toolchain (any Rust service/repo in the workspace).
-#   pnpm       corepack prepare pnpm@latest, but ONLY when brew does not own pnpm (else the brew
-#              group already handled it). Stays inside the CURRENT node; never switches node.
+#   pnpm       whichever updater owns the pnpm on PATH: brew (already done by the brew group), a
+#              standalone install under PNPM_HOME (pnpm self-update — corepack would install a
+#              second copy the standalone one shadows), else corepack, else npm. Stays inside the
+#              CURRENT node; never switches node.
 #   uv         uv self update, but only for the standalone installer. Brew-owned uv is handled by
 #              the brew group so the updater never replaces a package-managed binary.
 #   gcloud     gcloud components update.
 #   claude     claude update — the Claude Code CLI.
 #   cursor     cursor-agent update — the Cursor CLI.
-#   codex      upgrade @openai/codex through the installer that owns it (brew or npm).
+#   codex      upgrade the Codex CLI through the installer that owns it: brew cask, brew formula,
+#              npm global, else the CLI's own `codex update` (a standalone install owned by no
+#              package manager). Only a build with none of those is left alone.
 #   codegraph  codegraph upgrade — the per-repo code index CLI.
 #   graphify   uv tool upgrade graphifyy — this repo's doc-graph CLI (prose only).
 #   plugins    claude plugin marketplace update, then `claude plugin update` for every plugin in
@@ -176,6 +182,10 @@ conclude "aiworks update — $ROOT"
 # brew_owns, so listing one costs nothing.
 BREW_FORMULAE="mani glab gh jq dap k6 pnpm uv"
 BREW_CASKS="ngrok"
+# Of those, the ones a LATER group updates through their own installer when brew is not the owner.
+# Without this the summary shows them "skipped — not brew-owned" ten lines above the step that
+# actually moved them.
+SELF_UPDATING="pnpm uv"
 if want brew; then
   if ! command -v brew >/dev/null 2>&1; then
     warn "Homebrew not installed — skipping the brew group."
@@ -185,8 +195,22 @@ if want brew; then
     for f in $BREW_FORMULAE; do
       if brew_owns "$f"; then upgrade "brew upgrade $f" "$f" brew upgrade "$f"
       else
-        log "$f: not brew-owned here ($(command -v "$f" 2>/dev/null || echo 'not installed')) — leaving it alone."
-        record "$f" "skipped" "$(tool_version "$f")" "not brew-owned"
+        f_path="$(command -v "$f" 2>/dev/null || true)"
+        case " $SELF_UPDATING " in
+          *" $f "*)
+            log "$f: not brew-owned (${f_path:-not installed}) — the $f group owns it here." ;;
+          *)
+            case "$f_path" in
+              # OS-shipped (jq is /usr/bin/jq on a stock macOS): the vendor updates it. Nothing to
+              # run here, and nothing WRONG either — "skipped" reads like an unmet need it is not.
+              /usr/bin/*|/bin/*|/usr/sbin/*|/sbin/*)
+                log "$f: OS-shipped ($f_path) — the system updates it, not this script."
+                record "$f" "system" "$(tool_version "$f")" "OS-managed" ;;
+              *)
+                log "$f: not brew-owned here (${f_path:-not installed}) — leaving it alone."
+                record "$f" "skipped" "$(tool_version "$f")" "not brew-owned" ;;
+            esac ;;
+        esac
       fi
     done
     for c in $BREW_CASKS; do
@@ -211,8 +235,14 @@ fi
 
 # ── pnpm (only when brew is not the owner — else the brew group already did it) ───
 if want pnpm; then
+  pnpm_path="$(command -v pnpm 2>/dev/null || true)"
   if brew_owns pnpm; then
     log "pnpm is brew-owned — handled by the brew group."
+  elif [[ -n "$pnpm_path" && -n "${PNPM_HOME:-}" && "$pnpm_path" == "$PNPM_HOME"/* ]]; then
+    # Standalone install (pnpm's own installer, under PNPM_HOME). corepack would write a SECOND
+    # pnpm into ITS shim dir, which this one shadows — so the version on PATH never moves and the
+    # step reports "current" forever. `pnpm self-update` replaces the copy actually in use.
+    upgrade "pnpm self-update" "pnpm" pnpm self-update
   elif command -v corepack >/dev/null 2>&1; then
     upgrade "corepack prepare pnpm@latest" "pnpm" corepack prepare pnpm@latest --activate
   elif command -v npm >/dev/null 2>&1; then
@@ -270,10 +300,17 @@ if want codex; then
     record "codex" "skipped" "absent" "-"
   elif brew_owns codex --cask; then
     upgrade "brew upgrade --cask codex" "codex" brew upgrade --cask codex
+  elif brew_owns codex; then
+    upgrade "brew upgrade codex" "codex" brew upgrade codex
   elif command -v npm >/dev/null 2>&1 && npm list -g @openai/codex >/dev/null 2>&1; then
     upgrade "npm install -g @openai/codex@latest" "codex" npm install -g @openai/codex@latest
+  elif codex update --help >/dev/null 2>&1; then
+    # Standalone install (the official installer keeps versioned copies under ~/.codex and links
+    # the current one onto PATH). No package manager owns it, but the CLI updates ITSELF in
+    # place — the only updater that can, and the one that install method expects.
+    upgrade "codex update" "codex" codex update
   else
-    warn "codex is not brew/npm-owned here — leaving it alone rather than shadowing it."
+    warn "codex: no owner this script recognises and no 'codex update' subcommand — left alone."
     record "codex" "skipped" "$(tool_version codex)" "unknown owner"
   fi
 fi
