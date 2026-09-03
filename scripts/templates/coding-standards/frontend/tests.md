@@ -10,6 +10,26 @@ paths:
 
 Sibling rules: [`standards.md`](./standards.md).
 
+## File structure — **MUST DO**
+
+- [ ] Test file sits next to the unit it tests and shares its name: a hook/
+  util/component at `src/hook/useFetchList.ts` gets `src/hook/useFetchList.test.ts`
+  (co-located, same directory — swap the extension/pattern for this stack's own
+  convention if it differs; the co-location rule is what matters).
+- [ ] One test file = one test suite = one exported function/hook/component
+  under test. Don't fold several units' cases into one file, and don't split
+  one unit's cases across multiple files.
+- [ ] Every test case in that file targets that one unit — no incidental
+  coverage of a sibling export because it happened to be convenient.
+
+## Case count — **MUST DO**
+
+- [ ] New feature / new test suite (new file): 3-5 cases to start — happy path
+  plus the edge cases/states that actually matter. Don't pad past that for a
+  first pass.
+- [ ] Updating an existing suite / proving a fix: add or change only the
+  case(s) that prove the change. Don't re-verbosify the whole file.
+
 ## Date/time — **MUST DO**
 
 - [ ] Any test or story that involves a date, time, timestamp, or duration MUST
