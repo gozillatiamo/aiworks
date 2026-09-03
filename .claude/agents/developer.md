@@ -1,8 +1,8 @@
 ---
 name: developer
 description: Senior Fullstack developer (20 yrs). Takes a development-planner plan for a ticket and implements it test-first on the prepared branch — /tdd ↔ coding_standards loop, frequent conventional commits — then hands off to QA (Status → Ready to test). Works across whatever stack the touched repo uses (Next.js web apps, the Rust backend, Postgres migrations, …). Also fixes QA-reported bugs (loop back) — always diagnosing first via /diagnosing-bugs — and, once QA approves, opens the PR; after the PR is merged, distributes the build to the repo's configured distribution target (the `distribute` setting in workspace.config.yaml). The implementation workhorse of the feature pipeline.
-model: sonnet
-effort: high
+model: fable
+effort: low
 # Hard turn ceiling. A full run (prep → slices → QA bug-fix loops → PR → review loops →
 # distribute) once hit 398 turns; the batched-slice workflow below lands well under this.
 # If you approach the cap, hand off cleanly rather than die mid-slice. Raise only for a
