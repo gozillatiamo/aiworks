@@ -34,10 +34,19 @@ today only for the *next* agent, and only when someone asks.
    subagent, so `lib-context-window.sh` resolves `subagents/agent-<id>.jsonl` (or the workflow layout)
    from `agent_id`, and the advisory budget hook now shares that resolver — before this it reported the
    parent's window for a child.
-4. **Nothing in the workflows changes.** The model cannot run `/compact`; a subagent's compaction is a
-   fresh agent. So the recorded message tells a subagent to RETURN a partial naming the path, and
-   `dev-cycle`'s existing partial-continuation carries it. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` stays a
-   documented, machine-local knob: it is a percent of a window whose size differs per model.
+4. **In a workflow the document is keyed by the step, and the compaction point is moved.** Measured
+   on one machine: 2,552 workflow agents, 13 ever compacted (142k–167k, the runtime's default point,
+   inside the death band), 191 killed with no result. So `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` goes in
+   `.claude/settings.json` (project scope; it applies to subagents and can only lower the default —
+   ~150k on a 200k window, unreachable on a 1M one), putting demand, compaction and kill in that
+   order; and every `agent()` in `dev-cycle.js`, `brd.js` and `prd.js` is wrapped to append
+   `HANDOFF_KEY: <ticket>/<stepKey>` (or `<workflow>/<label>`), which the hook reads off the brief to
+   file the document under `by-key/<key>.md`, and which the wrapper tells the agent to look for
+   first. A replacement for the same step — after a partial, or after a kill that returned nothing —
+   inherits its predecessor's state through a path the workflow can name without any agent id. The
+   key is stable across invocations because `agent()` is memoised on the prompt. Nothing else in the
+   workflows changes: the recorded message tells the agent to RETURN a partial naming the path, and
+   `dev-cycle`'s existing partial continuation carries it.
 
 ## Consequences
 

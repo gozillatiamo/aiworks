@@ -1262,6 +1262,33 @@ hoc "after SessionStart the collapse says nothing twice" quiet "$(ho h9)"
 [ -z "$(ss h1)" ] \
   && { pass=$((pass+1)); printf 'ok   SessionStart with nothing written is silent\n'; } \
   || { fail=$((fail+1)); printf 'FAIL SessionStart with nothing written spoke\n'; }
+# A workflow agent's brief carries `HANDOFF_KEY: <ticket>/<step>` (the dev-cycle/brd/prd agent
+# wrappers append it), so the document is keyed by the STEP, not the agent: a replacement spawned
+# for the same step — after a partial, or after the runtime killed its predecessor with no result
+# at all — finds the document at a path the workflow could name in its brief without knowing any
+# agent id. The key is read off the first user message of the agent's own transcript.
+keyed() { # keyed <sid> <aid> <window> <key> — a subagent transcript whose brief carries the key
+  local d="$PROJ/$1/subagents/workflows/wf_k"; mkdir -p "$d"
+  { jq -cn --arg k "$4" '{type:"user",message:{role:"user",content:("Do the work.\n… HANDOFF_KEY: " + $k + ". CONTINUITY …")}}'
+    usage_row "$3"; } > "$d/agent-$2.jsonl"
+  usage_row 30000 > "$PROJ/$1.jsonl"
+}
+keyed h12 k1 145000 'FM-9/build|svc'
+hoc "a keyed brief puts the document under by-key, sanitised" block "$(ho h12 k1)" "$HDIR/by-key/FM-9_build_svc.md"
+mkdir -p "$HDIR/by-key"; printf '# Handoff k1\n' > "$HDIR/by-key/FM-9_build_svc.md"
+hoc "and records it there"                          context "$(ho h12 k1)" "recorded at $HDIR/by-key/FM-9_build_svc.md"
+# The replacement is a NEW agent on the SAME key: its own state starts armed, and the predecessor's
+# document — older than its demand — is not mistaken for its own.
+keyed h12 k2 145000 'FM-9/build|svc'
+touch -t 200001010000 "$HDIR/by-key/FM-9_build_svc.md"
+hoc "a replacement on the same key is asked for its own document" block "$(ho h12 k2)" "$HDIR/by-key/FM-9_build_svc.md"
+hoc "the predecessor's document does not satisfy it" block "$(ho h12 k2)" "(2/3)"
+# Array-shaped content (text blocks) carries the key too.
+d="$PROJ/h13/subagents"; mkdir -p "$d"
+{ jq -cn '{type:"user",message:{role:"user",content:[{type:"text",text:"HANDOFF_KEY: phase-1/research:phase-1 …"}]}}'; usage_row 145000; } > "$d/agent-k3.jsonl"
+usage_row 30000 > "$PROJ/h13.jsonl"
+hoc "a key in a text block is read too"             block "$(ho h13 k3)" "$HDIR/by-key/phase-1_research_phase-1.md"
+
 # The advisory budget hook shares the resolver: inside a subagent it must read the subagent's
 # window, not the parent's — before this it warned about the wrong agent, or not at all.
 mkctx h11 40000 a11 180000

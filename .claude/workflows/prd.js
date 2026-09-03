@@ -90,6 +90,15 @@ const imageGenRule = IMAGE_GEN_ENABLED
 // ──────────────────────────────────────────────────────────────────────────
 // Input — auto-detect: brd work-key | doc-space/Figma URL | docs/brd/<key>.md path
 // ──────────────────────────────────────────────────────────────────────────
+// Continuity across the context ceiling — same wrapper as dev-cycle.js, keyed by the step label.
+// context-handoff.sh demands a self-handoff at 140k and files it under by-key/<key>.md; this key is
+// what lets a replacement for the same step find it. Stable across invocations: agent() memoises
+// on the prompt.
+const handoffFile = (k) => String(k).replace(/[^A-Za-z0-9_.-]/g, '_')
+const HANDOFF_DISCIPLINE = (key) => ` HANDOFF_KEY: ${key}. CONTINUITY (mandatory, whatever your phase): that key names the handoff document for THIS step — \`\${TMPDIR:-/tmp}/aiworks-handoff/by-key/${handoffFile(key)}.md\`. Before anything else, \`test -f\` it: if it exists, an earlier attempt at this very step wrote it for you — read it, verify what it claims against the repo, the tracker and Figma before trusting it, and continue from its next steps instead of re-reading what it already knows. While you run, when your context crosses 140k a hook DEMANDS that you write that document (\`handoff\` skill, \`self <path>\`): comply at once, then finish the slice in flight, make it durable, and RETURN your structured result as a partial that names the path. Whatever ends you after that, the document survives and your replacement starts from it.`
+const rawAgent = agent
+agent = (prompt, opts) => rawAgent(prompt + HANDOFF_DISCIPLINE(`prd/${opts?.label || 'unlabelled'}`), opts)
+
 const rawIn = (typeof args === 'string'
   ? args
   : (args?.brd || args?.input || args?.workKey || args?.phase || args?.url || args?.path || ''))?.trim()

@@ -40,16 +40,46 @@ The document and its state live **outside the workspace** — `AIWORKS_HANDOFF_D
 `$TMPDIR/aiworks-handoff/<sid>/<agent_id|main>.md` — which is the skill's own rule for handoffs.
 Exit 0 always: a measuring hook never breaks the tool call it rides on.
 
+## Workflows — where this actually pays
+
+Measured on one machine's transcripts: **2,552** workflow agents, **13** ever compacted (all between
+142k and 167k — the runtime's default threshold, which sits inside the death band), **191** killed
+with no result. So for a workflow agent a "compaction" is a death and a re-spawn, and the re-spawn
+started from an empty context. Two layers close that, one mechanical and one deterministic:
+
+1. **Auto-compaction moved below the death band.** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` in
+   `.claude/settings.json` (project scope, documented to apply to subagents; it can only lower the
+   default). On a 200k window that is ~150k: the demand at 140k, the compaction at ~150k, the kill
+   past 160k — in that order. The hook's collapse detection then hands the document back and the
+   agent continues **in place**, no re-spawn. On a 1M window 75% is 750k, which these agents never
+   reach, so the knob is harmless there.
+2. **The document is keyed by the STEP, not the agent.** Every `agent()` in `dev-cycle.js`, `brd.js`
+   and `prd.js` runs through a wrapper that appends `HANDOFF_KEY: <ticket>/<stepKey>` (dev-cycle) or
+   `<workflow>/<label>` to the brief. The hook reads the key off the first user message of the
+   agent's own transcript and files the document under `by-key/<key>.md` instead of by agent id.
+   The wrapper also tells every agent to `test -f` that path **first** and, if it exists, to read it,
+   verify it against the branch, and continue from it. So a replacement — spawned for the same step
+   after a partial, or after the runtime killed its predecessor with no result at all — inherits the
+   predecessor's state through a path the workflow could name without knowing any agent id. Nothing
+   else in the workflows changed: the recorded message tells the agent to RETURN a partial naming the
+   path, and dev-cycle's existing partial continuation carries it.
+
+The key is deliberately **stable across invocations**: `agent()` is memoised on the prompt, so a
+per-invocation token would re-run every producing step on resume. Per-agent state stays per agent,
+so a replacement is asked for its *own* document and the predecessor's — older than the demand — is
+never mistaken for it. Known ceiling (`ponytail:` in dev-cycle.js): two rounds of one gate share a key,
+so round 2 may read round 1's document; it is told to verify before trusting, and the skill stamps
+every self-handoff with a UTC timestamp for exactly that reason.
+
 ## What the model cannot do, and what stands in for it
 
 - **The model cannot run `/compact`.** In the main session the person does (the recorded message
-  says so in a `systemMessage`), or auto-compaction does. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` moves the
-  automatic threshold and is documented to apply to subagents — but it is a **percent of the model's
-  window**, and the window differs per model, so it is not set in `settings.json`; set it in
-  `settings.local.json` for a known model (75 on a 200k window lands near 150k).
-- **A subagent's compaction is a fresh agent.** Its continuation starts from an empty context, so
-  the recorded message tells it to RETURN a partial that names the handoff path. `dev-cycle` already
-  continues partials (`build.max_continuation_passes`); nothing in the workflows changed.
+  says so in a `systemMessage`), or auto-compaction does at the `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`
+  point above — a **percent of the model's window**, so it is ~150k on a 200k model and 750k on a
+  1M one; override it in `settings.local.json` for a machine whose models differ.
+- **A subagent that is killed before it compacts is a fresh agent.** Its continuation starts from an
+  empty context — unless it finds the by-key document, which is what the workflow wrappers make it
+  look for first.
 - **Advice was already there and did not work.** `CONTEXT_DISCIPLINE` rides every dev-cycle brief and
   `posttool-context-budget.sh` warns at 150k; both are prose the model can weigh against the task in
   hand. A `block` is the strongest thing a hook can say, and the first time this hook was wired it
@@ -63,5 +93,6 @@ Exit 0 always: a measuring hook never breaks the tool call it rides on.
 | `AIWORKS_HANDOFF_NAGS` | `3` | demands per cycle before the hook gives up |
 | `AIWORKS_HANDOFF_DIR` | `$TMPDIR/aiworks-handoff` | where documents and state live |
 | `AIWORKS_CONTEXT_WARN` / `_ALARM` | `150000` / `300000` | the advisory budget hook, unchanged |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `75` (settings.json) | runtime auto-compaction point, percent of the model window; applies to subagents |
 
 `context-handoff.sh --check <n>` prints the transition a window of `n` tokens takes from `armed`.

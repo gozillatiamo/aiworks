@@ -77,6 +77,13 @@ key="${aid:-main}"; key="${key//[^A-Za-z0-9_.-]/_}"
 sdir="$DIR/${sid//[^A-Za-z0-9_.-]/_}"
 doc="$sdir/$key.md"
 st="$sdir/$key.state"
+# A workflow agent's brief names a STEP key; then the document is shared by every attempt at that
+# step (by-key/<key>.md) while the state stays this agent's own — a replacement is asked for its
+# own document, and the predecessor's, older than the demand, never counts as it.
+if [ -n "$aid" ]; then
+  hk="$(handoff_key_of "$(own_transcript "$tp" "$aid")")"
+  [ -n "$hk" ] && doc="$DIR/by-key/$hk.md"
+fi
 
 phase=armed; ts=0; nag=0; wref=0
 [ -f "$st" ] && read -r phase ts nag wref < "$st" 2>/dev/null

@@ -15,6 +15,15 @@ export const meta = {
 // ──────────────────────────────────────────────────────────────────────────
 // Input — auto-detect phase ("Phase 2", "phase-2") vs free-text directive
 // ──────────────────────────────────────────────────────────────────────────
+// Continuity across the context ceiling — same wrapper as dev-cycle.js, keyed by the step label.
+// context-handoff.sh demands a self-handoff at 140k and files it under by-key/<key>.md; this key is
+// what lets a replacement for the same step find it. Stable across invocations: agent() memoises
+// on the prompt.
+const handoffFile = (k) => String(k).replace(/[^A-Za-z0-9_.-]/g, '_')
+const HANDOFF_DISCIPLINE = (key) => ` HANDOFF_KEY: ${key}. CONTINUITY (mandatory, whatever your phase): that key names the handoff document for THIS step — \`\${TMPDIR:-/tmp}/aiworks-handoff/by-key/${handoffFile(key)}.md\`. Before anything else, \`test -f\` it: if it exists, an earlier attempt at this very step wrote it for you — read it, verify what it claims against the repo and the tracker before trusting it, and continue from its next steps instead of re-reading what it already knows. While you run, when your context crosses 140k a hook DEMANDS that you write that document (\`handoff\` skill, \`self <path>\`): comply at once, then finish the slice in flight, make it durable, and RETURN your structured result as a partial that names the path. Whatever ends you after that, the document survives and your replacement starts from it.`
+const rawAgent = agent
+agent = (prompt, opts) => rawAgent(prompt + HANDOFF_DISCIPLINE(`brd/${opts?.label || 'unlabelled'}`), opts)
+
 const raw = (typeof args === 'string' ? args : (args?.directive || args?.phase || ''))?.trim()
 if (!raw) throw new Error('brd needs a phase or directive, e.g. args: "Phase 2" or "add a vet-booking marketplace"')
 const phaseMatch = raw.match(/phase\s*-?\s*(\d+)/i)

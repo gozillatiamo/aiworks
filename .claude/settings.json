@@ -514,6 +514,7 @@
     }
   },
   "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75",
     "HCAT_GATE_BYTES": "65536",
     "HCAT_GATE_NO_SNIFF": "1",
     "DANGI_NO_NOTIFY": "1",

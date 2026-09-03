@@ -28,6 +28,22 @@ own_transcript() {
   return 0
 }
 
+# handoff_key_of <transcript> — the `HANDOFF_KEY: <key>` a workflow wrapper appended to the brief,
+# read off the first user message(s) of the agent's own transcript, sanitised to a file name
+# (anything outside [A-Za-z0-9_.-] becomes `_`). Empty when the brief carries none. Keying the
+# document by the STEP rather than the agent is what lets a replacement — spawned for the same step
+# after a partial, or after the runtime killed its predecessor — find it without knowing any id.
+handoff_key_of() {
+  local tp="$1" k
+  [ -n "$tp" ] && [ -f "$tp" ] || return 0
+  k="$(head -n 5 "$tp" 2>/dev/null | jq -Rr '
+        try fromjson catch empty | select(.type == "user") | .message.content
+        | if type == "string" then . elif type == "array" then map(.text? // "") | join(" ") else "" end' 2>/dev/null \
+      | grep -o 'HANDOFF_KEY: [^ ,;]*' | head -n 1 | cut -d' ' -f2 | sed 's/\.$//')"
+  [ -n "$k" ] && printf '%s' "${k//[^A-Za-z0-9_.-]/_}"
+  return 0
+}
+
 # window_of <transcript> — the input size of the newest request that actually billed something:
 # cache read + cache creation + uncached input. Reads only the tail (a transcript is routinely
 # hundreds of MB); a severed first line is dropped by `try fromjson`. A cancelled or synthetic
