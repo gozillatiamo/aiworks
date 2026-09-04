@@ -141,6 +141,23 @@ function strayCheck() {
   return stray.length === 0
 }
 
+// Claude Code compiles a workflow script under a determinism rule the CLI harness runtime does not
+// have, and enforces it before the script runs a line: "workflow scripts must be deterministic:
+// Date.now()/Math.random()/new Date() are unavailable (breaks resume)". Nothing else here can see
+// that — `scripts/workflows/run.mjs` is a plain AsyncFunction and bans nothing — so a script that
+// passes every test in this repo can still refuse to START under the harness most people run it
+// on. Scanned on the DELIVERED text, because that is what the runtime is handed, and because a
+// comment ABOUT the rule is not a use of it.
+const BANNED = [
+  [/\bDate\s*\.\s*now\s*\(/, 'Date.now()'],
+  [/\bnew\s+Date\s*\(/, 'new Date()'],
+  [/\bMath\s*\.\s*random\s*\(/, 'Math.random()'],
+]
+function bannedCheck(out) {
+  return BANNED.filter(([re]) => re.test(out)).map(([, what]) =>
+    `Claude Code refuses this script at compile time: ${what} is unavailable in a workflow script (breaks resume). Take the value from args, or vary the agent label instead.`)
+}
+
 function report(name, authored, delivered) {
   const pct = ((delivered / CAP) * 100).toFixed(1)
   const over = delivered - BUDGET
@@ -173,7 +190,7 @@ for (const name of scripts) {
   const out = strip(src)
   // Cheap enough to run on every build and every check, and the one thing that separates
   // "smaller" from "smaller and unchanged in behaviour".
-  const problems = verify(src, out)
+  const problems = [...verify(src, out), ...bannedCheck(out)]
   for (const p of problems) { console.error(`  FAIL ${name}  ${p}`); ok = false }
   ok = report(name, Buffer.byteLength(src), Buffer.byteLength(out)) && ok
   if (!check && !problems.length) {

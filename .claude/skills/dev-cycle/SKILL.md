@@ -7,9 +7,20 @@ Run the canonical `.claude/workflows/src/dev-cycle.js`; never improvise or resta
 
 - Under Claude Code, run `node scripts/workflows/build.mjs dev-cycle` first, then invoke the
   Workflow tool with `scriptPath` set to the path that command prints, passing the user's
-  original arguments. To resume, add `resumeFromRunId` to that same `scriptPath` call.
+  original arguments **plus `--invocation <stamp>`**, where `<stamp>` is
+  `date -u +%Y%m%dT%H%M%SZ` read at that moment. To resume, add `resumeFromRunId` to that same
+  `scriptPath` call — with a **fresh** stamp.
 - Under Codex, run `./aiworks workflow dev-cycle --harness codex <original arguments>`.
 - Under Cursor, run `./aiworks workflow dev-cycle --harness cursor <original arguments>`.
+
+Mint the stamp every single call, and never copy the one a previous call used. The runtime
+memoises a completed `agent()` on its prompt, and the workflow may not mint an id of its own —
+Claude Code refuses to compile a script containing `Date.now()` or `Math.random()`. The stamp is
+what a live-state probe (the run-state loader, the base reconciler, an approval or human-review
+read) carries so it is asked again against the world as it is now; a producing step never carries
+it, so a resume still replays the build it already paid for. A reused stamp silently returns
+yesterday's reading of a branch, an approval, or a review thread. Neither harness CLI stamps for
+you — `run.mjs` runs every agent unmemoised, so a stamp there changes nothing.
 
 **Never hand the Workflow tool `.claude/workflows/src/dev-cycle.js` itself**, and do not reach for
 `name: "dev-cycle"` instead. The tool weighs the script FILE before it parses it — 524,288 bytes
