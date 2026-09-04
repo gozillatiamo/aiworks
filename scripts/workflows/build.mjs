@@ -153,6 +153,11 @@ const BANNED = [
   [/\bnew\s+Date\s*\(/, 'new Date()'],
   [/\bMath\s*\.\s*random\s*\(/, 'Math.random()'],
 ]
+// The same list as the runtime prints it, so `aiworks doctor` can hold this copy up against the
+// installed Claude Code's own sentence and say when a CLI update has added a rule nobody here has
+// heard of. A list that only ever agrees with itself is how the last one got through.
+export const BANNED_NAMES = BANNED.map(([, what]) => what)
+
 export function bannedCheck(out) {
   return BANNED.filter(([re]) => re.test(out)).map(([, what]) =>
     `Claude Code refuses this script at compile time: ${what} is unavailable in a workflow script (breaks resume). Take the value from args, or vary the agent label instead.`)

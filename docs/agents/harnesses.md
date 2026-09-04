@@ -204,6 +204,38 @@ next 100 KB is.
 
 `scripts/workflows/selftest.mjs` holds the assertions, including the budget itself.
 
+### The determinism rule
+
+Claude Code compiles a workflow script under a rule that exists in **its runtime and nowhere in
+this repo**: `Date.now()`, `new Date()` and `Math.random()` are refused before a line of the script
+runs, because a resume replays completed `agent()` calls and a script that reads a clock cannot be
+replayed. The runtime says it in full:
+
+```
+workflow scripts must be deterministic: Date.now()/Math.random()/new Date() are unavailable
+(breaks resume). Stamp results after the workflow returns, or pass timestamps via args.
+```
+
+`scripts/workflows/run.mjs` bans none of that — it is a plain `AsyncFunction` — so **the Harness
+this framework tests against is more permissive than the one most runs happen on**. A workflow that
+breaks the rule passes every selftest here and then cannot start. Measured: a clock-minted
+per-invocation id did exactly that, green sweep and all.
+
+Three things hold the line now, and they are deliberately not the same thing:
+
+- `build.mjs` scans the **delivered** text and fails the build — delivered, not authored, so a
+  workflow may document the rule without tripping it;
+- `selftest.mjs` tests that scanner, including its false-positive cases, because a guard nothing
+  asserts is a guard a refactor deletes silently;
+- `aiworks doctor` reads the **installed** Claude Code's own sentence and warns when the runtime
+  bans something `BANNED` in `build.mjs` does not list. A copied list can only agree with itself;
+  this is the one check that can notice a rule a CLI update added.
+
+The workflow needs a per-invocation value anyway — a live-state probe must be re-asked rather than
+served from the memo — so it takes one from the caller: `--invocation <stamp>`, minted fresh per
+call by the skill, which is the runtime's own advice ("pass timestamps via args"). A resume passes
+the same arguments and replays its memos, which is what a resume is for.
+
 ## Agent compatibility contract
 
 A generated agent is available only when safety-relevant fields are mapped:
