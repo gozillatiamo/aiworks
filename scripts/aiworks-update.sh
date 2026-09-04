@@ -33,7 +33,10 @@
 #   codegraph  codegraph upgrade — the per-repo code index CLI.
 #   graphify   uv tool upgrade graphifyy — this repo's doc-graph CLI (prose only).
 #   plugins    claude plugin marketplace update, then `claude plugin update` for every plugin in
-#              .claude/settings.json enabledPlugins. Needs a Claude Code restart to take effect.
+#              .claude/settings.json enabledPlugins — at PROJECT scope, in the root and in every
+#              clone that carries a copy (plus a leftover user-scope copy if the machine has one),
+#              because the CLI's own default (-s user) leaves a project copy to rot.
+#              Needs a Claude Code restart to take effect.
 #   skills     npx skills update -p — the third-party Agent Skills declared in skills-lock.json
 #              at the workspace ROOT (project scope only; see the note below on the other scopes).
 #              There is no binary to version-probe, so "updated" is derived from each skill's
@@ -342,16 +345,46 @@ fi
 
 # ── claude plugins ───────────────────────────────────────────────────────────────
 # The plugins the workspace DECLARES (.claude/settings.json enabledPlugins) — the same list
-# ensure_claude_plugins installs at user scope during setup, so update reads the same source.
+# ensure_claude_plugins installs at PROJECT scope during setup, so update reads the same source
+# AND refreshes the same copies.
+#
+# `claude plugin update` defaults to USER scope, and the project copy it never touched is what
+# rotted here: measured 2026-09-04, this root carried a caveman 19 days behind the machine's
+# user-scope install, while `aiworks doctor --fix` could only DELETE that project copy — which
+# the next `aiworks update`/`setup` put straight back. A warn no command could clear, on the
+# ruleset every session and all 16 agent definitions preload.
+#
+# So every EXISTING copy of a declared plugin is refreshed: each project copy under this
+# workspace (the root and every clone), updated IN the project that owns it because -s project
+# resolves the project from the CWD — plus a pre-existing user-scope copy, which nothing here
+# creates any more but which rots the same way if it is left behind.
 if want plugins; then
   if ! command -v jq >/dev/null 2>&1; then
-    warn "jq unavailable — cannot read enabledPlugins; update plugins by hand (claude plugin update <plugin>@<marketplace>)."
+    warn "jq unavailable — cannot read enabledPlugins; update plugins by hand (claude plugin update <plugin>@<marketplace> -s project)."
     record "plugins" "skipped" "no jq" "-"
   else
     plugin_keys="$(jq -r '.enabledPlugins // {} | keys[]' .claude/settings.json 2>/dev/null)"
     if command -v claude >/dev/null 2>&1; then
       upgrade "claude plugin marketplace update" "" claude plugin marketplace update
-      for key in $plugin_keys; do upgrade "claude plugin update $key" "" claude plugin update "$key"; done
+      for key in $plugin_keys; do
+        found=0
+        for d in "$ROOT" "$ROOT"/*/; do
+          d="${d%/}"
+          [[ "$d" == "$ROOT" || -e "$d/.git" ]] || continue
+          phys="$(cd "$d" 2>/dev/null && pwd -P)" || continue
+          [[ -n "$(claude_plugin_scope_version "$key" project "$phys")" ]] || continue
+          if [[ "$d" == "$ROOT" ]]; then lbl="root"; else lbl="${d#"$ROOT"/}"; fi
+          upgrade "claude plugin update $key ($lbl)" "" claude_plugin_run_in "$d" update "$key"
+          found=1
+        done
+        if [[ -n "$(claude_plugin_scope_version "$key" user)" ]]; then
+          upgrade "claude plugin update $key (user scope)" "" claude plugin update "$key" -s user -y
+          found=1
+        fi
+        # Nothing installed anywhere is not something update can fix — the install is
+        # ensure_claude_plugins (`aiworks doctor` names it). Recorded so it is not silent.
+        [[ "$found" == 0 ]] && record "claude plugin $key" "skipped" "not installed" "-"
+      done
       warn "plugins updated — RESTART Claude Code for the new versions to load."
     else
       record "claude plugins" "skipped" "no claude CLI" "-"
