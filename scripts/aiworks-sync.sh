@@ -159,12 +159,13 @@ ensure_graphify() {
 }
 
 # ── the workspace repo's doc graph: report, never silently rebuild ────────────────
-# graph.json + GRAPH_REPORT.md are COMMITTED, so a fresh clone already has the map and a
-# sync must not spend the semantic pass again — it is the one expensive step here, it is
-# serialised (graphify forces concurrency 1 on the claude-cli backend), and it grows with
-# the repo's prose. So this step only reports, and hands over the one command that
-# refreshes it. It also installs the git merge driver, which is what stops two people
-# committing graph.json in parallel from landing conflict markers in it.
+# The graph is NOT committed — it is derived, per-workspace state (see .gitignore) — so a
+# fresh clone has none and builds it once, by hand. A sync must never spend the semantic
+# pass on its own: it is the one expensive step here, it is serialised (graphify forces
+# concurrency 1 on the claude-cli backend), and it grows with the repo's prose. So this step
+# only reports, and hands over the one command that refreshes it. `hook install` still runs,
+# for the post-commit rebuild and for the union merge driver a workspace that CHOOSES to
+# commit its own graph needs.
 sync_doc_graph() {
   step "Check the workspace repo's doc graph (reports only — never re-spends the semantic pass)"
   command -v graphify >/dev/null 2>&1 || { warn "graphify not on PATH — doc graph not checked"; return 0; }
