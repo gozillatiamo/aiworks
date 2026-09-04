@@ -279,6 +279,42 @@ t "hcat .env.amb blocked"            2 pretool-env-guard.sh "$(j "hcat dev-scrip
 t "Read .env.local blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local")"
 t "Read .env.example.bak blocked"    2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example.bak")"
 
+# --- Rule 3: an undirected recursive search is SCOPED, not blocked ----------------
+# `grep -rn SECRET .` names no .env, so every rule above passes it — and it then
+# prints every matching line of every .env it walks into. The guard rewrites the
+# command instead of denying it, because denying would tax every ordinary search
+# and a guard that annoys gets switched off. The rewrite is the verdict, so it needs
+# an assert on stdout, not on the exit code.
+te() { # te <name> <expected-substring|SILENT> <command>
+  local name=$1 want=$2 cmd=$3 out got
+  out=$(printf '%s' "$(j "$cmd")" | "$H/pretool-env-guard.sh" 2>/dev/null)
+  # No opinion is EMPTY stdout, and `jq` over empty input prints nothing at all —
+  # so the // fallback never fires and every silent case would read as a mismatch.
+  if [ -z "$out" ]; then got=SILENT
+  else got=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.updatedInput.command // "SILENT"' 2>/dev/null); fi
+  case "$got" in *"$want"*) pass=$((pass+1)); printf 'ok   %s\n' "$name" ;;
+    *) fail=$((fail+1)); printf 'FAIL %s (want %s, got %s)\n' "$name" "$want" "$got" ;;
+  esac
+}
+te "recursive grep is scoped"        "grep --exclude=$E --exclude=$E.* -rn" "grep -rn SECRET ."
+te "a pipeline keeps its shape"      "-rn x . | head -20"                   "grep -rn x . | head -20"
+te "rg is scoped (recursive always)" "-g '!$E*' -g '$E*.example'"           "rg TODO src"
+te "a non-recursive grep is left be" "SILENT"                               "grep -n foo file.txt"
+# --color contains an "r"; reading it as -r would rewrite every coloured grep.
+te "a long flag is not a -r"         "SILENT"                               "grep --color -n pat file"
+# A quoted mention is inert text, and `git grep` is a different command.
+te "a quoted grep is not rewritten"  "SILENT"                               'echo "grep -r x ."'
+te "git grep is not rewritten"       "SILENT"                               "git grep -rn pat"
+# The rewrite must survive its own guard: an exclusion ARGUMENT names a .env in
+# order to SKIP it. Denying that (as the guard first did) means the hook blocks the
+# command it just wrote, and punishes anyone who adds --exclude by hand.
+t "an --exclude=.env argument is allowed"  0 pretool-env-guard.sh "$(j "grep --exclude=$E --exclude=$E.* -rn SECRET .")"
+t "an rg env glob is allowed"              0 pretool-env-guard.sh "$(j "rg -g '!$E*' -g '$E*.example' TODO src")"
+te "a scoped command is not re-scoped"     "SILENT" "grep --exclude=$E --exclude=$E.* -rn SECRET ."
+# …without opening a hole: an exclusion elsewhere never excuses reading a .env.
+t "exclusion does not excuse a read"       2 pretool-env-guard.sh "$(j "grep --exclude=x PATTERN $E")"
+t "exclusion does not excuse a cat"        2 pretool-env-guard.sh "$(j "cat --exclude=$E.bak $E")"
+
 echo "--- pretool-hcat-size-guard ---"
 # hcat has no upper bound of its own, and headroom passes content through UNCHANGED when
 # compression would not help — measured on a 250 MB log: 0.0% saved, 262 MB printed, 80s.

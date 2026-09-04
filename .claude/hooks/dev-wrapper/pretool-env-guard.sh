@@ -70,6 +70,14 @@ case "$tool" in
     # ---------------------------------------------------------------------
     while IFS= read -r seg; do
       [ -z "$seg" ] && continue
+      # An EXCLUSION argument names a .env in order to skip it — the opposite of
+      # reading one, and exactly the shape Rule 3 injects below. Strip those
+      # tokens before the scan, or the guard denies the very command it just
+      # rewrote (measured: exit 2), and a person who adds --exclude by hand is
+      # punished for being careful. Only the option's own argument is dropped,
+      # so `grep --exclude=x .env` still reads as a .env and is still denied.
+      seg=$(printf '%s' "$seg" | sed -E "s/--exclude(-dir)?=[^[:space:]]+//g; s/--glob=[^[:space:]]+//g; s/-g[[:space:]]+'[^']*'//g")
+      [ -z "$seg" ] && continue
       # segment must name a .env; a .env.example segment is a safe template.
       printf '%s' "$seg" | grep -Eq "$ENV_TOKEN" || continue
       # `.env.<variant>.example` is a template too — .env.amb.example and
@@ -115,6 +123,57 @@ case "$tool" in
     if printf '%s' "$stripped" | grep -Eq "$TRACE_RE" \
        && printf '%s' "$cmd" | grep -Eq 'scripts/'; then
       deny "trace mode (-x) near a scripts/ path may echo a sourced .env value: $cmd"
+    fi
+
+    # ---------------------------------------------------------------------
+    # Rule 3 — an UNDIRECTED recursive search. `grep -rn SECRET .` names no
+    # .env, so Rules 1 and 2 pass it (measured: exit 0), and then it prints
+    # every matching line of every .env it walks into. Same leak as `cat
+    # .env`, with the filename supplied by the walk instead of by the model —
+    # which is exactly why the permission classifier flags an ordinary
+    # recursive grep as a possible secret read, and why the prompt kept
+    # coming back.
+    #
+    # Blocking would tax every ordinary search, so the search is SCOPED
+    # instead: the exclusions are injected and the command runs. `updatedInput`
+    # rewrites it and `systemMessage` says so, so the narrowing is never
+    # silent — `.env.example` is excluded with the rest (fnmatch cannot say
+    # ".env.* except *.example"), and a template that is genuinely needed is
+    # read by naming it, which this guard has always allowed.
+    # Idempotent: a command that already carries the exclusions is left alone,
+    # so a re-fired hook cannot stack them.
+    # ---------------------------------------------------------------------
+    new_cmd=$(printf '%s' "$cmd" | perl -0777 -pe '
+      sub scoped {
+        my ($pre, $bin, $rest) = @_;
+        return "$pre$bin$rest" if $rest =~ /--exclude=\.env/;
+        # Recursive only: -r/-R (alone or bundled, e.g. -rn) and the long forms.
+        # Matched on short-option tokens rather than anywhere, or a long flag
+        # that merely contains an "r" (--color) would read as recursive.
+        return "$pre$bin$rest"
+          unless $rest =~ /(?:^|\s)-[A-Za-z]*[rR][A-Za-z]*(?=\s|$)/
+              || $rest =~ /(?:^|\s)--(?:recursive|dereference-recursive)\b/;
+        return "$pre$bin --exclude=.env --exclude=.env.*$rest";
+      }
+      # Command position only (start, or after ; | & ( or $( ) — a "grep" inside
+      # a quoted string is inert text and must not be rewritten. Each match stops
+      # at the next segment separator so a pipeline keeps its shape.
+      s{(^|[;|&(]\s*|\$\(\s*)(grep|egrep|fgrep)\b([^;|&\n]*)}{ scoped($1, $2, $3) }ge;
+      # ripgrep walks recursively by default, so it needs no -r test. Its later
+      # glob wins, which is how the template stays readable here and cannot in grep.
+      s{(^|[;|&(]\s*|\$\(\s*)(rg)\b([^;|&\n]*)}{
+        $3 =~ /!\.env/ ? "$1$2$3" : "$1$2 -g \x27!.env*\x27 -g \x27.env*.example\x27$3"
+      }ge;
+    ' 2>/dev/null)
+    if [ -n "$new_cmd" ] && [ "$new_cmd" != "$cmd" ]; then
+      printf '%s' "$input" | jq -c --arg c "$new_cmd" '{
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          updatedInput: (.tool_input + {command: $c})
+        },
+        systemMessage: ("env-guard: scoped the recursive search away from .env files (.env.example too) — running: " + $c)
+      }' 2>/dev/null
+      exit 0
     fi
     exit 0
     ;;
