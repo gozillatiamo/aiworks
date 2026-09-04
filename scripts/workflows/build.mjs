@@ -153,7 +153,7 @@ const BANNED = [
   [/\bnew\s+Date\s*\(/, 'new Date()'],
   [/\bMath\s*\.\s*random\s*\(/, 'Math.random()'],
 ]
-function bannedCheck(out) {
+export function bannedCheck(out) {
   return BANNED.filter(([re]) => re.test(out)).map(([, what]) =>
     `Claude Code refuses this script at compile time: ${what} is unavailable in a workflow script (breaks resume). Take the value from args, or vary the agent label instead.`)
 }

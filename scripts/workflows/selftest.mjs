@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { run as runCodex, strictOutputSchema } from "./adapters/codex.mjs";
 import { runProcess } from "./adapters/common.mjs";
 import { run as runCursor } from "./adapters/cursor.mjs";
-import { BUDGET, CAP, strip, verify } from "./build.mjs";
+import { bannedCheck, BUDGET, CAP, strip, verify } from "./build.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -138,10 +138,30 @@ assert.deepEqual(verify("const a = 1\n  // gone\n", "const a = 1\n"), []);
 assert.ok(verify("const a = 1\n  // gone\n", "const a = 1").length, "verify accepted an output that lost a byte of code");
 assert.ok(verify("const a = 1\n", "const a = 1\nconst )(\n").length, "verify accepted an output that does not parse");
 
+// Claude Code compiles a workflow script under a determinism rule this repo's own runtime does not
+// have — `Date.now()`, `new Date()` and `Math.random()` are rejected before a line of the script
+// runs — and `run.mjs` is a plain AsyncFunction that bans nothing. A clock-minted id therefore
+// passed every test here and could not start a run on the harness people launch it from. bannedCheck
+// is the only thing standing between that and the next release, so it is tested, not trusted.
+for (const [name, src, want] of [
+  ["Date.now()", "const t = Date.now()\n", 1],
+  ["new Date()", "const t = new Date().toISOString()\n", 1],
+  ["Math.random()", "const r = Math.random()\n", 1],
+  ["spaced out to dodge a naive scan", "const t = Date . now ( )\n", 1],
+  ["Math.max is not Math.random", "const n = Math.max(1, 2)\n", 0],
+  ["a date the agent is asked to read is not a date the script mints", "const brief = `run \\`date -u\\` and report what it prints`\n", 0],
+]) assert.equal(bannedCheck(src).length, want, `bannedCheck: ${name}`);
+// Scanned on the DELIVERED text: the workflows now carry comments ABOUT the rule, and a comment is
+// not a use. Reversing these two would red the build on its own documentation.
+const documented = "// dev-cycle may not call Date.now() — the runtime rejects it\nconst t = 1\n";
+assert.equal(bannedCheck(documented).length, 1, "bannedCheck should flag the authored text");
+assert.deepEqual(bannedCheck(strip(documented)), [], "bannedCheck flagged a comment about the rule");
+
 for (const name of ["dev-cycle", "brd", "prd"]) {
   const src = await readFile(path.join(root, ".claude/workflows/src", `${name}.js`), "utf8");
   const out = strip(src);
   assert.deepEqual(verify(src, out), [], `${name}: the strip removed something that is not a comment`);
+  assert.deepEqual(bannedCheck(out), [], `${name}: Claude Code will refuse to compile this workflow`);
   const bytes = Buffer.byteLength(out);
   assert.ok(bytes <= BUDGET, `${name}: ${bytes} delivered bytes is inside the ${CAP - BUDGET}-byte reserve below the ${CAP}-byte cap — regenerate headroom before adding more`);
 }
