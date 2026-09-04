@@ -407,7 +407,11 @@ const stepKey = (opts) => `${opts?.phase || '-'}|${(String(opts?.label || '').sp
 // while the producing steps keep their memo untouched and a resume stays exactly as cheap as it was.
 // One small probe re-run per invocation is a rounding error against a re-run that ends in a false
 // halt, and a bargain against a gate that passes on a diff it never saw.
-const INVOCATION = String(args).replace(/[^a-zA-Z0-9]+/g, '').slice(-12) || 'run'
+// Minted from the clock, NOT from `args`: two invocations against the same ticket are called with
+// the same arguments, so an args-derived id is byte-identical between them and changes no key at
+// all — the probes it stamps memoise exactly as if it were absent. The random tail is against two
+// invocations landing in the same millisecond, which a stubbed run does.
+const INVOCATION = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 // The probes: every call whose answer is a reading of something free to change underneath this run —
 // the checkpoint files, a branch, what a PR/MR targets, an approval, a human's review directive, a
 // posted test report. `open-pr` is deliberately NOT one: replaying "PR #841 is open" is correct, and
