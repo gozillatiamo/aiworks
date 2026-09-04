@@ -16,7 +16,7 @@ to spawned agents, so native role TOML is not treated as an enforcement receipt;
 role work runs through the Workflow runtime. A safe false denial is preferable to an invisible
 permission widening.
 
-Cursor and Codex execute the same canonical `.claude/workflows/*.js` through a shared local
+Cursor and Codex execute the same canonical `.claude/workflows/src/*.js` through a shared local
 Workflow runtime instead of carrying rewritten workflow copies. Cursor routes workflow agents
 through `auto`; Codex maps `opus`, `sonnet`, and `haiku` to GPT-5.6 Sol, Terra, and Luna while
 preserving supported explicit effort names. Exact status-line appearance is a presentation

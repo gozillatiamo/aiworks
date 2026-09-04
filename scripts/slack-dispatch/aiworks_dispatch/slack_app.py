@@ -107,7 +107,7 @@ def render_workflow_list(flows: list[tuple[str, str]]) -> list[str]:
             "To call a single agent instead, see `agent:list`."
         ),
         empty=(
-            ":question: No workflows found — `.claude/workflows/` is empty or unreadable.\n"
+            ":question: No workflows found — `.claude/workflows/src/` is empty or unreadable.\n"
             "Check that `WORKSPACE_ROOT` points at the meta-repo main clone."
         ),
         prefix="workflow",

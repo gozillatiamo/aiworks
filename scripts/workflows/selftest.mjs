@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -18,16 +18,16 @@ const cli = path.join(root, "aiworks");
 // dev-cycle is generated with this workspace's tracker.ticket_prefix baked in, and it throws on
 // any other key before it spawns anything — so a hardcoded "FM-1" fails every workspace that
 // renamed the prefix. Take it from the file the run will actually load.
-const devCycle = await readFile(path.join(root, ".claude/workflows/dev-cycle.js"), "utf8");
+const devCycle = await readFile(path.join(root, ".claude/workflows/src/dev-cycle.js"), "utf8");
 const prefix = devCycle.match(/^const TICKET_PREFIX = '([^']+)'/m)?.[1];
-assert.ok(prefix, "no TICKET_PREFIX in .claude/workflows/dev-cycle.js");
+assert.ok(prefix, "no TICKET_PREFIX in .claude/workflows/src/dev-cycle.js");
 
 for (const [name, input] of [["brd", "phase-1"], ["prd", "phase-1"], ["dev-cycle", `${prefix}-1 --approve-plan`]]) {
   const { stdout } = await exec(cli, ["workflow", name, "--harness", "stub", input], { cwd: root, maxBuffer: 4_000_000 });
   assert.match(stdout, new RegExp(`Workflow ${name} complete`));
   // Every workflow wraps agent() so each brief carries the HANDOFF_KEY that context-handoff.sh
   // reads off the transcript; a workflow that loses the wrapper loses continuity across the ceiling.
-  const src = await readFile(path.join(root, `.claude/workflows/${name}.js`), "utf8");
+  const src = await readFile(path.join(root, `.claude/workflows/src/${name}.js`), "utf8");
   assert.match(src, /HANDOFF_KEY: \$\{key\}/, `${name}.js has no HANDOFF_DISCIPLINE`);
   assert.match(src, /rawAgent\(prompt[^\n]*HANDOFF_DISCIPLINE\(/, `${name}.js does not append HANDOFF_DISCIPLINE to every agent()`);
 }
@@ -139,11 +139,26 @@ assert.ok(verify("const a = 1\n  // gone\n", "const a = 1").length, "verify acce
 assert.ok(verify("const a = 1\n", "const a = 1\nconst )(\n").length, "verify accepted an output that does not parse");
 
 for (const name of ["dev-cycle", "brd", "prd"]) {
-  const src = await readFile(path.join(root, ".claude/workflows", `${name}.js`), "utf8");
+  const src = await readFile(path.join(root, ".claude/workflows/src", `${name}.js`), "utf8");
   const out = strip(src);
   assert.deepEqual(verify(src, out), [], `${name}: the strip removed something that is not a comment`);
   const bytes = Buffer.byteLength(out);
   assert.ok(bytes <= BUDGET, `${name}: ${bytes} delivered bytes is inside the ${CAP - BUDGET}-byte reserve below the ${CAP}-byte cap — regenerate headroom before adding more`);
 }
+
+// Claude Code auto-loads `.claude/workflows/*.js` and gives each one a `/<name>` slash entry of
+// its own. Every canonical workflow already owns that name through its skill — which is the half
+// that dispatches per Harness and builds the script first — so a `.js` left at the top level
+// puts a second, comment-laden `/<name>` in the same menu and invites the one invocation the
+// byte cap cannot survive. The loader does not recurse, so `src/` and `.build/` are invisible to
+// it; this asserts nothing has drifted back up.
+const registrable = (await readdir(path.join(root, ".claude/workflows"), { withFileTypes: true }))
+  .filter((e) => e.isFile() && e.name.endsWith(".js"))
+  .map((e) => e.name);
+assert.deepEqual(
+  registrable,
+  [],
+  `.claude/workflows/${registrable.join(", ")} would be auto-registered by Claude Code as a duplicate slash command — authored workflows belong in .claude/workflows/src/`,
+);
 
 console.log("workflow runtime selftest: ok");

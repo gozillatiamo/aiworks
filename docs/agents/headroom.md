@@ -57,7 +57,7 @@ mid-work, 84 of them past 160k input tokens, while the 145 that finished average
 count told the two apart almost not at all (killed 22–411 steps, finished 4–527). Of the 3,891
 results the killed agents pulled in, the median was ~1 KB and the **9% over 8 KB were 56% of
 everything they spent**. So this page's rule rides every agent brief (`CONTEXT_DISCIPLINE` in
-`.claude/workflows/dev-cycle.js`), and the ceiling is re-measured rather than assumed —
+`.claude/workflows/src/dev-cycle.js`), and the ceiling is re-measured rather than assumed —
 `scripts/agent-context-ceiling.sh` derives it from the local transcripts, because the wall is the
 runtime's and moves with the window a session was given.
 

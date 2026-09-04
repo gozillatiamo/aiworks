@@ -41,8 +41,8 @@ ck()   { # ck <label> <expect-substring|ABSENT:substring> <actual>
 
 # Writable stand-ins for the files the script REWRITES, or a passing suite would be quietly editing
 # the workspace it is testing.
-cp "$ROOT/.claude/workflows/dev-cycle.js" "$T/dc.js"
-cp "$ROOT/.claude/workflows/prd.js"       "$T/prd.js"
+cp "$ROOT/.claude/workflows/src/dev-cycle.js" "$T/dc.js"
+cp "$ROOT/.claude/workflows/src/prd.js"       "$T/prd.js"
 : > "$T/no-local.yaml"
 
 run() { # run <config> <config-local> → the guards' output, generated blocks dropped
@@ -270,7 +270,7 @@ ck "…including the suite-repair budget"             "maxSuiteRepairAttempts: 3
 # and reporting it as a failure made the suite red out of the box on a fresh clone.
 if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   skipc "not a git checkout (an extracted tarball) — no baseline to diff the workspace against"
-elif git -C "$ROOT" diff --quiet -- .claude/workflows/dev-cycle.js .claude/workflows/prd.js 2>/dev/null; then
+elif git -C "$ROOT" diff --quiet -- .claude/workflows/src/dev-cycle.js .claude/workflows/src/prd.js 2>/dev/null; then
   ok "the suite wrote nothing into the workspace"
 else
   bad "the suite wrote nothing into the workspace" "dev-cycle.js or prd.js changed"

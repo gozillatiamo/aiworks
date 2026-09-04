@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The branch-base reconcile in .claude/workflows/dev-cycle.js decides, from a reading of one
+# The branch-base reconcile in .claude/workflows/src/dev-cycle.js decides, from a reading of one
 # branch, whether to leave it alone, re-point it (which DELETES commits), or hand a person a
 # rebase. dev-cycle-gate-selftest.sh §G54 asserts the workflow emits the right command; this
 # asserts that the command is right — that git actually behaves the way §G54 assumes.

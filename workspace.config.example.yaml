@@ -15,7 +15,7 @@
 #     only its `folders` array is regenerated — any `settings` you add to it survive;
 #   • the adapters read their slice from scripts/{vcs,tracker}/.env;
 #   • the dev-cycle workflow keeps a mirrored CONFIG block at the top of
-#     .claude/workflows/dev-cycle.js (Workflow scripts cannot read the filesystem at
+#     .claude/workflows/src/dev-cycle.js (Workflow scripts cannot read the filesystem at
 #     runtime). `scripts/aiworks sync` — and every `add` / `remove` — REGENERATES that
 #     block from THIS file automatically (`scripts/aiworks config` is the standalone step),
 #     so the mirror always tracks this file. You never hand-edit dev-cycle.js.

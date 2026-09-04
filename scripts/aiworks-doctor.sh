@@ -733,7 +733,7 @@ check_per_repo() {
         index($0, want)==1 { inr=1; next }
         inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 2) printf "%s", q[2]; exit }
         inr && index($0, "\047")==3 { exit }
-      ' "$ROOT/.claude/workflows/dev-cycle.js" 2>/dev/null)"
+      ' "$ROOT/.claude/workflows/src/dev-cycle.js" 2>/dev/null)"
     if [[ -n "$proj_base" ]]; then
       base_checked=$((base_checked+1))
       if ! git -C "$d" show-ref --verify --quiet "refs/remotes/origin/$proj_base" 2>/dev/null; then
@@ -1098,9 +1098,16 @@ EOF
   if command -v node >/dev/null 2>&1 && [[ -x "$DIR/workflows/build.mjs" ]]; then
     local wstat wname wdetail
     while IFS=$'\t' read -r wstat wname wdetail; do
-      if [[ "$wstat" == ok ]]; then pass $g "workflow $wname within its byte budget" "$wdetail"
-      else warn $g "workflow $wname over its byte budget" "$wdetail"
-      fi
+      case "$wstat" in
+        ok)    pass $g "workflow $wname within its byte budget" "$wdetail" ;;
+        # Claude Code registers every `.claude/workflows/*.js` as its own `/<name>`, so a script
+        # left at the top level is a second entry beside the skill that already owns the name —
+        # and the half that skips the strip above. Moving it is a person's call: the file may be
+        # somebody's private workflow rather than drift.
+        stray) fail $g "workflow $wname is auto-registered as a duplicate slash command" "$wdetail" \
+                    "see: git mv .claude/workflows/$wname.js .claude/workflows/src/$wname.js" ;;
+        *)     warn $g "workflow $wname over its byte budget" "$wdetail" ;;
+      esac
     done < <(node "$DIR/workflows/build.mjs" --check 2>/dev/null |
              awk '{ st=$1; nm=$2; $1=""; $2=""; sub(/^ +/,""); print st"\t"nm"\t"$0 }')
   fi

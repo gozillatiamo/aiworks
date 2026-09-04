@@ -57,7 +57,7 @@ the same run that wrote the branch. Three things keep that honest rather than mi
 A workspace that needs the forge approval to mean *human* specifically should not adopt part 1 —
 it should leave `NO_SELF_APPROVE` covering the orchestrator too and accept the reconstruction
 cost. That is a config-shaped decision we have not needed to make; if it is ever needed, the
-single call site (`approvalTick` in `.claude/workflows/dev-cycle.js`) is where it goes.
+single call site (`approvalTick` in `.claude/workflows/src/dev-cycle.js`) is where it goes.
 
 ## What it buys
 

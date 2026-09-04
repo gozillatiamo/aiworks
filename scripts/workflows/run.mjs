@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Shared runtime for canonical .claude/workflows under non-native Agent harnesses.
+// Shared runtime for canonical .claude/workflows/src under non-native Agent harnesses.
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -145,7 +145,7 @@ async function main() {
   if (cli.help) { usage(); return; }
   if (!cli.name || !cli.harness) { usage(); process.exitCode = 2; return; }
   const adapter = await workflowAdapter(cli.harness);
-  const workflowPath = path.join(root, ".claude", "workflows", `${cli.name}.js`);
+  const workflowPath = path.join(root, ".claude", "workflows", "src", `${cli.name}.js`);
   let source = await readFile(workflowPath, "utf8");
   source = source.replace(/^export\s+/m, "");
   const args = cli.argsJson ? JSON.parse(cli.argsJson) : cli.input.join(" ");
