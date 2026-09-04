@@ -289,4 +289,4 @@ if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
   printf '%sSkipped (%d):%s\n' "$c_warn" "${#SKIPPED[@]}" "$c_off"
   for s in "${SKIPPED[@]}"; do printf '  ⤼ %s\n' "$s"; done
 fi
-printf '%sNext:%s the .claude/workflows/dev-cycle.js CONFIG was regenerated from workspace.config.yaml — no manual edit needed (re-run `aiworks config` any time to re-sync).\n' "$c_step" "$c_off"
+printf '%sNext:%s the .claude/workflows/src/dev-cycle.js CONFIG was regenerated from workspace.config.yaml — no manual edit needed (re-run `aiworks config` any time to re-sync).\n' "$c_step" "$c_off"

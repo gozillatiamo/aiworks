@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # prd-workflow-selftest.sh — offline, zero-token proof of a TICKET MODE audit's fixes to
-# .claude/workflows/prd.js:
+# .claude/workflows/src/prd.js:
 #   T1 — a tracker ticket URL (not just a bare key) is recognized as TICKET MODE.
 #   T2 — TICKET MODE write scope stays the ONE named ticket even when Recon finds another
 #        covering ticket; the anchor is the named ticket, never a Recon-suggested one.
@@ -17,7 +17,7 @@
 # Usage: scripts/prd-workflow-selftest.sh [-v]
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WORKFLOW="$DIR/.claude/workflows/prd.js"
+WORKFLOW="$DIR/.claude/workflows/src/prd.js"
 VERBOSE=0; [[ "${1:-}" == "-v" ]] && VERBOSE=1
 
 c_ok=$'\033[1;32m'; c_err=$'\033[1;31m'; c_off=$'\033[0m'

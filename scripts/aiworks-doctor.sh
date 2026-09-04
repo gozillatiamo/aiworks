@@ -733,7 +733,7 @@ check_per_repo() {
         index($0, want)==1 { inr=1; next }
         inr && /base:[ \t]*\{/ { if (split($0, q, "\047") >= 2) printf "%s", q[2]; exit }
         inr && index($0, "\047")==3 { exit }
-      ' "$ROOT/.claude/workflows/dev-cycle.js" 2>/dev/null)"
+      ' "$ROOT/.claude/workflows/src/dev-cycle.js" 2>/dev/null)"
     if [[ -n "$proj_base" ]]; then
       base_checked=$((base_checked+1))
       if ! git -C "$d" show-ref --verify --quiet "refs/remotes/origin/$proj_base" 2>/dev/null; then
@@ -1098,11 +1098,60 @@ EOF
   if command -v node >/dev/null 2>&1 && [[ -x "$DIR/workflows/build.mjs" ]]; then
     local wstat wname wdetail
     while IFS=$'\t' read -r wstat wname wdetail; do
-      if [[ "$wstat" == ok ]]; then pass $g "workflow $wname within its byte budget" "$wdetail"
-      else warn $g "workflow $wname over its byte budget" "$wdetail"
-      fi
+      case "$wstat" in
+        ok)    pass $g "workflow $wname within its byte budget" "$wdetail" ;;
+        # Claude Code registers every `.claude/workflows/*.js` as its own `/<name>`, so a script
+        # left at the top level is a second entry beside the skill that already owns the name —
+        # and the half that skips the strip above. Moving it is a person's call: the file may be
+        # somebody's private workflow rather than drift.
+        stray) fail $g "workflow $wname is auto-registered as a duplicate slash command" "$wdetail" \
+                    "see: git mv .claude/workflows/$wname.js .claude/workflows/src/$wname.js" ;;
+        *)     warn $g "workflow $wname over its byte budget" "$wdetail" ;;
+      esac
     done < <(node "$DIR/workflows/build.mjs" --check 2>/dev/null |
              awk '{ st=$1; nm=$2; $1=""; $2=""; sub(/^ +/,""); print st"\t"nm"\t"$0 }')
+  fi
+
+  # A workflow script is ALSO compiled under a determinism rule that lives in the Claude Code
+  # binary and nowhere in this repo: `Date.now()`, `new Date()` and `Math.random()` are refused
+  # before a line of the script runs, because they break resume. `scripts/workflows/run.mjs` — the
+  # runtime every selftest here exercises — bans nothing, so a script that breaks the rule passes
+  # the whole suite and then cannot START a run. Measured: a clock-minted id shipped exactly that
+  # way. build.mjs holds a copy of the list and the selftest pins it, but a copy can only ever
+  # agree with itself; this reads the INSTALLED runtime's own sentence and says when the two have
+  # drifted apart, which is the only warning available before a CLI update adds a rule nobody here
+  # has heard of. ~30ms even when the string is absent, so it runs on a default pass.
+  local cbin=""
+  cbin="$(command -v claude 2>/dev/null || true)"
+  [[ -n "$cbin" ]] && cbin="$(readlink -f "$cbin" 2>/dev/null || printf '%s' "$cbin")"
+  if [[ -z "$cbin" || ! -f "$cbin" ]]; then
+    skip $g "workflow determinism rule unverified" "claude is not on PATH — nothing to read the live rule from"
+  elif command -v node >/dev/null 2>&1 && [[ -f "$DIR/workflows/build.mjs" ]]; then
+    local sentence live unknown
+    sentence="$(LC_ALL=C grep -a -o -m1 -E 'workflow scripts must be deterministic: .{0,120} are unavailable' "$cbin" 2>/dev/null || true)"
+    live="${sentence#*deterministic: }"; live="${live% are unavailable}"
+    if [[ -z "$sentence" ]]; then
+      # Not a failure: an older or newer CLI may word it differently, or not carry it at all. But
+      # it does mean build.mjs's list is now asserted against nothing, and that is worth saying.
+      warn $g "cannot read the workflow determinism rule from Claude Code" \
+           "no rule sentence in $cbin — build.mjs's banned list is unverified against the runtime" \
+           "see: strings '$cbin' | grep -i 'workflow scripts'"
+    else
+      unknown="$(node -e '
+        const live = process.argv[1].split("/").map((s) => s.trim()).filter(Boolean)
+        import(process.argv[2]).then((m) => {
+          const known = new Set(m.BANNED_NAMES)
+          console.log(live.filter((x) => !known.has(x)).join(", "))
+        })
+      ' "$live" "$DIR/workflows/build.mjs" 2>/dev/null)"
+      if [[ -n "$unknown" ]]; then
+        warn $g "Claude Code bans a workflow construct build.mjs does not know" \
+             "runtime says: $live · missing here: $unknown" \
+             "see: add it to BANNED in scripts/workflows/build.mjs, with a case in scripts/workflows/selftest.mjs"
+      else
+        pass $g "workflow determinism list matches the installed Claude Code" "$live"
+      fi
+    fi
   fi
 }
 

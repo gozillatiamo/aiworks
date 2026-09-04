@@ -4,7 +4,7 @@
 
 `workspace.config.yaml` is the source of truth for this workspace, and agents/skills
 running in the main session read it directly. The headless Workflow scripts
-(`.claude/workflows/dev-cycle.js`, `prd.js`) **cannot** — a workflow runs detached with no
+(`.claude/workflows/src/dev-cycle.js`, `prd.js`) **cannot** — a workflow runs detached with no
 filesystem access at runtime, so it can only see values that were already baked into the
 script. We therefore *mirror* the config: `scripts/aiworks-config.sh` (run via
 `scripts/aiworks config`/`sync`/`add`/`remove`) extracts the relevant fields and rewrites them

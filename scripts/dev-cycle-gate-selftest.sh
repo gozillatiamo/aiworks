@@ -17,7 +17,7 @@
 # Usage: scripts/dev-cycle-gate-selftest.sh [-v]
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WORKFLOW="${WORKFLOW:-$DIR/.claude/workflows/dev-cycle.js}"
+WORKFLOW="${WORKFLOW:-$DIR/.claude/workflows/src/dev-cycle.js}"
 VERBOSE=0; [[ "${1:-}" == "-v" ]] && VERBOSE=1
 
 c_ok=$'\033[1;32m'; c_err=$'\033[1;31m'; c_off=$'\033[0m'
@@ -2244,9 +2244,12 @@ const BASE = {
         'notify:FM-12': { sent: true },
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
       }
-      await runOnce(ARGS, canned, {})
+      // The stamp is passed IN, because the script may not mint one: Claude Code rejects a
+      // workflow script containing Date.now()/new Date()/Math.random() at compile time. Two
+      // invocations therefore look exactly like this — same ticket, a fresh --invocation each.
+      await runOnce(`${ARGS} --invocation i1`, canned, {})
       const first = { ...PROMPTS }
-      await runOnce(ARGS, canned, {})
+      await runOnce(`${ARGS} --invocation i2`, canned, {})
       const second = { ...PROMPTS }
       const differs = (k) => !!first[k] && !!second[k] && first[k] !== second[k]
       report('G53_the_branch_base_probe_is_asked_again_on_the_next_invocation', differs('base-reconcile:FM-12:db'))

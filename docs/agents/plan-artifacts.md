@@ -64,7 +64,7 @@ their build agents receive a path that does not exist where they are standing.
 A plan is not a report about several repos. It is the input contract for one
 repo's build agent.
 
-The workflow derives these paths in `.claude/workflows/dev-cycle.js` (see
+The workflow derives these paths in `.claude/workflows/src/dev-cycle.js` (see
 `planMeta`); it is the executable expression of this document, not a second
 source of truth.
 

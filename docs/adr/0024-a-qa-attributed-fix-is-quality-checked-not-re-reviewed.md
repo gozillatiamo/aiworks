@@ -34,7 +34,7 @@ are precisely the two gates the Review phase ran (guardian, performance) and thi
 
 ## Decision
 
-Four parts, all in `runSuiteGate` in `.claude/workflows/dev-cycle.js`:
+Four parts, all in `runSuiteGate` in `.claude/workflows/src/dev-cycle.js`:
 
 1. **No code reviewer in this loop.** Dropped here and only here. The Review phase keeps its code
    gate unchanged, and so does the **scoped re-gate** a cross-repo escalation runs

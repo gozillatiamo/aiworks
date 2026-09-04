@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse(Write|Edit) — compile a touched .claude/workflows/*.js the way the ENGINE
+# PostToolUse(Write|Edit) — compile a touched .claude/workflows/src/*.js the way the ENGINE
 # loads it, and say so loudly when it no longer parses.
 #
 # WHY THIS EXISTS
@@ -33,7 +33,7 @@ except Exception:
     print("")' 2>/dev/null || true)"
 
 case "$file" in
-  */.claude/workflows/*.js) ;;
+  */.claude/workflows/src/*.js) ;;
   *) exit 0 ;;
 esac
 [[ -f "$file" ]] || exit 0

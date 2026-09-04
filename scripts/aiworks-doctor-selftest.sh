@@ -628,12 +628,12 @@ dr() { "$1/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk -v 2>
 drj() { "$1/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --json 2>&1; }
 base_fixture() {
   local w="$1" projected="$2" head_branch="${3:-}"
-  mkdir -p "$w/.claude/workflows"
+  mkdir -p "$w/.claude/workflows/src"
   { printf "const REPOS = {\n"
     printf "  'demo-repo': {\n"
     printf "    path: 'demo-repo', kind: 'backend',\n"
     printf "    base: { feature: '%s', fix: 'main' },\n" "$projected"
-    printf "  },\n}\n"; } > "$w/.claude/workflows/dev-cycle.js"
+    printf "  },\n}\n"; } > "$w/.claude/workflows/src/dev-cycle.js"
   local r="$w/demo-repo" sha
   sha="$(git -C "$r" rev-parse HEAD 2>/dev/null)"
   [[ -n "$head_branch" ]] || return 0

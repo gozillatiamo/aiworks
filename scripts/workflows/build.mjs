@@ -24,8 +24,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const SRC_DIR = path.join(ROOT, '.claude', 'workflows')
-const OUT_DIR = path.join(SRC_DIR, '.build')
+const SRC_DIR = path.join(ROOT, '.claude', 'workflows', 'src')
+const REG_DIR = path.join(ROOT, '.claude', 'workflows')
+const OUT_DIR = path.join(REG_DIR, '.build')
 
 // Measured against the live runtime, not assumed: 524,288 launches, 524,289 is refused.
 export const CAP = 524288
@@ -121,6 +122,47 @@ export function verify(src, out) {
   return problems
 }
 
+// Claude Code auto-loads `.claude/workflows/*.js` and registers each one as BOTH a `/<name>`
+// slash command and a `Workflow({name})` target. Every canonical workflow here already owns
+// that name through its skill, so a script sitting directly in that directory puts two
+// identically named entries in one `/` menu — and the native one is the wrong half: it hands
+// the Workflow tool the AUTHORED file, comments and all, skipping the strip this script exists
+// to perform. The loader is not recursive (measured: a `.js` one directory down registers
+// nothing), which is why the sources live in `src/` and the builds in `.build/`. Reported per
+// stray file so `aiworks doctor` can name the one to move.
+function strayCheck() {
+  const stray = fs.readdirSync(REG_DIR, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.js'))
+    .map((e) => e.name)
+    .sort()
+  for (const f of stray) {
+    console.log(`  stray ${f.slice(0, -3)}  .claude/workflows/${f} is auto-registered by Claude Code as a second /${f.slice(0, -3)} entry — move it to .claude/workflows/src/${f}`)
+  }
+  return stray.length === 0
+}
+
+// Claude Code compiles a workflow script under a determinism rule the CLI harness runtime does not
+// have, and enforces it before the script runs a line: "workflow scripts must be deterministic:
+// Date.now()/Math.random()/new Date() are unavailable (breaks resume)". Nothing else here can see
+// that — `scripts/workflows/run.mjs` is a plain AsyncFunction and bans nothing — so a script that
+// passes every test in this repo can still refuse to START under the harness most people run it
+// on. Scanned on the DELIVERED text, because that is what the runtime is handed, and because a
+// comment ABOUT the rule is not a use of it.
+const BANNED = [
+  [/\bDate\s*\.\s*now\s*\(/, 'Date.now()'],
+  [/\bnew\s+Date\s*\(/, 'new Date()'],
+  [/\bMath\s*\.\s*random\s*\(/, 'Math.random()'],
+]
+// The same list as the runtime prints it, so `aiworks doctor` can hold this copy up against the
+// installed Claude Code's own sentence and say when a CLI update has added a rule nobody here has
+// heard of. A list that only ever agrees with itself is how the last one got through.
+export const BANNED_NAMES = BANNED.map(([, what]) => what)
+
+export function bannedCheck(out) {
+  return BANNED.filter(([re]) => re.test(out)).map(([, what]) =>
+    `Claude Code refuses this script at compile time: ${what} is unavailable in a workflow script (breaks resume). Take the value from args, or vary the agent label instead.`)
+}
+
 function report(name, authored, delivered) {
   const pct = ((delivered / CAP) * 100).toFixed(1)
   const over = delivered - BUDGET
@@ -144,7 +186,7 @@ const names = process.argv.slice(2).filter((a) => !a.startsWith('--'))
 const check = process.argv.includes('--check')
 const scripts = (names.length ? names : fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.js')).map((f) => f.slice(0, -3))).sort()
 
-let ok = true
+let ok = strayCheck() && true
 if (!check) fs.mkdirSync(OUT_DIR, { recursive: true })
 for (const name of scripts) {
   const srcPath = path.join(SRC_DIR, `${name}.js`)
@@ -153,7 +195,7 @@ for (const name of scripts) {
   const out = strip(src)
   // Cheap enough to run on every build and every check, and the one thing that separates
   // "smaller" from "smaller and unchanged in behaviour".
-  const problems = verify(src, out)
+  const problems = [...verify(src, out), ...bannedCheck(out)]
   for (const p of problems) { console.error(`  FAIL ${name}  ${p}`); ok = false }
   ok = report(name, Buffer.byteLength(src), Buffer.byteLength(out)) && ok
   if (!check && !problems.length) {

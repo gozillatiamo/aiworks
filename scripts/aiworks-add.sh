@@ -216,7 +216,7 @@ print_summary() {
   [[ $((TOK_IN + TOK_OUT + TOK_CR + TOK_CW)) -gt 0 ]] && printf '%sClaude usage this run:%s in=%d out=%d cache(r=%d w=%d)  total cost=$%s\n' "$c_step" "$c_off" "$TOK_IN" "$TOK_OUT" "$TOK_CR" "$TOK_CW" "$TOK_COST"
   # The dev-cycle.js CONFIG mirror is regenerated FROM workspace.config.yaml by step 2.6
   # (scripts/aiworks-config.sh) — there is nothing to paste by hand anymore.
-  printf '%sNext:%s the .claude/workflows/dev-cycle.js CONFIG is auto-generated from workspace.config.yaml (regenerated at step 2.6; re-run `aiworks config` any time). Then `mani list projects`.\n' "$c_step" "$c_off"
+  printf '%sNext:%s the .claude/workflows/src/dev-cycle.js CONFIG is auto-generated from workspace.config.yaml (regenerated at step 2.6; re-run `aiworks config` any time). Then `mani list projects`.\n' "$c_step" "$c_off"
 }
 # Append a literal line to a file iff absent. Returns 0 if it added it, 1 if already
 # present. Guarantees the file ends in a newline first so lines never merge.

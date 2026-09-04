@@ -3,7 +3,7 @@
 Everything the agents rely on — project guidance, rules, skills, subagents, guard hooks,
 permissions, MCP, adapters, and the three deterministic Workflows — works in Cursor as well as in
 Claude Code. Cursor's persistent configuration is projected; Workflows execute from their original
-`.claude/workflows/*.js` source through the shared runtime.
+`.claude/workflows/src/*.js` source through the shared runtime.
 
 The Cursor layer is *generated*, never hand-edited. Author on the Claude side; run `aiworks cursor`.
 
@@ -31,7 +31,7 @@ are linked on every root run.)
 | Permissions | `permissions` in `.claude/settings.json` | `.cursor/cli.json` — **generated** |
 | — | `scripts/cursor/hook-shim.template.sh` | `.cursor/hooks/hook-shim.sh` — **copied** |
 | Each repo's instruction + rules, for a **root** session | `<repo>/CLAUDE.md`, `<repo>/.claude/rules/` | `.cursor/rules/repos/<repo>/*.mdc` — **generated** |
-| Workflows | `.claude/workflows/{brd,prd,dev-cycle}.js` | `aiworks workflow --harness cursor` — shared runtime |
+| Workflows | `.claude/workflows/src/{brd,prd,dev-cycle}.js` | `aiworks workflow --harness cursor` — shared runtime |
 
 Only those last four are not symlinks; the rest is one file read by both tools. Rule frontmatter
 therefore carries `paths:` (Claude) **and** `globs:` (Cursor) — `aiworks cursor` keeps them in step,

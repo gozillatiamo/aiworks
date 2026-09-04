@@ -235,7 +235,7 @@ the names to your setup:
 > and run plain `aiworks run` from anywhere.
 
 > ⚠️ Never hand-edit `mani.d/`, the `.code-workspace` file, or the CONFIG block in
-> `.claude/workflows/dev-cycle.js` — all generated from the config.
+> `.claude/workflows/src/dev-cycle.js` — all generated from the config.
 
 ## 🔄 Keeping the tooling current
 

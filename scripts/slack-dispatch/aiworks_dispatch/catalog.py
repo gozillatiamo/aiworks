@@ -1,7 +1,7 @@
 """What this workspace can be asked for — its subagents and its workflows.
 
 Pure parsing, no Slack dependency: what exists (`.claude/agents/<name>.md`,
-`.claude/workflows/<name>.js`), a one-line summary for each, how a leading
+`.claude/workflows/src/<name>.js`), a one-line summary for each, how a leading
 `agent:<name>` / `workflow:<name>` is peeled off a request, and how a thread's
 standing slash command is replayed in front of a conversational follow-up
 (`resolve_sticky_command`).
@@ -58,7 +58,13 @@ _JS_UNESCAPE = re.compile(r"\\(['\"`\\])")
 # -- discovery -------------------------------------------------------------------
 
 def _dir(workspace_root: str, kind: str) -> Path:
-    return Path(workspace_root, ".claude", "agents" if kind == AGENT else "workflows")
+    if kind == AGENT:
+        return Path(workspace_root, ".claude", "agents")
+    # Authored workflows sit one level down: Claude Code auto-registers every
+    # `.claude/workflows/*.js` as a slash command of its own, which would duplicate the
+    # skill that already owns the name. `src/` is invisible to that loader, `.build/` holds
+    # the stripped copies the runtime is handed.
+    return Path(workspace_root, ".claude", "workflows", "src")
 
 
 def _paths(workspace_root: str, kind: str) -> list[Path]:
@@ -81,7 +87,7 @@ def available_agents(workspace_root: str) -> set[str]:
 
 
 def available_workflows(workspace_root: str) -> set[str]:
-    """Workflow names — `.claude/workflows/<name>.js` filenames."""
+    """Workflow names — `.claude/workflows/src/<name>.js` filenames."""
     return {p.stem.lower() for p in _paths(workspace_root, WORKFLOW)}
 
 

@@ -250,7 +250,7 @@ const acceptBaseChange = /--accept-base-change\b/i.test(rawArg) || opt.acceptBas
 // were "a fast-track for release/v7.10.3", free text that `flag()` cannot see and nothing
 // complained about, and that dropped intent is what put four MRs on the wrong branch two days
 // later. An argument the run cannot honour must stop the run before it costs anything.
-const VALUED_FLAGS = ['base', 'feature-base', 'feature-base-repos', 'max-review-rounds', 'max-test-suite-fix-rounds', 'token-budget']
+const VALUED_FLAGS = ['base', 'feature-base', 'feature-base-repos', 'max-review-rounds', 'max-test-suite-fix-rounds', 'token-budget', 'invocation']
 const BOOLEAN_FLAGS = ['dry-run', 'approve-plan', 'accept-base-change']
 const argErr = (msg) => { throw new Error(`dev-cycle ${ticket}: ${msg}\nNo agent was spawned and nothing moved on the tracker.`) }
 // What is left of the arg string once the ticket key and every recognised flag (with its value)
@@ -407,7 +407,19 @@ const stepKey = (opts) => `${opts?.phase || '-'}|${(String(opts?.label || '').sp
 // while the producing steps keep their memo untouched and a resume stays exactly as cheap as it was.
 // One small probe re-run per invocation is a rounding error against a re-run that ends in a false
 // halt, and a bargain against a gate that passes on a diff it never saw.
-const INVOCATION = String(args).replace(/[^a-zA-Z0-9]+/g, '').slice(-12) || 'run'
+// The id comes from the CALLER, and it cannot come from the clock. Claude Code's Workflow runtime
+// rejects a script containing `Date.now()`, `new Date()` or `Math.random()` before it runs a line
+// of it — "workflow scripts must be deterministic: Date.now()/Math.random()/new Date() are
+// unavailable (breaks resume). Stamp results after the workflow returns, or pass timestamps via
+// args." A clock-minted id therefore does not degrade the run, it refuses to compile it, and no
+// test here can see that: `scripts/workflows/run.mjs` is a plain AsyncFunction and bans nothing.
+// So the stamp arrives as `--invocation <id>`: run.mjs mints one for the CLI harnesses, the skill
+// mints one for Claude Code. Same args on a deliberate resume ⇒ same stamp ⇒ the memo replays,
+// which is what a resume is for; a new invocation carries a new stamp and re-asks every probe.
+// Unstamped is the old broken behaviour — every probe memoises — so the run says so rather than
+// looking stamped.
+const INVOCATION = flag('invocation') || opt.invocation || 'unstamped'
+if (INVOCATION === 'unstamped') log('⚠️ unstamped run (no --invocation) — under a memoising runtime a re-run answers its live-state probes from the last run\'s memo')
 // The probes: every call whose answer is a reading of something free to change underneath this run —
 // the checkpoint files, a branch, what a PR/MR targets, an approval, a human's review directive, a
 // posted test report. `open-pr` is deliberately NOT one: replaying "PR #841 is open" is correct, and

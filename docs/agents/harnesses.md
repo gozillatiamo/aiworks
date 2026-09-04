@@ -53,7 +53,7 @@ Every other Harness is a projection:
 | Instruction rules | `.claude/rules/*.md` | `.cursor/rules/*.mdc` links/slices | generated scope index + direct-read hook |
 | Hooks | `.claude/settings.json` + `.claude/hooks/` | generated wiring + shim | generated wiring + shim |
 | MCP | `.mcp.json` | `.cursor/mcp.json` symlink | generated `.codex/config.toml` tables |
-| Workflows | `.claude/workflows/*.js` | shared runtime, Cursor adapter | shared runtime, Codex adapter |
+| Workflows | `.claude/workflows/src/*.js` | shared runtime, Cursor adapter | shared runtime, Codex adapter |
 | Status line | Harness-native | command-driven Cursor form | native Codex footer items |
 
 Compatible formats use relative symlinks. Incompatible formats are generated and checked. A
@@ -80,8 +80,19 @@ aiworks workflow dev-cycle --harness codex FM-123
 ```
 
 In chat, invoke `$dev-cycle` / `$prd` / `$brd` in Codex and `/dev-cycle` / `/prd` / `/brd` in
-Cursor. The skills launch the deterministic runtime; they do not ask the outer model to reproduce
-the workflow from prose.
+Cursor and in Claude Code. The skills launch the deterministic runtime; they do not ask the outer
+model to reproduce the workflow from prose.
+
+**One workflow, one `/` entry.** Claude Code auto-loads `.claude/workflows/` and registers every
+`.js` it finds there as both a `/<name>` slash command and a `Workflow({name})` target. Each
+canonical workflow already owns that name through its skill, so a script sitting at the top of
+that directory would put two identically named entries in one menu — and the native one is the
+wrong half: it hands the Workflow tool the AUTHORED file, comments and all, skipping the build
+below. The loader does not recurse (measured: a `.js` one directory down registers nothing), so
+the authored sources live in `.claude/workflows/src/` and the built copies in
+`.claude/workflows/.build/`, leaving the directory Claude Code scans empty. `build.mjs --check`
+and `scripts/workflows/selftest.mjs` both fail on a `.js` that drifts back up, and `aiworks
+doctor` names it.
 
 ## Harness registry contract
 
@@ -173,7 +184,8 @@ The rule that replaces it: **the authored script is never what the runtime recei
 node scripts/workflows/build.mjs [--check] [<name>…]
 ```
 
-Default builds each workflow into `.claude/workflows/.build/<name>.js` — gitignored, disposable,
+Default reads `.claude/workflows/src/<name>.js` and builds each workflow into
+`.claude/workflows/.build/<name>.js` — gitignored, disposable,
 rebuilt on demand — and prints the path to hand the Workflow tool. `--check` measures without
 writing. Both refuse to produce a file they cannot vouch for:
 
@@ -191,6 +203,38 @@ fix command: it is a prompt to hoist repeated brief text into shared constants, 
 next 100 KB is.
 
 `scripts/workflows/selftest.mjs` holds the assertions, including the budget itself.
+
+### The determinism rule
+
+Claude Code compiles a workflow script under a rule that exists in **its runtime and nowhere in
+this repo**: `Date.now()`, `new Date()` and `Math.random()` are refused before a line of the script
+runs, because a resume replays completed `agent()` calls and a script that reads a clock cannot be
+replayed. The runtime says it in full:
+
+```
+workflow scripts must be deterministic: Date.now()/Math.random()/new Date() are unavailable
+(breaks resume). Stamp results after the workflow returns, or pass timestamps via args.
+```
+
+`scripts/workflows/run.mjs` bans none of that — it is a plain `AsyncFunction` — so **the Harness
+this framework tests against is more permissive than the one most runs happen on**. A workflow that
+breaks the rule passes every selftest here and then cannot start. Measured: a clock-minted
+per-invocation id did exactly that, green sweep and all.
+
+Three things hold the line now, and they are deliberately not the same thing:
+
+- `build.mjs` scans the **delivered** text and fails the build — delivered, not authored, so a
+  workflow may document the rule without tripping it;
+- `selftest.mjs` tests that scanner, including its false-positive cases, because a guard nothing
+  asserts is a guard a refactor deletes silently;
+- `aiworks doctor` reads the **installed** Claude Code's own sentence and warns when the runtime
+  bans something `BANNED` in `build.mjs` does not list. A copied list can only agree with itself;
+  this is the one check that can notice a rule a CLI update added.
+
+The workflow needs a per-invocation value anyway — a live-state probe must be re-asked rather than
+served from the memo — so it takes one from the caller: `--invocation <stamp>`, minted fresh per
+call by the skill, which is the runtime's own advice ("pass timestamps via args"). A resume passes
+the same arguments and replays its memos, which is what a resume is for.
 
 ## Agent compatibility contract
 

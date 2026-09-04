@@ -25,7 +25,7 @@
 # from inside a repo to the workspace root would dangle in such a clone. `--check`
 # hashes it back against the template so the copy can never silently drift.
 #
-# Workflows stay canonical under .claude/workflows and execute through `aiworks workflow
+# Workflows stay canonical under .claude/workflows/src and execute through `aiworks workflow
 # --harness cursor`; this projector owns only Cursor's persistent configuration face.
 #
 # IDEMPOTENT: a link or file that is already correct is left alone and reported as

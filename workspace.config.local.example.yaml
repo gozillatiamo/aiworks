@@ -12,7 +12,7 @@
 #     before producing output), and interactive skills. The one machine lifecycle exception is a
 #     local `harnesses` subset: it selects the Harness CLIs, plugins, status lines, and local MCP
 #     registrations for this machine, while shared projections still follow workspace.config.yaml.
-#   • The committed workflow CONFIG mirror (.claude/workflows/{dev-cycle,prd}.js) is
+#   • The committed workflow CONFIG mirror (.claude/workflows/src/{dev-cycle,prd}.js) is
 #     generated from `workspace.config.yaml` ONLY — a local override NEVER rewrites that
 #     tracked file (that is the whole point: no personal pref leaks into git). Three keys
 #     still reach a headless run anyway: `language`, `planning.to_html` and

@@ -99,7 +99,7 @@ definitions — `.claude/agents/<name>.md` (`developer`, `code-reviewer`, `qa-pl
 
 **Discovery.** `agent:list` and `workflow:list` are answered **inline, in seconds** — each
 name with a one-line summary, read straight from disk (`description:` frontmatter of
-`.claude/agents/*.md`; `whenToUse` from a workflow's `meta` in `.claude/workflows/*.js`,
+`.claude/agents/*.md`; `whenToUse` from a workflow's `meta` in `.claude/workflows/src/*.js`,
 falling back to its `description`). No worktree, no agent session, no busy flag, so they
 also answer while a turn is still running. `list` / `lists` are therefore reserved names —
 no agent or workflow may be called that.

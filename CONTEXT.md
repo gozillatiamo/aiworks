@@ -13,7 +13,7 @@ canonical term is the heading and the rest are listed under `_Avoid_`.
 ## Orchestration
 
 **Workflow**:
-A deterministic, multi-agent orchestration script (`.claude/workflows/*.js`) run headless — it
+A deterministic, multi-agent orchestration script (`.claude/workflows/src/*.js`) run headless — it
 fans out and sequences agents rather than reasoning turn-by-turn. Claude runs it natively; Cursor
 and Codex run the same source through the shared Workflow runtime.
 
@@ -24,7 +24,7 @@ _Avoid_: generated workflow, harness-specific workflow
 
 **dev-cycle**:
 The end-to-end delivery Workflow for a single ticket: plan → build → PR/MR → review → test gate
-→ merge → distribute. → `.claude/workflows/dev-cycle.js`
+→ merge → distribute. → `.claude/workflows/src/dev-cycle.js`
 
 **Invocation**:
 One `Workflow` call. A run that is stopped and started again is a second invocation of the same

@@ -4,7 +4,7 @@
 # CONFIG block FROM workspace.config.yaml.
 #
 # WHY THIS EXISTS
-#   Workflow scripts (.claude/workflows/dev-cycle.js) run in an engine sandbox with NO
+#   Workflow scripts (.claude/workflows/src/dev-cycle.js) run in an engine sandbox with NO
 #   filesystem access — they cannot read workspace.config.yaml at runtime. So the workflow
 #   carries its own in-source MIRROR of the config (TICKET_PREFIX, the status map, the
 #   auto-merge / planning flags, and the REPOS registry) in an AIWORKS-MANAGED block.
@@ -95,8 +95,8 @@
 #   --config <file>     workspace.config.yaml to read   (default: <workspace>/workspace.config.yaml)
 #   --config-local <f>  the personal override to CHECK   (default: <workspace>/workspace.config.local.yaml)
 #                       Read by the advisory guards only — never baked into the generated mirror.
-#   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/dev-cycle.js)
-#   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/prd.js)
+#   --target <file>     dev-cycle.js to rewrite          (default: <workspace>/.claude/workflows/src/dev-cycle.js)
+#   --prd-target <file> prd.js to rewrite (its design CONFIG) (default: <workspace>/.claude/workflows/src/prd.js)
 #   --workspace <file>  <name>.code-workspace to (re)generate (default: <workspace>/<basename>.code-workspace)
 #   -n, --dry-run      print the generated block(s) + the .code-workspace to stdout; write nothing.
 #   -q, --quiet        only print on change/error (suppress the "in sync" line).
@@ -133,8 +133,8 @@ done
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 [[ -n "$WC" ]]         || WC="$ROOT/workspace.config.yaml"
-[[ -n "$TARGET" ]]     || TARGET="$ROOT/.claude/workflows/dev-cycle.js"
-[[ -n "$PRD_TARGET" ]] || PRD_TARGET="$ROOT/.claude/workflows/prd.js"
+[[ -n "$TARGET" ]]     || TARGET="$ROOT/.claude/workflows/src/dev-cycle.js"
+[[ -n "$PRD_TARGET" ]] || PRD_TARGET="$ROOT/.claude/workflows/src/prd.js"
 # The multi-root workspace file is named after the workspace-root basename (deterministic),
 # e.g. <root>/aiworks.code-workspace. Override the whole path with --workspace.
 WS_NAME="$(basename "$ROOT")"
