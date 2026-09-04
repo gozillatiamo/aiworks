@@ -654,7 +654,8 @@ ensure_agent_harnesses() {
 }
 
 # Ensure every plugin this workspace declares in .claude/settings.json `enabledPlugins` is
-# actually INSTALLED, at USER scope. Best-effort + idempotent. macOS bash 3.2 safe.
+# actually INSTALLED, at PROJECT scope — in the workspace root AND in every clone beside it that
+# declares one. Best-effort + idempotent. macOS bash 3.2 safe.
 #
 # Why this exists: declaring a plugin in a committed settings.json is NOT installing it —
 # measured, and it is the kind of thing that reads as working. With `enabledPlugins` +
@@ -662,36 +663,53 @@ ensure_agent_harnesses() {
 # still answered NOT-FOUND for `caveman:caveman`, while the workspace root (where the plugin
 # was genuinely installed) answered AVAILABLE. Same probe, so the difference is the install.
 #
-# USER scope, not project: one install then covers the workspace root AND every repo clone
-# AND any other project — a repo-only session is a first-class way to work here (see
-# docs/agents/submodules.md and the Cursor doc's "open one repo at a time"), and caveman is
-# supposed to hold no matter where a session starts. Project scope would mean one install per clone
-# that drift apart.
+# PROJECT scope, not user: a workspace's dependencies are declared in the workspace, so they are
+# installed where they are declared — the committed settings.json says which plugins this
+# workspace needs, and the install that satisfies it belongs to the same project, not to the
+# machine of whoever cloned it. That also gives `aiworks update` something it can actually keep
+# current: it refreshes the copies this function created, in the projects it created them in.
+# The cost is one install per project rather than one per machine, which is why this walks the
+# root plus every clone that declares the plugin instead of installing once and hoping the
+# reach is machine-wide. A repo-only session (docs/agents/submodules.md, the Cursor doc's "open
+# one repo at a time") is still first-class: its own clone carries its own install.
+# A pre-existing USER-scope copy is never removed — it belongs to the person's other projects.
 #
 # This matters most for caveman: it is the workspace's output-compression baseline, preloaded
 # by all 16 agent definitions. Without the install those 16 preloads resolve to nothing.
 ensure_claude_plugins() {
   command -v claude >/dev/null 2>&1 || { log "claude CLI not found — skipping plugin install."; return 0; }
-  command -v jq >/dev/null 2>&1     || { warn "jq unavailable — cannot read enabledPlugins; install workspace plugins by hand (claude plugin install <plugin>@<marketplace> -s user)."; return 0; }
+  command -v jq >/dev/null 2>&1     || { warn "jq unavailable — cannot read enabledPlugins; install workspace plugins by hand (claude plugin install <plugin>@<marketplace> -s project)."; return 0; }
   # setup.sh cd's to the workspace root before anything runs (`cd "$(dirname "$0")/.."`), and
   # the rest of lib.sh anchors on $PWD for the same reason. Not SUPERSET_ROOT_PATH — that is a
   # DIFFERENT thing (the source worktree a fresh one copies its local state from).
-  local settings="$PWD/.claude/settings.json"
-  [[ -f "$settings" ]] || { log "no .claude/settings.json — no plugins declared."; return 0; }
+  local root="$PWD" dir
+  for dir in "$root" "$root"/*/; do
+    dir="${dir%/}"
+    # The root always counts; a sibling directory only when it is a clone (node_modules/, docs/
+    # and the generated mirrors carry no .git and declare no plugins of their own).
+    [[ "$dir" == "$root" || -e "$dir/.git" ]] || continue
+    [[ -f "$dir/.claude/settings.json" ]] || continue
+    ensure_claude_plugins_in "$dir"
+  done
+  return 0
+}
 
-  local reg="$HOME/.claude/plugins/installed_plugins.json" key mp src
+# The per-project half of ensure_claude_plugins. Separate so `aiworks update` can reuse the same
+# path resolution, and so a single project can be reconciled on its own.
+ensure_claude_plugins_in() {  # <project-dir>
+  local dir="$1" settings="$1/.claude/settings.json"
+  local reg="$HOME/.claude/plugins/installed_plugins.json" key mp src phys
+  phys="$(cd "$dir" 2>/dev/null && pwd -P)" || phys="$dir"
   while IFS= read -r key; do
     [[ -n "$key" ]] || continue
-    # The registry's schema has already changed once under us (a flat map became
-    # {version, plugins:{…}}), so read both shapes rather than the current one.
-    if [[ -f "$reg" ]] && jq -e --arg k "$key" \
-         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
-      log "plugin $key already installed (user scope)."
+    if [[ -n "$(claude_plugin_scope_version "$key" project "$phys")" ]]; then
+      log "plugin $key already installed (project scope: $dir)."
       continue
     fi
     mp="${key#*@}"
     # A marketplace the workspace declares may be unknown to this machine. Add it from
     # extraKnownMarketplaces before installing, or the install has nowhere to resolve from.
+    # Marketplaces are machine-wide, so this is done once per key, not once per project.
     if ! claude plugin marketplace list 2>/dev/null | grep -q "$mp"; then
       src="$(jq -r --arg m "$mp" '(.extraKnownMarketplaces[$m].source.repo) // empty' "$settings" 2>/dev/null)"
       if [[ -n "$src" ]]; then
@@ -701,9 +719,40 @@ ensure_claude_plugins() {
         warn "marketplace $mp is unknown and .claude/settings.json declares no source for it — $key will not install."
       fi
     fi
-    run_glance "plugin: install $key" claude plugin install "$key" -s user \
-      || warn "claude plugin install $key -s user failed — install it by hand, or agents that preload it get nothing."
+    # -s project resolves the project from the CWD, so the install has to RUN in that project.
+    run_glance "plugin: install $key ($dir)" claude_plugin_run_in "$dir" install "$key" \
+      || warn "claude plugin install $key -s project failed in $dir — install it by hand, or agents that preload it get nothing."
   done < <(jq -r '(.enabledPlugins // {}) | to_entries[] | select(.value == true) | .key' "$settings" 2>/dev/null)
+  return 0
+}
+
+# `claude plugin <verb> <key> -s project`, run inside <project-dir>. A function rather than an
+# inline subshell so run_glance/upgrade can take it as a command.
+claude_plugin_run_in() {  # <project-dir> <verb> <plugin-key>
+  ( cd "$1" && claude plugin "$2" "$3" -s project -y )
+}
+
+# The version the plugin registry records for one plugin at one scope, or "" when it has no entry
+# there. For scope=project the projectPath is matched on the RESOLVED path, never the recorded
+# string: the registry stores whatever path the session was opened with, and on macOS a /var/…
+# symlink of /private/var/… is the same directory spelled two ways.
+claude_plugin_scope_version() {  # <plugin-key> <scope> [project-dir]
+  local key="$1" scope="$2" want="${3:-}" reg="$HOME/.claude/plugins/installed_plugins.json" ep ev
+  [[ -f "$reg" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  if [[ "$scope" != project ]]; then
+    # The registry's schema has already changed once under us (a flat map became
+    # {version, plugins:{…}}), so read both shapes rather than the current one.
+    jq -r --arg k "$key" --arg s "$scope" \
+      '(((.plugins // .)[$k]) // [])[] | select(.scope == $s) | .version' "$reg" 2>/dev/null | head -1
+    return 0
+  fi
+  while IFS="$(printf '\t')" read -r ep ev; do
+    [[ -n "$ep" ]] || continue
+    [[ "$(cd "$ep" 2>/dev/null && pwd -P)" == "$want" ]] && { printf '%s\n' "$ev"; return 0; }
+  done <<EOF
+$(jq -r --arg k "$key" '(((.plugins // .)[$k]) // [])[] | select(.scope == "project") | "\(.projectPath)\t\(.version)"' "$reg" 2>/dev/null)
+EOF
   return 0
 }
 

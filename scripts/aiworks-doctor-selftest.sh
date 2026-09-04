@@ -430,21 +430,22 @@ else
   skipc "live workspace run (no config in this clone)"
 fi
 
-# ── 19 · plugin scope drift + the caveman restart marker ──────────────────────────
+# ── 19 · plugin scope + the caveman restart marker ────────────────────────────────
 # Both checks read machine state ($HOME plugin registry, $CLAUDE_CONFIG_DIR activation flag), so
-# each case points those at a crafted directory instead of the real one. The pair that matters is
-# 19a/19c: the check must fire on DIVERGENCE and stay silent on mere duplication, because a
-# project-scope entry re-appears on its own and a warn nobody can clear is the defect this file
-# already pins for `gh` currency.
+# each case points those at a crafted directory instead of the real one. What matters here is the
+# scope the workspace installs at: PROJECT (docs/adr/0035). So a declared plugin with no project
+# copy for THIS workspace is the finding even when the machine carries a user-scope one, and the
+# fix for two copies that have parted must REFRESH them — the uninstall this check used to
+# prescribe was a warn no command could clear, because setup and update put the copy right back.
 W="$T/pluginscope"; make_ws "$W"; stage "$W"
 printf '{"hooks":{},"enabledPlugins":{"caveman@caveman":true}}\n' > "$W/.claude/settings.json"
 FH="$T/fakehome"; mkdir -p "$FH/.claude/plugins"
 
-mk_reg() {  # mk_reg <user-version> <project-version>
+mk_reg() {  # mk_reg <user-version> <project-version> [project-lastUpdated]
   cat > "$FH/.claude/plugins/installed_plugins.json" <<JSON
 {"version":1,"plugins":{"caveman@caveman":[
  {"scope":"user","version":"$1","lastUpdated":"2026-07-20T11:15:27.000Z"},
- {"scope":"project","projectPath":"$W","version":"$2","lastUpdated":"2026-07-01T00:00:00.000Z"}]}}
+ {"scope":"project","projectPath":"$W","version":"$2","lastUpdated":"${3:-2026-07-20T11:15:27.000Z}"}]}}
 JSON
 }
 # -v so a PASSING check's detail line is visible too — the "duplicate but in step" case asserts on
@@ -454,38 +455,49 @@ run_ps() { HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor
 mk_reg NEW999 OLD111
 printf 'full' > "$FH/.claude/.caveman-active"; touch -t 202607010000 "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
-ck "a diverged project-scope copy is a finding"   "drifted from user scope" "$OUT"
+ck "a project copy out of step with user scope is a finding" "out of step" "$OUT"
 ck "the finding names the plugin"                 "caveman@caveman"         "$OUT"
 ck "an update after the last activation warns"    "updated since the last activation" "$OUT"
-# The rendered owner command is width-truncated ("… (+1 more words)"), and the half that gets cut is the
-# settings.json restore — the half whose absence breaks the whole team. Assert on --json, which
-# carries the command whole.
+# The rendered owner command is width-truncated ("… (+1 more words)"), so assert on --json, which
+# carries it whole. Both halves matter: the fix must be the refresh, and it must NOT be the
+# uninstall — that one deleted the plugin's line from the committed settings.json and was undone
+# by the next setup/update, which is how this finding used to survive its own fix.
 JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
-ck "the fix restores the committed settings.json" "git checkout -- .claude/settings.json" "$JOUT"
+ck "the fix refreshes both copies"      "update --only plugins"    "$JOUT"
+ck "the fix never deletes the project copy" "ABSENT:plugin uninstall" "$JOUT"
 
 mk_reg SAME777 SAME777
 touch -t 202608010000 "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
-ck "a duplicate at the SAME version is not a finding" "ABSENT:drifted from user scope" "$OUT"
+ck "copies in step are not a finding"                 "ABSENT:out of step" "$OUT"
 ck "activation after the update is not a finding"     "ABSENT:updated since the last activation" "$OUT"
-ck "the duplicate is still reported as context"       "project-scope duplicate" "$OUT"
+ck "the project install is reported"                  "installed at project scope" "$OUT"
 
+# The restart check reads THIS project's copy, not the machine's. Project installed 2026-08-15,
+# user 2026-07-20, marker 2026-08-01: only the project stamp is newer than the activation, so a
+# check still reading the user entry would stay silent here.
+mk_reg SAME777 SAME777 "2026-08-15T04:47:02.000Z"
+OUT="$(run_ps)"
+ck "the restart check compares this project's copy" "updated since the last activation" "$OUT"
+
+mk_reg SAME777 SAME777
 rm -f "$FH/.claude/.caveman-active"
 OUT="$(run_ps)"
 ck "no activation marker skips rather than warns" "ABSENT:updated since the last activation" "$OUT"
 
-# A DECLARED plugin with no user-scope entry at all. This is the state `aiworks sync` leaves —
-# it converges enabledPlugins everywhere and never installs — and nothing else reported it, so a
-# teammate ran sync, saw the skills resolve, and had no hooks. The pass line has to disappear
-# with it: "declared plugins are user-scope only" printed beside the warn would read as fine.
+# A DECLARED plugin with no project-scope entry for THIS workspace, while the machine carries a
+# user-scope one. That is the state `aiworks sync` leaves — it converges enabledPlugins
+# everywhere and never installs — and a machine-wide copy does not stand in for it: nothing keeps
+# it in step with what this workspace declares. The pass line has to disappear with the warn.
 cat > "$FH/.claude/plugins/installed_plugins.json" <<'JSON'
 {"version":1,"plugins":{"caveman@caveman":[
+ {"scope":"user","version":"USR111","lastUpdated":"2026-07-20T11:15:27.000Z"},
  {"scope":"project","projectPath":"/nowhere","version":"OLD111","lastUpdated":"2026-07-01T00:00:00.000Z"}]}}
 JSON
 OUT="$(run_ps)"
-ck "a declared-but-uninstalled plugin is a finding" "declared plugin(s) not installed" "$OUT"
+ck "a plugin with no copy in THIS project is a finding" "not installed in this project" "$OUT"
 ck "the finding names the plugin"                   "caveman@caveman"                   "$OUT"
-ck "it does not also claim the scope is clean"      "ABSENT:user-scope only"            "$OUT"
+ck "a user-scope copy does not clear it"            "ABSENT:declared plugin(s) installed" "$OUT"
 JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
 ck "the fix runs the one script that owns the install" "ensure_claude_plugins" "$JOUT"
 

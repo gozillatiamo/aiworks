@@ -812,8 +812,9 @@ fi
 # today, but the "<skill>|<source>" form keeps multi-source support. Already-present skills are
 # skipped. Project scope is guaranteed by being inside the repo with a .claude/ marker + -y (no
 # --global).
-# NOTE: caveman is deliberately absent from THIS list. For Claude Code it is the user-scope
-# `caveman@caveman` plugin (enabledPlugins in the meta repo's .claude/settings.json) and the agents
+# NOTE: caveman is deliberately absent from THIS list. For Claude Code it is the project-scope
+# `caveman@caveman` plugin (enabledPlugins in this repo's own .claude/settings.json, installed by
+# ensure_claude_plugins — docs/adr/0035) and the agents
 # invoke `caveman:caveman` themselves, so installing it through the `skills` CLI as well would be
 # redundant.
 # It does NOT follow that a repo carries no caveman file — read on before deleting one. Every repo
@@ -1130,8 +1131,8 @@ if have jq; then
   # adds only what is missing and preserves the repo's own entries and their order.
   #
   # Why these two rules travel with the hooks rather than being each repo's call: `hcat` is the
-  # headroom plugin's reader, and the plugin is installed at USER scope, so it is live in a
-  # repo-only session whether or not that repo knows about it. The deny half is the one that
+  # headroom plugin's reader, and the plugin is installed in every project that declares it
+  # (docs/adr/0035), so it is live in a repo-only session whether or not that repo knows about it. The deny half is the one that
   # matters — it is defense in depth beside pretool-env-guard.sh for the same reason
   # Read(**/.env) is denied even though the hook already blocks it. The allow half only buys
   # determinism over the auto-mode classifier.

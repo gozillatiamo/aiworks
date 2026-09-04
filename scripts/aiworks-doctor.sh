@@ -965,84 +965,84 @@ EOF
     skip $g "codex projection" "Codex is not in the active Harness set"
   fi
 
-  # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at USER scope on purpose
-  # (its own comment: one install covers the root AND all 22 clones; project scope would mean 22
-  # installs that drift apart). A project-scope entry beside it is not a second plugin — it is a
-  # duplicate registration of the same one, pinned to whatever marketplace commit was cached the
-  # day it appeared, and `claude plugin update` only ever moves the USER entry. So it silently
-  # rots: measured 2026-08-07, this workspace carried one 18 days behind the user-scope install.
+  # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at PROJECT scope: a workspace
+  # declares its dependencies in a committed settings.json, so the install that satisfies the
+  # declaration belongs to the same project rather than to the machine of whoever cloned it
+  # (docs/adr/0035). So the finding here is a project that DECLARES a plugin and does not carry
+  # it — the state `aiworks sync` leaves, since sync converges enabledPlugins everywhere and
+  # never installs. Nothing looks broken while it is open: the skills still resolve, because
+  # `aiworks cursor` vendors and links them independently of the plugin. What is silently absent
+  # is the plugin's HOOKS — which for caveman and ponytail is the entire point, since that is how
+  # the ruleset reaches a session and its subagents at all.
+  # A leftover USER-scope copy is not a finding on its own (it serves the person's other
+  # projects, and this one is served by its own copy) — only a DIVERGENCE is, because then one of
+  # the two lagged and the honest fix refreshes both rather than deleting either.
   # Cheap enough for the default run — two file reads, no network, no session.
-  local reg="$HOME/.claude/plugins/installed_plugins.json"
+  local reg="$HOME/.claude/plugins/installed_plugins.json" proj_stamps=""
   if ! command -v jq >/dev/null 2>&1; then
     skip $g "plugin scope" "jq unavailable — cannot read the plugin registry"
   elif [[ ! -f "$reg" ]]; then
     skip $g "plugin scope" "no plugin registry on this machine yet"
   else
-    # Report DIVERGENCE, not mere duplication. A project-scope entry appears on its own here
-    # (`claude plugin update` refreshed one into this root mid-run on 2026-08-07, and every
-    # dispatched worktree gets one), so warning on existence alone would be a warn no command can
-    # permanently clear — the same defect this file's `gh` currency warn had. While the two entries
-    # carry the SAME version nothing is broken; the failure is when they part, because only the
-    # user entry is ever updated. That is the caveman case: project 77 lines vs user 87.
     # Match the project entry on the RESOLVED path, never the recorded string. $ROOT is already
     # physical (`cd … && pwd`) while the registry stores whatever path the session was opened
     # with — on macOS a /var/… symlink of /private/var/… is the same directory spelled two ways,
     # and a string compare silently matches nothing. Caught by the selftest, not by inspection.
-    local pkey projscoped="" missing="" dup=0 uv pv ep ev rootp
+    local pkey diverged="" missing="" installed=0 uv pv ep ev el rootp
     rootp="$(cd "$ROOT" 2>/dev/null && pwd -P)" || rootp="$ROOT"
     while IFS= read -r pkey; do
       [[ -z "$pkey" ]] && continue
       uv="$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .version' "$reg" 2>/dev/null | head -1)"
       pv=""
-      while IFS="$(printf '\t')" read -r ep ev; do
+      while IFS="$(printf '\t')" read -r ep ev el; do
         [[ -z "$ep" ]] && continue
-        [[ "$(cd "$ep" 2>/dev/null && pwd -P)" == "$rootp" ]] && { pv="$ev"; break; }
+        # The project entry's own lastUpdated is carried out for the RESTART check below, so the
+        # resolved-path walk happens once per plugin rather than twice.
+        [[ "$(cd "$ep" 2>/dev/null && pwd -P)" == "$rootp" ]] && {
+          pv="$ev"; proj_stamps="$proj_stamps$pkey	$el
+"; break; }
       done <<INNER
-$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "project") | "\(.projectPath)\t\(.version)"' "$reg" 2>/dev/null)
+$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "project") | "\(.projectPath)\t\(.version)\t\(.lastUpdated)"' "$reg" 2>/dev/null)
 INNER
-      [[ -n "$pv" ]] && dup=$((dup+1))
-      [[ -n "$uv" && -n "$pv" && "$uv" != "$pv" ]] && projscoped="${projscoped:+$projscoped }$pkey"
-      # DECLARED BUT NOT INSTALLED. `$uv` is already the user-scope version, so its absence IS
-      # the test — no second registry read, no second loop.
-      [[ -z "$uv" ]] && missing="${missing:+$missing }$pkey"
+      # DECLARED BUT NOT INSTALLED — for THIS project. `$pv` is the project-scope version, so its
+      # absence IS the test; a user-scope copy does not stand in for it, because nothing keeps a
+      # machine-wide install in step with what this workspace declares.
+      if [[ -z "$pv" ]]; then missing="${missing:+$missing }$pkey"
+      else installed=$((installed+1)); fi
+      [[ -n "$uv" && -n "$pv" && "$uv" != "$pv" ]] && diverged="${diverged:+$diverged }$pkey"
     done <<EOF
 $(jq -r '(.enabledPlugins // {}) | keys[]' "$settings" 2>/dev/null)
 EOF
     # "Declared" reads as done and is not. `aiworks sync` converges enabledPlugins +
-    # extraKnownMarketplaces into the root and every declared repo, and stops there — the install is
-    # `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls. Nothing else
-    # reports the gap, and nothing looks broken while it is open: the skills still resolve,
-    # because `aiworks cursor` vendors and links them independently of the plugin. What is
-    # silently absent is the plugin's HOOKS — which for caveman and ponytail is the entire
-    # point, since that is how the ruleset reaches a session and its subagents at all.
-    # Reported separately from the scope block below: a machine can be missing one plugin while
-    # another has drifted, and collapsing them would hide whichever lost the branch.
+    # extraKnownMarketplaces into the root and every declared repo, and stops there — the install
+    # is `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls.
+    # Reported separately from the divergence below: a project can be missing one plugin while
+    # another has parted from the machine's copy, and collapsing them would hide whichever lost
+    # the branch.
     if [[ -n "$missing" ]]; then
       # The owner is ensure_claude_plugins, not a hand-written pair of claude commands: it
       # already adds the marketplace from extraKnownMarketplaces BEFORE installing, and a bare
       # `claude plugin install` without that step fails with "not found in marketplace" —
       # measured 2026-08-13. Sourcing lib.sh keeps the write in the one script that owns it.
-      warn $g "declared plugin(s) not installed" \
-           "$missing — declaring is not installing: no SessionStart/SubagentStart hooks on this machine" \
+      warn $g "declared plugin(s) not installed in this project" \
+           "$missing — declaring is not installing: no SessionStart/SubagentStart hooks in this project" \
            "bash -c '. .superset/lib.sh && ensure_claude_plugins'" slow
     fi
 
-    if [[ -n "$projscoped" ]]; then
-      # The uninstall ALSO deletes the plugin's line from the committed settings.json, which is
-      # the very file lib.sh reads to install it user-scope everywhere — so the restore is part
-      # of the fix, not an afterthought.
-      # `claude plugin uninstall` takes ONE plugin, so a bare space-joined list would fail — loop.
-      # The trailing checkout is not optional: each uninstall deletes that plugin's line from the
-      # committed settings.json, the file lib.sh reads to install it user-scope on every machine.
-      warn $g "project-scope plugin copy has drifted from user scope" \
-           "$projscoped — the session may serve this older copy; only user scope gets updated" \
-           "for p in $projscoped; do claude plugin uninstall \"\$p\" -s project -y; done; git checkout -- .claude/settings.json"
-    elif [[ $dup -gt 0 ]]; then
-      pass $g "plugin scope" "$dup project-scope duplicate(s), all matching user scope"
+    if [[ -n "$diverged" ]]; then
+      # NOT an uninstall. Deleting the project copy also deletes the plugin's line from the
+      # committed settings.json — the very declaration the workspace installs from — and `setup`
+      # or `update` puts the copy straight back, which is how this warn used to survive its own
+      # fix. The honest close is to move BOTH copies forward: `aiworks update --only plugins`
+      # refreshes each project copy in its own project AND any leftover user-scope one, so the
+      # two stop parting. Owner command, not a suggestion, so --fix can actually clear it.
+      warn $g "project-scope plugin copy is out of step with the machine's user-scope copy" \
+           "$diverged — this project serves ITS copy; one of the two lagged, so refresh both" \
+           "./aiworks update --only plugins" slow
     elif [[ -z "$missing" ]]; then
-      # Only claim this when every declared plugin is actually there — a "user-scope only" pass
-      # beside a not-installed warn would read as the plugins being fine.
-      pass $g "plugin scope" "declared plugins are user-scope only"
+      # Only claim this when every declared plugin is actually there — a clean-scope pass beside
+      # a not-installed warn would read as the plugins being fine.
+      pass $g "plugin scope" "$installed declared plugin(s) installed at project scope"
     fi
   fi
 
@@ -1068,7 +1068,12 @@ EOF
     elif [[ ! -f "$flag" ]]; then
       skip $g "$nm restart" "no $mk marker — $nm is off or has never activated"
     else
-      lu="$(jq -r --arg k "$pk" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
+      # THIS project's copy is the one a session here serves, so its install time is the one to
+      # compare against — collected by the scope walk above, which already resolved the paths.
+      # A machine that still carries only a user-scope copy falls back to that one rather than
+      # skipping: the ruleset it serves can be stale in exactly the same way.
+      lu="$(printf '%s' "$proj_stamps" | awk -F'\t' -v k="$pk" '$1 == k { print $2; exit }')"
+      [[ -n "$lu" ]] || lu="$(jq -r --arg k "$pk" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .lastUpdated' "$reg" 2>/dev/null | head -1)"
       fm="$(stat -f %m "$flag" 2>/dev/null)"
       ue="$(date -j -u -f '%Y-%m-%dT%H:%M:%S' "${lu%.*}" +%s 2>/dev/null)"
       if [[ -z "$lu" || -z "$fm" || -z "$ue" ]]; then
@@ -1322,12 +1327,14 @@ check_headroom() {
   if ! command -v jq >/dev/null 2>&1; then
     skip $g "headroom plugin" "jq not on PATH — cannot read the plugin registry"
   elif [[ -f "$reg" ]] && jq -e --arg k "$key" \
-         '(((.plugins // .)[$k]) // []) | any(.scope == "user")' "$reg" >/dev/null 2>&1; then
-    pass $g "headroom plugin" "installed at user scope"
+         '(((.plugins // .)[$k]) // []) | any(.scope == "project" or .scope == "user")' "$reg" >/dev/null 2>&1; then
+    # Either scope serves the badge and the hooks; the scope check above is the one that holds
+    # this project to its own copy, and saying it twice would double-count one defect.
+    pass $g "headroom plugin" "installed"
   else
     warn $g "headroom plugin not installed" \
          "declared in .claude/settings.json enabledPlugins, but declaring is not installing" \
-         "claude plugin install $key -s user" slow
+         "claude plugin install $key -s project -y" slow
   fi
 
   # ── a knob the installed plugin does not read (C15) ──

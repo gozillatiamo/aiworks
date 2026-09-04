@@ -155,8 +155,9 @@ fi
 # shell out to this binary, and a plugin installed without it fails open (no compression, no
 # badge, no error). Gated by headroom.enabled in workspace.config.yaml.
 ensure_headroom || true
-# Claude plugins declared in .claude/settings.json, installed at USER scope so they hold in a
-# repo-only session too. Declaring is not installing — measured: a repo whose settings.json
+# Claude plugins declared in .claude/settings.json, installed at PROJECT scope — the root and
+# every clone that declares one, so a repo-only session is served by its own project too.
+# Declaring is not installing — measured: a repo whose settings.json
 # carried enabledPlugins still answered NOT-FOUND for caveman:caveman until the install ran.
 # After ensure_jq, since it reads the settings with jq.
 ensure_harness_plugins || true
