@@ -368,11 +368,11 @@ check_workspace() {
 
   # This repo's doc graph (graphify — prose only, docs/adr/0013). The workspace's own half
   # of the index: codegraph covers the product repos' code and indexes neither shell nor
-  # markdown, which is most of what lives here. graph.json is committed, so a fresh clone
-  # should already have one — an absent graph means either the commit is missing or someone
-  # ran `graphify uninstall --purge`. Never offer a rebuild as a cheap fix: the semantic
-  # pass is the most expensive step in the toolchain and it is serialised, so the owner
-  # command is deliberately the explicit one.
+  # markdown, which is most of what lives here. The graph is NOT committed — it is derived,
+  # per-workspace state (see .gitignore) — so a fresh clone legitimately has none and this
+  # warns until the first build. Never offer a rebuild as a cheap fix: the semantic pass is
+  # the most expensive step in the toolchain and it is serialised, so the owner command is
+  # deliberately the explicit one.
   if [[ ! -f "$ROOT/.graphifyignore" ]]; then
     warn $g "no .graphifyignore" "the doc graph would index shell, config and generated mirrors" \
          "\$EDITOR .graphifyignore"
@@ -383,7 +383,7 @@ check_workspace() {
     local dn; dn="$(grep -o '"norm_label"' "$ROOT/graphify-out/graph.json" 2>/dev/null | grep -c . || true)"
     pass $g "doc graph" "${dn:-0} nodes"
   else
-    warn $g "no doc graph" "prose queries answer from nothing — codegraph indexes no shell and no markdown" \
+    warn $g "no doc graph" "not built yet — prose queries answer from nothing, and codegraph indexes no shell and no markdown" \
          "graphify extract . --backend claude-cli" slow
   fi
 }

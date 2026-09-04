@@ -67,19 +67,44 @@ from graphify.cluster import community_member_sigs
 
 A mismatch is silent. Nothing errors; the names simply degrade.
 
-## What is committed, and what is not
+## Nothing in `graphify-out/` is committed here
 
-`graph.json`, `manifest.json`, `GRAPH_REPORT.md` and the label pair **are** committed — a teammate's
-first pull gets the map without re-spending the semantic pass. Not committed: `cache/`, `cost.json`,
-`graph.html`, the dated backup dirs, and any `.graphify_*` file holding an absolute path or a
-per-machine tally.
+The graph is **derived, per-workspace state**, and this repo is a harness other orgs fork:
 
-`.graphify_analysis.json` is **intra-run scratch** — the skill's Step 5 reads it and Step 9 deletes
-it. Committing it guarantees a permanently dirty tree.
+- **Regenerable.** `graph.json` is built from the `.md` files already tracked here.
+- **Not reproducible.** Clustering drifts run to run (49 → 54 above) and concept ids are
+  model-authored, so no two builds agree. A rebuild lands ~90,000 changed lines nobody can review —
+  a text file with none of the benefits of one.
+- **Yours, not ours.** A fork's graph maps ITS workspace: its product, its ticket keys, its channels.
+  A graph shipped upstream carries the author's org into every fork, and conflicts with the fork's
+  own graph on every pull, forever.
 
-`.gitattributes` binding `graph.json` to the union merge driver is the one shareable artifact of
-`hook install`. Without it the driver is dead config and a `graph.json` conflict lands as tens of
-thousands of unresolvable lines.
+So a fresh clone has no graph, `aiworks doctor` warns until you build one, and `aiworks sync` reports
+rather than rebuilds. Build it once with `/graphify` in the assistant — the skill is the LLM, no API
+key.
+
+### Committing it inside your own workspace
+
+Reasonable — it saves teammates the semantic pass, the most expensive step in the toolchain. Then:
+
+1. **Un-ignore what you want.** `graphify-out/graph.json`, and `.graphify_labels.json` + `.sig` to
+   keep curated names. Never `.graphify_analysis.json` — intra-run scratch that the skill's Step 5
+   reads and Step 9 deletes, so committing it guarantees a permanently dirty tree. Never `cache/`,
+   `cost.json`, `graph.html`, the dated backup dirs, or any `.graphify_*` holding an absolute path or
+   a per-machine tally.
+2. **Install the union merge driver and commit its binding.**
+   ```bash
+   graphify hook install
+   echo 'graphify-out/graph.json merge=graphify' >> .gitattributes
+   ```
+   The binding is the one shareable artifact of `hook install`; without it the driver is dead config
+   and a conflict lands as tens of thousands of unresolvable lines. The driver itself lives in
+   `.git/config` with an **absolute path to the installing machine's interpreter**, so every clone
+   runs `hook install` for itself — and a forge's server-side merge button never runs it at all.
+   Merge locally, then push.
+3. **Rebuild in one lane.** Two people rebuilding in parallel re-partition differently. The union
+   driver saves `graph.json`; nothing saves the labels, and union merge only ever adds, so a graph
+   merged this way grows monotonically.
 
 ## `graphify install` overreaches — review before committing
 

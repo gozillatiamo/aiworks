@@ -39,24 +39,18 @@ __pycache__/
 .superset/products/*.sh
 !.superset/products/example.sh
 
-# The doc graph (graphify — docs/adr/0013). graph.json, manifest.json and GRAPH_REPORT.md
-# ARE committed, so a teammate's first pull gets the map without re-spending the semantic
-# pass. These are not:
-#   cache/                   the semantic-extraction cache; rebuildable and by far the bulk
-#   cost.json                this machine's token/cost tally for its own runs
-#   .graphify_python         an absolute path to THIS machine's interpreter
-#   .graphify_root           an absolute path to THIS checkout
-#   .graphify_semantic_marker  this machine's output-token tally
-#   graph.html               derived visualisation; `graphify cluster-only .` regenerates it
-#   graphify-out/<date>/     pre-rebuild backups of graph.json + manifest.json
-# No trailing comments on the patterns below — gitignore treats them as part of the pattern.
-graphify-out/cache/
-graphify-out/cost.json
-graphify-out/.graphify_python
-graphify-out/.graphify_root
-graphify-out/.graphify_semantic_marker
-graphify-out/graph.html
-graphify-out/20*/
+# The doc graph (graphify — docs/adr/0013) is DERIVED, per-workspace state, not source, so
+# none of it is committed here. Three reasons, and docs/agents/graphify.md has the detail:
+#   regenerable       graph.json is built from the .md files already tracked in this repo
+#   not reproducible  clustering drifts run to run and concept ids are model-authored, so no
+#                     two builds agree — a rebuild is ~90k changed lines nobody can review
+#   yours, not ours   a fork's graph maps ITS workspace (its product, ticket keys, channels),
+#                     and a graph shipped upstream conflicts with it on every pull
+# Build your own once with /graphify in the assistant. Committing the graph inside YOUR OWN
+# workspace is a fine choice — docs/agents/graphify.md says which paths to un-ignore and why
+# the union merge driver has to come with them.
+# No trailing comment on the pattern below — gitignore treats it as part of the pattern.
+graphify-out/
 
 # logs
 agent_logs/
