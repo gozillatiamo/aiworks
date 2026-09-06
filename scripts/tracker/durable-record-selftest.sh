@@ -182,6 +182,57 @@ out="$(linear exists tracker_edit_comment APP-1 c-new 1 "$MARKER"$'\n''r7')"
 has "--dry-run says what it would do"                "DRY RUN"       "$out"
 hasnt "…and calls no mutation"                       "commentUpdate" "$(calls)"
 
+# ── jira ──────────────────────────────────────────────────────────────────────────
+# jira's own comment API rewrites bodies (unlike notion/linear it needs no callout or
+# find-newest workaround) — but its markdown renderer autolinks any bare ticket-key mention
+# (APP-2286: "mentioned another ticket in prose" made it a real link), and that applies to a
+# MARKER LINE too the instant it is not bold-protected any more (adf_to_text drops the
+# bold mark on read, so the SECOND write of a marker onward posts it unprotected). The
+# corrupted marker then reads back as `[dev · [APP-1](url)]`, which no longer CONTAINS the
+# literal marker `[dev · APP-1]` — so `tracker_find_comment` answers "nothing", and every
+# later run posts a brand new record instead of updating the one already there. Measured on
+# a live ticket: nine separate `[dev · KEY]` comments over three days, one per round.
+jira() { # jira <fixture-json> <function> [args…]
+  local fixture="$1"; shift
+  CALLS="$TMP/calls"; : > "$CALLS"
+  JIRA_BASE_URL=https://example.atlassian.net JIRA_PROJECT_KEY=APP JIRA_EMAIL=x JIRA_API_TOKEN=x \
+  TRACKER_PROVIDER=jira CALLS="$CALLS" FIXTURE="$fixture" bash -c '
+    . "$1"/lib.sh
+    shift
+    # Transport stub, defined AFTER the impl so it wins. Everything under test — the
+    # marker match, the autolink, the table renderer — is the real code.
+    jira_key() { printf "APP-1"; }
+    jira_api() {
+      printf "%s %s\n" "$1" "$2" >> "$CALLS"
+      case "$1 $2" in
+        "GET /rest/api/3/issue/APP-1/comment") printf "%s" "$FIXTURE" ;;
+        *) printf "{}\n" ;;
+      esac
+    }
+    "$@"
+  ' _ "$TDIR" "$@"
+}
+
+# A comment whose FIRST post went out bold-protected (`**[dev · APP-1]**`, no link — the
+# marker is not autolinked the FIRST time, since the bold match wins the whole line and
+# does not recurse into it) but has since been through one section-splice re-write, which
+# read the bold back as plain text (adf_to_text drops marks) and re-posted it unguarded —
+# exactly the shape a live ticket carries after its second repo joins the shared record.
+CORRUPTED_MARKER_FIXTURE='{"comments":[{"id":"c-old","created":"2026-01-01T00:00:00Z","body":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"[dev · "},{"type":"text","text":"APP-1","marks":[{"type":"link","attrs":{"href":"https://example.atlassian.net/browse/APP-1"}}]},{"type":"text","text":"]"}]},{"type":"heading","attrs":{"level":3},"content":[{"type":"text","text":"web-app"}]}]}}]}'
+
+echo "── jira: find survives the ticket-key autolink"
+out="$(jira "$CORRUPTED_MARKER_FIXTURE" tracker_find_comment APP-1 '[dev · APP-1]')"
+has "a marker corrupted by the autolink is still found" "c-old" "$(printf '%s' "$out" | head -1)"
+has "…and the returned text is un-linked back to the literal marker" "[dev · APP-1]" "$out"
+hasnt "…never the corrupted markdown-link form" "[dev · [APP-1]" "$out"
+
+echo "── jira: a table survives adf_to_text"
+TABLE_ADF='{"type":"doc","version":1,"content":[{"type":"table","attrs":{"isNumberColumnEnabled":false,"layout":"default"},"content":[{"type":"tableRow","content":[{"type":"tableHeader","attrs":{},"content":[{"type":"paragraph","content":[{"type":"text","text":"run"}]}]},{"type":"tableHeader","attrs":{},"content":[{"type":"paragraph","content":[{"type":"text","text":"change"}]}]}]},{"type":"tableRow","content":[{"type":"tableCell","attrs":{},"content":[{"type":"paragraph","content":[{"type":"text","text":"r1"}]}]},{"type":"tableCell","attrs":{},"content":[{"type":"paragraph","content":[{"type":"text","text":"first slice"}]}]}]}]}]}'
+out="$(printf '%s' "$TABLE_ADF" | jq -L "$TDIR/jira" -r 'include "jira"; adf_to_text')"
+has  "the header row survives as a pipe row" "| run | change |" "$out"
+has  "…with a separator row marking it as header" "| --- | --- |" "$out"
+has  "…and the data row survives too" "| r1 | first slice |" "$out"
+
 # ── the wrapper's own refusal ──────────────────────────────────────────────────────
 echo "── upsert-ticket-comment.sh"
 out="$(NOTION_TOKEN=x NOTION_DB_ID=y TRACKER_PROVIDER=notion \

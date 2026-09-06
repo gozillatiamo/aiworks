@@ -529,14 +529,26 @@ tracker_add_comment() {
 # stable across a round trip: a comment is posted as Markdown, stored as ADF, and read back as
 # text, and an HTML comment (`<!-- … -->`) does not survive that trip at all. So a marker has
 # to be a line a human can see — which is also why it reads like a label rather than a uuid.
+#
+# A marker embedding the ticket key (e.g. `[dev · APP-1]`) is not safe from md_to_adf's own
+# autolink: the FIRST post goes out bold (`**[dev · APP-1]**`), and bold does not recurse for
+# inline parsing, so the key inside is untouched — but adf_to_text drops mark info entirely
+# (it only ever reads a LINK mark back out), so the record's SECOND write posts that same line
+# unguarded, and this time the bare key gets autolinked like any other mention. Read back, it
+# is `[dev · [APP-1](url)]` — text that no longer CONTAINS the literal marker, so the next
+# find answers "nothing" and a fresh record gets posted instead of an update. Undo exactly
+# that autolink before matching, so a marker already corrupted this way is still found.
 tracker_find_comment() {
   local ticket="$1" marker="$2" key resp hit
   key="$(jira_key "$ticket")"
   resp="$(jira_api GET "/rest/api/3/issue/$key/comment")"
-  hit="$(printf '%s' "$resp" | jq -r -L "$JIRA_IMPL_DIR" --arg m "$marker" '
+  hit="$(printf '%s' "$resp" | jq -r -L "$JIRA_IMPL_DIR" --arg m "$marker" --arg prefix "$JIRA_PROJECT_KEY" '
     include "jira";
+    def unlink_ticket_keys:
+      if ($prefix // "") == "" then .
+      else gsub("\\[(?<k>" + $prefix + "-[0-9]+)\\]\\([^)]*\\)"; "\(.k)") end;
     [ (.comments // [])[]
-      | { id: .id, created: (.created // ""), text: (.body | adf_to_text) }
+      | { id: .id, created: (.created // ""), text: (.body | adf_to_text | unlink_ticket_keys) }
       | select(.text | contains($m)) ]
     | sort_by(.created) | last
     | if . == null then empty else "\(.id)\n\(.text)" end')"
