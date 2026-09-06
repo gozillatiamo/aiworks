@@ -24,6 +24,20 @@ def adf_to_text:
       elif $t == "codeBlock"   then ( (($n.content // []) | map(node) | join("")) + "\n" )
       elif $t == "blockquote"  then ( "> " + (($n.content // []) | map(node) | join("")) )
       elif $t == "rule"        then "----------\n"
+      # A table cell's own paragraph already ends in "\n" (see the paragraph case) — collapsed
+      # to a single space, since a literal newline inside a GFM cell breaks the row it sits in.
+      # The writer's own pipe-table parser (_split_cells, below) has no escaping for a literal
+      # "|" inside a cell either, so this stays symmetric with what it can actually round-trip.
+      elif $t == "tableCell" or $t == "tableHeader"
+                               then ( (($n.content // []) | map(node) | join("")) | gsub("\n"; " ") | gsub("^[ \t]+|[ \t]+$"; "") )
+      elif $t == "tableRow"    then ( "| " + (($n.content // []) | map(node) | join(" | ")) + " |\n" )
+      elif $t == "table"       then
+        ( ($n.content // []) as $rows
+          | ($rows | map(node)) as $lines
+          | if ($lines | length) == 0 then "" else
+              ( ($rows[0].content // []) | length ) as $ncols
+              | $lines[0] + ("| " + ([range($ncols) | "---"] | join(" | ")) + " |\n") + ($lines[1:] | join(""))
+            end )
       elif $t == "mention"     then ($n.attrs.text // "@user")
       elif $t == "emoji"       then ($n.attrs.text // $n.attrs.shortName // "")
       elif $t == "inlineCard"  then ($n.attrs.url // "")
