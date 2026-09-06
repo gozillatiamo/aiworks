@@ -130,6 +130,53 @@ t "compound: add + rm -rf is not force-add" 0 pretool-git-guard.sh "$(j "git -C 
 t "compound: push then tail -f allowed"     0 pretool-git-guard.sh "$(j 'git push origin x && tail -f log')"
 t "force-add in a later segment caught"     2 pretool-git-guard.sh "$(j "echo hi && git -C $TMP/svc $FA agent_logs/APP-1-svc-plan.md")"
 
+# --- merge/pull restricted to the ticket's recorded base branch -----------------
+# A ticket work branch's `planned` run-state row is the recorded source of truth for
+# what it may be merged/pulled from. Fixture root is SEPARATE from $ROOT (which the
+# whole suite already pins CLAUDE_PROJECT_DIR at) because this rule needs BOTH a
+# workspace.config.yaml AND an agent_logs/<ticket>-dev-cycle-state/ under the SAME
+# root — same override pattern as pretool-agent-context.sh's `ac()` below.
+GB="$TMP/gbroot"
+mkdir -p "$GB/agent_logs/APP-1-dev-cycle-state"
+printf 'ticket_prefix: APP\n' > "$GB/workspace.config.yaml"
+# `rev-parse --abbrev-ref HEAD` prints the literal string "HEAD" on an unborn
+# branch (zero commits) rather than the branch name, which would make every
+# ticket-branch match below silently fail open — so, unlike the other mk_repo
+# fixtures in this suite, these two need one real commit.
+mk_repo "gbroot/svc"
+git -C "$GB/svc" add -A >/dev/null 2>&1
+git -C "$GB/svc" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+git -C "$GB/svc" checkout -q -b feature/APP-1
+printf '{"repo":"svc","milestone":"planned","base_branch":"release/v7.10.9"}\n' \
+  > "$GB/agent_logs/APP-1-dev-cycle-state/svc-planned.json"
+mk_repo "gbroot/nostate"
+git -C "$GB/nostate" add -A >/dev/null 2>&1
+git -C "$GB/nostate" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+git -C "$GB/nostate" checkout -q -b feature/APP-2
+
+tg() { # tg <name> <expected-exit> <cmd>
+  local name=$1 want=$2 cmd=$3 got
+  printf '%s' "$(j "$cmd")" | CLAUDE_PROJECT_DIR="$GB" "$H/pretool-git-guard.sh" >/dev/null 2>&1; got=$?
+  if [ "$got" = "$want" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else fail=$((fail+1)); printf 'FAIL %s (want exit %s, got %s)\n' "$name" "$want" "$got"; fi
+}
+
+tg "merge of a foreign branch blocked"            2 "git -C $GB/svc merge origin/develop"
+tg "merge of the recorded base allowed"           0 "git -C $GB/svc merge origin/release/v7.10.9"
+tg "merge of the recorded base, no origin/ prefix" 0 "git -C $GB/svc merge release/v7.10.9"
+tg "pull of a foreign branch blocked"             2 "git -C $GB/svc pull origin develop"
+tg "pull of the recorded base allowed"            0 "git -C $GB/svc pull origin release/v7.10.9"
+tg "bare pull ambiguous, fails open"              0 "git -C $GB/svc pull"
+tg "merge of the ticket's own remote branch allowed" 0 "git -C $GB/svc merge origin/feature/APP-1"
+tg "rebase onto a foreign branch is out of scope" 0 "git -C $GB/svc rebase origin/develop"
+tg "octopus merge (2 refs) ambiguous, fails open" 0 "git -C $GB/svc merge origin/develop origin/release/v7.10.9"
+tg "flagged merge of a foreign branch still blocked" 2 "git -C $GB/svc merge --no-ff -m 'custom message' origin/develop"
+tg "flagged merge of the recorded base still allowed" 0 "git -C $GB/svc merge --no-ff -m 'custom message' origin/release/v7.10.9"
+tg "no run-state file, fails open"                0 "git -C $GB/nostate merge origin/develop"
+git -C "$GB/svc" checkout -q -b develop
+tg "merge on a non-ticket branch is untouched"    0 "git -C $GB/svc merge origin/whatever"
+git -C "$GB/svc" checkout -q feature/APP-1
+
 echo "--- pretool-notify-guard ---"
 t "agent_logs path blocked"   2 pretool-notify-guard.sh "$(j "$ROOT/scripts/notify/send.sh --channel C1 \"plan at agent_logs/APP-1-svc-plan.html\"")"
 t "/Users abs path blocked"   2 pretool-notify-guard.sh "$(j "$ROOT/scripts/notify/send.sh --channel C1 \"see /Users/someone/x/y.md\"")"
