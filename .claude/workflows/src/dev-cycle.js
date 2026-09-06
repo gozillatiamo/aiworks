@@ -3941,15 +3941,24 @@ const approvalTick = async (ids, phaseName, receipt) => {
     log(`⛔ [approve] NOT TICKING — ${tgtBad.length} PR/MR(s) do not target this run's base:\n${tgtBad.map((c) => `   ${c.why}`).join('\n')}`)
     return null
   }
-  const r = await safeAgent(
-    `${tag('all', 'tracker', 'approve')} POST THE APPROVAL — no review, no code, no merge. ${ticket} passed every gate on every repo, so tick the approval on each PR/MR below. One call per repo, each BARE (a writer in a pipe or after \`&&\` is denied silently):\n${targets.map((t) => `• ${t.id} — PR/MR ${t.pr}, repo dir ${t.path}`).join('\n')}\nFor EACH one, in this order: (1) resolve this repo's VCS_REPO in its own command — \`git -C <that repo dir> remote get-url origin\`, then strip the leading \`git@<host>:\`/\`https://<host>/\` and any trailing \`.git\`; (2) \`VCS_REPO=<that> scripts/vcs/pr-approve.sh <that number> --body "<the verdict line>"\`. STEP 1 IS NOT OPTIONAL: PR/MR numbers COLLIDE across repos in this workspace (the same ticket routinely has !806 in two unrelated repos), the adapter resolves its target from cwd unless VCS_REPO says otherwise, and several agents share this Bash session — so a tick sent on cwd alone lands on a stranger's MR. Verify per repo before you write.\nThe verdict line, in the resolved output language, names WHAT CLEARED THE BAR — it is the durable record a human reads next to the diff: requirements met, standards clean, 0 must-fix, and the suite that proved it (${receipt}). An approval that cannot point at a test result is the failure the green gate exists to prevent, so if you cannot name the suite for a repo, say so in \`note\` and skip that repo rather than inventing one.\nThe adapter is IDEMPOTENT — an already-approved PR/MR prints "already approved — nothing to do" and posts nothing, which is a SUCCESS, not a failure: report it in \`posted\` with that note. Report in \`failed\` only a repo whose tick genuinely did not land (a refused permission, an adapter error) — quote the error. Do NOT merge anything, whatever the config says.` +
-      ADAPTER_DISCIPLINE + LANGUAGE_DIRECTIVE + CAVEMAN_DIRECTIVE,
-    { agentType: 'developer', model: 'haiku', phase: phaseName, label: `approve:${ticket}:${ids.join('+')}`, schema: APPROVAL_POST_SCHEMA },
-  )
-  const failed = Array.isArray(r?.failed) ? r.failed : []
-  log(`[approve] ${(r?.posted || []).length}/${targets.length} PR/MR ticked${failed.length ? ` — ⚠️ NOT ticked: ${failed.join(' | ')}` : ''}${r?.note ? ` (${r.note})` : ''}`)
-  if (!r) log(`⚠️ [approve] the approval step did not converge — the PR/MR(s) may be unapproved. Tick by hand: scripts/vcs/pr-approve.sh <number> --body "…"`)
-  return r
+  // NOT AGENT-DISPATCHED. Like the Merge phase's own writer (mergeCmd below), this is one
+  // mechanical write with no judgment left to make — the bar was already cleared in Review, and
+  // the verdict text is fully determined by data this run already holds. Dispatching it to a
+  // background agent used to mean a classifier denial most of the time: the platform's own safety
+  // classifier clears an outward write ONLY when it runs in-session — a human, or the
+  // orchestrating session acting on an already-computed verdict — never when a background agent
+  // runs it on the run's behalf. So this returns commands, not a posted result: the orchestrating
+  // session runs them (gated on the same run-state row that already proves the ticket-wide bar was
+  // met — see the skill's own post-workflow step) before reporting anything downstream.
+  const commands = targets.map((t) => {
+    const verdict = `requirements met, standards clean, 0 must-fix, tests green (${receipt})`
+    return {
+      id: t.id, pr: t.pr, verdict,
+      command: `! git -C ${t.path} remote get-url origin\n! VCS_REPO=<owner/repo from that URL — strip the leading git@host:/https://host/ and any trailing .git> scripts/vcs/pr-approve.sh ${t.pr} --body ${JSON.stringify(verdict)}`,
+    }
+  })
+  log(`[approve] ${commands.length} PR/MR(s) ready to tick — run in-session, never via a background agent (the platform classifier denies the latter):\n${commands.map((c) => `  ${c.id} !${c.pr}:\n    ${c.command.split('\n').join('\n    ')}`).join('\n')}`)
+  return { commands }
 }
 
 // Code repos are ticked HERE, at the end of Review — that is the gate whose bar they cleared.
