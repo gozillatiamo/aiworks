@@ -48,6 +48,34 @@
 #    Catches a force-add that landed in the index some other way — an earlier
 #    session, `git update-index`, or a file staged before the rule appeared.
 #
+# 4. `git merge` / `git pull` of anything but a ticket branch's OWN recorded base
+#    A gate-fix agent merged an unrelated branch into a ticket's work branch to
+#    pull in fixtures it needed. That merge commit dragged in a pile of commits
+#    from OTHER tickets along with it — mixed ticket/non-ticket history that a
+#    later re-point could no longer repair automatically, and a person had to
+#    back up the branch and rebase it by hand. `git merge`/`git pull` succeed
+#    silently even when the branch they just polluted is a ticket's own — there
+#    is no conflict to stop them, unlike a rebase (see below).
+#
+#    The workflow that owns a ticket's branch already records which base branch
+#    it was planned against, in its own per-repo run-state row
+#    (agent_logs/<TICKET>-dev-cycle-state/<repo>-planned.json, `.base_branch` —
+#    see docs/adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md
+#    and docs/adr/0018-dev-cycle-keeps-its-own-run-state.md). This rule reads that
+#    SAME row rather than re-deriving a base of its own: on a branch matching
+#    `feature/<PREFIX>-<n>` or `fix/<PREFIX>-<n>` (ticket_prefix from
+#    workspace.config.yaml), a merge/pull may only target the recorded base
+#    branch or the ticket branch's own remote — anything else is blocked.
+#
+#    Deliberately out of scope: `git rebase` (a foreign rebase target still stops
+#    on its own conflicts, and is the documented human repair path for exactly
+#    this failure — `--accept-base-change` in docs/agents/workflow-resume.md);
+#    a remote named anything other than `origin` (this workspace's own
+#    convention); a bare `merge`/`pull` with no explicit ref, an octopus merge,
+#    or a target of `FETCH_HEAD`/`MERGE_HEAD` (all ambiguous — fails open rather
+#    than guess); and any branch with no recorded base at all (nothing to
+#    enforce yet, fails open).
+#
 # Every check is scoped to the SEGMENT of the command that actually runs that
 # git subcommand, split on shell separators. Scanning the whole command string
 # would misread an unrelated flag elsewhere in a compound command (`git add x &&
@@ -310,6 +338,99 @@ for seg in $segments; do
         echo "See docs/agents/plan-artifacts.md."
       } >&2
       exit 2
+    fi
+  fi
+
+  # ------------------- merge/pull limited to the ticket's recorded base ------
+  sub=""
+  if is_git_sub "$seg" merge; then sub=merge
+  elif is_git_sub "$seg" pull; then sub=pull
+  fi
+  if [ -n "$sub" ]; then
+    repo_dir=$(seg_repo_dir "$seg")
+    cur_branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    proj_root="${CLAUDE_PROJECT_DIR:-.}"
+    cfg="$proj_root/workspace.config.yaml"
+    prefix=""
+    if [ -f "$cfg" ]; then
+      prefix=$(grep -m1 -E '^[[:space:]]*ticket_prefix:' "$cfg" 2>/dev/null \
+        | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//')
+      prefix=${prefix%\"}; prefix=${prefix#\"}
+      prefix=${prefix%\'}; prefix=${prefix#\'}
+    fi
+    ticket=""
+    if [ -n "$cur_branch" ] && [ "$cur_branch" != "HEAD" ] && [ -n "$prefix" ]; then
+      ticket=$(printf '%s' "$cur_branch" | grep -oE "^(feature|fix)/(${prefix}-[0-9]+)$" | sed -E 's#^(feature|fix)/##')
+    fi
+    if [ -n "$ticket" ]; then
+      repo_base=$(basename "$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)")
+      state_file="$proj_root/agent_logs/${ticket}-dev-cycle-state/${repo_base}-planned.json"
+      if [ -n "$repo_base" ] && [ -f "$state_file" ]; then
+        recorded_base=$(jq -r '.base_branch // empty' "$state_file" 2>/dev/null)
+        if [ -n "$recorded_base" ]; then
+          # Tokenize the subcommand's OWN arguments (quote-aware, so a quoted
+          # `-m "custom message"` value is one token, not two stray words), drop
+          # every flag and — for a value-taking flag — the token right after it,
+          # so its value is never mistaken for a ref. What remains are positionals.
+          positionals=$(printf '%s' "$(seg_args "$seg" "$sub")" | perl -e '
+            my $s = do { local $/; <STDIN> };
+            my ($SQ,$DQ,$BS) = (chr(39), chr(34), chr(92));
+            my @toks; my ($cur, $q, $have) = ("", "", 0);
+            my ($i, $n) = (0, length $s);
+            while ($i < $n) {
+              my $c = substr($s,$i,1);
+              if    ($q eq "" and ($c eq $SQ or $c eq $DQ)) { $q = $c; $have = 1 }
+              elsif ($q ne "" and $c eq $q)                 { $q = "" }
+              elsif ($q ne $SQ and $c eq $BS and $i+1 < $n) { $i++; $cur .= substr($s,$i,1); $have = 1 }
+              elsif ($q eq "" and $c =~ /\s/)                { if ($have) { push @toks, $cur; $cur=""; $have=0 } }
+              else                                           { $cur .= $c; $have = 1 }
+              $i++;
+            }
+            push @toks, $cur if $have;
+            print "$_\n" for @toks;
+          ' 2>/dev/null | awk '
+            BEGIN { skip = 0 }
+            {
+              if (skip) { skip = 0; next }
+              if ($0 ~ /^-/) {
+                if ($0 == "-m" || $0 == "--message" || $0 == "-s" || $0 == "--strategy" ||
+                    $0 == "-X" || $0 == "--strategy-option" || $0 == "--into-name") skip = 1
+                next
+              }
+              print
+            }')
+          count=$(printf '%s\n' "$positionals" | grep -c .)
+          target=""
+          case "$sub:$count" in
+            merge:1) target=$(printf '%s\n' "$positionals" | grep .) ;;
+            pull:2)  target=$(printf '%s\n' "$positionals" | grep . | tail -1) ;;
+          esac
+          # FETCH_HEAD/MERGE_HEAD: what they resolve to isn't visible here — fail open.
+          if [ -n "$target" ] && [ "$target" != "FETCH_HEAD" ] && [ "$target" != "MERGE_HEAD" ]; then
+            case "$target" in
+              "$recorded_base"|"origin/$recorded_base"|"$cur_branch"|"origin/$cur_branch") : ;;
+              *)
+                {
+                  echo "⛔ Blocked: git $sub of '$target' on ticket branch '$cur_branch'."
+                  echo
+                  echo "This ticket's recorded base is '$recorded_base' ($state_file)."
+                  echo "Merging/pulling any other branch here silently pollutes the ticket"
+                  echo "branch with unrelated history — exactly what a later re-point cannot"
+                  echo "repair without a person."
+                  echo
+                  echo "Need the base's own newer commits?  git merge origin/$recorded_base"
+                  echo
+                  echo "Base itself wrong? That's a human/orchestrator call, not something to"
+                  echo "route around locally — see"
+                  echo "docs/adr/0025-the-runs-base-is-state-and-the-pr-is-asserted-against-it.md"
+                  echo "and docs/agents/workflow-resume.md (--accept-base-change)."
+                } >&2
+                exit 2
+                ;;
+            esac
+          fi
+        fi
+      fi
     fi
   fi
 done
