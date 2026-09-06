@@ -48,7 +48,7 @@ const NOTIFY_PROVIDER = "slack"
 const NOTIFY_CHANNEL = "#code-reviews"
 const NOTIFY_DM = process.env.FIXTURE_NOTIFY_DM || "U012345"
 const DESIGN_ENABLED = false
-const QUALITY_GATE = "none"
+const QUALITY_GATE = process.env.FIXTURE_QUALITY_GATE || "none"
 const REVIEW_LEVEL = "strict"
 const LANGUAGE = "en"
 const LOADTEST = { tolerancePct: 10, noiseRuns: 2, noiseCeilingMultiple: 2, maxFixRounds: 2, baselineCache: "~/.cache/x" }
@@ -2608,13 +2608,13 @@ echo "── G3 (both green) — reaches the merge gate"
 out="$(run_scenario G3_GREEN)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G4 — repair loop (C4 + ADR 0024): app red fixed, scoped guard+perf check, no code reviewer"
-out="$(run_scenario G4)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+out="$(FIXTURE_QUALITY_GATE=sonarqube run_scenario G4)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G4 variant — a rejected scoped check retries the fix, then halts on its own bound"
-out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G4_CHECK_REJECTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+out="$(FIXTURE_QUALITY_GATE=sonarqube FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G4_CHECK_REJECTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G4 variant — max_fix_rounds exhausted"
-out="$(FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G4_ROUNDS_EXHAUSTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+out="$(FIXTURE_QUALITY_GATE=sonarqube FIXTURE_TS_MAX_FIX_ROUNDS=2 run_scenario G4_ROUNDS_EXHAUSTED)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo "── G4 variant — pre_existing_on_base: true skips the fix"
 out="$(run_scenario G4_PRE_EXISTING)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
