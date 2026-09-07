@@ -97,6 +97,34 @@ const codexResult = await runCodex({ root, role: "fixture", definition, prompt: 
 assert.deepEqual(codexResult.value, { ok: true });
 assert.equal(codexResult.spent, 11);
 
+// Every role tier must resolve to the Codex-side model the adapter actually declares — a stale or
+// missing modelMap entry falls through to the raw tier name (e.g. "fable") and the real CLI would
+// reject that model outright, so catch it here instead of on the first live workflow run.
+const modelCapture = path.join(fixture, "codex-model-capture");
+const modelSpy = path.join(fixture, "codex-model-spy");
+await writeFile(modelSpy, `#!/usr/bin/env bash
+out=''
+model=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    --model) model="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '%s\\n' "$model" > "${modelCapture}"
+printf '%s\\n' '{"ok":true}' > "$out"
+printf '%s\\n' '{"type":"turn.completed","usage":{"output_tokens":1}}'
+`);
+await chmod(modelSpy, 0o755);
+process.env.AIWORKS_CODEX_CLI = modelSpy;
+const expectedModelMap = { opus: "gpt-5.6-sol", sonnet: "gpt-5.6-terra", haiku: "gpt-5.6-luna", fable: "gpt-6-astra" };
+for (const [tier, expected] of Object.entries(expectedModelMap)) {
+  await runCodex({ root, role: "fixture", definition, prompt: "return JSON", schema, options: { model: tier } });
+  const captured = (await readFile(modelCapture, "utf8")).trim();
+  assert.equal(captured, expected, `codex modelMap["${tier}"] resolved to "${captured}", expected "${expected}"`);
+}
+
 const failed = path.join(fixture, "failed");
 await writeFile(failed, `#!/usr/bin/env bash
 printf '%s\\n' 'stdout diagnostic'
