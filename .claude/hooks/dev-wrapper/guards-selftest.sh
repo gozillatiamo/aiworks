@@ -1401,27 +1401,51 @@ exits "and it stays denied"                        2 "$(pre hs as)"
 exits "a sealed agent may still write its handoff"  0 "$(pre hs as Write "$HDIR/hs/as.md")"
 exits "but not some other file"                     2 "$(pre hs as Write "$HDIR/hs/other.md")"
 # ── THE PARENT RELAYS ITS SEALED CHILD (ADR-0037) ──────────────────────────────────────
-# A workflow relays itself in JS. A subagent spawned from a session has no such loop: the parent
-# just receives a partial and would summarise it. So the token the sealed child was told to
-# return is read HERE, off the Agent tool's own result, and the parent is blocked into
-# re-spawning instead. Bounded, because a step that fills its window faster than it does work
-# would otherwise relay forever.
+# A workflow relays itself in JS. A subagent spawned from a session has no such loop, so the token
+# the sealed child returns is read here and the parent is blocked into re-spawning.
+#
+# It takes TWO events, and which one does what was measured, not guessed (scripts/hook-relay-probe.sh):
+#   • The Agent tool launches ASYNCHRONOUSLY. Its PostToolUse fires at LAUNCH, where tool_response
+#     is launch metadata and tool_input still holds the brief — so reading the result there finds
+#     nothing, and reading the payload finds the BRIEF, which relays a child that never ran.
+#   • SubagentStop fires at completion and carries `last_assistant_message`: the child's own final
+#     text, and nothing of the brief. That is where the token is read.
+# SubagentStop NEVER returns a decision: on a Stop event `block` means "do not stop" and is fed to
+# the agent that was about to end — here a SEALED one, whose every tool is denied. It would spin.
+# So SubagentStop only RECORDS, and the parent's next tool call is what gets told.
 AR="$H/posttool-agent-relay.sh"
-agr() { # agr <sid> <subagent_type> <child result text>
-  jq -cn --arg s "$1" --arg ty "$2" --arg r "$3" \
-    '{hook_event_name:"PostToolUse",session_id:$s,tool_name:"Agent",
-      tool_input:{subagent_type:$ty,prompt:"do the thing"},tool_response:$r}' \
+stop() { # stop <sid> <aid> <agent_type> <last assistant message>
+  jq -cn --arg s "$1" --arg a "$2" --arg ty "$3" --arg m "$4" \
+    '{hook_event_name:"SubagentStop",session_id:$s,agent_id:$a,agent_type:$ty,
+      last_assistant_message:$m,tool_input:{prompt:"a brief that also says HANDOFF_RELAY:/tmp/decoy.md"}}' \
     | AIWORKS_HANDOFF_DIR="$HDIR" "$AR" 2>/dev/null
 }
-hoc "a sealed child makes the parent re-spawn"   block "$(agr r1 developer 'partial. HANDOFF_RELAY:/tmp/hd/a.md')" "/tmp/hd/a.md"
-hoc "the directive says re-spawn, not summarise" block "$(agr r1 developer 'partial. HANDOFF_RELAY:/tmp/hd/a.md')" "re-spawn"
-hoc "an ordinary child result is left alone"     quiet "$(agr r1 developer 'all done, status complete')"
-# The budget: five relays for a given (session, agent type), then the parent keeps the partial.
-i=3; while [ "$i" -le 4 ]; do agr r1 developer 'HANDOFF_RELAY:/tmp/hd/a.md' >/dev/null; i=$((i+1)); done
-hoc "the fifth relay still fires"                block "$(agr r1 developer 'HANDOFF_RELAY:/tmp/hd/a.md')" "5/5"
-hoc "the sixth is the parent's to keep"          quiet "$(agr r1 developer 'HANDOFF_RELAY:/tmp/hd/a.md')"
+par() { # par <sid> [<aid>] — the parent's next tool call
+  jq -cn --arg s "$1" --arg a "${2:-}" \
+    '{hook_event_name:"PostToolUse",session_id:$s,tool_name:"Bash"} + (if $a != "" then {agent_id:$a} else {} end)' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$AR" 2>/dev/null
+}
+hoc "SubagentStop never answers a stopping agent"  quiet "$(stop r1 c1 developer 'done. HANDOFF_RELAY:/tmp/hd/a.md')"
+out="$(par r1)"   # ONE directive: the marker is consumed, so assert both against it
+hoc "the parent's next call carries the directive" block "$out" "/tmp/hd/a.md"
+hoc "and it says re-spawn, not summarise"          block "$out" "re-spawn"
+# The BRIEF is never the source: a decoy token in tool_input must not relay a child that returned
+# nothing of the kind. This is the false positive the probe caught.
+hoc "a token only in the brief relays nothing"     quiet "$(stop r2 c2 developer 'all done, status complete')"
+hoc "so the parent is told nothing"                quiet "$(par r2)"
+# One directive per sealed child: the marker is consumed, not re-served on every later tool call.
+hoc "the directive is delivered once"              quiet "$(par r1)"
+# A subagent is never told to relay its sibling — the marker is the parent's business.
+stop r3 c3 developer 'HANDOFF_RELAY:/tmp/hd/c.md' >/dev/null
+hoc "a subagent never sees the parent's marker"    quiet "$(par r3 someagent)"
+hoc "the parent still does"                        block "$(par r3)" "/tmp/hd/c.md"
+# The budget: five relays for a given (session, agent type), then the partial is the parent's.
+i=2; while [ "$i" -le 5 ]; do stop r1 c1 developer 'HANDOFF_RELAY:/tmp/hd/a.md' >/dev/null; par r1 >/dev/null; i=$((i+1)); done
+stop r1 c1 developer 'HANDOFF_RELAY:/tmp/hd/a.md' >/dev/null
+hoc "the sixth is the parent's to keep"            quiet "$(par r1)"
 # A different role in the same session has its own budget.
-hoc "another agent type relays on its own count" block "$(agr r1 qa-runner 'HANDOFF_RELAY:/tmp/hd/b.md')" "1/5"
+stop r1 c9 qa-runner 'HANDOFF_RELAY:/tmp/hd/b.md' >/dev/null
+hoc "another agent type relays on its own count"   block "$(par r1)" "1/5"
 
 # The advisory budget hook shares the resolver: inside a subagent it must read the subagent's
 # window, not the parent's — before this it warned about the wrong agent, or not at all.

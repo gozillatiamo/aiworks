@@ -1,7 +1,8 @@
 # Context handoff — a subagent hands off to itself, is sealed, and is replaced
 
 **Hooks:** `.claude/hooks/dev-wrapper/context-handoff.sh` (PostToolUse `*` **and** PreToolUse `*`) ·
-`posttool-agent-relay.sh` (PostToolUse `Agent`) · **Shared measurement:** `lib-context-window.sh` ·
+`posttool-agent-relay.sh` (SubagentStop `*` **and** PostToolUse `*`) ·
+**Shared measurement:** `lib-context-window.sh` ·
 **Skill:** `handoff` in `self <path>` mode ·
 **Proof:** the `context-handoff.sh` section of `.claude/hooks/dev-wrapper/guards-selftest.sh`, and
 the relay cases in `scripts/workflows/selftest.mjs` ·
@@ -97,11 +98,19 @@ A sealed agent returns `HANDOFF_RELAY:<document>`. Two readers act on it, and ne
   `build.max_continuation_passes` or `review.max_rounds` — a relay is not a failed pass. Spent, the
   last result goes back as the partial it is (repo out of `ready`, RECORDED — `docs/adr/0027`,
   `0028`), never as a new run ending.
-- **Outside one**, `posttool-agent-relay.sh` reads the token off the `Agent` tool's result and
-  `block`s the parent into re-spawning the same `subagent_type` with the same brief plus *read the
-  document first*. Budget 5 per (session, `subagent_type`) — ponytail: that type is the only stable
-  discriminator a parent's payload carries, so two unrelated children of one role share a budget.
-  The error runs toward fewer relays, never more.
+- **Outside one**, `posttool-agent-relay.sh` rides **two** events. `SubagentStop` fires at the
+  child's completion and carries `last_assistant_message` — its own final text — which is the only
+  field read; it records a pending relay and answers nothing, because on a Stop event `block` means
+  *do not stop* and would be fed to the sealed agent, which would spin against its own closed seal.
+  The parent's next `PostToolUse` then delivers the directive once and consumes the marker. Budget
+  5 per (session, `agent_type`) — ponytail: the coarsest honest key, so two unrelated children of
+  one role share a budget; the error runs toward fewer relays, never more.
+
+  ⚠️ **Not the Agent tool's own `PostToolUse`.** It launches asynchronously, so that event fires at
+  *launch*: `tool_response` is launch metadata and `tool_input` still holds the brief. Wiring the
+  relay there reads nothing of the result — and reading the payload at large relays a child whose
+  BRIEF merely mentioned the token. Both were observed; `scripts/hook-relay-probe.sh` re-measures
+  the payload shapes after a CLI update.
 
 The continuation brief is a pure function of `(brief, document)` — no clock, no counter, no id — so
 a resume replays it unchanged. `selftest.mjs` pins that by running the same workflow twice and

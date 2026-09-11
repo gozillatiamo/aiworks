@@ -362,12 +362,7 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
             "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-agent-relay.sh",
@@ -480,6 +475,18 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-gate.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-agent-relay.sh",
             "timeout": 10
           }
         ]

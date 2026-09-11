@@ -28,9 +28,18 @@ For the main session the assumption failed differently and more simply: the mode
   After that a PreToolUse hook denies every tool call. Starved of tools, the only move left is to
   return. A deny is a mechanism; the prose it replaces was not.
 - **Relay.** The sealed agent returns a literal `HANDOFF_RELAY:<document>` token. Inside a workflow
-  the `agent()` wrapper reads it, ends the attempt and spawns a fresh agent for the same step,
-  told to read the document first and continue from it. For a subagent spawned from a session the
-  same token is read off the Agent tool's result and the parent is blocked into re-spawning.
+  the `agent()` wrapper reads it off the value it awaited, ends the attempt and spawns a fresh
+  agent for the same step, told to read the document first and continue from it.
+
+  For a subagent spawned from a session it takes two events, and which one does what was measured
+  rather than assumed (`scripts/hook-relay-probe.sh`). The Agent tool launches **asynchronously**:
+  its `PostToolUse` fires at *launch*, where `tool_response` is launch metadata and `tool_input`
+  still holds the brief — so the first wiring read nothing of the child's result, and reading the
+  payload at large relayed a child whose **brief** merely mentioned the token. `SubagentStop` fires
+  at completion and carries `last_assistant_message`, the child's own final text and none of the
+  brief; that is the only field read. It records a pending relay and returns no decision — on a
+  Stop event `block` means "do not stop" and would be fed to the sealed agent, which would spin
+  against its own closed seal. The parent's next tool call is what gets told.
 - **Bounded, with its own budget.** Five relays per step, counted separately from
   `build.max_continuation_passes` and `review.max_rounds` — those are sized for work that remains,
   and a relay is not a failed pass. When the budget is spent the last result goes back as the
