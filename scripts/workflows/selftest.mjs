@@ -29,8 +29,48 @@ for (const [name, input] of [["brd", "phase-1"], ["prd", "phase-1"], ["dev-cycle
   // reads off the transcript; a workflow that loses the wrapper loses continuity across the ceiling.
   const src = await readFile(path.join(root, `.claude/workflows/src/${name}.js`), "utf8");
   assert.match(src, /HANDOFF_KEY: \$\{key\}/, `${name}.js has no HANDOFF_DISCIPLINE`);
-  assert.match(src, /rawAgent\(prompt[^\n]*HANDOFF_DISCIPLINE\(/, `${name}.js does not append HANDOFF_DISCIPLINE to every agent()`);
+  assert.match(src, /const brief = prompt[^\n]*HANDOFF_DISCIPLINE\(/, `${name}.js does not append HANDOFF_DISCIPLINE to every agent()`);
+  // …and hands that brief to the relay loop rather than to rawAgent directly, so a sealed
+  // agent is replaced instead of its partial being taken at face value (docs/adr/0037).
+  assert.match(src, /relayed\(brief, opts\)/, `${name}.js does not relay a sealed agent`);
 }
+
+
+// ── THE RELAY LOOP (ADR-0037) ──────────────────────────────────────────────────────────────
+// A sealed subagent returns HANDOFF_RELAY:<doc> and stops. The agent() wrapper must treat that
+// as "this attempt is over" and spawn a FRESH one for the same step, continuing from the
+// document — up to its own budget, which is not the phase's continuation budget. Proven by
+// counting spawns rather than by reading the source: the stub is told to seal the first N
+// attempts at a label, and the run must show N+1 of them.
+const relayDir = await mkdtemp(path.join(tmpdir(), "aiworks-relay-selftest-"));
+const runRelay = async (spec, tag) => {
+  const log = path.join(relayDir, `${tag}.log`);
+  await exec(cli, ["workflow", "dev-cycle", "--harness", "stub", `${prefix}-1 --approve-plan`], {
+    cwd: root, maxBuffer: 4_000_000,
+    env: { ...process.env, AIWORKS_STUB_RELAY: spec, AIWORKS_STUB_SPAWNLOG: log },
+  });
+  const lines = (await readFile(log, "utf8")).split("\n").filter(Boolean);
+  return { lines, of: (l) => lines.filter((x) => x.startsWith(`${l}\t`)) };
+};
+
+// `resolve-runtime-config` is the run's FIRST agent and runs exactly once, so its spawn count is
+// the relay count and nothing else.
+const twice = await runRelay("resolve-runtime-config:2", "twice");
+assert.equal(twice.of("resolve-runtime-config").length, 3,
+  "a step sealed twice must be spawned three times — once, then one replacement per relay");
+
+// The budget is the only bound. Sealed forever, the step stops at 1 + maxRelays and the result
+// goes back to the phase as the partial it is, rather than relaying until the run dies.
+const forever = await runRelay("resolve-runtime-config:99", "forever");
+assert.equal(forever.of("resolve-runtime-config").length, 6,
+  "a step sealed forever must stop at 1 + 5 relays");
+
+// RESUME DETERMINISM. A resume replays completed agent() calls keyed on the prompt, so a
+// continuation brief that is not a pure function of (prompt, document, n) re-runs work the memo
+// should have served. The log records a hash of every prompt: two identical runs, byte for byte.
+const again = await runRelay("resolve-runtime-config:2", "again");
+assert.deepEqual(again.of("resolve-runtime-config"), twice.of("resolve-runtime-config"),
+  "relayed continuation briefs must be identical across runs — no clock, no counter, no id");
 
 const fixture = await mkdtemp(path.join(tmpdir(), "aiworks-workflow-selftest-"));
 const cursor = path.join(fixture, "cursor-agent");
