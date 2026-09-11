@@ -13,6 +13,7 @@ remote** when unset. All commands run against the repo in the current directory.
 | `upload-media.sh`   | Host media (image/video files, a dir of them, or http(s) URLs) and print an embeddable **## Visual results** markdown section |
 | `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` + `approved=<yes\|no\|unknown>` + `target_branch=` + `source_branch=` (`--approved` prints just the last) |
 | `retarget-pr.sh`    | Repoint an OPEN PR/MR at a different base (`--base <branch>`), then read the new target back from the forge. Approvals survive a retarget; close+reopen does not |
+| `update-pr.sh`      | Re-describe an OPEN PR/MR — `--title`, `--body`/`--body-file` (`-` = stdin). REPLACES the description, never appends; prints `updated=`. The repair for a body that went stale under review |
 | `pr-comment.sh`     | Comment on a PR/MR (inline at `--path`:`--line` where supported) — review comments must anchor + quote code (see Notes) |
 | `pr-comments.sh`    | Print a PR/MR's comments / review notes as plain text |
 | `pr-threads.sh`     | List a PR/MR's resolvable **review threads** with their thread ids + resolved state (so a fix can be tied back to a thread) |
@@ -21,7 +22,7 @@ remote** when unset. All commands run against the repo in the current directory.
 | `pr-approve.sh`     | **The reviewer's PASS signal** — register a host approval (+ post a one-line verdict via `--body`). Decoupled from merge; the merge stays gated on `vcs.auto_merge` |
 
 `open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, `merge-pr.sh`,
-`retarget-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
+`retarget-pr.sh`, `update-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
 
 **Why `pr-view.sh` prints the branches.** It always fetched the whole PR/MR object —
 `target_branch` included — and printed three of its fields, so the one question a pipeline needs to
@@ -41,9 +42,10 @@ vcs/
 ├── gitlab.sh          # glab implementation
 ├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
 ├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
-├── retarget-pr.sh     find-prs.sh  list-prs.sh  close-pr.sh
+├── retarget-pr.sh     update-pr.sh find-prs.sh  list-prs.sh  close-pr.sh
 ├── approve-selftest.sh       # offline regression for the approval read + write (stubbed CLI)
 ├── open-pr-selftest.sh       # offline regression for the open-PR/MR FAILURE paths (stubbed CLI)
+├── update-pr-selftest.sh     # offline regression for re-describing a PR/MR (stubbed CLI)
 ├── repo-target-selftest.sh   # offline regression: every native glab/gh subcommand names its repo
 ├── target-branch-selftest.sh # offline regression for reading + changing a target branch
 └── .env.example       # optional VCS_PROVIDER override

@@ -110,6 +110,35 @@ vcs_pr_retarget() {
   printf 'target_branch=%s\n' "$(_gh_pr view "$num" --json baseRefName -q '.baseRefName' 2>/dev/null || printf '%s' "$base")"
 }
 
+# vcs_pr_describe NUMBER TITLE BODY [DRY] -> re-describe an OPEN PR. An empty TITLE or BODY means
+# "leave that field alone", so a caller can fix a stale description without restating a title.
+#
+# The body goes through --body-file, never argv. A description is markdown of unbounded length,
+# and a multi-kilobyte argv is the kind of limit that holds on this machine and fails on someone
+# else's — the same reason open-pr.sh grew --body-file.
+vcs_pr_describe() {
+  local num="$1" title="${2:-}" body="${3:-}" dry="${4:-0}" out bf=""
+  [[ -n "$title" || -n "$body" ]] || { printf 'nothing to update — pass --title, --body or --body-file\n' >&2; return 1; }
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — gh pr edit %s%s%s\n' "$num" \
+      "${title:+ --title "$title"}" "${body:+ --body-file <${#body} bytes>}"; return 0
+  fi
+  local -a args=(edit "$num")
+  [[ -n "$title" ]] && args+=(--title "$title")
+  if [[ -n "$body" ]]; then
+    bf="$(mktemp)"; printf '%s\n' "$body" > "$bf"; args+=(--body-file "$bf")
+  fi
+  # `out=$(…)` on its own is FATAL under this adapter's `set -e`: the function dies at the
+  # assignment and the caller gets zero bytes instead of the forge's reason. The `||` is what
+  # keeps the refusal readable — the same silent-exit regression open-pr-selftest.sh pins.
+  if ! out="$(_gh_pr "${args[@]}" 2>&1)"; then
+    [[ -z "$bf" ]] || rm -f "$bf"
+    printf '%s\n' "$out" >&2; return 1
+  fi
+  [[ -z "$bf" ]] || rm -f "$bf"
+  printf 'updated=%s\n' "$num"
+}
+
 # vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this
 # PR already carries a review approval. "unknown" is NOT "no": it means GitHub would not
 # answer, and a caller must never skip a review gate on an unanswered question — treat unknown

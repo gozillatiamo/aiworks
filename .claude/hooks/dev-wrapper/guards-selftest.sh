@@ -628,6 +628,10 @@ t  "notify writer piped blocked"     2 $P "$(j 'scripts/notify/send.sh --channel
 t  "bare merge allowed"              0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --subject "x"')"
 t  "bare writer, stdin allowed"      0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 < report.md')"
 t  "bare writer, redirect allowed"   0 $P "$(j 'scripts/vcs/open-pr.sh --title y > out.txt')"
+# A writer added to the adapter is a writer the guard must know: one missing from the list is
+# not a warning, it is a compound call that slips through silently.
+t  "cd && update-pr blocked"         2 $P "$(j 'cd /abs/x && scripts/vcs/update-pr.sh 42 --body y')"
+t  "bare update-pr allowed"          0 $P "$(j 'scripts/vcs/update-pr.sh 42 --body-file ./b.md')"
 t  "piped --dry-run allowed"         0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --dry-run 2>&1 | tail -3')"
 t  "piped READER allowed"            0 $P "$(j 'scripts/vcs/pr-view.sh 11 | head -3')"
 # The comment UPSERT is a writer like any other: it is the one that rewrites a test-report
