@@ -206,6 +206,28 @@ vcs_pr_retarget() {
   printf 'target_branch=%s\n' "$(printf '%s' "$out" | jq -r '.target_branch // ""')"
 }
 
+# vcs_pr_describe NUMBER TITLE BODY [DRY] -> re-describe an OPEN MR. An empty TITLE or BODY means
+# "leave that field alone", so a caller can fix a stale description without restating a title.
+# GitLab calls the body `description`; the field name is the whole difference from GitHub here.
+#
+# ponytail: the body travels in argv as `-f description=…`, where GitHub's goes through a file.
+# glab has no --body-file equivalent for `api`, and a description large enough to exhaust ARG_MAX
+# (~256 KB on Linux, 1 MB on macOS) is not a description anyone will read. If that ever bites,
+# the upgrade is `glab api --input <json-file>`.
+vcs_pr_describe() {
+  local num="$1" title="${2:-}" body="${3:-}" dry="${4:-0}" out
+  [[ -n "$title" || -n "$body" ]] || { printf 'nothing to update — pass --title, --body or --body-file\n' >&2; return 1; }
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — PUT merge_requests/%s%s%s\n' "$num" \
+      "${title:+ title=$title}" "${body:+ description=<${#body} bytes>}"; return 0
+  fi
+  local -a args=(api --method PUT "projects/$(_gl_project)/merge_requests/$num")
+  [[ -n "$title" ]] && args+=(-f "title=$title")
+  [[ -n "$body" ]]  && args+=(-f "description=$body")
+  out="$(glab "${args[@]}" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+  printf 'updated=%s\n' "$(printf '%s' "$out" | jq -r '.iid // ""' 2>/dev/null || printf '%s' "$num")"
+}
+
 # vcs_pr_approved NUMBER -> prints yes | no | unknown, the forge's own record of whether this
 # MR already carries a review approval. "unknown" is NOT "no": it means this instance would not
 # answer, and a caller must never skip a review gate on an unanswered question — treat unknown

@@ -34,6 +34,11 @@ set -uo pipefail
 
 H="${AIWORKS_CONTEXT_HANDOFF:-140000}"
 NAGS="${AIWORKS_HANDOFF_NAGS:-3}"
+# Tool calls between the document landing and the seal closing. It pays for the one thing the
+# document CANNOT carry: an uncommitted tree. Findings, verdicts and ledger rows go in the
+# document and the relay posts them, so this is slack rather than a dependency — 4-6 calls is
+# the honest need (status, add, commit, push, a ledger Write) and the rest is room to retry.
+GRACE="${AIWORKS_HANDOFF_GRACE:-20}"
 tmp="${TMPDIR:-/tmp}"; DIR="${AIWORKS_HANDOFF_DIR:-${tmp%/}/aiworks-handoff}"
 DROP=20000   # a window never shrinks between two calls except across a compaction
 
@@ -51,8 +56,12 @@ demand() { # demand <window> <doc> <nag>
     "$(( $1 / 1000 ))" "$(( H / 1000 ))" "$2" "$3" "$NAGS"
 }
 
-recorded() { # recorded <doc>
-  printf '✅ Handoff recorded at %s. Open nothing new from here: finish the step in flight and make it durable. If you are a SUBAGENT, RETURN now with a partial result that names this handoff path, so your continuation starts from it instead of from an empty context. If you are the MAIN session, the person can run /compact now — after compaction you are restored from the handoff.' "$1"
+recorded() { # recorded <doc> <grace>
+  printf '✅ Handoff recorded at %s — SEALED IN %s TOOL CALLS. Spend them on ONE thing: making what you already hold durable. Commit or park the working tree (a `wip(...)` commit, or `git stash push -u`) — that is the only thing this document cannot carry for you. Open nothing new, start no fix, run no suite. Then RETURN your result, and put the literal token HANDOFF_RELAY:%s in it — that token is what ends you cleanly and starts your replacement from this document instead of from an empty context. After those %s calls every tool is denied, so returning is the only move you will have left.' "$1" "$2" "$1" "$2"
+}
+
+sealed_text() { # sealed_text <doc>
+  printf '⛔ SEALED. Your handoff document is written at %s and your grace window is spent, so every tool call from here is denied — there is nothing left to do but RETURN. Return your result now, filled with what is TRUE so far (a partial is a real answer the workflow continues from), and INCLUDE THE LITERAL TOKEN HANDOFF_RELAY:%s in it. That token is not decoration: it is what tells whoever spawned you to replace you with a fresh agent continuing from that document. Without it you are scored as having simply stopped.' "$1" "$1"
 }
 
 resume_text() { # resume_text <doc>
@@ -72,6 +81,11 @@ sid="$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null)"
 aid="$(printf '%s' "$payload" | jq -r '.agent_id // ""' 2>/dev/null)"
 tp="$(printf '%s' "$payload" | jq -r '.transcript_path // ""' 2>/dev/null)"
 [ -n "$sid" ] || exit 0
+# THE MAIN SESSION IS NOT OUR BUSINESS (ADR-0037). The model cannot run /compact, so a demand
+# here bought a document that only paid off if a person then compacted; auto-compaction already
+# restores the window on its own. Everything below is for an agent that can be ENDED and
+# REPLACED — which the main session, the one agent nobody can respawn, is not.
+[ -n "$aid" ] || exit 0
 
 key="${aid:-main}"; key="${key//[^A-Za-z0-9_.-]/_}"
 sdir="$DIR/${sid//[^A-Za-z0-9_.-]/_}"
@@ -93,12 +107,22 @@ case "$wref" in ''|*[!0-9]*) wref=0 ;; esac
 save() { mkdir -p "$sdir" 2>/dev/null && printf '%s %s %s %s\n' "$1" "$2" "$3" "$4" > "$st" 2>/dev/null; }
 now="$(date +%s)"
 
-# ── SessionStart(compact): the documented re-injection point, fires before the first tool call.
-if [ "$ev" = "SessionStart" ]; then
-  [ "$phase" = written ] && [ -f "$doc" ] || exit 0
-  resume_text "$doc"
-  save resumed "$now" 0 0
-  exit 0
+# ── PreToolUse: the seal. Runs before EVERY tool call in the workspace, so it leaves as fast as
+# it can — no state file, or a phase that is not grace/sealed, and it is already gone. Only two
+# things get through a closed seal: a write to the handoff document itself (the agent may refresh
+# it), and returning, which is not a tool call at all.
+if [ "$ev" = "PreToolUse" ]; then
+  case "$phase" in grace|sealed) ;; *) exit 0 ;; esac
+  fp="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // ""' 2>/dev/null)"
+  [ -n "$fp" ] && [ "$fp" = "$doc" ] && exit 0
+  if [ "$phase" = grace ] && [ "$nag" -gt 0 ]; then
+    nag=$((nag - 1)); save grace "$ts" "$nag" "$wref"
+    printf 'SEALED IN %s TOOL CALLS — commit or park what you hold, then return with HANDOFF_RELAY:%s\n' "$nag" "$doc" >&2
+    exit 0
+  fi
+  save sealed "$now" 0 "$wref"
+  sealed_text "$doc" >&2
+  exit 2
 fi
 
 # ── PostToolUse: measure the caller's OWN window.
@@ -117,8 +141,8 @@ case "$phase" in
     ;;
   requested)
     if [ -f "$doc" ] && ! [ "$doc" -ot "$mark" ]; then
-      save written "$now" 0 "$win"
-      json_out "" "" "$(recorded "$doc")" "handoff written at $doc — /compact continues from it"
+      save grace "$now" "$GRACE" "$win"
+      json_out "" "" "$(recorded "$doc" "$GRACE")" "handoff written at $doc — sealed in $GRACE tool calls"
     elif [ "$win" -lt "$(( wref - DROP ))" ]; then
       save armed "$now" 0 0            # compacted without a document: nothing to hand back
     elif [ "$nag" -lt "$NAGS" ]; then
@@ -126,7 +150,10 @@ case "$phase" in
       json_out block "$(demand "$win" "$doc" "$nag")" "" ""
     fi
     ;;
-  written)
+  grace|sealed)
+    # The runtime can still compact a subagent in place before the seal ever closes (the
+    # auto-compaction point sits above the demand). That is the better ending — no re-spawn at
+    # all — so it keeps winning: hand the document back and re-arm.
     [ "$win" -lt "$(( wref - DROP ))" ] || exit 0
     save resumed "$now" 0 0
     json_out "" "" "$(resume_text "$doc")" ""

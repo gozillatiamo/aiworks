@@ -15,7 +15,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so already in context. Keys documented in
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
-  `docs/adr/` — why the workspace is shaped this way (`0001`–`0036`).
+  `docs/adr/` — why the workspace is shaped this way (`0001`–`0037`).
 - `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
   (Hermes is next). ⚠️ The Workflow tool weighs the script **FILE** before parsing it — 524,288 bytes, no delivery
   parameter exempt — so under Claude Code a workflow is ALWAYS delivered comment-stripped: `node
@@ -61,8 +61,10 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   `headroom.md` — `hcat` for a big file, never a bare `cat`: an unbounded read ≥8 KiB is hook-BLOCKED, as is a read-modify-write
   heredoc patch (`Edit` ships only the delta) — and so is the **7th identical probe of one file**, because a turn costs the whole
   window re-sent, not its own bytes: wait for a long run in ONE `Bash(run_in_background=true, "until <done or failed>; do sleep 5;
-  done")`, never a `grep`/`tail` loop · `context-handoff.md` — at 140k a hook DEMANDS a handoff document you write
-  for yourself (`handoff` skill, `self <path>`), hands it back after the compaction, and re-arms until the work is done.
+  done")`, never a `grep`/`tail` loop · `context-handoff.md` — **SUBAGENTS only, never the main session**: at 140k a
+  hook DEMANDS a handoff document the agent writes for ITSELF (`handoff` skill, `self <path>`), then after a 20-call
+  grace window SEALS it — every tool call denied, so returning is the only move — and its spawner RELAYS it into a
+  fresh agent continuing from that document, 5 times per step before the partial stands (`docs/adr/0037`).
 - `scripts/k8s/README.md` — READ-ONLY Kubernetes triage (`k8s_triage` MCP) through a `view`-only impersonated identity,
   so the **API server** rejects writes. ⚠️ `Bash(kubectl *)`/`Bash(gcloud *)` denied — ask for `!kubectl`.
 - **Test environment:** automated runs target **local**; staging is an explicit, QA-reserved opt-in

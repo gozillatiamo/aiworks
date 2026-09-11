@@ -1,5 +1,11 @@
 # An agent hands off to itself before the ceiling
 
+**Status:** Accepted, and amended by
+[ADR-0037](0037-a-sealed-subagent-is-relayed-not-continued.md): the document below is still
+written, but a subagent that writes one is now SEALED and REPLACED rather than continuing in
+place, and the main session no longer takes part at all. Read 0037 for what the loop does today;
+this record is why the document exists.
+
 ## Context
 
 What ends a spawned agent is context, not turns: of 235 `dev-cycle` agents measured, 90 were killed

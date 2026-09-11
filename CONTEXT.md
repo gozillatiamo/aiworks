@@ -233,6 +233,23 @@ re-parents, re-sprints or re-estimates one. Shipped work is a record, not a work
 A ticket an automated run may write to: any covering ticket that is not a **reference ticket**,
 plus a key a human named explicitly. The distinction is enforced in code, not by instruction.
 
+**Seal**:
+The state a subagent enters once its self-handoff document is written and its **grace** window is
+spent: every tool call is denied, so the only move left is to return. Not advice — the earlier
+design asked an agent to stop and lost to "finish the task". A seal ends one attempt; it never ends
+the work, which a **relay** continues. The main session is never sealed: nobody can respawn it.
+
+**Grace**:
+The bounded run of tool calls between the handoff document landing and the **seal** closing. It pays
+for the one thing the document cannot carry — an uncommitted working tree. Findings, verdicts and
+ledger rows belong in the document instead, so the window is slack rather than a dependency.
+
+**Relay**:
+Ending a **sealed** subagent and spawning a fresh one for the same step, continuing from the
+predecessor's handoff document rather than from an empty context. Distinct from a **build
+continuation**: that resumes work that genuinely remains, while a relay replaces an attempt the
+context ceiling cut short, and the two are budgeted separately so neither spends the other's passes.
+
 **Build continuation**:
 A bounded pass that resumes an unfinished build from the branch as it stands, rather than ending the
 repo. A `partial` handoff means "some slices landed, work of my own remains" — the best-informed

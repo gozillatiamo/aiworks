@@ -628,6 +628,10 @@ t  "notify writer piped blocked"     2 $P "$(j 'scripts/notify/send.sh --channel
 t  "bare merge allowed"              0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --subject "x"')"
 t  "bare writer, stdin allowed"      0 $P "$(j 'scripts/tracker/add-ticket-comment.sh A-1 < report.md')"
 t  "bare writer, redirect allowed"   0 $P "$(j 'scripts/vcs/open-pr.sh --title y > out.txt')"
+# A writer added to the adapter is a writer the guard must know: one missing from the list is
+# not a warning, it is a compound call that slips through silently.
+t  "cd && update-pr blocked"         2 $P "$(j 'cd /abs/x && scripts/vcs/update-pr.sh 42 --body y')"
+t  "bare update-pr allowed"          0 $P "$(j 'scripts/vcs/update-pr.sh 42 --body-file ./b.md')"
 t  "piped --dry-run allowed"         0 $P "$(j 'scripts/vcs/merge-pr.sh 11 --dry-run 2>&1 | tail -3')"
 t  "piped READER allowed"            0 $P "$(j 'scripts/vcs/pr-view.sh 11 | head -3')"
 # The comment UPSERT is a writer like any other: it is the one that rewrites a test-report
@@ -1288,11 +1292,18 @@ hoc() { # hoc <name> <want: quiet|block|context> <stdout>  (+ optional <substrin
   fi
 }
 
+
+# ── THE MAIN SESSION IS NOT OUR BUSINESS (ADR-0037) ────────────────────────────────────
+# A demand here buys a document that only pays off if a person then runs /compact — the model
+# cannot. Auto-compaction already restores the window, and the seal below only makes sense for
+# an agent that can be ENDED and replaced, which the main session cannot be. So: silent, always.
+mkctx hm 200000
+hoc "the main session is never demanded a handoff" quiet "$(ho hm)"
 mkctx h1 139999
 hoc "under the handoff threshold is silent"        quiet "$(ho h1)"
-mkctx h2 145000
-hoc "main crossing demands the handoff by path"    block "$(ho h2)" "$HDIR/h2/main.md"
-hoc "the demand names the skill"                   block "$(ho h2)" "handoff"
+mkctx h2 30000 a2 145000
+hoc "main crossing demands the handoff by path"    block "$(ho h2 a2)" "$HDIR/h2/a2.md"
+hoc "the demand names the skill"                   block "$(ho h2 a2)" "handoff"
 # A subagent's window is ITS transcript, never the parent's.
 mkctx h3 200000 a3 50000
 hoc "subagent under threshold stays quiet despite a fat parent" quiet "$(ho h3 a3)"
@@ -1305,46 +1316,35 @@ hoc "an agent with no transcript on disk measures nothing" quiet "$(ho h6 ghost)
 
 # The nag has a budget: an agent without a Write tool cannot comply, and a demand that never
 # ends is the one that gets ignored. Default 3 — the two above were 1 and 2.
-hoc "third demand still fires"                     block "$(ho h2)" "(3/3)"
-hoc "the fourth is silent — budget spent"          quiet "$(ho h2)"
+hoc "third demand still fires"                     block "$(ho h2 a2)" "(3/3)"
+hoc "the fourth is silent — budget spent"          quiet "$(ho h2 a2)"
 
 # The document must be NEWER than the demand: a stale file from a previous cycle proves nothing.
-mkctx h7 145000; ho h7 >/dev/null
-mkdir -p "$HDIR/h7"; printf '# old\n' > "$HDIR/h7/main.md"; touch -t 200001010000 "$HDIR/h7/main.md"
-hoc "a stale document does not satisfy the demand" block "$(ho h7)" "(2/3)"
-printf '# Handoff h7\n\nNext: finish the thing.\n' > "$HDIR/h7/main.md"
-hoc "a fresh document is recorded, not blocked"    context "$(ho h7)" "Handoff recorded at $HDIR/h7/main.md"
-hoc "recorded tells a subagent to return a partial" quiet "$(ho h7)"   # said once, then quiet
-setwin "$PROJ/h7.jsonl" 160000
-hoc "written and still growing stays quiet"        quiet "$(ho h7)"
+mkctx h7 30000 a7 145000; ho h7 a7 >/dev/null
+mkdir -p "$HDIR/h7"; printf '# old\n' > "$HDIR/h7/a7.md"; touch -t 200001010000 "$HDIR/h7/a7.md"
+hoc "a stale document does not satisfy the demand" block "$(ho h7 a7)" "(2/3)"
+printf '# Handoff h7\n\nNext: finish the thing.\n' > "$HDIR/h7/a7.md"
+hoc "a fresh document is recorded, not blocked"    context "$(ho h7 a7)" "Handoff recorded at $HDIR/h7/a7.md"
+hoc "recorded tells a subagent to return a partial" quiet "$(ho h7 a7)"   # said once, then quiet
+setwin "$PROJ/h7/subagents/agent-a7.jsonl" 160000
+hoc "written and still growing stays quiet"        quiet "$(ho h7 a7)"
 # A window never shrinks between two calls except across a compaction — so a drop IS one.
-setwin "$PROJ/h7.jsonl" 90000
-hoc "the collapse hands the document back"         context "$(ho h7)" "Next: finish the thing."
-hoc "the document is handed back once"             quiet "$(ho h7)"
-setwin "$PROJ/h7.jsonl" 141000
-hoc "resumed re-arms: the next crossing demands again" block "$(ho h7)" "(1/3)"
+setwin "$PROJ/h7/subagents/agent-a7.jsonl" 90000
+hoc "the collapse hands the document back"         context "$(ho h7 a7)" "Next: finish the thing."
+hoc "the document is handed back once"             quiet "$(ho h7 a7)"
+setwin "$PROJ/h7/subagents/agent-a7.jsonl" 141000
+hoc "resumed re-arms: the next crossing demands again" block "$(ho h7 a7)" "(1/3)"
 
 # Compaction without a document: nothing to hand back, the cycle just re-arms.
-mkctx h8 145000; ho h8 >/dev/null
-setwin "$PROJ/h8.jsonl" 90000
-hoc "collapse while requested is silent"           quiet "$(ho h8)"
-setwin "$PROJ/h8.jsonl" 150000
-hoc "and re-arms"                                  block "$(ho h8)" "(1/3)"
+mkctx h8 30000 a8 145000; ho h8 a8 >/dev/null
+setwin "$PROJ/h8/subagents/agent-a8.jsonl" 90000
+hoc "collapse while requested is silent"           quiet "$(ho h8 a8)"
+setwin "$PROJ/h8/subagents/agent-a8.jsonl" 150000
+hoc "and re-arms"                                  block "$(ho h8 a8)" "(1/3)"
 
-# SessionStart(compact) is the documented re-injection point — it fires BEFORE the first tool
-# call after a compaction, so it wins over the collapse detection above, which then stays quiet.
-ss() { jq -cn --arg s "$1" '{hook_event_name:"SessionStart",source:"compact",session_id:$s}' | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" 2>/dev/null; }
-mkctx h9 145000; ho h9 >/dev/null
-mkdir -p "$HDIR/h9"; printf '# Handoff h9\n\nResume at step 4.\n' > "$HDIR/h9/main.md"; ho h9 >/dev/null
-out="$(ss h9)"
-if printf '%s' "$out" | grep -qF 'Resume at step 4.' && printf '%s' "$out" | grep -qF 'YOUR OWN handoff'; then
-  pass=$((pass+1)); printf 'ok   SessionStart(compact) re-injects the document\n'
-else fail=$((fail+1)); printf 'FAIL SessionStart(compact) did not re-inject the document\n'; fi
-setwin "$PROJ/h9.jsonl" 90000
-hoc "after SessionStart the collapse says nothing twice" quiet "$(ho h9)"
-[ -z "$(ss h1)" ] \
-  && { pass=$((pass+1)); printf 'ok   SessionStart with nothing written is silent\n'; } \
-  || { fail=$((fail+1)); printf 'FAIL SessionStart with nothing written spoke\n'; }
+# SessionStart(compact) is GONE (ADR-0037): it only ever fired for the main session — a subagent
+# never gets that event, which is why the window-collapse path above exists and is the one that
+# hands a subagent its document back. With main exempt, that leg had no caller left.
 # A workflow agent's brief carries `HANDOFF_KEY: <ticket>/<step>` (the dev-cycle/brd/prd agent
 # wrappers append it), so the document is keyed by the STEP, not the agent: a replacement spawned
 # for the same step — after a partial, or after the runtime killed its predecessor with no result
@@ -1372,6 +1372,85 @@ d="$PROJ/h13/subagents"; mkdir -p "$d"
 usage_row 30000 > "$PROJ/h13.jsonl"
 hoc "a key in a text block is read too"             block "$(ho h13 k3)" "$HDIR/by-key/phase-1_research_phase-1.md"
 
+# ── GRACE, THEN THE SEAL (ADR-0037) ────────────────────────────────────────────────────
+# Asking a subagent to return was advice, and advice lost to "finish the task". So once the
+# document exists the agent gets a bounded run of tool calls to make its work durable — commit
+# or park the tree, which is the one thing the document cannot carry — and then every tool call
+# is DENIED. Starved of tools, the only move left is to return, which is the point.
+# pre <sid> <aid> [<tool> <file_path>] — the PreToolUse leg; prints its exit code.
+pre() {
+  jq -cn --arg s "$1" --arg t "$PROJ/$1.jsonl" --arg a "$2" --arg tn "${3:-Bash}" --arg fp "${4:-}" \
+    '{hook_event_name:"PreToolUse",session_id:$s,transcript_path:$t,agent_id:$a,tool_name:$tn,
+      tool_input:(if $fp != "" then {file_path:$fp} else {command:"ls"} end)}' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" >/dev/null 2>&1
+  echo $?
+}
+exits() { # exits <name> <want> <got>
+  if [ "$3" = "$2" ]; then pass=$((pass+1)); printf 'ok   %s\n' "$1"
+  else fail=$((fail+1)); printf 'FAIL %s (wanted exit %s, got %s)\n' "$1" "$2" "$3"; fi
+}
+mkctx hs 30000 as 145000
+ho hs as >/dev/null
+mkdir -p "$HDIR/hs"; printf '# Handoff as\n\nNext: commit.\n' > "$HDIR/hs/as.md"
+hoc "the document opens the grace window, not silence" context "$(ho hs as)" "SEALED IN 20"
+exits "the first grace call is allowed"            0 "$(pre hs as)"
+i=2; while [ "$i" -le 19 ]; do pre hs as >/dev/null; i=$((i+1)); done
+exits "the twentieth grace call is still allowed"  0 "$(pre hs as)"
+exits "the call past the grace window is DENIED"   2 "$(pre hs as)"
+exits "and it stays denied"                        2 "$(pre hs as)"
+
+# A closed seal still lets the agent refresh its OWN document — the one write that makes the
+# relay better rather than costlier. Everything else, including a write one directory over,
+# stays denied.
+exits "a sealed agent may still write its handoff"  0 "$(pre hs as Write "$HDIR/hs/as.md")"
+exits "but not some other file"                     2 "$(pre hs as Write "$HDIR/hs/other.md")"
+# ── THE PARENT RELAYS ITS SEALED CHILD (ADR-0037) ──────────────────────────────────────
+# A workflow relays itself in JS. A subagent spawned from a session has no such loop, so the token
+# the sealed child returns is read here and the parent is blocked into re-spawning.
+#
+# It takes TWO events, and which one does what was measured, not guessed (scripts/hook-relay-probe.sh):
+#   • The Agent tool launches ASYNCHRONOUSLY. Its PostToolUse fires at LAUNCH, where tool_response
+#     is launch metadata and tool_input still holds the brief — so reading the result there finds
+#     nothing, and reading the payload finds the BRIEF, which relays a child that never ran.
+#   • SubagentStop fires at completion and carries `last_assistant_message`: the child's own final
+#     text, and nothing of the brief. That is where the token is read.
+# SubagentStop NEVER returns a decision: on a Stop event `block` means "do not stop" and is fed to
+# the agent that was about to end — here a SEALED one, whose every tool is denied. It would spin.
+# So SubagentStop only RECORDS, and the parent's next tool call is what gets told.
+AR="$H/posttool-agent-relay.sh"
+stop() { # stop <sid> <aid> <agent_type> <last assistant message>
+  jq -cn --arg s "$1" --arg a "$2" --arg ty "$3" --arg m "$4" \
+    '{hook_event_name:"SubagentStop",session_id:$s,agent_id:$a,agent_type:$ty,
+      last_assistant_message:$m,tool_input:{prompt:"a brief that also says HANDOFF_RELAY:/tmp/decoy.md"}}' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$AR" 2>/dev/null
+}
+par() { # par <sid> [<aid>] — the parent's next tool call
+  jq -cn --arg s "$1" --arg a "${2:-}" \
+    '{hook_event_name:"PostToolUse",session_id:$s,tool_name:"Bash"} + (if $a != "" then {agent_id:$a} else {} end)' \
+    | AIWORKS_HANDOFF_DIR="$HDIR" "$AR" 2>/dev/null
+}
+hoc "SubagentStop never answers a stopping agent"  quiet "$(stop r1 c1 developer 'done. HANDOFF_RELAY:/tmp/hd/a.md')"
+out="$(par r1)"   # ONE directive: the marker is consumed, so assert both against it
+hoc "the parent's next call carries the directive" block "$out" "/tmp/hd/a.md"
+hoc "and it says re-spawn, not summarise"          block "$out" "re-spawn"
+# The BRIEF is never the source: a decoy token in tool_input must not relay a child that returned
+# nothing of the kind. This is the false positive the probe caught.
+hoc "a token only in the brief relays nothing"     quiet "$(stop r2 c2 developer 'all done, status complete')"
+hoc "so the parent is told nothing"                quiet "$(par r2)"
+# One directive per sealed child: the marker is consumed, not re-served on every later tool call.
+hoc "the directive is delivered once"              quiet "$(par r1)"
+# A subagent is never told to relay its sibling — the marker is the parent's business.
+stop r3 c3 developer 'HANDOFF_RELAY:/tmp/hd/c.md' >/dev/null
+hoc "a subagent never sees the parent's marker"    quiet "$(par r3 someagent)"
+hoc "the parent still does"                        block "$(par r3)" "/tmp/hd/c.md"
+# The budget: five relays for a given (session, agent type), then the partial is the parent's.
+i=2; while [ "$i" -le 5 ]; do stop r1 c1 developer 'HANDOFF_RELAY:/tmp/hd/a.md' >/dev/null; par r1 >/dev/null; i=$((i+1)); done
+stop r1 c1 developer 'HANDOFF_RELAY:/tmp/hd/a.md' >/dev/null
+hoc "the sixth is the parent's to keep"            quiet "$(par r1)"
+# A different role in the same session has its own budget.
+stop r1 c9 qa-runner 'HANDOFF_RELAY:/tmp/hd/b.md' >/dev/null
+hoc "another agent type relays on its own count"   block "$(par r1)" "1/5"
+
 # The advisory budget hook shares the resolver: inside a subagent it must read the subagent's
 # window, not the parent's — before this it warned about the wrong agent, or not at all.
 mkctx h11 40000 a11 180000
@@ -1381,10 +1460,6 @@ printf '%s' "$err" | grep -q 'context window 180k' \
   && { pass=$((pass+1)); printf 'ok   budget hook measures the subagent, not its parent\n'; } \
   || { fail=$((fail+1)); printf 'FAIL budget hook did not measure the subagent window\n'; }
 
-mkctx h10 145000; ho h10 >/dev/null
-[ -z "$(ss h10)" ] \
-  && { pass=$((pass+1)); printf 'ok   SessionStart while merely requested is silent\n'; } \
-  || { fail=$((fail+1)); printf 'FAIL SessionStart handed back a document that was never written\n'; }
 for bad in 'not json' '{}' '{"hook_event_name":"PostToolUse","session_id":"x"}'; do
   if printf '%s\n' "$bad" | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" >/dev/null 2>&1; then
     pass=$((pass+1)); printf 'ok   handoff hook exits 0 on payload: %s\n' "$bad"

@@ -437,6 +437,47 @@ const FRESH_READING = ` FRESH READING REQUIRED — INVOCATION ${INVOCATION}. Wha
 // ponytail: two rounds of one gate share a key; round 2 is told to verify before trusting.
 const handoffFile = (k) => String(k).replace(/[^A-Za-z0-9_.-]/g, '_')
 const HANDOFF_DISCIPLINE = (key) => ` HANDOFF_KEY: ${key}. CONTINUITY (mandatory, whatever your phase): that key names the handoff document for THIS step — \`\${TMPDIR:-/tmp}/aiworks-handoff/by-key/${handoffFile(key)}.md\`. Before anything else, \`test -f\` it: if it exists, an earlier attempt at this very step wrote it for you — read it, verify what it claims against the branch (commits, files, threads) before trusting it, and continue from its next steps instead of re-reading what it already knows. While you run, when your context crosses 140k a hook DEMANDS that you write that document (\`handoff\` skill, \`self <path>\`): comply at once, then finish the slice in flight, make it durable, and RETURN your structured result as a partial that names the path. Whatever ends you after that, the document survives and your replacement starts from it.`
+// ── THE RELAY: A SEALED AGENT IS REPLACED, NOT CONTINUED IN PLACE (docs/adr/0037) ─────────────
+// ADR-0034 assumed a subagent that wrote its self-handoff could carry on and be compacted in
+// place. It could not: the hook could only ASK it to return, and asking lost to "finish the
+// task", so the agent walked into the kill band holding everything. It is now SEALED — past a
+// grace window every tool call is denied — and it returns the token below. That is this loop's
+// cue to end the attempt and spawn a fresh one for the SAME step, continuing from the document.
+//
+// The budget is its own, counted per step, and deliberately NOT charged to
+// build.max_continuation_passes or review.max_rounds: those are sized for work that remains, and
+// a relay is not a failed pass. When it is spent the last result goes back to the phase as the
+// partial it is — the repo stays out of `ready` and the item is RECORDED (docs/adr/0027, 0028) —
+// rather than becoming a new way for a run to stop.
+//
+// The continuation brief is a pure function of (brief, document, n): no clock, no counter, no id.
+// A resume replays agent() calls keyed on the prompt, so anything else would re-run the step the
+// memo should have served — the same trap the determinism rule names (docs/agents/harnesses.md).
+const HANDOFF_RELAYS = 5
+const RELAY_RE = /HANDOFF_RELAY:([^\s",;)\\]+)/
+const relayBrief = (doc) => ` 🔁 YOU ARE A CONTINUATION. The previous attempt at this exact step was SEALED at the context ceiling and returned early — not because it failed, and not because anything is wrong with the ask. It wrote its handoff document at ${doc}. Read that FIRST, before anything else. Verify what it claims against the repo, the branch and the forge before you trust it, then continue from its next steps: do not re-read what it already tells you, and do not restart the step from the beginning.`
+const relayed = async (brief, opts) => {
+  const key = stepKey(opts)
+  let relayDoc = ''   // per CALL: the Build phase runs every repo in parallel through this loop
+  for (let n = 0; ; n++) {
+    let out
+    try { out = await rawAgent(n === 0 ? brief : brief + relayBrief(relayDoc), opts) }
+    catch (e) {
+      const reason = String(e?.stdout || e?.message || e).trim().slice(-300)
+      if (CUT_OFF_RE.test(reason)) cutOffs.push({ key, label: opts?.label || '(unlabelled)', phase: opts?.phase || null, reason })
+      throw e
+    }
+    const hit = RELAY_RE.exec(JSON.stringify(out ?? ''))
+    if (!hit) return out
+    if (n >= HANDOFF_RELAYS) {
+      log(`🔁 [${key}] ${n} relay(s) spent and the step is still sealed at the ceiling — taking its partial as it stands; the last handoff document is ${hit[1]}.`)
+      if (out && typeof out === 'object') out.remaining = `${out.remaining || ''} [workflow: ${n} handoff relay(s) spent at this step and it was still sealed at the context ceiling; the last handoff document is ${hit[1]}.]`.trim()
+      return out
+    }
+    relayDoc = hit[1]
+    log(`🔁 [${key}] sealed at the context ceiling — relaying into a fresh agent from ${relayDoc} (${n + 1}/${HANDOFF_RELAYS}).`)
+  }
+}
 const rawAgent = agent
 agent = async (prompt, opts) => {
   const priorCuts = cutOffs.filter((c) => c.key === stepKey(opts)).length
@@ -463,12 +504,8 @@ agent = async (prompt, opts) => {
   // its memo on the prompt, so an id that changes every invocation is the whole difference between
   // re-reading the world and being told what it looked like last time.
   const fresh = LIVE_STATE_PROBE.test(String(opts?.label || '')) ? FRESH_READING : ''
-  try { return await rawAgent(prompt + notice + narrowed + returns + CONTEXT_DISCIPLINE + CUTOFF_DISCIPLINE + fresh + HANDOFF_DISCIPLINE(`${ticket}/${stepKey(opts)}`), opts) }
-  catch (e) {
-    const reason = String(e?.stdout || e?.message || e).trim().slice(-300)
-    if (CUT_OFF_RE.test(reason)) cutOffs.push({ key: stepKey(opts), label: opts?.label || '(unlabelled)', phase: opts?.phase || null, reason })
-    throw e
-  }
+  const brief = prompt + notice + narrowed + returns + CONTEXT_DISCIPLINE + CUTOFF_DISCIPLINE + fresh + HANDOFF_DISCIPLINE(`${ticket}/${stepKey(opts)}`)
+  return await relayed(brief, opts)
 }
 // C14 — MECHANICAL STEPS run on haiku, explicitly, so it never depends on an agent file staying
 // haiku: this resolver, the status mover, the ws-root/plan-guard/publish-request kickoff steps, the
