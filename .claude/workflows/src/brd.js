@@ -22,7 +22,37 @@ export const meta = {
 const handoffFile = (k) => String(k).replace(/[^A-Za-z0-9_.-]/g, '_')
 const HANDOFF_DISCIPLINE = (key) => ` HANDOFF_KEY: ${key}. CONTINUITY (mandatory, whatever your phase): that key names the handoff document for THIS step — \`\${TMPDIR:-/tmp}/aiworks-handoff/by-key/${handoffFile(key)}.md\`. Before anything else, \`test -f\` it: if it exists, an earlier attempt at this very step wrote it for you — read it, verify what it claims against the repo and the tracker before trusting it, and continue from its next steps instead of re-reading what it already knows. While you run, when your context crosses 140k a hook DEMANDS that you write that document (\`handoff\` skill, \`self <path>\`): comply at once, then finish the slice in flight, make it durable, and RETURN your structured result as a partial that names the path. Whatever ends you after that, the document survives and your replacement starts from it.`
 const rawAgent = agent
-agent = (prompt, opts) => rawAgent(prompt + HANDOFF_DISCIPLINE(`brd/${opts?.label || 'unlabelled'}`), opts)
+// ── THE RELAY: A SEALED AGENT IS REPLACED, NOT CONTINUED IN PLACE (docs/adr/0037) ─────────────
+// ADR-0034 assumed a subagent that wrote its self-handoff could carry on and be compacted in
+// place. It could not: the hook could only ASK it to return, and asking lost to "finish the
+// task". It is now SEALED — past a grace window every tool call is denied — and it returns the
+// token below, which is this loop's cue to end the attempt and spawn a fresh one for the SAME
+// step, continuing from the document. Own budget, per step; when it is spent the last result
+// stands as the partial it is rather than becoming a new way for a run to stop.
+// The continuation brief is a pure function of (brief, document): no clock, no counter, no id, so
+// a resume replays it unchanged (the determinism rule, docs/agents/harnesses.md).
+// Duplicated in each workflow on purpose — a workflow script is delivered self-contained and
+// cannot import; docs/agents/harnesses.md.
+const HANDOFF_RELAYS = 5
+const RELAY_RE = /HANDOFF_RELAY:([^\s",;)\\]+)/
+const relayBrief = (doc) => ` 🔁 YOU ARE A CONTINUATION. The previous attempt at this exact step was SEALED at the context ceiling and returned early — not because it failed, and not because anything is wrong with the ask. It wrote its handoff document at ${doc}. Read that FIRST, before anything else. Verify what it claims against the repo and the tracker before you trust it, then continue from its next steps: do not re-read what it already tells you, and do not restart the step from the beginning.`
+const relayed = async (brief, opts) => {
+  let doc = ''
+  for (let n = 0; ; n++) {
+    const out = await rawAgent(n === 0 ? brief : brief + relayBrief(doc), opts)
+    const hit = RELAY_RE.exec(JSON.stringify(out ?? ''))
+    if (!hit) return out
+    if (n >= HANDOFF_RELAYS) {
+      if (out && typeof out === 'object') out.remaining = `${out.remaining || ''} [workflow: ${n} handoff relay(s) spent at this step and it was still sealed at the context ceiling; the last handoff document is ${hit[1]}.]`.trim()
+      return out
+    }
+    doc = hit[1]
+  }
+}
+agent = (prompt, opts) => {
+  const brief = prompt + HANDOFF_DISCIPLINE(`brd/${opts?.label || 'unlabelled'}`)
+  return relayed(brief, opts)
+}
 
 const raw = (typeof args === 'string' ? args : (args?.directive || args?.phase || ''))?.trim()
 if (!raw) throw new Error('brd needs a phase or directive, e.g. args: "Phase 2" or "add a vet-booking marketplace"')

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Shared runtime for canonical .claude/workflows/src under non-native Agent harnesses.
 
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,16 @@ import { fileURLToPath } from "node:url";
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const runtime = { spent: 0, accounting: "reported" };
+// The stub harness, made scriptable so the relay loop in the workflows can be tested for real
+// rather than asserted against their source. AIWORKS_STUB_RELAY="<label substring>:<n>" seals
+// the first n attempts at any matching step; AIWORKS_STUB_SPAWNLOG names a file that records
+// every spawn. Both are inert unless set, and neither is read outside --harness stub.
+const stub = { log: process.env.AIWORKS_STUB_SPAWNLOG || "", relay: new Map() };
+if (process.env.AIWORKS_STUB_RELAY) {
+  const spec = process.env.AIWORKS_STUB_RELAY;
+  const cut = spec.lastIndexOf(":");
+  stub.relay.set(spec.slice(0, cut), Number(spec.slice(cut + 1)) || 0);
+}
 
 function usage() {
   console.error(`Usage: aiworks workflow <brd|prd|dev-cycle> --harness <codex|cursor> [input]
@@ -154,7 +165,25 @@ async function main() {
     const definition = await roleDefinition(role);
     const schema = options.schema || { type: "object", additionalProperties: true };
     const prompt = buildPrompt(role, definition, task, schema, definition.data.maxTurns);
-    if (cli.harness === "stub") return synthesize(schema);
+    if (cli.harness === "stub") {
+      const label = String(options.label || "");
+      // Every spawn, with a hash of the brief that produced it: a test can count attempts at a
+      // step and compare two runs' briefs byte for byte without the briefs themselves ever
+      // leaving the process.
+      if (stub.log) {
+        await appendFile(stub.log, `${label}\t${createHash("sha1").update(prompt).digest("hex")}\n`);
+      }
+      const result = synthesize(schema);
+      // Seal the first N attempts at a label: return what a subagent returns when
+      // context-handoff.sh has sealed it, so the workflow's own relay loop is what is under test.
+      for (const [needle, left] of stub.relay) {
+        if (left > 0 && label.includes(needle)) {
+          stub.relay.set(needle, left - 1);
+          result.stub_sealed = `HANDOFF_RELAY:${path.join(root, ".stub-handoff.md")}`;
+        }
+      }
+      return result;
+    }
     let result;
     try {
       result = await adapter.run({ root, role, definition, prompt, schema, options });

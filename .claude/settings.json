@@ -2,7 +2,9 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "outputStyle": "Concise",
   "autoMemoryEnabled": false,
-  "fallbackModel": ["sonnet"],
+  "fallbackModel": [
+    "sonnet"
+  ],
   "enabledMcpjsonServers": [
     "postgres_main",
     "postgres_secondary",
@@ -121,16 +123,6 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repo-health-check.sh",
             "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
-            "timeout": 10
           }
         ]
       }
@@ -301,6 +293,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/voice-narrate.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
+            "timeout": 10
           }
         ]
       }
@@ -364,6 +361,16 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/context-handoff.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-wrapper/posttool-agent-relay.sh",
             "timeout": 10
           }
         ]
