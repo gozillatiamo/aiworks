@@ -10,7 +10,7 @@ print **plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare numb
 |---|---|
 | `get-ticket-details.sh`   | Read title, properties/fields (Status, Priority, Assignee, …) and the body |
 | `get-ticket-comments.sh`  | Read open comments (`--deep` also gathers inline/block-anchored — Notion only) |
-| `find-tickets.sh`         | **Search** the tracker (`--query`/`--type`/`--open`) — the dedup lookup |
+| `find-tickets.sh`         | **Search** the tracker (`--query`/`--type`/`--open`/`--fix-version`) — the dedup lookup, and the release-report input |
 | `upsert-ticket-details.sh`| Set Status/Priority/Effort/Title/Description, and write the full spec to the **body** (`--body`/`--body-file`) — updates or creates the ticket |
 | `add-ticket-comment.sh`   | Add a comment (text from an argument or stdin) — Markdown is rendered to the tracker's native style, not posted raw |
 | `find-ticket-comment.sh`  | **Read-only.** Print the id + body of the one comment carrying `--marker <text>`, or nothing |
@@ -119,6 +119,13 @@ the board so a caller never files a duplicate. Notion matches a case-insensitive
 **substring**; Jira's `summary ~` is a **word/text** match — pick a distinctive whole
 token. `--json` returns the raw matches for scripting.
 
+**Every ticket in a release:** `find-tickets.sh --fix-version <id|name>` — the input a
+release report or announcement is built from. Jira maps it to `fixVersion = …`: an all-digits
+value is the version **ID** (the number in a release-report URL, passed bare) and anything
+else is the version **name** (quoted), so no version lookup is needed. Notion and Linear have
+no release field and **refuse** the flag — a silently unfiltered list would be worse than an
+error. Regression suite: `./fix-version-selftest.sh` (offline, asserts the built JQL).
+
 ## Layout
 
 ```
@@ -131,6 +138,7 @@ tracker/
 ├── find-ticket-comment.sh     # reader: marker -> record id + body
 ├── upsert-ticket-comment.sh   # writer: update the marked record, else add it
 ├── durable-record-selftest.sh # offline regression for the marker upsert on every provider
+├── fix-version-selftest.sh    # offline regression for the --fix-version JQL clause + provider refusal
 ├── notion/{impl.sh,notion.jq} # Notion REST implementation (records are page BLOCKS — see above)
 ├── jira/{impl.sh,jira.jq}     # Jira Cloud REST v3 implementation (ADF)
 └── linear/impl.sh             # Linear GraphQL implementation (Markdown-native)
@@ -161,6 +169,7 @@ Requires `bash`, `curl`, and `jq`.
 # search (dedup) — provider-neutral flags
 ./find-tickets.sh --query "encryption" --open
 ./find-tickets.sh --type Bug --open --json
+./find-tickets.sh --fix-version 10042 --json      # Jira: every ticket in one release
 
 # update — provider-neutral flags
 ./upsert-ticket-details.sh FM-9    --status Testing

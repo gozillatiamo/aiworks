@@ -502,6 +502,8 @@ tracker_find() {
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
+  # Linear has no fix-version field — refuse rather than answer unfiltered.
+  [[ -z "$(printf '%s' "$opts" | jq -r '.fix_version // ""')" ]] || die "--fix-version is not supported by the linear provider"
 
   # Build an IssueFilter (AND of the supplied constraints). "Done" == a completed workflow
   # state (state.type == "completed"); --open excludes that. --type names map to labels.

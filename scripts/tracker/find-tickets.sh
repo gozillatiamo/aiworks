@@ -10,6 +10,7 @@
 #   ./find-tickets.sh --type "Bug" --open                  # all open Bug tickets
 #   ./find-tickets.sh --query rebuild --type "Polish"      # AND of both
 #   ./find-tickets.sh --query startup --json               # raw JSON for scripting
+#   ./find-tickets.sh --fix-version 10042 --json            # every ticket in one release (Jira)
 #
 # Output (one line per match, newest first):
 #   <ID> | <Status> | <Type> | <Title>  ::  <Description>
@@ -40,12 +41,17 @@ Options:
   --estimated        Keep only tickets that carry an estimate — a Dev-points or
                      QA-points (or effort) value. Pairs with --done --limit 10 for a
                      deterministic calibration set. No-op if no point field is configured.
+  --fix-version <v>  Keep only tickets in one release / fix version — the input a release
+                     report or announcement is built from. Jira: a version ID (all digits,
+                     e.g. 10042 — the number in the release-report URL) or a version NAME
+                     ("2026.09"). Other providers have no release concept and REFUSE the
+                     flag rather than return an unfiltered list.
   --limit <n>        Print at most n rows (default 50; 0 = no limit).
   --json             Print the raw matched tickets as a JSON array instead of lines.
   -h, --help         Show this help and exit.
 
-With NO --query and NO --type, lists every ticket (newest first) — combine with
---open to scope it.
+With NO --query, --type or --fix-version, lists every ticket (newest first) — combine
+with --open to scope it.
 
 Environment:
   TRACKER_PROVIDER   notion | jira | linear (default: notion). Provider creds live in .env.
@@ -57,7 +63,7 @@ for a in "$@"; do case "$a" in -h|--help) usage; exit 0 ;; esac; done
 # shellcheck source=lib.sh
 . "$DIR/lib.sh"
 
-query=""; open=0; done_only=0; estimated=0; limit=50; as_json=0; types_json='[]'
+query=""; open=0; done_only=0; estimated=0; fix_version=""; limit=50; as_json=0; types_json='[]'
 addtype() { types_json="$(jq -n --argjson cur "$types_json" --arg t "$1" '$cur + [$t]')"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -69,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --open)   open=1; shift ;;
     --done)   done_only=1; shift ;;
     --estimated) estimated=1; shift ;;
+    --fix-version) [[ -n "${2:-}" ]] || die "--fix-version needs a value"; fix_version="$2"; shift 2 ;;
     --limit)  [[ -n "${2:-}" ]] || die "--limit needs a value"; limit="$2"; shift 2 ;;
     --json)   as_json=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -78,9 +85,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 opts="$(jq -n --arg q "$query" --argjson open "$open" --argjson done "$done_only" \
-  --argjson estimated "$estimated" --argjson limit "$limit" \
+  --argjson estimated "$estimated" --arg fv "$fix_version" --argjson limit "$limit" \
   --argjson json "$as_json" --argjson types "$types_json" \
   '{query: $q, open: ($open == 1), done: ($done == 1), estimated: ($estimated == 1),
-    limit: $limit, as_json: ($json == 1), types: $types}')"
+    fix_version: $fv, limit: $limit, as_json: ($json == 1), types: $types}')"
 
 tracker_find "$opts"
