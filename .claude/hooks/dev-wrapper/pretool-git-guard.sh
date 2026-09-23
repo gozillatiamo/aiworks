@@ -360,7 +360,7 @@ for seg in $segments; do
     fi
     ticket=""
     if [ -n "$cur_branch" ] && [ "$cur_branch" != "HEAD" ] && [ -n "$prefix" ]; then
-      ticket=$(printf '%s' "$cur_branch" | grep -oE "^(feature|fix)/(${prefix}-[0-9]+)$" | sed -E 's#^(feature|fix)/##')
+      ticket=$(printf '%s' "$cur_branch" | grep -oE "^(feature|fix)/((${prefix//,/|})-[0-9]+)$" | sed -E 's#^(feature|fix)/##')
     fi
     if [ -n "$ticket" ]; then
       repo_base=$(basename "$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)")

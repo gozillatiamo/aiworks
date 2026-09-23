@@ -19,7 +19,8 @@ const cli = path.join(root, "aiworks");
 // any other key before it spawns anything — so a hardcoded "FM-1" fails every workspace that
 // renamed the prefix. Take it from the file the run will actually load.
 const devCycle = await readFile(path.join(root, ".claude/workflows/src/dev-cycle.js"), "utf8");
-const prefix = devCycle.match(/^const TICKET_PREFIX = '([^']+)'/m)?.[1];
+// The value may list several projects ("FM,OPS"); any of them parses, so take the first.
+const prefix = devCycle.match(/^const TICKET_PREFIX = '([^',]+)/m)?.[1];
 assert.ok(prefix, "no TICKET_PREFIX in .claude/workflows/src/dev-cycle.js");
 
 for (const [name, input] of [["brd", "phase-1"], ["prd", "phase-1"], ["dev-cycle", `${prefix}-1 --approve-plan`]]) {

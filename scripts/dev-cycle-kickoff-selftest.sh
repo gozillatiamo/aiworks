@@ -38,7 +38,10 @@ HARNESS="$TMP/harness.cjs"
 # Read the four facts the fixtures need out of the file under test, and substitute them in.
 read -r TICKET APP SUITE SUITE_BASE <<<"$(awk '
   /^const TICKET_PREFIX = / {
-    if (match($0, /\047[^\047]+\047/)) prefix = substr($0, RSTART + 1, RLENGTH - 2)
+    if (match($0, /\047[^\047]+\047/)) {
+      prefix = substr($0, RSTART + 1, RLENGTH - 2)
+      sub(/,.*/, "", prefix)   # the value may list several projects ("FM,OPS"); any parses, take the first
+    }
     next
   }
   /^const REPOS = \{/ { inr = 1; next }

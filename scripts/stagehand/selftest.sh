@@ -150,6 +150,7 @@ fdry() { "$FOLLOW" --dry-run --text "$1" 2>/dev/null; }
 # group: hand-assembling such a URL is how a 404 was produced during development (the project lived
 # under a different group than the guess), so the nested path has to survive resolution intact.
 PREFIX="$(bash -c ". '$DIR/lib.sh'; stage_cfg tracker.ticket_prefix FM")"
+PREFIX="${PREFIX%%,*}"   # several may be listed ("FM,OPS"); fixtures use the first
 TBASE="$(bash -c ". '$DIR/lib.sh'; stage_cfg tracker.base_url")"
 fake="$ROOT/.selftest-repo"
 rm -rf "$fake"; mkdir -p "$fake"
