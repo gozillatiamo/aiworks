@@ -16,6 +16,8 @@ adapter in `scripts/tracker/`, which dispatches by `TRACKER_PROVIDER`
 |---|---|
 | Read a ticket | `scripts/tracker/get-ticket-details.sh <KEY>` |
 | Read comments | `scripts/tracker/get-ticket-comments.sh [--deep] <KEY>` |
+| Search / dedup | `scripts/tracker/find-tickets.sh --query <token> [--type …] [--open\|--done]` |
+| Tickets in one release | `scripts/tracker/find-tickets.sh --fix-version <id\|name> [--json]` — Jira only (`fixVersion =`); Notion/Linear refuse the flag rather than return an unfiltered list |
 | Set status/fields | `scripts/tracker/upsert-ticket-details.sh <KEY> --status … --priority … --title … --description …` |
 | Set project + label | `scripts/tracker/upsert-ticket-details.sh <KEY> --project "<name>" --label <name>` (both work on create AND update) |
 | Set estimate points | `scripts/tracker/upsert-ticket-details.sh <KEY> --dev-points <n> --qa-points <n> --effort …` |

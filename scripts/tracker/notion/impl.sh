@@ -526,6 +526,8 @@ tracker_find() {
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
+  # No release/version concept in a Notion database — refuse rather than answer unfiltered.
+  [[ -z "$(printf '%s' "$opts" | jq -r '.fix_version // ""')" ]] || die "--fix-version is not supported by the notion provider"
 
   # --estimated → keep tickets with a Dev-points OR QA-points value (whichever props are
   # configured); an is_not_empty OR-group, or [] (no-op) when neither prop is set.

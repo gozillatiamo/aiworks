@@ -789,11 +789,15 @@ tracker_download_attachment() {
   printf 'Downloaded %s (id %s) -> %s\n' "$att_name" "$att_id" "$dest"
 }
 
-# tracker_find OPTS_JSON — OPTS = {query, open, limit, as_json, types:[...]}.
+# tracker_find OPTS_JSON — OPTS = {query, open, done, estimated, fix_version, limit, as_json, types:[...]}.
 # Search the project via JQL and print one compact line per match (newest first):
 #   "<KEY> | <Status> | <Type> | <Summary>  ::  <Description>", or raw issues JSON.
 # The dedup lookup behind /clarifying-ticket. NOTE: Jira's `summary ~` is a word/text
 # match (not a raw substring); pick a distinctive whole token.
+#
+# --fix-version → `fixVersion = <v>`. JQL accepts the version's numeric ID bare (the number
+# in a release-report URL) and its NAME quoted, so one flag serves both without a version
+# lookup. All-digits → bare id; anything else → @json-quoted name.
 #
 # Uses POST /rest/api/3/search/jql — the enhanced search Atlassian migrated to after
 # REMOVING the classic POST /rest/api/3/search (changelog CHANGE-2046; the old endpoint
@@ -806,11 +810,12 @@ tracker_download_attachment() {
 # enough issues are collected (only --limit 0 / "all" pages the whole board); the final
 # slice trims any overshoot from the last page.
 tracker_find() {
-  local opts="$1" query open done_only estimated limit as_json types_json jql token acc resp body count tmpdir
+  local opts="$1" query open done_only estimated fix_version limit as_json types_json jql token acc resp body count tmpdir
   query="$(printf '%s' "$opts" | jq -r '.query // ""')"
   open="$(printf '%s' "$opts" | jq -r '.open // false')"
   done_only="$(printf '%s' "$opts" | jq -r '.done // false')"
   estimated="$(printf '%s' "$opts" | jq -r '.estimated // false')"
+  fix_version="$(printf '%s' "$opts" | jq -r '.fix_version // ""')"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
@@ -837,12 +842,13 @@ tracker_find() {
   done
 
   jql="$(jq -rn --arg proj "$JIRA_PROJECT_KEY" --arg q "$query" --argjson open "$open" \
-      --argjson done "$done_only" --arg est "$est_clause" --argjson types "$types_json" '
+      --argjson done "$done_only" --arg est "$est_clause" --arg fv "$fix_version" --argjson types "$types_json" '
     ( [ (if ($proj|length) > 0 then "project = " + $proj else empty end),
         (if ($q|length)    > 0 then "summary ~ " + ($q | @json) else empty end),
         (if $open              then "statusCategory != Done" else empty end),
         (if $done              then "statusCategory = Done"  else empty end),
         (if ($est|length)  > 0 then $est else empty end),
+        (if ($fv|length)   > 0 then "fixVersion = " + (if ($fv|test("^[0-9]+$")) then $fv else ($fv|@json) end) else empty end),
         (if ($types|length)> 0 then "issuetype in (" + ($types | map(@json) | join(", ")) + ")" else empty end)
       ] )
     | (if length > 0 then join(" AND ") + " " else "" end) + "ORDER BY created DESC"
