@@ -177,7 +177,7 @@ tagged=0
 if [[ "$tagged" == "0" ]]; then
   while IFS= read -r m; do
     [[ -n "$m" ]] && targets+=("$m")
-  done < <(printf '%s' "$TEXT" | tr -d '`*' | grep -oE "https?://[A-Za-z0-9._~:/?#@!\$&+,;=%-]+|[A-Za-z0-9._-]+![0-9]+|${prefix}-[0-9]+" | head -40)
+  done < <(printf '%s' "$TEXT" | tr -d '`*' | grep -oE "https?://[A-Za-z0-9._~:/?#@!\$&+,;=%-]+|[A-Za-z0-9._-]+![0-9]+|(${prefix//,/|})-[0-9]+" | head -40)
 fi
 
 # ── don't re-stage the same reply ──────────────────────────────────────────────────

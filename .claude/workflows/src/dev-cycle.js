@@ -24,7 +24,9 @@ export const meta = {
 // `aiworks add` / `remove` / `sync`, which regenerate it for you). Anything you type
 // between the AIWORKS:CONFIG markers is OVERWRITTEN on the next regenerate.
 //
-// TICKET_PREFIX — the ticket id prefix (drives the <PREFIX>-\d+ regex).      ← tracker.ticket_prefix
+// TICKET_PREFIX — the ticket id prefix, or several comma-separated             ← tracker.ticket_prefix
+//                 ("FM,OPS"); drives the <PREFIX>-\d+ regex, first one wins
+//                 wherever a single project has to be named.
 // STATUS        — EVERY status the org declares, canonical_key → REAL name.  ← tracker.statuses.*
 //                 The workflow drives a monotonic SUBSET (see STATUS_ORDER / moveTicket);
 //                 keys it doesn't emit are carried for humans/other tools.
@@ -218,9 +220,13 @@ let RESOLVED_ARTIFACTS = false
 const rawArg = (typeof args === 'string' ? args : args?.ticket) || ''
 // Tolerate stray flags/words in the arg string (e.g. "FM-10 --dry-run"): pull out
 // the <PREFIX>-<n> token so the ticket never becomes "FM-10 --dry-run".
-const TICKET_RE = new RegExp(`${TICKET_PREFIX}-\\d+`, 'i')
+// TICKET_PREFIX is one prefix, or several comma-separated ("FM,OPS") when the workspace
+// tracks more than one project. Every prefix parses; the FIRST one is what an example or a
+// bare number resolves to, which is why order in workspace.config.yaml is not cosmetic.
+const TICKET_PREFIXES = String(TICKET_PREFIX).split(',').map((p) => p.trim()).filter(Boolean)
+const TICKET_RE = new RegExp(`(?:${TICKET_PREFIXES.join('|')})-\\d+`, 'i')
 const ticket = (rawArg.match(TICKET_RE)?.[0] || rawArg).trim()
-if (!ticket) throw new Error(`dev-cycle needs a ticket number, e.g. args: "${TICKET_PREFIX}-12"`)
+if (!ticket) throw new Error(`dev-cycle needs a ticket number, e.g. args: "${TICKET_PREFIXES[0]}-12"`)
 const opt = typeof args === 'object' && args ? args : {}
 // Flags settable from the STRING arg form, not just an object arg. The string form is what a
 // human actually types, and the only reason the persisted script kept being hand-edited — a

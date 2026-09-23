@@ -357,9 +357,12 @@ prepare_adapter_env() {
   # tracker/.env — the provider, plus the one provider-specific value the config carries.
   local -a tkv=(TRACKER_PROVIDER "$tracker_provider")
   case "$tracker_provider" in
-    jira)   tkv+=(JIRA_PROJECT_KEY  "$ticket_prefix") ;;   # ticket_prefix == the Jira project key
+    # ticket_prefix == the project/team key. It may list several ("FM,OPS"); the adapters take
+    # ONE, and an explicit KEY-123 reaches any project regardless, so the FIRST one is the
+    # default a bare number expands against.
+    jira)   tkv+=(JIRA_PROJECT_KEY  "${ticket_prefix%%,*}") ;;
     notion) tkv+=(NOTION_STATUS_DONE "$status_done") ;;    # the "done" status name find-tickets uses
-    linear) tkv+=(LINEAR_TEAM_KEY   "$ticket_prefix") ;;   # ticket_prefix == the Linear team key
+    linear) tkv+=(LINEAR_TEAM_KEY   "${ticket_prefix%%,*}") ;;
   esac
   seed_env_file "$DIR/tracker" "${tkv[@]}"
 

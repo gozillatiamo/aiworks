@@ -32,12 +32,13 @@ _branch() { git -C "$VOICE_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || prin
 
 _cache_file() { printf '%s/%s.txt' "$VOICE_IDENT_DIR" "$(voice_sha "$VOICE_ROOT|$(_branch)")"; }
 
-_ticket_key() {   # e.g. feat/APP-1952-admin-swap → APP-1952
+_ticket_key() {   # e.g. feat/APP-1952-admin-swap → APP-1952. ticket_prefix may list several: "FM,OPS"
   local prefix branch
   prefix="$(voice_cfg tracker.ticket_prefix "")"
   [[ -n "$prefix" ]] || return 0
   branch="$(_branch)"
-  printf '%s' "$branch" | tr '[:lower:]' '[:upper:]' | grep -oE "$prefix-[0-9]+" | head -1 || true
+  printf '%s' "$branch" | tr '[:lower:]' '[:upper:]' \
+    | grep -oE "(${prefix//,/|})-[0-9]+" | head -1 || true
 }
 
 _ticket_title() {   # KEY → the title, or nothing

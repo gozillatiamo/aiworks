@@ -592,7 +592,9 @@ def th_number(tok):
 NB = r"(?<![A-Za-z0-9])"
 pats = []
 if prefix:
-    pats.append(re.compile(NB + r"(" + re.escape(prefix) + r")-(\d+)(?![0-9])", re.I))
+    alts = "|".join(re.escape(p.strip()) for p in prefix.split(",") if p.strip())
+    if alts:
+        pats.append(re.compile(NB + r"(" + alts + r")-(\d+)(?![0-9])", re.I))
 pats.append(re.compile(NB + r"([A-Z][A-Z0-9]{1,9})-(\d{3,})(?![0-9])"))
 
 def spell_keys(s):

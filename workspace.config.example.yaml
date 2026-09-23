@@ -147,7 +147,10 @@ notify:
 # ── Issue tracker ──────────────────────────────────────────────────────────────
 tracker:
   provider: notion                 # notion | jira | linear
-  ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+)
+  ticket_prefix: FM                # FM | APP | …  → drives the ticket-id regex (e.g. FM-\d+).
+                                   #   Several projects: comma-separate them, "FM,OPS" — every
+                                   #   prefix parses, and the FIRST is the one a bare number
+                                   #   expands against (JIRA_PROJECT_KEY / LINEAR_TEAM_KEY).
   base_url: ""                     # the board's web root, e.g. https://your-org.atlassian.net — used
                                    #   to turn a bare ticket key into a link (stagehand opens
                                    #   <base_url>/browse/<KEY>). A public hostname, not a credential;

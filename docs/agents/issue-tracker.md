@@ -110,6 +110,10 @@ it can re-parent it under the new epic instead).
 - **Ticket id format:** `<PREFIX>-<n>` (e.g. `FM-9`, `APP-123`). The id regex is
   `<PREFIX>-\d+`. A bare number is accepted (Notion: looked up by the unique-id
   property; Jira/Linear: expanded with `JIRA_PROJECT_KEY` / `LINEAR_TEAM_KEY`).
+  `tracker.ticket_prefix` may name **several** projects, comma-separated (`FM,OPS`):
+  every listed prefix parses wherever a key is recognised, and the **first** is the one
+  a bare number expands against, since an adapter env var holds exactly one key. An
+  explicit `KEY-123` reaches any project the credentials can see, listed or not.
 - **Notion only:** tasks database id = `<NOTION_DB_ID>`; unique-id property =
   `<NOTION_ID_PROP, default "Task ID">`. Never write `Task ID` or `Updated at`
   (read-only / auto).
