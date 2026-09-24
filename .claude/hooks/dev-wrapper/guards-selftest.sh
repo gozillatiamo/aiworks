@@ -369,9 +369,9 @@ te() { # te <name> <expected-substring|SILENT> <command>
     *) fail=$((fail+1)); printf 'FAIL %s (want %s, got %s)\n' "$name" "$want" "$got" ;;
   esac
 }
-te "recursive grep is scoped"        "grep --exclude=$E --exclude=$E.* -rn" "grep -rn SECRET ."
+te "recursive grep is scoped"        "grep --exclude=$E --exclude=$E.* --exclude=$S -rn" "grep -rn SECRET ."
 te "a pipeline keeps its shape"      "-rn x . | head -20"                   "grep -rn x . | head -20"
-te "rg is scoped (recursive always)" "-g '!$E*' -g '$E*.example'"           "rg TODO src"
+te "rg is scoped (recursive always)" "-g '!$E*' -g '$E*.example' -g '!$S'"  "rg TODO src"
 te "a non-recursive grep is left be" "SILENT"                               "grep -n foo file.txt"
 # --color contains an "r"; reading it as -r would rewrite every coloured grep.
 te "a long flag is not a -r"         "SILENT"                               "grep --color -n pat file"
@@ -383,7 +383,13 @@ te "git grep is not rewritten"       "SILENT"                               "git
 # command it just wrote, and punishes anyone who adds --exclude by hand.
 t "an --exclude=.env argument is allowed"  0 pretool-env-guard.sh "$(j "grep --exclude=$E --exclude=$E.* -rn SECRET .")"
 t "an rg env glob is allowed"              0 pretool-env-guard.sh "$(j "rg -g '!$E*' -g '$E*.example' TODO src")"
-te "a scoped command is not re-scoped"     "SILENT" "grep --exclude=$E --exclude=$E.* -rn SECRET ."
+t "an --exclude=socks.auth is allowed"     0 pretool-env-guard.sh "$(j "grep --exclude=$S -rn SECRET .")"
+t "an rg socks.auth glob is allowed"       0 pretool-env-guard.sh "$(j "rg -g '!$S' TODO src")"
+te "a scoped command is not re-scoped"     "SILENT" "grep --exclude=$E --exclude=$E.* --exclude=$S -rn SECRET ."
+te "a fully scoped rg is not re-scoped"    "SILENT" "rg -g '!$E*' -g '!$S' TODO src"
+# A command scoped for .env only (the pre-socks.auth rewrite) still gains the new exclusion.
+te ".env-only scope gains socks.auth"      "--exclude=$S" "grep --exclude=$E --exclude=$E.* -rn SECRET ."
+te ".env-only rg scope gains socks.auth"   "-g '!$S'"     "rg -g '!$E*' TODO src"
 # …without opening a hole: an exclusion elsewhere never excuses reading a .env.
 t "exclusion does not excuse a read"       2 pretool-env-guard.sh "$(j "grep --exclude=x PATTERN $E")"
 t "exclusion does not excuse a cat"        2 pretool-env-guard.sh "$(j "cat --exclude=$E.bak $E")"

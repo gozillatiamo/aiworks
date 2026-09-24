@@ -145,20 +145,21 @@ case "$tool" in
     # silent — `.env.example` is excluded with the rest (fnmatch cannot say
     # ".env.* except *.example"), and a template that is genuinely needed is
     # read by naming it, which this guard has always allowed.
-    # Idempotent: a command that already carries the exclusions is left alone,
-    # so a re-fired hook cannot stack them.
+    # Idempotent: a command that already carries the FULL set of exclusions is
+    # left alone, so a re-fired hook cannot stack them; a partial set (an older
+    # .env-only rewrite) gets the full set again — a duplicate exclude is harmless.
     # ---------------------------------------------------------------------
     new_cmd=$(printf '%s' "$cmd" | perl -0777 -pe '
       sub scoped {
         my ($pre, $bin, $rest) = @_;
-        return "$pre$bin$rest" if $rest =~ /--exclude=\.env/;
+        return "$pre$bin$rest" if $rest =~ /--exclude=\.env/ && $rest =~ /--exclude=socks\.auth/;
         # Recursive only: -r/-R (alone or bundled, e.g. -rn) and the long forms.
         # Matched on short-option tokens rather than anywhere, or a long flag
         # that merely contains an "r" (--color) would read as recursive.
         return "$pre$bin$rest"
           unless $rest =~ /(?:^|\s)-[A-Za-z]*[rR][A-Za-z]*(?=\s|$)/
               || $rest =~ /(?:^|\s)--(?:recursive|dereference-recursive)\b/;
-        return "$pre$bin --exclude=.env --exclude=.env.*$rest";
+        return "$pre$bin --exclude=.env --exclude=.env.* --exclude=socks.auth$rest";
       }
       # Command position only (start, or after ; | & ( or $( ) — a "grep" inside
       # a quoted string is inert text and must not be rewritten. Each match stops
@@ -166,8 +167,10 @@ case "$tool" in
       s{(^|[;|&(]\s*|\$\(\s*)(grep|egrep|fgrep)\b([^;|&\n]*)}{ scoped($1, $2, $3) }ge;
       # ripgrep walks recursively by default, so it needs no -r test. Its later
       # glob wins, which is how the template stays readable here and cannot in grep.
+      # Captures are copied first: a successful `=~` inside the block resets $1..$3.
       s{(^|[;|&(]\s*|\$\(\s*)(rg)\b([^;|&\n]*)}{
-        $3 =~ /!\.env/ ? "$1$2$3" : "$1$2 -g \x27!.env*\x27 -g \x27.env*.example\x27$3"
+        my ($pre, $bin, $rest) = ($1, $2, $3);
+        ($rest =~ /!\.env/ && $rest =~ /!socks\.auth/) ? "$pre$bin$rest" : "$pre$bin -g \x27!.env*\x27 -g \x27.env*.example\x27 -g \x27!socks.auth\x27$rest"
       }ge;
     ' 2>/dev/null)
     if [ -n "$new_cmd" ] && [ "$new_cmd" != "$cmd" ]; then
@@ -176,7 +179,7 @@ case "$tool" in
           hookEventName: "PreToolUse",
           updatedInput: (.tool_input + {command: $c})
         },
-        systemMessage: ("env-guard: scoped the recursive search away from .env files (.env.example too) — running: " + $c)
+        systemMessage: ("env-guard: scoped the recursive search away from .env and socks.auth files (.env.example too) — running: " + $c)
       }' 2>/dev/null
       exit 0
     fi
