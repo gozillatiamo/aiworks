@@ -348,6 +348,9 @@ t "wc socks.auth allowed"               0 pretool-env-guard.sh "$(j "wc -c confi
 t "find socks.auth allowed"             0 pretool-env-guard.sh "$(j "find . -name $S")"
 t "cat mysocks.auth allowed"            0 pretool-env-guard.sh "$(j "cat my$S")"
 t "cat socks.authority allowed"         0 pretool-env-guard.sh "$(j "cat ${S}ority")"
+# Rule 2: trace mode near a socks.auth mention leaks like trace mode near scripts/.
+t "bash -x near socks.auth blocked"     2 pretool-env-guard.sh "$(j "bash -x run.sh config/$S")"
+t "quoted bash -x is not a trace"       0 pretool-env-guard.sh "$(j "echo \"bash -x\" config/$S")"
 
 # --- Rule 3: an undirected recursive search is SCOPED, not blocked ----------------
 # `grep -rn SECRET .` names no .env, so every rule above passes it — and it then

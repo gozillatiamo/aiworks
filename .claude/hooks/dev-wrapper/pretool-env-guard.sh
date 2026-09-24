@@ -112,9 +112,9 @@ case "$tool" in
 
     # ---------------------------------------------------------------------
     # Rule 2 — shell trace mode (bash -x / sh -x / set -x) near a scripts/
-    # path. Every adapter (vcs/tracker/notify) sources a .env from
-    # scripts/*/, and xtrace echoes every sourced variable VALUE straight
-    # to the transcript.
+    # path or a socks.auth mention. Every adapter (vcs/tracker/notify)
+    # sources a .env from scripts/*/, and xtrace echoes every sourced
+    # variable VALUE straight to the transcript.
     #
     # Quoted substrings are stripped BEFORE looking for the trace token: a
     # `bash -x` inside a string literal is inert data (echo/printf/comment)
@@ -126,8 +126,8 @@ case "$tool" in
     stripped=$(printf '%s' "$cmd" | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g')
     TRACE_RE='(^|[[:space:];&|(/])(bash|sh)[[:space:]]+(-[A-Za-z]*x[A-Za-z]*|--?xtrace)\b|(^|[[:space:];&|(])set[[:space:]]+(-[A-Za-z]*x[A-Za-z]*\b|-o[[:space:]]+xtrace\b)'
     if printf '%s' "$stripped" | grep -Eq "$TRACE_RE" \
-       && printf '%s' "$cmd" | grep -Eq 'scripts/'; then
-      deny "trace mode (-x) near a scripts/ path may echo a sourced .env value: $cmd"
+       && printf '%s' "$cmd" | grep -Eq 'scripts/|\bsocks\.auth\b'; then
+      deny "trace mode (-x) near a scripts/ path or socks.auth may echo a sourced secret value: $cmd"
     fi
 
     # ---------------------------------------------------------------------
