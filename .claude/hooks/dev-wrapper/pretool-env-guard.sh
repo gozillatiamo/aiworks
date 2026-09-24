@@ -159,7 +159,8 @@ case "$tool" in
         return "$pre$bin$rest"
           unless $rest =~ /(?:^|\s)-[A-Za-z]*[rR][A-Za-z]*(?=\s|$)/
               || $rest =~ /(?:^|\s)--(?:recursive|dereference-recursive)\b/;
-        return "$pre$bin --exclude=.env --exclude=.env.* --exclude=socks.auth$rest";
+        # `.env.*` is quoted: zsh globs a bare one and aborts with "no matches found".
+        return "$pre$bin --exclude=.env --exclude=\x27.env.*\x27 --exclude=socks.auth$rest";
       }
       # Command position only (start, or after ; | & ( or $( ) — a "grep" inside
       # a quoted string is inert text and must not be rewritten. Each match stops

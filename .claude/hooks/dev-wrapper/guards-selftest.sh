@@ -369,7 +369,15 @@ te() { # te <name> <expected-substring|SILENT> <command>
     *) fail=$((fail+1)); printf 'FAIL %s (want %s, got %s)\n' "$name" "$want" "$got" ;;
   esac
 }
-te "recursive grep is scoped"        "grep --exclude=$E --exclude=$E.* --exclude=$S -rn" "grep -rn SECRET ."
+# The injected `.env.*` is QUOTED: zsh globs an unquoted `--exclude=.env.*` and aborts the
+# whole command with `no matches found` (bash leaves an unmatched glob alone).
+te "recursive grep is scoped"        "grep --exclude=$E --exclude='$E.*' --exclude=$S -rn" "grep -rn SECRET ."
+if command -v zsh >/dev/null 2>&1; then
+  mkdir -p "$TMP/zsh/src" && printf 'SECRET=1\n' > "$TMP/zsh/src/a.txt"
+  rw=$(printf '%s' "$(j "grep -rl SECRET .")" | "$H/pretool-env-guard.sh" 2>/dev/null | jq -r '.hookSpecificOutput.updatedInput.command')
+  if (cd "$TMP/zsh" && zsh -c "$rw" >/dev/null 2>&1); then pass=$((pass+1)); printf 'ok   %s\n' "the rewritten grep runs under zsh"
+  else fail=$((fail+1)); printf 'FAIL %s (zsh rejected: %s)\n' "the rewritten grep runs under zsh" "$rw"; fi
+fi
 te "a pipeline keeps its shape"      "-rn x . | head -20"                   "grep -rn x . | head -20"
 te "rg is scoped (recursive always)" "-g '!$E*' -g '$E*.example' -g '!$S'"  "rg TODO src"
 te "a non-recursive grep is left be" "SILENT"                               "grep -n foo file.txt"
