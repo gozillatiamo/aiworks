@@ -325,6 +325,9 @@ t "env.config.example.json allowed"  0 pretool-env-guard.sh "$(jr "$TMP/svc/${E#
 t "hcat .env.amb blocked"            2 pretool-env-guard.sh "$(j "hcat dev-script/x/$E.amb")"
 t "Read .env.local blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local")"
 t "Read .env.example.bak blocked"    2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example.bak")"
+# A template in the SAME segment must not excuse a secret beside it: the exemption once
+# skipped the whole segment on any `.env*.example`, so `cat a/.env.example a/.env` passed.
+t "template does not excuse a real .env" 2 pretool-env-guard.sh "$(j "cat a/$E.example a/$E")"
 
 # --- Rule 3: an undirected recursive search is SCOPED, not blocked ----------------
 # `grep -rn SECRET .` names no .env, so every rule above passes it — and it then

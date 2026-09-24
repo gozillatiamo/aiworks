@@ -78,12 +78,13 @@ case "$tool" in
       # so `grep --exclude=x .env` still reads as a .env and is still denied.
       seg=$(printf '%s' "$seg" | sed -E "s/--exclude(-dir)?=[^[:space:]]+//g; s/--glob=[^[:space:]]+//g; s/-g[[:space:]]+'[^']*'//g")
       [ -z "$seg" ] && continue
-      # segment must name a .env; a .env.example segment is a safe template.
+      # `.env.<variant>.example` is a template — .env.amb.example and .env.local.example
+      # both exist here (same suffix rule as is_env_path). STRIP those tokens rather than
+      # skip the segment: skipping let `cat a/.env.example a/.env` through, because one
+      # template excused the real secret beside it (measured: exit 0).
+      seg=$(printf '%s' "$seg" | sed -E 's/[^[:space:]]*\.env[A-Za-z0-9_.-]*\.example//g')
+      # segment must still name a secret file.
       printf '%s' "$seg" | grep -Eq "$ENV_TOKEN" || continue
-      # `.env.<variant>.example` is a template too — .env.amb.example and
-      # .env.local.example both exist here and were blocked by an exemption that
-      # only matched the exact `.env.example`. Same suffix rule as is_env_path.
-      printf '%s' "$seg" | grep -Eq '\.env[A-Za-z0-9_.-]*\.example\b' && continue
 
       # cat/head/tail/less/more/sed -n always print file contents. `hcat` is
       # the headroom plugin's compress-at-the-source reader: a RENAMED `cat`,
