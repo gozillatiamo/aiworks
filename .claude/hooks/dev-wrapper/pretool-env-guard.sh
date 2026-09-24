@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# PreToolUse(Read|Bash) hook — block reads/dumps of secret .env files.
+# PreToolUse(Read|Bash) hook — block reads/dumps of secret files: .env, .env.*
+# and socks.auth (any directory, basename match).
 #
 # CLAUDE.md rule: never Read/cat/grep/trace-dump .env or .env.* — only
-# .env.example templates are safe. Real incident: `bash -x` on a script that
+# .env.example templates are safe. socks.auth (a SOCKS proxy credential file)
+# gets the same treatment and has no template form. Real incident: `bash -x` on a script that
 # sources an adapter .env printed a real secret value into the transcript
 # and an on-disk tool-result file — deleting the file after the fact did not
 # undo the transcript leak. This hook is the enforcement backstop so it
@@ -17,8 +19,8 @@ input=$(cat)
 tool=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)
 
 is_env_path() {
-  # $1 = path/string to test. True (0) if it looks like a real secret .env
-  # file (.env or .env.<suffix>) and NOT a template.
+  # $1 = path/string to test. True (0) if it looks like a real secret file
+  # (.env, .env.<suffix>, or a socks.auth basename) and NOT a template.
   #
   # A trailing `.example` is the template marker, wherever it sits: the workspace
   # carries .env.example, .env.amb.example and .env.local.example, and only the
@@ -29,6 +31,7 @@ is_env_path() {
   case "$1" in
     *.example) return 1 ;;
     *.env|*.env.*) return 0 ;;
+    socks.auth|*/socks.auth) return 0 ;;
   esac
   return 1
 }
@@ -37,7 +40,7 @@ deny() {
   {
     echo "⛔ Blocked: $1"
     echo
-    echo "CLAUDE.md rule: never read/cat/grep/trace-dump .env or .env.* — only .env.example is safe."
+    echo "CLAUDE.md rule: never read/cat/grep/trace-dump .env, .env.* or socks.auth — only .env.example is safe."
     echo "(Real incident: bash -x on a script sourcing .env leaked a real secret value into the transcript.)"
     echo "To check a var is merely set without exposing it: grep -q '^VAR=.\\+' .env"
     echo "To debug a script that sources .env: add temporary non-secret echo markers, not bash -x/set -x."
@@ -45,14 +48,15 @@ deny() {
   exit 2
 }
 
-# Regex fragment: a .env or .env.<suffix> filename token (word-bounded).
-ENV_TOKEN='\.env(\.[A-Za-z0-9_.-]*)?\b'
+# Regex fragment: a .env / .env.<suffix> / socks.auth filename token (word-bounded).
+# Grouped, because it is appended inside larger regexes below.
+ENV_TOKEN='(\.env(\.[A-Za-z0-9_.-]*)?|\bsocks\.auth)\b'
 
 case "$tool" in
   Read)
     path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
     [ -z "$path" ] && exit 0
-    is_env_path "$path" && deny "Read of secret env file: $path"
+    is_env_path "$path" && deny "Read of secret file: $path"
     exit 0
     ;;
   Bash)
@@ -94,14 +98,14 @@ case "$tool" in
       # what that command printed, so `hrun cat .env` leaks exactly as `cat
       # .env` does — and its own name contains no "cat" to match on.
       if printf '%s' "$seg" | grep -Eq "\\b(hrun|hcat|cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
-        deny "command dumps a .env file: $cmd"
+        deny "command dumps a secret file: $cmd"
       fi
       # grep prints matching lines (leaks values) UNLESS it is quiet:
       # -q/--quiet/--silent only sets the exit code, printing nothing —
       # that is the sanctioned "is this var set?" idiom, so allow it.
       if printf '%s' "$seg" | grep -Eq "\\bgrep\\b[^|;&]*$ENV_TOKEN"; then
         if ! printf '%s' "$seg" | grep -Eq '(^|[[:space:]])-[A-Za-z]*q[A-Za-z]*\b|--quiet\b|--silent\b'; then
-          deny "grep would print .env contents: $cmd"
+          deny "grep would print secret file contents: $cmd"
         fi
       fi
     done <<< "$(printf '%s' "$cmd" | tr ';|&' $'\n\n\n')"

@@ -329,6 +329,26 @@ t "Read .env.example.bak blocked"    2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.e
 # skipped the whole segment on any `.env*.example`, so `cat a/.env.example a/.env` passed.
 t "template does not excuse a real .env" 2 pretool-env-guard.sh "$(j "cat a/$E.example a/$E")"
 
+# --- socks.auth is a secret file too: same rules, basename match, no template form ---
+S='socks.auth'
+t "Read of socks.auth blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$S")"
+t "Read of bare socks.auth blocked"     2 pretool-env-guard.sh "$(jr "$S")"
+t "Read of mysocks.auth allowed"        0 pretool-env-guard.sh "$(jr "$TMP/svc/my$S")"
+t "cat socks.auth blocked"              2 pretool-env-guard.sh "$(j "cat scripts/vcs/$S")"
+t "hcat quoted socks.auth blocked"      2 pretool-env-guard.sh "$(j "hcat \"config/$S\"")"
+t "hcat socks.auth after && blocked"    2 pretool-env-guard.sh "$(j "cd /tmp && hcat $S")"
+t "hrun cat socks.auth blocked"         2 pretool-env-guard.sh "$(j "hrun cat config/$S")"
+t "tail socks.auth blocked"             2 pretool-env-guard.sh "$(j "tail -f x/$S")"
+t "sed -n socks.auth blocked"           2 pretool-env-guard.sh "$(j "sed -n 1p x/$S")"
+t "grep socks.auth blocked"             2 pretool-env-guard.sh "$(j "grep USER config/$S")"
+t "grep -q socks.auth allowed"          0 pretool-env-guard.sh "$(j "grep -q '^USER=.\\+' config/$S")"
+t "template does not excuse socks.auth" 2 pretool-env-guard.sh "$(j "cat a/$E.example config/$S")"
+t "ls socks.auth allowed"               0 pretool-env-guard.sh "$(j "ls config/$S")"
+t "wc socks.auth allowed"               0 pretool-env-guard.sh "$(j "wc -c config/$S")"
+t "find socks.auth allowed"             0 pretool-env-guard.sh "$(j "find . -name $S")"
+t "cat mysocks.auth allowed"            0 pretool-env-guard.sh "$(j "cat my$S")"
+t "cat socks.authority allowed"         0 pretool-env-guard.sh "$(j "cat ${S}ority")"
+
 # --- Rule 3: an undirected recursive search is SCOPED, not blocked ----------------
 # `grep -rn SECRET .` names no .env, so every rule above passes it — and it then
 # prints every matching line of every .env it walks into. The guard rewrites the
