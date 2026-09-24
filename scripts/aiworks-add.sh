@@ -1137,7 +1137,7 @@ if have jq; then
   # Read(**/.env) is denied even though the hook already blocks it. The allow half only buys
   # determinism over the auto-mode classifier.
   hcat_allow='["Bash(hcat *)"]'
-  hcat_deny='["Bash(hcat *.env)","Bash(hcat *.env.*)"]'
+  hcat_deny='["Bash(hcat *.env)","Bash(hcat *.env.*)","Bash(hcat *socks.auth)"]'
   if merged="$(printf '%s\n%s\n' "$existing" "$base_for_merge" \
         | jq -s --argjson ha "$hcat_allow" --argjson hd "$hcat_deny" '
             (.[0] * .[1])

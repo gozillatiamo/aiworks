@@ -652,6 +652,7 @@ ta "build chained after read"         silent "$(j "git -C $SUB status && ./scrip
 # so this guard must stand aside rather than wave it through.
 ta "secretish read deferred"          silent "$(j "git -C $SUB show HEAD:.env")"
 ta ".env.example not secretish"       allow  "$(j "git -C $SUB show HEAD:.env.example")"
+ta "socks.auth read deferred"         silent "$(j "git -C $SUB show HEAD:x/$S")"
 
 # --- a PRIMARY clone is not a submodule: the guard has no opinion at all ---------
 t  "primary clone commit untouched"  0 $G "$(j "git -C $TMP/subsrc commit -m x")"

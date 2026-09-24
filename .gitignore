@@ -10,6 +10,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+# SOCKS proxy credential file — guarded like .env by pretool-env-guard.sh, never committed.
+socks.auth
 
 # the org's real workspace config — each org creates it from workspace.config.example.yaml
 workspace.config.yaml
