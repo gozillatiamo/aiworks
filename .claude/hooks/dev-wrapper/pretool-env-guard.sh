@@ -166,12 +166,15 @@ case "$tool" in
       # a quoted string is inert text and must not be rewritten. Each match stops
       # at the next segment separator so a pipeline keeps its shape.
       s{(^|[;|&(]\s*|\$\(\s*)(grep|egrep|fgrep)\b([^;|&\n]*)}{ scoped($1, $2, $3) }ge;
-      # ripgrep walks recursively by default, so it needs no -r test. Its later
-      # glob wins, which is how the template stays readable here and cannot in grep.
+      # ripgrep walks recursively by default, so it needs no -r test. Negated
+      # globs ONLY: a positive glob (`-g '.env*.example'`, once added to keep the
+      # template readable) makes rg a whitelist that searches nothing else
+      # (measured: every scoped rg returned rc 1). Same rule as grep — a template
+      # is read by naming it.
       # Captures are copied first: a successful `=~` inside the block resets $1..$3.
       s{(^|[;|&(]\s*|\$\(\s*)(rg)\b([^;|&\n]*)}{
         my ($pre, $bin, $rest) = ($1, $2, $3);
-        ($rest =~ /!\.env/ && $rest =~ /!socks\.auth/) ? "$pre$bin$rest" : "$pre$bin -g \x27!.env*\x27 -g \x27.env*.example\x27 -g \x27!socks.auth\x27$rest"
+        ($rest =~ /!\.env/ && $rest =~ /!socks\.auth/) ? "$pre$bin$rest" : "$pre$bin -g \x27!.env*\x27 -g \x27!socks.auth\x27$rest"
       }ge;
     ' 2>/dev/null)
     if [ -n "$new_cmd" ] && [ "$new_cmd" != "$cmd" ]; then

@@ -379,7 +379,16 @@ if command -v zsh >/dev/null 2>&1; then
   else fail=$((fail+1)); printf 'FAIL %s (zsh rejected: %s)\n' "the rewritten grep runs under zsh" "$rw"; fi
 fi
 te "a pipeline keeps its shape"      "-rn x . | head -20"                   "grep -rn x . | head -20"
-te "rg is scoped (recursive always)" "-g '!$E*' -g '$E*.example' -g '!$S'"  "rg TODO src"
+# Negated globs ONLY. A positive glob (`-g '.env*.example'`) turns rg into a whitelist —
+# it searched nothing but templates and every scoped rg came back empty (measured: rc 1).
+te "rg is scoped (recursive always)" "rg -g '!$E*' -g '!$S' TODO src"  "rg TODO src"
+if command -v rg >/dev/null 2>&1; then
+  mkdir -p "$TMP/rg/src" && printf 'TODO=1\n' > "$TMP/rg/src/a.txt" && printf 'TODO=1\n' > "$TMP/rg/src/$S"
+  rw=$(printf '%s' "$(j "rg -l TODO src")" | "$H/pretool-env-guard.sh" 2>/dev/null | jq -r '.hookSpecificOutput.updatedInput.command')
+  got=$(cd "$TMP/rg" && bash -c "$rw" 2>/dev/null)
+  if [ "$got" = "src/a.txt" ]; then pass=$((pass+1)); printf 'ok   %s\n' "the rewritten rg still finds files (and skips $S)"
+  else fail=$((fail+1)); printf 'FAIL %s (want src/a.txt, got %s; cmd: %s)\n' "the rewritten rg still finds files" "${got:-nothing}" "$rw"; fi
+fi
 te "a non-recursive grep is left be" "SILENT"                               "grep -n foo file.txt"
 # --color contains an "r"; reading it as -r would rewrite every coloured grep.
 te "a long flag is not a -r"         "SILENT"                               "grep --color -n pat file"
@@ -390,7 +399,7 @@ te "git grep is not rewritten"       "SILENT"                               "git
 # order to SKIP it. Denying that (as the guard first did) means the hook blocks the
 # command it just wrote, and punishes anyone who adds --exclude by hand.
 t "an --exclude=.env argument is allowed"  0 pretool-env-guard.sh "$(j "grep --exclude=$E --exclude=$E.* -rn SECRET .")"
-t "an rg env glob is allowed"              0 pretool-env-guard.sh "$(j "rg -g '!$E*' -g '$E*.example' TODO src")"
+t "an rg env glob is allowed"              0 pretool-env-guard.sh "$(j "rg -g '!$E*' TODO src")"
 t "an --exclude=socks.auth is allowed"     0 pretool-env-guard.sh "$(j "grep --exclude=$S -rn SECRET .")"
 t "an rg socks.auth glob is allowed"       0 pretool-env-guard.sh "$(j "rg -g '!$S' TODO src")"
 te "a scoped command is not re-scoped"     "SILENT" "grep --exclude=$E --exclude=$E.* --exclude=$S -rn SECRET ."
