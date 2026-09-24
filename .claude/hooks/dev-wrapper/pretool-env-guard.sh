@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# PreToolUse(Read|Bash) hook — block reads/dumps of secret .env files.
+# PreToolUse(Read|Bash) hook — block reads/dumps of secret files: .env, .env.*
+# and socks.auth (any directory, basename match).
 #
 # CLAUDE.md rule: never Read/cat/grep/trace-dump .env or .env.* — only
-# .env.example templates are safe. Real incident: `bash -x` on a script that
+# .env.example templates are safe. socks.auth (a SOCKS proxy credential file)
+# gets the same treatment and has no template form. Real incident: `bash -x` on a script that
 # sources an adapter .env printed a real secret value into the transcript
 # and an on-disk tool-result file — deleting the file after the fact did not
 # undo the transcript leak. This hook is the enforcement backstop so it
@@ -17,8 +19,8 @@ input=$(cat)
 tool=$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)
 
 is_env_path() {
-  # $1 = path/string to test. True (0) if it looks like a real secret .env
-  # file (.env or .env.<suffix>) and NOT a template.
+  # $1 = path/string to test. True (0) if it looks like a real secret file
+  # (.env, .env.<suffix>, or a socks.auth basename) and NOT a template.
   #
   # A trailing `.example` is the template marker, wherever it sits: the workspace
   # carries .env.example, .env.amb.example and .env.local.example, and only the
@@ -29,6 +31,7 @@ is_env_path() {
   case "$1" in
     *.example) return 1 ;;
     *.env|*.env.*) return 0 ;;
+    socks.auth|*/socks.auth) return 0 ;;
   esac
   return 1
 }
@@ -37,7 +40,7 @@ deny() {
   {
     echo "⛔ Blocked: $1"
     echo
-    echo "CLAUDE.md rule: never read/cat/grep/trace-dump .env or .env.* — only .env.example is safe."
+    echo "CLAUDE.md rule: never read/cat/grep/trace-dump .env, .env.* or socks.auth — only .env.example is safe."
     echo "(Real incident: bash -x on a script sourcing .env leaked a real secret value into the transcript.)"
     echo "To check a var is merely set without exposing it: grep -q '^VAR=.\\+' .env"
     echo "To debug a script that sources .env: add temporary non-secret echo markers, not bash -x/set -x."
@@ -45,14 +48,15 @@ deny() {
   exit 2
 }
 
-# Regex fragment: a .env or .env.<suffix> filename token (word-bounded).
-ENV_TOKEN='\.env(\.[A-Za-z0-9_.-]*)?\b'
+# Regex fragment: a .env / .env.<suffix> / socks.auth filename token (word-bounded).
+# Grouped, because it is appended inside larger regexes below.
+ENV_TOKEN='(\.env(\.[A-Za-z0-9_.-]*)?|\bsocks\.auth)\b'
 
 case "$tool" in
   Read)
     path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
     [ -z "$path" ] && exit 0
-    is_env_path "$path" && deny "Read of secret env file: $path"
+    is_env_path "$path" && deny "Read of secret file: $path"
     exit 0
     ;;
   Bash)
@@ -78,12 +82,13 @@ case "$tool" in
       # so `grep --exclude=x .env` still reads as a .env and is still denied.
       seg=$(printf '%s' "$seg" | sed -E "s/--exclude(-dir)?=[^[:space:]]+//g; s/--glob=[^[:space:]]+//g; s/-g[[:space:]]+'[^']*'//g")
       [ -z "$seg" ] && continue
-      # segment must name a .env; a .env.example segment is a safe template.
+      # `.env.<variant>.example` is a template — .env.amb.example and .env.local.example
+      # both exist here (same suffix rule as is_env_path). STRIP those tokens rather than
+      # skip the segment: skipping let `cat a/.env.example a/.env` through, because one
+      # template excused the real secret beside it (measured: exit 0).
+      seg=$(printf '%s' "$seg" | sed -E 's/[^[:space:]]*\.env[A-Za-z0-9_.-]*\.example//g')
+      # segment must still name a secret file.
       printf '%s' "$seg" | grep -Eq "$ENV_TOKEN" || continue
-      # `.env.<variant>.example` is a template too — .env.amb.example and
-      # .env.local.example both exist here and were blocked by an exemption that
-      # only matched the exact `.env.example`. Same suffix rule as is_env_path.
-      printf '%s' "$seg" | grep -Eq '\.env[A-Za-z0-9_.-]*\.example\b' && continue
 
       # cat/head/tail/less/more/sed -n always print file contents. `hcat` is
       # the headroom plugin's compress-at-the-source reader: a RENAMED `cat`,
@@ -93,23 +98,23 @@ case "$tool" in
       # what that command printed, so `hrun cat .env` leaks exactly as `cat
       # .env` does — and its own name contains no "cat" to match on.
       if printf '%s' "$seg" | grep -Eq "\\b(hrun|hcat|cat|head|tail|less|more|sed[[:space:]]+-n)\\b[^|;&]*$ENV_TOKEN"; then
-        deny "command dumps a .env file: $cmd"
+        deny "command dumps a secret file: $cmd"
       fi
       # grep prints matching lines (leaks values) UNLESS it is quiet:
       # -q/--quiet/--silent only sets the exit code, printing nothing —
       # that is the sanctioned "is this var set?" idiom, so allow it.
       if printf '%s' "$seg" | grep -Eq "\\bgrep\\b[^|;&]*$ENV_TOKEN"; then
         if ! printf '%s' "$seg" | grep -Eq '(^|[[:space:]])-[A-Za-z]*q[A-Za-z]*\b|--quiet\b|--silent\b'; then
-          deny "grep would print .env contents: $cmd"
+          deny "grep would print secret file contents: $cmd"
         fi
       fi
     done <<< "$(printf '%s' "$cmd" | tr ';|&' $'\n\n\n')"
 
     # ---------------------------------------------------------------------
     # Rule 2 — shell trace mode (bash -x / sh -x / set -x) near a scripts/
-    # path. Every adapter (vcs/tracker/notify) sources a .env from
-    # scripts/*/, and xtrace echoes every sourced variable VALUE straight
-    # to the transcript.
+    # path or a socks.auth mention. Every adapter (vcs/tracker/notify)
+    # sources a .env from scripts/*/, and xtrace echoes every sourced
+    # variable VALUE straight to the transcript.
     #
     # Quoted substrings are stripped BEFORE looking for the trace token: a
     # `bash -x` inside a string literal is inert data (echo/printf/comment)
@@ -121,8 +126,8 @@ case "$tool" in
     stripped=$(printf '%s' "$cmd" | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g')
     TRACE_RE='(^|[[:space:];&|(/])(bash|sh)[[:space:]]+(-[A-Za-z]*x[A-Za-z]*|--?xtrace)\b|(^|[[:space:];&|(])set[[:space:]]+(-[A-Za-z]*x[A-Za-z]*\b|-o[[:space:]]+xtrace\b)'
     if printf '%s' "$stripped" | grep -Eq "$TRACE_RE" \
-       && printf '%s' "$cmd" | grep -Eq 'scripts/'; then
-      deny "trace mode (-x) near a scripts/ path may echo a sourced .env value: $cmd"
+       && printf '%s' "$cmd" | grep -Eq 'scripts/|\bsocks\.auth\b'; then
+      deny "trace mode (-x) near a scripts/ path or socks.auth may echo a sourced secret value: $cmd"
     fi
 
     # ---------------------------------------------------------------------
@@ -140,29 +145,36 @@ case "$tool" in
     # silent — `.env.example` is excluded with the rest (fnmatch cannot say
     # ".env.* except *.example"), and a template that is genuinely needed is
     # read by naming it, which this guard has always allowed.
-    # Idempotent: a command that already carries the exclusions is left alone,
-    # so a re-fired hook cannot stack them.
+    # Idempotent: a command that already carries the FULL set of exclusions is
+    # left alone, so a re-fired hook cannot stack them; a partial set (an older
+    # .env-only rewrite) gets the full set again — a duplicate exclude is harmless.
     # ---------------------------------------------------------------------
     new_cmd=$(printf '%s' "$cmd" | perl -0777 -pe '
       sub scoped {
         my ($pre, $bin, $rest) = @_;
-        return "$pre$bin$rest" if $rest =~ /--exclude=\.env/;
+        return "$pre$bin$rest" if $rest =~ /--exclude=\.env/ && $rest =~ /--exclude=socks\.auth/;
         # Recursive only: -r/-R (alone or bundled, e.g. -rn) and the long forms.
         # Matched on short-option tokens rather than anywhere, or a long flag
         # that merely contains an "r" (--color) would read as recursive.
         return "$pre$bin$rest"
           unless $rest =~ /(?:^|\s)-[A-Za-z]*[rR][A-Za-z]*(?=\s|$)/
               || $rest =~ /(?:^|\s)--(?:recursive|dereference-recursive)\b/;
-        return "$pre$bin --exclude=.env --exclude=.env.*$rest";
+        # `.env.*` is quoted: zsh globs a bare one and aborts with "no matches found".
+        return "$pre$bin --exclude=.env --exclude=\x27.env.*\x27 --exclude=socks.auth$rest";
       }
       # Command position only (start, or after ; | & ( or $( ) — a "grep" inside
       # a quoted string is inert text and must not be rewritten. Each match stops
       # at the next segment separator so a pipeline keeps its shape.
       s{(^|[;|&(]\s*|\$\(\s*)(grep|egrep|fgrep)\b([^;|&\n]*)}{ scoped($1, $2, $3) }ge;
-      # ripgrep walks recursively by default, so it needs no -r test. Its later
-      # glob wins, which is how the template stays readable here and cannot in grep.
+      # ripgrep walks recursively by default, so it needs no -r test. Negated
+      # globs ONLY: a positive glob (`-g '.env*.example'`, once added to keep the
+      # template readable) makes rg a whitelist that searches nothing else
+      # (measured: every scoped rg returned rc 1). Same rule as grep — a template
+      # is read by naming it.
+      # Captures are copied first: a successful `=~` inside the block resets $1..$3.
       s{(^|[;|&(]\s*|\$\(\s*)(rg)\b([^;|&\n]*)}{
-        $3 =~ /!\.env/ ? "$1$2$3" : "$1$2 -g \x27!.env*\x27 -g \x27.env*.example\x27$3"
+        my ($pre, $bin, $rest) = ($1, $2, $3);
+        ($rest =~ /!\.env/ && $rest =~ /!socks\.auth/) ? "$pre$bin$rest" : "$pre$bin -g \x27!.env*\x27 -g \x27!socks.auth\x27$rest"
       }ge;
     ' 2>/dev/null)
     if [ -n "$new_cmd" ] && [ "$new_cmd" != "$cmd" ]; then
@@ -171,7 +183,7 @@ case "$tool" in
           hookEventName: "PreToolUse",
           updatedInput: (.tool_input + {command: $c})
         },
-        systemMessage: ("env-guard: scoped the recursive search away from .env files (.env.example too) — running: " + $c)
+        systemMessage: ("env-guard: scoped the recursive search away from .env and socks.auth files (.env.example too) — running: " + $c)
       }' 2>/dev/null
       exit 0
     fi

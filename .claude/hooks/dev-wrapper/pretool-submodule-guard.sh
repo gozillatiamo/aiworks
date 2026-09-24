@@ -148,7 +148,7 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 secretish=0
 case "$cmd" in
   *.env.example*|*.env.sample*) ;;
-  *.env*|*id_rsa*|*id_ed25519*|*.pem*|*credentials*|*secrets/*) secretish=1 ;;
+  *.env*|*socks.auth*|*id_rsa*|*id_ed25519*|*.pem*|*credentials*|*secrets/*) secretish=1 ;;
 esac
 
 # Normalise the file-descriptor redirections BEFORE splitting. The separator split

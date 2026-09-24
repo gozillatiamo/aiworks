@@ -325,6 +325,32 @@ t "env.config.example.json allowed"  0 pretool-env-guard.sh "$(jr "$TMP/svc/${E#
 t "hcat .env.amb blocked"            2 pretool-env-guard.sh "$(j "hcat dev-script/x/$E.amb")"
 t "Read .env.local blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.local")"
 t "Read .env.example.bak blocked"    2 pretool-env-guard.sh "$(jr "$TMP/svc/$E.example.bak")"
+# A template in the SAME segment must not excuse a secret beside it: the exemption once
+# skipped the whole segment on any `.env*.example`, so `cat a/.env.example a/.env` passed.
+t "template does not excuse a real .env" 2 pretool-env-guard.sh "$(j "cat a/$E.example a/$E")"
+
+# --- socks.auth is a secret file too: same rules, basename match, no template form ---
+S='socks.auth'
+t "Read of socks.auth blocked"          2 pretool-env-guard.sh "$(jr "$TMP/svc/$S")"
+t "Read of bare socks.auth blocked"     2 pretool-env-guard.sh "$(jr "$S")"
+t "Read of mysocks.auth allowed"        0 pretool-env-guard.sh "$(jr "$TMP/svc/my$S")"
+t "cat socks.auth blocked"              2 pretool-env-guard.sh "$(j "cat scripts/vcs/$S")"
+t "hcat quoted socks.auth blocked"      2 pretool-env-guard.sh "$(j "hcat \"config/$S\"")"
+t "hcat socks.auth after && blocked"    2 pretool-env-guard.sh "$(j "cd /tmp && hcat $S")"
+t "hrun cat socks.auth blocked"         2 pretool-env-guard.sh "$(j "hrun cat config/$S")"
+t "tail socks.auth blocked"             2 pretool-env-guard.sh "$(j "tail -f x/$S")"
+t "sed -n socks.auth blocked"           2 pretool-env-guard.sh "$(j "sed -n 1p x/$S")"
+t "grep socks.auth blocked"             2 pretool-env-guard.sh "$(j "grep USER config/$S")"
+t "grep -q socks.auth allowed"          0 pretool-env-guard.sh "$(j "grep -q '^USER=.\\+' config/$S")"
+t "template does not excuse socks.auth" 2 pretool-env-guard.sh "$(j "cat a/$E.example config/$S")"
+t "ls socks.auth allowed"               0 pretool-env-guard.sh "$(j "ls config/$S")"
+t "wc socks.auth allowed"               0 pretool-env-guard.sh "$(j "wc -c config/$S")"
+t "find socks.auth allowed"             0 pretool-env-guard.sh "$(j "find . -name $S")"
+t "cat mysocks.auth allowed"            0 pretool-env-guard.sh "$(j "cat my$S")"
+t "cat socks.authority allowed"         0 pretool-env-guard.sh "$(j "cat ${S}ority")"
+# Rule 2: trace mode near a socks.auth mention leaks like trace mode near scripts/.
+t "bash -x near socks.auth blocked"     2 pretool-env-guard.sh "$(j "bash -x run.sh config/$S")"
+t "quoted bash -x is not a trace"       0 pretool-env-guard.sh "$(j "echo \"bash -x\" config/$S")"
 
 # --- Rule 3: an undirected recursive search is SCOPED, not blocked ----------------
 # `grep -rn SECRET .` names no .env, so every rule above passes it — and it then
@@ -343,9 +369,26 @@ te() { # te <name> <expected-substring|SILENT> <command>
     *) fail=$((fail+1)); printf 'FAIL %s (want %s, got %s)\n' "$name" "$want" "$got" ;;
   esac
 }
-te "recursive grep is scoped"        "grep --exclude=$E --exclude=$E.* -rn" "grep -rn SECRET ."
+# The injected `.env.*` is QUOTED: zsh globs an unquoted `--exclude=.env.*` and aborts the
+# whole command with `no matches found` (bash leaves an unmatched glob alone).
+te "recursive grep is scoped"        "grep --exclude=$E --exclude='$E.*' --exclude=$S -rn" "grep -rn SECRET ."
+if command -v zsh >/dev/null 2>&1; then
+  mkdir -p "$TMP/zsh/src" && printf 'SECRET=1\n' > "$TMP/zsh/src/a.txt"
+  rw=$(printf '%s' "$(j "grep -rl SECRET .")" | "$H/pretool-env-guard.sh" 2>/dev/null | jq -r '.hookSpecificOutput.updatedInput.command')
+  if (cd "$TMP/zsh" && zsh -c "$rw" >/dev/null 2>&1); then pass=$((pass+1)); printf 'ok   %s\n' "the rewritten grep runs under zsh"
+  else fail=$((fail+1)); printf 'FAIL %s (zsh rejected: %s)\n' "the rewritten grep runs under zsh" "$rw"; fi
+fi
 te "a pipeline keeps its shape"      "-rn x . | head -20"                   "grep -rn x . | head -20"
-te "rg is scoped (recursive always)" "-g '!$E*' -g '$E*.example'"           "rg TODO src"
+# Negated globs ONLY. A positive glob (`-g '.env*.example'`) turns rg into a whitelist —
+# it searched nothing but templates and every scoped rg came back empty (measured: rc 1).
+te "rg is scoped (recursive always)" "rg -g '!$E*' -g '!$S' TODO src"  "rg TODO src"
+if command -v rg >/dev/null 2>&1; then
+  mkdir -p "$TMP/rg/src" && printf 'TODO=1\n' > "$TMP/rg/src/a.txt" && printf 'TODO=1\n' > "$TMP/rg/src/$S"
+  rw=$(printf '%s' "$(j "rg -l TODO src")" | "$H/pretool-env-guard.sh" 2>/dev/null | jq -r '.hookSpecificOutput.updatedInput.command')
+  got=$(cd "$TMP/rg" && bash -c "$rw" 2>/dev/null)
+  if [ "$got" = "src/a.txt" ]; then pass=$((pass+1)); printf 'ok   %s\n' "the rewritten rg still finds files (and skips $S)"
+  else fail=$((fail+1)); printf 'FAIL %s (want src/a.txt, got %s; cmd: %s)\n' "the rewritten rg still finds files" "${got:-nothing}" "$rw"; fi
+fi
 te "a non-recursive grep is left be" "SILENT"                               "grep -n foo file.txt"
 # --color contains an "r"; reading it as -r would rewrite every coloured grep.
 te "a long flag is not a -r"         "SILENT"                               "grep --color -n pat file"
@@ -356,8 +399,14 @@ te "git grep is not rewritten"       "SILENT"                               "git
 # order to SKIP it. Denying that (as the guard first did) means the hook blocks the
 # command it just wrote, and punishes anyone who adds --exclude by hand.
 t "an --exclude=.env argument is allowed"  0 pretool-env-guard.sh "$(j "grep --exclude=$E --exclude=$E.* -rn SECRET .")"
-t "an rg env glob is allowed"              0 pretool-env-guard.sh "$(j "rg -g '!$E*' -g '$E*.example' TODO src")"
-te "a scoped command is not re-scoped"     "SILENT" "grep --exclude=$E --exclude=$E.* -rn SECRET ."
+t "an rg env glob is allowed"              0 pretool-env-guard.sh "$(j "rg -g '!$E*' TODO src")"
+t "an --exclude=socks.auth is allowed"     0 pretool-env-guard.sh "$(j "grep --exclude=$S -rn SECRET .")"
+t "an rg socks.auth glob is allowed"       0 pretool-env-guard.sh "$(j "rg -g '!$S' TODO src")"
+te "a scoped command is not re-scoped"     "SILENT" "grep --exclude=$E --exclude=$E.* --exclude=$S -rn SECRET ."
+te "a fully scoped rg is not re-scoped"    "SILENT" "rg -g '!$E*' -g '!$S' TODO src"
+# A command scoped for .env only (the pre-socks.auth rewrite) still gains the new exclusion.
+te ".env-only scope gains socks.auth"      "--exclude=$S" "grep --exclude=$E --exclude=$E.* -rn SECRET ."
+te ".env-only rg scope gains socks.auth"   "-g '!$S'"     "rg -g '!$E*' TODO src"
 # …without opening a hole: an exclusion elsewhere never excuses reading a .env.
 t "exclusion does not excuse a read"       2 pretool-env-guard.sh "$(j "grep --exclude=x PATTERN $E")"
 t "exclusion does not excuse a cat"        2 pretool-env-guard.sh "$(j "cat --exclude=$E.bak $E")"
@@ -603,6 +652,7 @@ ta "build chained after read"         silent "$(j "git -C $SUB status && ./scrip
 # so this guard must stand aside rather than wave it through.
 ta "secretish read deferred"          silent "$(j "git -C $SUB show HEAD:.env")"
 ta ".env.example not secretish"       allow  "$(j "git -C $SUB show HEAD:.env.example")"
+ta "socks.auth read deferred"         silent "$(j "git -C $SUB show HEAD:x/$S")"
 
 # --- a PRIMARY clone is not a submodule: the guard has no opinion at all ---------
 t  "primary clone commit untouched"  0 $G "$(j "git -C $TMP/subsrc commit -m x")"
