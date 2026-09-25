@@ -35,9 +35,35 @@ addressed as `target="<name>"` at call time:
 | `PGPROD_SECONDARY`  | `target="secondary"` | A second database, if any.                        |
 | `PGPROD_<NAME>`     | `target="<name>"`    | Any additional database.                          |
 
-There is **no sharding scheme baked in**. If your data is split across several databases,
-declare one target per database (`PGPROD_SHARD0`, `PGPROD_SHARD1`, …) and address each
-explicitly; a fleet-wide check is just a query per target.
+A target is just a database. Nothing about your topology is assumed until you declare it.
+
+### Shards (optional)
+
+If your data is split across up to 16 databases keyed by one hex digit (`0`–`f`), declare each
+one's shard role and the triage tools can route to it for you:
+
+| Env var                          | Declares                          | Address as          |
+|----------------------------------|-----------------------------------|---------------------|
+| `PGPROD_SHARD_<HEX>`             | shard `<hex>`                     | `target="<hex>"`    |
+| `PGPROD_<LABEL>_SHARD_<HEX>`     | shard `<hex>`; `<LABEL>` is free-form (e.g. the host, `HOST1`) | `target="<hex>"` |
+| `PGPROD_<NAME>` + `PGPROD_<NAME>_SHARD=<hex>` | shard `<hex>` for an existing named DSN | `target="<hex>"` |
+
+- The target key is always `shard_<hex>`, whichever var backs it; `list_targets` shows the var
+  (`kind: shard`; everything else is `kind: named`).
+- Two vars claiming the same hex is a conflict: that shard reads as unconfigured and every claimant
+  is named (`conflict: [vars]` in `list_targets`, a FAIL line in `--selftest`). Fix
+  `scripts/db/.env`; nothing is guessed.
+- `resolve_shard(routing_key)` maps an identifier to its shard by its **first character** (`0`–`f`).
+  Data tools accept `routing_key=` instead of `target=`. This is the only place the framework assumes
+  a keyspace, and it engages only when you declare a shard.
+- Staging shard databases are named by `PGSTG_DB_SHARD_FMT` (default `shard_%s`, which is also the
+  plain name default).
+- `PGPROD_SHARD0` (no underscore before the hex) is an ordinary named target, `shard0`.
+
+> **Upgrading:** a var that ends in `_SHARD_<hex>` or `_SHARD` used to be an ordinary named target
+> and is now a shard declaration. `--selftest` lists every key it reinterprets.
+
+Declare no shard vars and every target behaves as a plain named database, as before.
 
 ## Setup (one-time, per machine)
 

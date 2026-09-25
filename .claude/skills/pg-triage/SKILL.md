@@ -107,11 +107,18 @@ Every data tool takes **`target`** — a name you configured via `PGPROD_<NAME>`
 (see `scripts/db/README.md`): `target="main"`, `target="secondary"`, or any name you declared.
 Use `list_targets` to see what is configured.
 
-There is **no sharding scheme baked in** — a target is just a database. If your data is split
-across several databases, each is its own target (`target="shard0"`, …); to compare a record
-across them, query each explicitly and say you did — don't pretend one database is the whole
-picture. When you only have an inner-system identifier (e.g. a `*_code`) and don't know which
-target holds it, resolve it from whatever registry your schema uses before a blind fan-out.
+A target is just a database — nothing about the topology is assumed until it is declared. If
+your data is split across several databases, each is its own target (`target="shard0"`, …); to
+compare a record across them, query each explicitly and say you did — don't pretend one database
+is the whole picture. When you only have an inner-system identifier (e.g. a `*_code`) and don't
+know which target holds it, resolve it from whatever registry your schema uses before a blind
+fan-out.
+
+When the `.env` **declares shard roles** (`PGPROD_SHARD_<HEX>`, `PGPROD_<LABEL>_SHARD_<HEX>`, or
+`PGPROD_<NAME>_SHARD=<hex>` — see "Shards (optional)" in `scripts/db/README.md`), `target="<hex>"`
+selects that shard and `resolve_shard(routing_key)` derives it from the identifier's first
+character; every data tool then takes `routing_key=` in place of `target=`. A shard `list_targets`
+reports with `conflict: [vars]` is deliberately unconfigured — fix the `.env`, never guess.
 
 ## Workflow
 

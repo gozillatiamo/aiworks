@@ -183,3 +183,40 @@ connect already is one.
 
 **Supersedes.** "Port safety" and the gost addendum's "No adoption" bullet, for an identified gost
 only. Everything else they say stands.
+
+## Addendum — the shard role is declared, never baked in
+
+**Context.** Some fleets split one logical database across up to sixteen physical ones, keyed
+by a single hex digit `0`–`f`, and route a record to its database by the first character of a
+routing key. The triage tools are more useful when they can follow that route themselves —
+`target="a"`, `resolve_shard(routing_key)` — but a framework that *assumed* the sixteen-way,
+first-character scheme would be wrong for every fleet that does not use it, and silently so.
+
+**Decision.** The shard role is **opt-in, by declaration**, in the same `.env` the DSNs live in:
+
+- a **shard token** in the var name — `PGPROD_SHARD_<HEX>` or `PGPROD_<LABEL>_SHARD_<HEX>`,
+  `<LABEL>` free-form; or
+- a **shard sidecar** beside a named var — `PGPROD_<NAME>_SHARD=<hex>` — for a var whose name
+  cannot change. Refused on a name that already carries the token.
+
+Either yields the target key `shard_<hex>`; `list_targets` reports `kind: shard` and the var
+that backs it. A var with neither is a **named target**, exactly as before. Declare nothing and
+nothing changes — `list_targets` for a shard-free `.env` is identical except for the additive
+`kind: named`.
+
+**Fail closed on a conflict.** Two vars claiming one hex is not resolved by precedence: the
+shard reads as *unconfigured*, `list_targets` carries `conflict: [vars]` for it, `--selftest`
+FAILs the file, and `resolve_shard` says so. A guess here would answer a production question
+from the wrong database.
+
+**The one keyspace assumption.** `resolve_shard(routing_key)` — first character, hex — is the
+only place the framework assumes how records are keyed. It engages only once a shard is
+declared, and a routing key outside `0`–`f` is refused, not defaulted. Anything else (a master,
+a fleet size, a padding of undeclared shards) is deliberately absent.
+
+**Staging.** One pattern, `PGSTG_DB_SHARD_FMT` (default `shard_%s`), names the staging database
+of every shard target — not sixteen `PGSTG_DB_SHARD_<HEX>` lines. An explicit `PGSTG_DB_<NAME>`
+still wins.
+
+**Migration.** A var that ended in `_SHARD_<hex>` or `_SHARD` used to be an ordinary named
+target and is now a declaration; `--selftest`'s file report names every key it reinterprets.
