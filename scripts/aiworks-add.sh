@@ -1001,6 +1001,17 @@ if [[ -d "$ROOT/.claude/hooks/dev-wrapper" ]]; then
 else
   skip "9. no $ROOT/.claude/hooks to seed from — copy your hook scripts into $PATH_REL/.claude/hooks/ by hand"
 fi
+# 9a. .cursorignore — a COPY, not a symlink, same reasoning as the hooks above (independent clone).
+CI_SRC="$ROOT/.cursorignore"; CI_DST="$REPO_DIR/.cursorignore"
+if [[ -f "$CI_SRC" ]]; then
+  if [[ -f "$CI_DST" ]] && cmp -s "$CI_SRC" "$CI_DST"; then
+    skip "9a. .cursorignore already matches the workspace root"
+  else
+    cp "$CI_SRC" "$CI_DST" && ok "synced .cursorignore from workspace root"
+  fi
+else
+  skip "9a. no $ROOT/.cursorignore to seed from"
+fi
 # 9b. settings.json — hardcoded baseline (modeled on a Flutter app, minus sonar), merged to keep plugins.
 SETTINGS_FILE="$REPO_DIR/.claude/settings.json"
 read -r -d '' BASE_SETTINGS <<'JSON'
