@@ -84,6 +84,7 @@ from psycopg_pool import ConnectionPool, PoolTimeout
 # from a ticket or Slack post while leaving identical-looking local/staging data alone.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import gcloud_tunnel  # noqa: E402 — stdlib-only tunnel helper, shared with redis_triage
+import pg_prod  # noqa: E402  — declared shard role of a PGPROD_ var, shared with prod_repro_seed.py
 import pg_staging  # noqa: E402  — staging DSN resolution, shared with prod_repro_seed.py
 import triage_policy  # noqa: E402  — the production gate; load-bearing, so never optional
 
@@ -151,21 +152,49 @@ def _resolve_env(env: str | None) -> str:
     return e
 
 
+SHARD_KEY_PREFIX = "shard_"  # the target key of a declared shard: shard_<hex>
+
+
 def _env_var(key: str) -> str:
-    """Env var backing a target: 'main' -> PGPROD_MAIN, 'shard0' -> PGPROD_SHARD0."""
+    """Env var backing a target: 'main' -> PGPROD_MAIN; 'shard_0' -> whichever var DECLARES
+    shard 0 (`pg_prod.shard_var`; ValueError naming both vars on a conflict)."""
+    if key.startswith(SHARD_KEY_PREFIX):
+        return pg_prod.shard_var(key[len(SHARD_KEY_PREFIX):])
     return ENV_PREFIX + re.sub(r"[^A-Z0-9]+", "_", key.strip().upper())
 
 
 def _target_key(target: str | None = None) -> str:
     """Canonicalize a request to a lowercase target name.
 
-    A target is just a name you configured via `PGPROD_<NAME>` in the .env — there is no
-    topology/sharding logic here, so the name is used verbatim (lowercased)."""
+    A target is a name you configured via `PGPROD_<NAME>` in the .env, used verbatim
+    (lowercased). The one shorthand: a single hex `0-f` means the declared shard `shard_<hex>`
+    (see `pg_prod`)."""
     if not target or not target.strip():
         raise ValueError(
             "provide a `target` — a configured prod target name (e.g. 'main'); see list_targets"
         )
-    return target.strip().lower()
+    t = target.strip().lower()
+    if len(t) == 1 and t in pg_prod.HEX:
+        return SHARD_KEY_PREFIX + t
+    return t
+
+
+def _shard_key(routing_key: str) -> str:
+    """`shard_<hex>` for a routing key whose FIRST character is the shard hex. Nothing else is
+    inferred: a first character outside 0-f is refused, never guessed."""
+    rk = (routing_key or "").strip()
+    if not rk or rk[0].lower() not in pg_prod.HEX:
+        raise ValueError("routing_key must start with the shard hex 0-f (see resolve_shard)")
+    return SHARD_KEY_PREFIX + rk[0].lower()
+
+
+def _key_from(target: str | None, routing_key: str | None) -> str:
+    """Exactly one of `target` | `routing_key` names the target for a data tool."""
+    if target and routing_key:
+        raise ValueError("pass either `target` or `routing_key`, not both")
+    if routing_key:
+        return _shard_key(routing_key)
+    return _target_key(target)
 
 
 # --- the name grammar: ONE classifier for every PGPROD_/PGSTG_ key -------------------------
@@ -179,6 +208,9 @@ REASON_DSN = "reserved: PGSTG_DSN is the staging base DSN; prod has one DSN per 
 REASON_EMPTY = "empty value"
 REASON_MULTILINE = "value spans lines — an unbalanced quote swallowed the lines after it"
 REASON_NOT_DSN = "not a valid libpq DSN (looks like a sidecar? name it …_TUNNEL)"
+REASON_BARE_HEX = "a bare hex is not a target name; declare the shard role"
+REASON_SHARD_CONFLICT = pg_prod.REASON_CONFLICT
+SHARD_SUFFIX = pg_prod.SHARD_SUFFIX
 
 
 def _classify(
@@ -218,13 +250,34 @@ def _classify(
         return None, None, None  # the base DSN, never a target
     if prefix == STAGING_PREFIX and suffix.startswith("DB_"):
         name, check_dsn = suffix[3:], False  # a database name on the base DSN
+        if name.startswith(pg_prod.TOKEN):  # a shard database is the pattern, never a mapping
+            return None, pg_prod.REASON_SHARD, pg_staging.DB_SHARD_FMT_VAR
     else:
         name = suffix
     if name == "DSN":
         return None, REASON_DSN, None
+    if prefix == ENV_PREFIX and suffix.endswith(SHARD_SUFFIX):
+        # `PGPROD_<NAME>_SHARD=<hex>` declares the shard role of PGPROD_<NAME> — a sidecar, so
+        # never a target; refused on a name that already carries SHARD_<hex>.
+        base = var[: -len(SHARD_SUFFIX)]
+        if pg_prod.name_hex(base) != (None, None):
+            return None, pg_prod.REASON_SHARD_SIDECAR_REFUSED, None
+        if value is None:
+            return None, None, None
+        return None, pg_prod.shard_value(value)[1], None
+    if prefix == ENV_PREFIX and len(name) == 1 and name.lower() in pg_prod.HEX:
+        return None, REASON_BARE_HEX, pg_prod.default_var(name)
     if not name or not name[0].isalpha():
         return None, REASON_UPPER, _closest(prefix, var)
     key = name.lower()
+    if prefix == ENV_PREFIX:
+        hex_, bad = pg_prod.name_hex(var)
+        if bad:
+            return None, bad, None
+        if hex_ is None:  # no token: a sidecar may still declare the role
+            hex_ = pg_prod.shard_value(env.get(var + SHARD_SUFFIX))[0] if env.get(var + SHARD_SUFFIX) else None
+        if hex_:
+            key = SHARD_KEY_PREFIX + hex_
 
     if value is not None:
         if value == "":
@@ -253,7 +306,7 @@ def _prefix(env: str) -> str:
 
 
 def _kind(key: str) -> str:
-    return "named"
+    return "shard" if key.startswith(SHARD_KEY_PREFIX) else "named"
 
 
 def _configured_targets(env: str) -> list[str]:
@@ -263,7 +316,10 @@ def _configured_targets(env: str) -> list[str]:
     `PGSTG_DSN` set, ANY staging name resolves, so the list is what was named, not what is
     reachable."""
     prefix = _prefix(env)
-    return sorted({key for var, val in os.environ.items() if (key := _classify(prefix, var, val)[0])})
+    keys = {key for var, val in os.environ.items() if (key := _classify(prefix, var, val)[0])}
+    if env == ENV_PROD:  # a shard two vars claim is unconfigured (fails closed); list_targets shows why
+        keys -= {SHARD_KEY_PREFIX + h for h in _shard_conflicts()}
+    return sorted(keys)
 
 
 def _unrecognized() -> list[dict]:
@@ -274,11 +330,22 @@ def _unrecognized() -> list[dict]:
             _, reason, dym = _classify(_prefix(env), var, value)
             if reason:
                 out.append({"env": env, "var": var, "reason": reason, "did_you_mean": dym})
+    for hex_, vars_ in sorted(_shard_conflicts().items()):
+        for var in vars_:
+            out.append({"env": ENV_PROD, "var": var,
+                        "reason": REASON_SHARD_CONFLICT.format(hex=hex_, vars=" + ".join(vars_)), "did_you_mean": None})
     return out
+
+
+def _shard_conflicts(env: Mapping[str, str] | None = None) -> dict[str, list[str]]:
+    """hex -> the vars claiming it, for every hex more than one var claims (fails closed)."""
+    claims = pg_prod.shard_claims(os.environ if env is None else env)
+    return {h: v for h, v in claims.items() if len(v) > 1}
 
 
 REASON_SHADOWED = "set in the file but the process env overrides it (override=False)"
 REASON_ORPHAN = "orphan sidecar: no {base} DSN"
+REASON_SIDECAR_OF_SIDECAR = "a _TUNNEL belongs on the DSN var, not on its _SHARD sidecar"
 
 
 def _file_key_report(path: Path) -> list[tuple[str, str]]:
@@ -287,6 +354,8 @@ def _file_key_report(path: Path) -> list[tuple[str, str]]:
     Reads key NAMES and classifies values in-process; a line carries only the var name, the
     target key/kind and a FIXED reason — never a value. `status` is 'ok' | 'WARN' | 'FAIL'."""
     values = {k: v or "" for k, v in dotenv_values(path).items()}
+    conflicts = _shard_conflicts(values)
+    conflict = {v: h for h, vs in conflicts.items() for v in vs}
     out: list[tuple[str, str]] = []
     for var, val in values.items():
         prefix = next((p for p in (ENV_PREFIX, STAGING_PREFIX) if var.upper().startswith(p)), None)
@@ -294,7 +363,9 @@ def _file_key_report(path: Path) -> list[tuple[str, str]]:
             continue
         if var.upper().endswith(TUNNEL_SUFFIX):
             base = var[: -len(TUNNEL_SUFFIX)]
-            if prefix == ENV_PREFIX and not (values.get(base) or os.environ.get(base)):
+            if prefix == ENV_PREFIX and base.endswith(SHARD_SUFFIX):
+                out.append(("FAIL", f"{var} — {REASON_SIDECAR_OF_SIDECAR}"))
+            elif prefix == ENV_PREFIX and not (values.get(base) or os.environ.get(base)):
                 out.append(("WARN", f"{var} — {REASON_ORPHAN.format(base=base)}"))
             else:
                 out.append(("ok", f"{var} -> sidecar of {base}"))
@@ -302,8 +373,16 @@ def _file_key_report(path: Path) -> list[tuple[str, str]]:
         key, reason, dym = _classify(prefix, var, val, env=values)
         if reason:
             out.append(("FAIL", f"{var} — {reason}" + (f"; did you mean {dym}?" if dym else "")))
+        elif var in conflict:
+            out.append(("FAIL", f"{var} — {REASON_SHARD_CONFLICT.format(hex=conflict[var], vars=' + '.join(conflicts[conflict[var]]))}"))
         elif var in os.environ and os.environ[var] != val:
             out.append(("FAIL", f"{var} — {REASON_SHADOWED}"))
+        elif prefix == ENV_PREFIX and var.endswith(SHARD_SUFFIX):
+            base = var[: -len(SHARD_SUFFIX)]
+            if not (values.get(base) or os.environ.get(base)):
+                out.append(("WARN", f"{var} — {REASON_ORPHAN.format(base=base)}"))
+            else:
+                out.append(("ok", f"{var} -> declares shard role of {base}"))
         elif key is None:
             out.append(("ok", f"{var} -> staging base DSN"))
         else:
@@ -315,7 +394,10 @@ def _configured(env: str, key: str) -> bool:
     """Whether a target has credentials here. Booleans only — never a DSN."""
     if env == ENV_STAGING:
         return pg_staging.configured(key)
-    return bool(os.environ.get(_env_var(key)))
+    try:
+        return bool(os.environ.get(_env_var(key)))
+    except ValueError:  # a shard two vars claim reads unconfigured — fails closed
+        return False
 
 
 def _dsn(env: str, key: str) -> str:
@@ -438,7 +520,7 @@ def _tunnel_var(env: str, key: str) -> str:
     """
     if env == ENV_STAGING:
         return pg_staging.TARGET_PREFIX + pg_staging._suffix(key) + TUNNEL_SUFFIX
-    return ENV_PREFIX + re.sub(r"[^A-Z0-9]+", "_", key.strip().upper()) + TUNNEL_SUFFIX
+    return _env_var(key) + TUNNEL_SUFFIX
 
 
 def _tunnel_spec(env: str, key: str) -> gcloud_tunnel.TunnelSpec | None:
@@ -666,9 +748,11 @@ def list_targets() -> dict:
         pool_keys = set(_pools)
         tunnel_snapshot = {pk: (t.spec, gcloud_tunnel.is_alive(t)) for pk, t in _tunnels.items()}
     envs = {}
+    conflicts = _shard_conflicts()
     for env in ENVS:
         names = sorted(
             set(_configured_targets(env))
+            | ({SHARD_KEY_PREFIX + h for h in conflicts} if env == ENV_PROD else set())
             | {pk.split(":", 1)[1] for pk in pool_keys if pk.startswith(f"{env}:")}
         )
         entries = []
@@ -679,12 +763,13 @@ def list_targets() -> dict:
                 "kind": _kind(key),
                 "configured": _configured(env, key),
                 "pool_open": pk in pool_keys,
-                **(
-                    {"database": pg_staging.dbname(key)}
-                    if env == ENV_STAGING
-                    else {"env_var": _env_var(key)}
-                ),
             }
+            if env == ENV_STAGING:
+                entry["database"] = pg_staging.dbname(key)
+            elif key[len(SHARD_KEY_PREFIX):] in conflicts and _kind(key) == "shard":
+                entry["conflict"] = conflicts[key[len(SHARD_KEY_PREFIX):]]  # fails closed: no env_var
+            else:
+                entry["env_var"] = _env_var(key)
             # Tunnel sidecar fields — display only; never a DSN
             try:
                 spec = _tunnel_spec(env, key)
@@ -713,12 +798,29 @@ def list_targets() -> dict:
 
 
 @mcp.tool()
-def list_schemas(env: str | None = None, target: str | None = None) -> dict:
+def resolve_shard(routing_key: str) -> dict:
+    """Which declared shard a routing key maps to: shard = its FIRST character (hex 0-f). Pure
+    lookup, no DB access. Only meaningful when targets declare shard roles (see
+    `scripts/db/README.md`, "Shards"); a first character outside 0-f is refused, never guessed."""
+    key = _shard_key(routing_key)
+    hex_ = key[len(SHARD_KEY_PREFIX):]
+    try:
+        env_var: str | None = pg_prod.shard_var(hex_)
+        conflict: list[str] = []
+    except ValueError:
+        env_var, conflict = None, _shard_conflicts().get(hex_, [])
+    return _jsonable({"routing_key": routing_key, "shard": hex_, "target": key, "env_var": env_var,
+                      **({"conflict": conflict} if conflict else {}),
+                      "configured": _configured(ENV_PROD, key)})
+
+
+@mcp.tool()
+def list_schemas(env: str | None = None, target: str | None = None, routing_key: str | None = None) -> dict:
     """List user schemas on a target (excludes pg_* and information_schema).
     Provide `env` ('staging' | 'prod') and `target` — a configured target name (see
-    list_targets)."""
+    list_targets) — or `routing_key` (a key whose first character is the shard hex)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     cols, rows = _query(
         e,
         key,
@@ -735,11 +837,12 @@ def list_objects(
     target: str | None = None,
     schema: str = "public",
     object_type: str | None = None,
+    routing_key: str | None = None,
 ) -> dict:
     """List tables/views in a schema on a target. `object_type` optionally filters to
-    'table' or 'view'. Provide `env` and `target`."""
+    'table' or 'view'. Provide `env` and `target` (or `routing_key`)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     sql = (
         "SELECT table_schema, table_name, table_type FROM information_schema.tables "
         "WHERE table_schema = %s"
@@ -760,11 +863,12 @@ def get_object_details(
     env: str | None = None,
     target: str | None = None,
     schema: str = "public",
+    routing_key: str | None = None,
 ) -> dict:
     """Describe a table/view: its columns (name, type, nullability, default) and indexes.
-    Provide `env` and `target`."""
+    Provide `env` and `target` (or `routing_key`)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     _, columns = _query(
         e,
         key,
@@ -791,13 +895,14 @@ def explain_query(
     env: str | None = None,
     target: str | None = None,
     analyze: bool = False,
+    routing_key: str | None = None,
 ) -> dict:
     """Return the query plan for a read-only query. `analyze=False` (default) plans without
     running it; `analyze=True` runs EXPLAIN (ANALYZE, BUFFERS) — note that actually EXECUTES
     the query against the target, so leave it off unless you need real timings. Provide `env`
-    and `target`."""
+    and `target` (or `routing_key`)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     body = _assert_read_only(sql)
     prefix = "EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT TEXT) " if analyze else "EXPLAIN (VERBOSE, FORMAT TEXT) "
     cols, rows = _query(e, key, prefix + body)
@@ -812,11 +917,13 @@ def execute_sql(
     target: str | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    routing_key: str | None = None,
 ) -> dict:
     """Run a READ-ONLY query against one target, paginated.
 
-    Provide `env` ('staging' | 'prod' — required, never defaulted) and `target` — a configured
-    target name (see list_targets). Only SELECT/WITH/TABLE/VALUES, one statement. Results are
+    Provide `env` ('staging' | 'prod' — required, never defaulted) and exactly one of `target`
+    — a configured target name (see list_targets) — or `routing_key` (shard = its first
+    character, see resolve_shard). Only SELECT/WITH/TABLE/VALUES, one statement. Results are
     paged at `page_size` (max 200) rows; `page` is 1-based. Include an ORDER BY so pages are
     stable — OFFSET paging over an unordered query can repeat or skip rows between pages.
     `has_more` in the result tells you whether to fetch the next page.
@@ -825,7 +932,7 @@ def execute_sql(
     redaction: true for prod, false for staging (staging is not the production boundary).
     """
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     body = _assert_read_only(sql)
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), MAX_PAGE_SIZE))
@@ -1005,6 +1112,13 @@ def _selftest() -> int:
             failures += 1
         print(f"  {'ok  ' if cond else 'FAIL'} {label}{(' — ' + detail) if detail else ''}")
 
+    def _raises(fn, needle: str) -> bool:
+        try:
+            fn()
+        except ValueError as exc:
+            return needle in str(exc)
+        return False
+
     # --- classifier: the one name grammar (synthetic names + values, never the real file) ---
     print("classifier:")
     _dsn_ok = "postgresql://ro:pw@h:5432/db"
@@ -1015,6 +1129,23 @@ def _selftest() -> int:
     check("PGPROD_REPORTING -> reporting", cls("PGPROD_REPORTING") == ("reporting", None, None))
     check("PGPROD_HOST1_RO -> host1_ro", cls("PGPROD_HOST1_RO") == ("host1_ro", None, None))
     check("A5 PGPROD_ZZ_TUNNEL is not a target", cls("PGPROD_ZZ_TUNNEL") == (None, None, None))
+    # shard role — opt-in, by declaration only
+    check("PGPROD_HOST1_SHARD_0 -> shard_0 (token)", cls("PGPROD_HOST1_SHARD_0") == ("shard_0", None, None))
+    check("PGPROD_SHARD_F -> shard_f (bare token)", cls("PGPROD_SHARD_F") == ("shard_f", None, None))
+    check("PGPROD_X_SHARD_00 refused (token grammar)", cls("PGPROD_X_SHARD_00")[1] == pg_prod.REASON_SHARD_TOKEN)
+    check("PGPROD_0 refused: bare hex, advise a declared name",
+          cls("PGPROD_0") == (None, REASON_BARE_HEX, "PGPROD_SHARD_0"))
+    check("sidecar declares the role of a named var",
+          _classify(ENV_PREFIX, "PGPROD_HOST1", _dsn_ok, env={"PGPROD_HOST1_SHARD": "a"}) == ("shard_a", None, None))
+    check("_SHARD sidecar is never a target", _classify(ENV_PREFIX, "PGPROD_HOST1_SHARD", "a") == (None, None, None))
+    check("_SHARD sidecar with a list value refused", cls("PGPROD_HOST1_SHARD", "0,1")[1] == pg_prod.REASON_LIST)
+    check("_SHARD sidecar on a token name refused",
+          cls("PGPROD_HOST1_SHARD_0_SHARD", "0")[1] == pg_prod.REASON_SHARD_SIDECAR_REFUSED)
+    check("target 'a' -> shard_a", _target_key("A") == "shard_a")
+    check("target 'main' stays named", _target_key("main") == "main")
+    check("routing_key resolves by first char", _key_from(None, "0abc-def") == "shard_0")
+    check("routing_key outside 0-f refused", _raises(lambda: _key_from(None, "zzz"), "routing_key"))
+    check("target + routing_key refused", _raises(lambda: _key_from("main", "0abc"), "not both"))
     check("PGPROD_DSN reserved", cls("PGPROD_DSN")[1] == REASON_DSN)
     check("PGPROD_1X refused: name starts with a letter", cls("PGPROD_1X")[1] == REASON_UPPER)
     check("PGPROD_A__B refused: single underscores", cls("PGPROD_A__B")[1] == REASON_UPPER)
@@ -1034,6 +1165,8 @@ def _selftest() -> int:
     check("PGSTG_DB_REPORTING empty", stg("PGSTG_DB_REPORTING", "")[1] == REASON_EMPTY)
     check("PGSTG_REPORTING sidecar-shaped value refused", stg("PGSTG_REPORTING", "tunnel=gost;local=1")[1] == REASON_NOT_DSN)
     check("PGSTG_MAIN_TUNNEL is a sidecar", stg("PGSTG_MAIN_TUNNEL") == (None, None, None))
+    check("PGSTG_DB_SHARD_X refused; advise the pattern var",
+          stg("PGSTG_DB_SHARD_X", "shard_x") == (None, pg_prod.REASON_SHARD, pg_staging.DB_SHARD_FMT_VAR))
 
     # --- discovery: synthetic prod + staging vars, set and restored in-process --------------
     print("discovery:")
@@ -1052,7 +1185,24 @@ def _selftest() -> int:
         entry = next((e for e in lt["envs"][ENV_PROD] if e["target"] == "zzq"), None)
         check("list_targets has zzq (named)", entry is not None and entry["kind"] == "named")
         check("list_targets.unrecognized names PGPROD_zzbad", "PGPROD_zzbad" in {u["var"] for u in lt["unrecognized"]})
+        # shard role: a token name declares shard_0; a second claimant fails it closed
+        os.environ["PGPROD_ZZH_SHARD_0"] = _dsn_ok
+        check("token var discovered as shard_0", "shard_0" in _configured_targets(ENV_PROD))
+        check("shard_0 resolves to the token var", _env_var("shard_0") == "PGPROD_ZZH_SHARD_0")
+        entry = next((e for e in list_targets()["envs"][ENV_PROD] if e["target"] == "shard_0"), None)
+        check("list_targets has shard_0 (shard)", entry is not None and entry["kind"] == "shard")
+        os.environ["PGPROD_ZZI"] = _dsn_ok
+        os.environ["PGPROD_ZZI_SHARD"] = "0"
+        check("conflicted shard_0 is not configured",
+              "shard_0" not in _configured_targets(ENV_PROD) and _configured(ENV_PROD, "shard_0") is False)
+        entry = next((e for e in list_targets()["envs"][ENV_PROD] if e["target"] == "shard_0"), None)
+        check("list_targets names both claimants",
+              entry is not None and set(entry.get("conflict", [])) == {"PGPROD_ZZH_SHARD_0", "PGPROD_ZZI"})
+        check("unrecognized names both claimants",
+              {"PGPROD_ZZH_SHARD_0", "PGPROD_ZZI"} <= {u["var"] for u in _unrecognized()})
     finally:
+        for k in ("PGPROD_ZZH_SHARD_0", "PGPROD_ZZI", "PGPROD_ZZI_SHARD"):
+            os.environ.pop(k, None)
         for k, v in saved_syn.items():
             if v is None:
                 os.environ.pop(k, None)
@@ -1076,6 +1226,11 @@ def _selftest() -> int:
         "PGSTG_ZZQ=postgresql://ro:pw@h/db5\n"
         'PGPROD_ZZD="postgresql://ro:pw@h/db6\n'
         'PGPROD_ZZE=postgresql://ro:pw@h/db7"\n'
+        "PGPROD_ZZF_SHARD_1=postgresql://ro:pw@h/db9\n"
+        "PGPROD_ZZG=postgresql://ro:pw@h/db10\n"
+        "PGPROD_ZZG_SHARD=2\n"
+        "PGPROD_ZZG_SHARD_TUNNEL=tunnel=gost;local=65444\n"
+        "PGPROD_ZZORPHAN2_SHARD=3\n"
     )
     saved_shadow = os.environ.pop("PGPROD_ZZSHADOW", None)
     os.environ["PGPROD_ZZSHADOW"] = "postgresql://ro:other@h/db8"
@@ -1099,8 +1254,13 @@ def _selftest() -> int:
         check("fixture: PGSTG_ZZQ ok (named)", rep["PGSTG_ZZQ"] == ("ok", "PGSTG_ZZQ -> target zzq (named)"))
         check("fixture: unbalanced quote swallows the next line",
               rep["PGPROD_ZZD"][0] == "FAIL" and REASON_MULTILINE in rep["PGPROD_ZZD"][1] and "PGPROD_ZZE" not in rep)
+        check("fixture: token var -> shard_1", rep["PGPROD_ZZF_SHARD_1"] == ("ok", "PGPROD_ZZF_SHARD_1 -> target shard_1 (shard)"))
+        check("fixture: sidecar-declared -> shard_2", rep["PGPROD_ZZG"] == ("ok", "PGPROD_ZZG -> target shard_2 (shard)"))
+        check("fixture: _SHARD sidecar line", rep["PGPROD_ZZG_SHARD"] == ("ok", "PGPROD_ZZG_SHARD -> declares shard role of PGPROD_ZZG"))
+        check("fixture: sidecar of a sidecar fails", rep["PGPROD_ZZG_SHARD_TUNNEL"][0] == "FAIL")
+        check("fixture: orphan _SHARD warns", rep["PGPROD_ZZORPHAN2_SHARD"][0] == "WARN")
         check("fixture: no value ever surfaces",
-              all(s not in joined for s in ("pw", "other", "db1", "db8", "65441", "65442", "65443", "zzw_db")))
+              all(s not in joined for s in ("pw", "other", "db1", "db8", "db9", "db10", "65441", "65442", "65443", "65444", "zzw_db")))
     finally:
         os.unlink(fh.name)
         if saved_shadow is None:
