@@ -96,7 +96,8 @@ limitation `pg_staging.RESERVED` already documents for the name `dsn`.
 The framework refuses to adopt a tunnel it did not open (ADR 0005 principle: credentials being
 present is not permission — this extends to reachability). If `127.0.0.1:<local_port>` is
 already listening, `gcloud_tunnel.open_tunnel` raises immediately, naming
-`scripts/db/tunnel.sh status|kill` as the human remedy.
+`scripts/db/tunnel.sh status|kill` as the human remedy. (Narrowed for `tunnel=gost` by the
+adoption addendum below: an identified gost is adopted for connecting, never for killing.)
 
 The `--selftest` guards two additional invariants: local ports must be unique across all
 configured specs (two specs sharing a port would race), and no spec may use port 5432 (the
@@ -112,3 +113,73 @@ data-integrity hazard).
   `.claude/hooks/` SessionEnd generalisation is deferred (see plan §6). Manual remedy:
   `scripts/db/tunnel.sh kill`.
 - No new key in `workspace.config*.yaml`; no new Python dependency in either MCP.
+
+## Addendum — `tunnel=gost` (SOCKS proxy, one shared process)
+
+Some fleets reach production Postgres only through a local SOCKS5 proxy, `gost -C gost.yaml`.
+The sidecar gained a second kind, `tunnel=gost;local=<port>`, declared beside the DSN exactly
+like `gcloud`. The path to that config is operator configuration — `PG_TRIAGE_GOST_CONFIG` in
+`scripts/db/.env` (absolute, or relative to the workspace root) — never a path baked into the
+framework.
+
+- **What the sidecar carries.** Only `local` — the `gost.yaml` service port that serves the
+  target. Hosts stay in `gost.yaml`; `host`/`port`/`vm`/`zone`/`project`/`iap` are rejected for
+  gost so the same fact never lives in two files.
+- **One process, many holders.** gost binds every service port at once, so the MCP runs ONE
+  `gost -C <PG_TRIAGE_GOST_CONFIG>` (fixed argv, no tool input reaches it; cwd = that file's
+  directory) and every gost target holds a `Tunnel` on that shared process. The per-target
+  lifecycle (lazy open, idle reap, `disconnect`, `_close_all`) is unchanged; gost itself is
+  terminated only when the LAST holder closes, and a stale holder from a crashed generation
+  never kills a newer process.
+- **Port rule refined.** gcloud ports unique; gost ports may repeat (two targets per host) but
+  must not overlap gcloud ports; nothing on 5432. No adoption (superseded for an identified
+  gost — see the adoption addendum below): any `gost.yaml` port already listening refuses the
+  spawn and names `scripts/db/tunnel.sh status|kill`.
+- **Preflight is loud.** `gost` missing from `PATH` prints a `!!!` banner with `brew install gost`
+  and the README section; `PG_TRIAGE_GOST_CONFIG` unset or naming a missing file, `socks.auth`
+  missing beside it (existence only — never opened) and an undeclared `local` port are reported
+  the same way, in `--selftest`, `--verify` and at runtime. A prod target with no sidecar gets a
+  non-failing `WARN` (hard enforcement deferred).
+- **Why generalise `gcloud_tunnel.py` rather than a sibling module.** Every MCP call site speaks
+  only `open_tunnel` / `close_tunnel` / `is_alive` on a per-target `Tunnel`; dispatching on
+  `spec.kind` inside those keeps the MCP diff to one condition plus display, and the module name
+  is already cited here and in `tunnel.sh`.
+
+## Addendum — an identified gost is adopted for connecting, never for killing
+
+**Context.** "Port safety" refuses any tunnel the framework did not open, and the gost addendum
+applied that to every `gost.yaml` port. But the setup guide tells a person to run gost by hand
+(for a GUI client or `psql`) and to leave it running. With that process up, every gost target
+refused, so a person had to choose between their own manual access and the MCP. The refusal
+protected against two things: a listener that "may point somewhere else entirely", and the MCP
+later stopping a process it does not own. Only the second needs an absolute rule.
+
+**Decision.** For `tunnel=gost` only, a running gost is ADOPTED — used, never started or stopped
+— when the process table proves it is the gost for this config: ONE process listens on
+127.0.0.1 on EVERY declared port, its command is `gost`, it runs as this user, its `-C` argument
+resolves (against its own cwd) to the file `PG_TRIAGE_GOST_CONFIG` names, it started after that
+file last changed, and it is not an orphan of an earlier MCP session (ppid 1 with the MCP's own
+absolute argv). The check reads `lsof`/`ps` only: nothing is sent to the ports, because a connect
+to gost dials prod upstream. Any failed condition refuses exactly as before, naming the failed
+condition and `scripts/db/tunnel.sh status|kill`. `tunnel=gcloud` is unchanged — it has no
+config the process could be checked against.
+
+**Never for killing.** An adopted `Tunnel` holds no process handle (`proc=None`, `adopted_pid` set)
+and never joins the shared-gost holder count; `close_tunnel` returns on it before touching any
+process. Every MCP teardown path — `disconnect`, the idle reaper, `_close_all` at exit or signal,
+the dead-tunnel branch — goes through `close_tunnel`, so none of them can stop it; the selftest
+proves it for each live path. Releasing an adopted target drops only the MCP's pool. Liveness is a
+signal-0 existence probe of the pid, never a connect.
+
+**Visibility.** `tunnel_status` reports `owner: self | adopted` with the real pid and a `teardown`
+sentence; `disconnect` lists adopted targets under `adopted_left_running`; `tunnel.sh status` labels
+each gost `MCP-owned | MCP orphan | manual | detached manual`, and `tunnel.sh kill` spares a manual
+one.
+
+**What is not proven.** Process identity is not far-end identity: gost's `tcp` handler accepts before
+it dials, so neither an adopted nor a self-spawned gost proves the SOCKS path or the database behind
+it. That proof is the DSN's own `sslmode=verify-full`. No protocol probe was added — psycopg's first
+connect already is one.
+
+**Supersedes.** "Port safety" and the gost addendum's "No adoption" bullet, for an identified gost
+only. Everything else they say stands.

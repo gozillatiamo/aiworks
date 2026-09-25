@@ -120,7 +120,7 @@ WATCHDOG_TICK_S = 10        # how often the watchdog checks
 TUNNEL_READY_TIMEOUT_S = 45 # how long to wait for the port-forward to answer
 
 _pools: dict[str, ConnectionPool] = {}
-_tunnels: dict[str, gcloud_tunnel.Tunnel] = {}  # keyed by pool key (env:target)
+_tunnels: dict[str, gcloud_tunnel.Tunnel] = {}  # keyed by pool key (env:target); gost targets share one proc
 _lock = threading.RLock()   # guards both _pools and _tunnels
 _watchdog: threading.Thread | None = None
 
@@ -249,19 +249,24 @@ def _reap_idle() -> None:
     """Watchdog: reap pools and tunnels that have been idle past IDLE_TIMEOUT_S."""
     while True:
         time.sleep(WATCHDOG_TICK_S)
-        now = time.time()
-        with _lock:
-            for pk, tun in list(_tunnels.items()):
-                dead = not gcloud_tunnel.is_alive(tun)
-                if dead or (now - tun.last_used > IDLE_TIMEOUT_S):
-                    pool = _pools.pop(pk, None)
-                    if pool is not None:
-                        try:
-                            pool.close()
-                        except Exception:
-                            pass
-                    gcloud_tunnel.close_tunnel(tun)
-                    _tunnels.pop(pk, None)
+        _reap_once(time.time())
+
+
+def _reap_once(now: float) -> None:
+    """One watchdog tick. Every teardown goes through close_tunnel, which leaves an adopted
+    gost running — reaping it drops only the MCP's pool."""
+    with _lock:
+        for pk, tun in list(_tunnels.items()):
+            dead = not gcloud_tunnel.is_alive(tun)
+            if dead or (now - tun.last_used > IDLE_TIMEOUT_S):
+                pool = _pools.pop(pk, None)
+                if pool is not None:
+                    try:
+                        pool.close()
+                    except Exception:
+                        pass
+                gcloud_tunnel.close_tunnel(tun)
+                _tunnels.pop(pk, None)
 
 
 def _pool(env: str, key: str) -> ConnectionPool:
@@ -295,7 +300,7 @@ def _pool(env: str, key: str) -> ConnectionPool:
         conninfo = _dsn(env, key)
         spec = _tunnel_spec(env, key)
 
-        if spec is not None and spec.kind == "gcloud":
+        if spec is not None and spec.kind != "none":  # gcloud, or the shared gost forwarder
             _start_watchdog()
             tun = gcloud_tunnel.open_tunnel(spec)  # blocks up to TUNNEL_READY_TIMEOUT_S
             _tunnels[pk] = tun
@@ -595,10 +600,12 @@ def disconnect(env: str | None = None) -> dict:
     """Close open connection pools and any tunnel sidecars — the teardown for a triage job.
     Closes BOTH environments by default; pass `env` to close just one. Leaves zero open
     connections and zero tunnels; the MCP process stays up but idle. Always call this when
-    the investigation is done."""
+    the investigation is done. An adopted gost (started outside the MCP) is left running and
+    reported under `adopted_left_running` — only the MCP's hold on it is released."""
     only = _resolve_env(env) if env else None
     closed_pools: list[str] = []
     closed_tunnels: list[str] = []
+    adopted: list[dict] = []
     with _lock:
         # Close pools BEFORE tunnels — killing the forward under an open pool leaves psycopg
         # handing out sockets to nothing.
@@ -613,25 +620,31 @@ def disconnect(env: str | None = None) -> dict:
         for pk in list(_tunnels):
             if only and not pk.startswith(f"{only}:"):
                 continue
-            gcloud_tunnel.close_tunnel(_tunnels.pop(pk))
+            tun = _tunnels.pop(pk)
+            gcloud_tunnel.close_tunnel(tun)
             closed_tunnels.append(pk)
+            if tun.adopted_pid is not None:
+                adopted.append({"pool_key": pk, "pid": tun.adopted_pid})
     return {
         "closed": closed_pools,
         "tunnels_closed": closed_tunnels,
+        "adopted_left_running": adopted,
         "open_pools": list(_pools),
     }
 
 
 @mcp.tool()
 def tunnel_status() -> dict:
-    """Report open tunnel sidecars: pid, up_seconds, idle_seconds, time-to-reap, and the local
-    port forward. Touches no database — reads only in-process tunnel state."""
+    """Report open tunnel sidecars: owner (self | adopted), pid, up_seconds, idle_seconds,
+    time-to-reap, and the local port forward. Touches no database — reads only in-process
+    tunnel state. An adopted gost is never stopped by the MCP; `teardown` says so."""
     now = time.time()
     with _lock:
         entries = []
         for pk, tun in _tunnels.items():
             env, _, target = pk.partition(":")
             idle_s = now - tun.last_used
+            adopted = tun.adopted_pid is not None
             entries.append(
                 _jsonable(
                     {
@@ -639,12 +652,25 @@ def tunnel_status() -> dict:
                         "env": env,
                         "target": target,
                         "kind": tun.spec.kind,
+                        "owner": "adopted" if adopted else "self",
+                        "teardown": (
+                            "never stopped by the MCP — started outside it; disconnect or idle "
+                            "only drops the MCP's connection. Stop it yourself (Ctrl-C in its terminal)."
+                            if adopted else
+                            f"released on disconnect or after {IDLE_TIMEOUT_S} s idle; "
+                            "the shared gost stops with its last holder"
+                        ),
+                        "shared": tun.spec.kind == "gost",
                         "forward": (
-                            f"127.0.0.1:{tun.spec.local_port}"
-                            f" -> {tun.spec.host}:{tun.spec.port}"
+                            f"127.0.0.1:{tun.spec.local_port} -> "
+                            + (
+                                "gost (PG_TRIAGE_GOST_CONFIG)"
+                                if tun.spec.kind == "gost"
+                                else f"{tun.spec.host}:{tun.spec.port}"
+                            )
                         ),
                         "tunnel_open": gcloud_tunnel.is_alive(tun),
-                        "pid": tun.proc.pid if tun.proc is not None else None,
+                        "pid": tun.proc.pid if tun.proc is not None else tun.adopted_pid,
                         "up_seconds": round(now - tun.opened_at, 1),
                         "idle_seconds": round(idle_s, 1),
                         "reaped_in_seconds": max(0.0, round(IDLE_TIMEOUT_S - idle_s, 1)),
@@ -798,41 +824,124 @@ def _selftest() -> int:
     prod_allowed, _ = triage_policy.resolve("prod")
     if not prod_allowed:
         test_pk = _pool_key(ENV_PROD, "_selftest_gate")
-        try:
-            # Temporarily inject a fake prod target + tunnel sidecar
-            os.environ[ENV_PREFIX + "_SELFTEST_GATE"] = "postgresql://ro:pw@fake:5432/db"
-            os.environ[ENV_PREFIX + "_SELFTEST_GATE_TUNNEL"] = (
-                "tunnel=gcloud;host=fake-db;local=15503;vm=fake-vm"
-            )
-            _pool(ENV_PROD, "_selftest_gate")
-            check("A9 prod gate before tunnel spawn", False, "PermissionError not raised")
-        except PermissionError:
-            check("A9 prod gate before tunnel spawn", True)
-            # Verify no tunnel was opened
-            with _lock:
-                check("A9 no tunnel spawned before gate", test_pk not in _tunnels)
-        finally:
-            os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE", None)
-            os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE_TUNNEL", None)
+        for sidecar in (
+            "tunnel=gcloud;host=fake-db;local=15503;vm=fake-vm",
+            "tunnel=gost;local=65432",
+        ):
+            kind = sidecar.split(";")[0].split("=")[1]
+            try:
+                # Temporarily inject a fake prod target + tunnel sidecar
+                os.environ[ENV_PREFIX + "_SELFTEST_GATE"] = "postgresql://ro:pw@fake:5432/db"
+                os.environ[ENV_PREFIX + "_SELFTEST_GATE_TUNNEL"] = sidecar
+                _pool(ENV_PROD, "_selftest_gate")
+                check(f"A9 prod gate before {kind} spawn", False, "PermissionError not raised")
+            except PermissionError:
+                check(f"A9 prod gate before {kind} spawn", True)
+                # Verify no tunnel was opened
+                with _lock:
+                    check(f"A9 no {kind} tunnel spawned before gate", test_pk not in _tunnels)
+                if kind == "gost":
+                    check("A9 no shared gost spawned before gate", not gcloud_tunnel.gost_running())
+            finally:
+                os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE", None)
+                os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE_TUNNEL", None)
     else:
         print("  skip A9 — triage.prod is on; a human verifies this case with prod gated off")
 
-    # Port uniqueness across all configured targets
+    # Adopted gost is never stopped: every MCP teardown path against a live stand-in process.
+    # Hermetic — a `sleep` plays the person's gost; no gost, no DB.
+    import subprocess as _sp
+    _adopt_pk = _pool_key(ENV_PROD, "_selftest_adopt")
+    _adopt_spec = gcloud_tunnel.parse_spec("PGPROD_SELFTEST_ADOPT_TUNNEL", "tunnel=gost;local=65432")
+    _sleeper = _sp.Popen(["sleep", "60"])
+    _victim = _sp.Popen(["sleep", "60"])  # a self-owned tunnel the reaper MUST kill (contrast)
+
+    def _adopted(last_used: float) -> gcloud_tunnel.Tunnel:
+        return gcloud_tunnel.Tunnel(spec=_adopt_spec, proc=None, log_path=None, opened_at=time.time(),
+                                    last_used=last_used, adopted_pid=_sleeper.pid)
+    try:
+        with _lock:
+            _tunnels[_adopt_pk] = _adopted(time.time())
+        entry = next(e for e in tunnel_status()["tunnels"] if e["pool_key"] == _adopt_pk)
+        check("adopted: tunnel_status owner=adopted", entry["owner"] == "adopted")
+        check("adopted: tunnel_status pid is the real pid", entry["pid"] == _sleeper.pid)
+        check("adopted: tunnel_status teardown says never stopped", "never stopped" in entry["teardown"])
+
+        closed = disconnect(env=ENV_PROD)
+        check("adopted: disconnect releases the hold", _adopt_pk in closed["tunnels_closed"])
+        check("adopted: disconnect reports adopted_left_running",
+              [e["pool_key"] for e in closed["adopted_left_running"]] == [_adopt_pk])
+        check("adopted: disconnect leaves the process running", _sleeper.poll() is None)
+
+        with _lock:
+            _tunnels[_adopt_pk] = _adopted(0.0)   # idle since the epoch -> reaped on this tick
+            _victim_pk = _pool_key(ENV_PROD, "_selftest_victim")
+            _tunnels[_victim_pk] = gcloud_tunnel.Tunnel(
+                spec=gcloud_tunnel.parse_spec("PGPROD_SELFTEST_VICTIM_TUNNEL",
+                                              "tunnel=gcloud;host=h;local=15599;vm=v"),
+                proc=_victim, log_path=None, opened_at=0.0, last_used=0.0)
+        _reap_once(time.time())
+        with _lock:
+            check("adopted: reaper drops the entry", _adopt_pk not in _tunnels)
+            check("contrast: reaper drops the self-owned entry", _victim_pk not in _tunnels)
+        check("adopted: reaper leaves the process running", _sleeper.poll() is None)
+        check("contrast: reaper DOES stop a self-owned tunnel", _victim.poll() is not None)
+
+        with _lock:
+            _tunnels[_adopt_pk] = _adopted(time.time())
+        _close_all()
+        with _lock:
+            check("adopted: _close_all clears the entry", not _tunnels)
+        check("adopted: _close_all leaves the process running", _sleeper.poll() is None)
+    finally:
+        with _lock:
+            _tunnels.pop(_adopt_pk, None)
+        for p in (_sleeper, _victim):
+            if p.poll() is None:
+                p.kill()
+            p.wait()
+
+    # Port invariants across all configured targets: gcloud ports unique; gost ports may repeat
+    # (two shards per host) but must not overlap gcloud ports; nothing on 5432.
     all_specs: list[tuple[str, str, gcloud_tunnel.TunnelSpec]] = []
+    direct_prod: list[str] = []
     for env in ENVS:
         for key in _configured_targets(env):
             try:
                 spec = _tunnel_spec(env, key)
             except ValueError:
                 continue
-            if spec is not None and spec.kind == "gcloud":
-                all_specs.append((env, key, spec))
-    ports = [s.local_port for _, _, s in all_specs]
-    check("local ports are unique across all specs", len(ports) == len(set(ports)),
+            if spec is None or spec.kind == "none":
+                if env == ENV_PROD:
+                    direct_prod.append(_prod_env_var(key))
+                continue
+            all_specs.append((env, key, spec))
+    gcloud_specs = [s for s in all_specs if s[2].kind == "gcloud"]
+    gost_specs = [s for s in all_specs if s[2].kind == "gost"]
+    ports = [s.local_port for _, _, s in gcloud_specs]
+    check("gcloud local ports are unique", len(ports) == len(set(ports)),
           f"duplicates: {[p for p in ports if ports.count(p) > 1]}")
+    overlap = set(ports) & {s.local_port for _, _, s in gost_specs}
+    check("gcloud ports disjoint from gost ports", not overlap, f"shared: {sorted(overlap)}")
     bad_5432 = [(env, key) for env, key, s in all_specs if s.local_port == 5432]
     check("no spec forwards to 5432 (local dev Postgres)", not bad_5432,
           f"offenders: {bad_5432}")
+
+    # gost preflight (A6): binary, gost.yaml, socks.auth existence, declared port — loud on miss.
+    if gost_specs:
+        problems: list[str] = []
+        for env, key, spec in gost_specs:
+            problems += gcloud_tunnel.gost_preflight(spec)
+        for line in dict.fromkeys(problems):  # dedupe, keep order (banner prints once)
+            print(f"  {line}")
+        check(f"gost preflight ({len(gost_specs)} target(s))", not problems)
+    else:
+        print("  skip gost preflight — no tunnel=gost sidecar configured")
+
+    # Policy: production only through the SOCKS proxy. Advisory for now (not a failure).
+    for var in direct_prod:
+        print(f"  WARN {var} connects directly — policy requires the SOCKS proxy; "
+              f"add {var}_TUNNEL=tunnel=gost;local=<port>")
 
     print("selftest ok" if not failures else f"{failures} tunnel check(s) FAILED")
     return 1 if failures else 0
@@ -867,6 +976,15 @@ def _verify(env: str, target: str) -> int:
     if not _configured(e, key):
         print(f"  FAIL {e} target {key!r} is unconfigured — see --selftest for what is set")
         return 1
+    spec = _tunnel_spec(e, _target_key(target))
+    uses_gost = spec is not None and spec.kind == "gost"
+    if uses_gost:
+        problems = gcloud_tunnel.gost_preflight(spec)
+        if problems:
+            print("  FAIL gost preflight:")
+            for line in problems:
+                print(f"  {line}")
+            return 1
 
     vault_tmp = Path(tempfile.mkdtemp(prefix="pg-triage-verify-vault-"))
     prev_vault = os.environ.get("PII_VAULT_DIR")
@@ -944,8 +1062,15 @@ def _verify(env: str, target: str) -> int:
         else:
             print("  skip prod-gate check — triage.prod is on, so prod is legitimately reachable")
 
-        # 8) teardown
+        # 8) teardown — an adopted gost (a person's own) must SURVIVE disconnect
+        owners = {e["pool_key"]: (e["owner"], e["pid"]) for e in tunnel_status()["tunnels"]}
+        adopted_pids = [pid for owner, pid in owners.values() if owner == "adopted"]
         closed = disconnect()
+        if adopted_pids:
+            check("disconnect leaves the adopted gost running",
+                  all(gcloud_tunnel._pid_exists(p) for p in adopted_pids), str(adopted_pids))
+            check("disconnect reports it under adopted_left_running",
+                  {e["pid"] for e in closed["adopted_left_running"]} == set(adopted_pids))
         check(
             "disconnect leaves zero open pools",
             not closed["open_pools"],
@@ -955,6 +1080,8 @@ def _verify(env: str, target: str) -> int:
             "disconnect result has tunnels_closed key",
             "tunnels_closed" in closed,
         )
+        if uses_gost and not adopted_pids:
+            check("disconnect stops the shared gost", not gcloud_tunnel.gost_running())
     finally:
         if prev_vault is None:
             os.environ.pop("PII_VAULT_DIR", None)

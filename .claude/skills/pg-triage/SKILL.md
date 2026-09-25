@@ -130,7 +130,9 @@ target holds it, resolve it from whatever registry your schema uses before a bli
    hand that off — this skill does not write code or change prod.
 7. **Teardown**: call `disconnect` to close every prod pool **and any open tunnel sidecars**.
    Always do this when the investigation is done — it leaves zero open connections to prod and
-   zero tunnel processes. Call `tunnel_status` afterwards to confirm the local port was released.
+   zero tunnel processes — except an adopted gost (a person's own), which is reported under
+   `adopted_left_running` and left running on purpose. Call `tunnel_status` afterwards to
+   confirm the local port was released.
 
 ## Persisting to a local repro (developer, `/diagnosing-bugs` only)
 Reading prod here is transient and read-only. If a bug needs the *actual* rows reproduced
@@ -146,19 +148,25 @@ the fix off.
 Some targets require a `gcloud compute ssh` port-forward because the Postgres host is inside a
 VPC. These are declared in `scripts/db/.env` as `PGPROD_<NAME>_TUNNEL=...` sidecars. When one
 is configured, the MCP opens and manages the tunnel automatically — you do not need a `gcloud`
-grant.
+grant. Targets may instead ride the shared `gost` SOCKS forwarder (`tunnel=gost` — one process
+for every gost target, stopped when the last one closes); a missing `gost` binary fails loudly
+with `brew install gost` and a pointer to `scripts/db/README.md`.
 
 - **`list_targets`** includes `tunnel_open` per entry when a sidecar is declared.
-- **`tunnel_status`** shows open tunnels, pid, idle time and time-to-reap mid-session.
-- **`disconnect`** closes both pools and tunnels and returns a `tunnels_closed` key.
+- **`tunnel_status`** shows open tunnels, pid, `owner` (`self` | `adopted`), idle time and
+  time-to-reap mid-session.
+- **`disconnect`** closes both pools and tunnels and returns a `tunnels_closed` key, plus
+  `adopted_left_running` for any adopted gost it left untouched.
 
 **Port-in-use failure:** if `127.0.0.1:<local>` is already listening when the MCP tries to
-open a tunnel, the call fails with a clear error naming `scripts/db/tunnel.sh status|kill`.
-This means a previous session's tunnel is orphaned. The remedy is human-only:
+open a tunnel, the call fails with a clear error naming `scripts/db/tunnel.sh status|kill` —
+a listener the MCP could not identify as this `gost.yaml`'s gost (the error names the failed
+condition), or a gcloud port already taken. A gost a person started for themselves is instead
+adopted: used for connecting, never stopped. The remedy for the rest is human-only:
 
 ```bash
-scripts/db/tunnel.sh status     # see what is open
-scripts/db/tunnel.sh kill       # clear orphans
+scripts/db/tunnel.sh status     # see what is open, each gost labelled by owner
+scripts/db/tunnel.sh kill       # clear orphans — a manual gost is spared
 ```
 
 This script is not granted to agents. See `docs/adr/0017`.
