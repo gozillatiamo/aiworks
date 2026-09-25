@@ -35,9 +35,35 @@ addressed as `target="<name>"` at call time:
 | `PGPROD_SECONDARY`  | `target="secondary"` | A second database, if any.                        |
 | `PGPROD_<NAME>`     | `target="<name>"`    | Any additional database.                          |
 
-There is **no sharding scheme baked in**. If your data is split across several databases,
-declare one target per database (`PGPROD_SHARD0`, `PGPROD_SHARD1`, …) and address each
-explicitly; a fleet-wide check is just a query per target.
+A target is just a database. Nothing about your topology is assumed until you declare it.
+
+### Shards (optional)
+
+If your data is split across up to 16 databases keyed by one hex digit (`0`–`f`), declare each
+one's shard role and the triage tools can route to it for you:
+
+| Env var                          | Declares                          | Address as          |
+|----------------------------------|-----------------------------------|---------------------|
+| `PGPROD_SHARD_<HEX>`             | shard `<hex>`                     | `target="<hex>"`    |
+| `PGPROD_<LABEL>_SHARD_<HEX>`     | shard `<hex>`; `<LABEL>` is free-form (e.g. the host, `HOST1`) | `target="<hex>"` |
+| `PGPROD_<NAME>` + `PGPROD_<NAME>_SHARD=<hex>` | shard `<hex>` for an existing named DSN | `target="<hex>"` |
+
+- The target key is always `shard_<hex>`, whichever var backs it; `list_targets` shows the var
+  (`kind: shard`; everything else is `kind: named`).
+- Two vars claiming the same hex is a conflict: that shard reads as unconfigured and every claimant
+  is named (`conflict: [vars]` in `list_targets`, a FAIL line in `--selftest`). Fix
+  `scripts/db/.env`; nothing is guessed.
+- `resolve_shard(routing_key)` maps an identifier to its shard by its **first character** (`0`–`f`).
+  Data tools accept `routing_key=` instead of `target=`. This is the only place the framework assumes
+  a keyspace, and it engages only when you declare a shard.
+- Staging shard databases are named by `PGSTG_DB_SHARD_FMT` (default `shard_%s`, which is also the
+  plain name default).
+- `PGPROD_SHARD0` (no underscore before the hex) is an ordinary named target, `shard0`.
+
+> **Upgrading:** a var that ends in `_SHARD_<hex>` or `_SHARD` used to be an ordinary named target
+> and is now a shard declaration. `--selftest` lists every key it reinterprets.
+
+Declare no shard vars and every target behaves as a plain named database, as before.
 
 ## Setup (one-time, per machine)
 
@@ -102,7 +128,9 @@ Every data tool takes a `target`.
 ## Tunnel sidecars (optional — for managed Postgres behind a VPC)
 
 A managed Postgres instance is usually not reachable from a laptop. When you need to triage such
-a target, declare a tunnel sidecar beside its DSN and the MCP will port-forward for you.
+a target, declare a tunnel sidecar beside its DSN and the MCP will port-forward for you. Two
+transports exist: `gcloud` (a per-target IAP SSH forward) and `gost` (ONE shared SOCKS5
+forwarder for every gost target).
 
 ### Declaring a tunnel
 
@@ -111,17 +139,21 @@ Add a `_TUNNEL` sidecar in `scripts/db/.env` next to the target DSN:
 ```bash
 PGPROD_MAIN=postgresql://readonly:pw@prod-db.internal:5432/app?sslmode=verify-full
 PGPROD_MAIN_TUNNEL=tunnel=gcloud;host=prod-db.internal;port=5432;local=15432;vm=bastion-vm;zone=asia-southeast1-a
+
+# gost: hosts live in gost.yaml; the sidecar only names the service port serving the target
+PGPROD_MAIN_TUNNEL=tunnel=gost;local=65432
+PGPROD_SECONDARY_TUNNEL=tunnel=gost;local=65433
 ```
 
 **Supported keys:**
 
 | Key       | Required                | Default  | Description |
 |-----------|-------------------------|----------|-------------|
-| `tunnel`  | no                      | `gcloud` | `gcloud` \| `none` (use `none` when already reachable via VPN/bastion). |
-| `host`    | yes (for `gcloud`)      |          | Remote Postgres hostname as seen **from the VM** (not your laptop). |
-| `port`    | no                      | `5432`   | Remote Postgres port. |
-| `local`   | yes (for `gcloud`)      |          | Local port to bind on 127.0.0.1. Must be unique across all sidecars; must not be 5432. |
-| `vm`      | yes (for `gcloud`)      |          | `gcloud compute` instance name. |
+| `tunnel`  | no                      | `gcloud` | `gcloud` \| `gost` \| `none` (use `none` when already reachable via VPN/bastion). |
+| `host`    | yes (for `gcloud`)      |          | Remote Postgres hostname as seen **from the VM** (not your laptop). gcloud only — rejected with `gost`. |
+| `port`    | no                      | `5432`   | Remote Postgres port. gcloud only — rejected with `gost`. |
+| `local`   | yes (`gcloud`, `gost`)  |          | Local port on 127.0.0.1. gcloud: unique across sidecars. gost: the service port in your `gost.yaml` (two targets on one host share it). Never 5432; gost ports must not overlap gcloud ports. |
+| `vm`      | yes (for `gcloud`)      |          | `gcloud compute` instance name. gcloud only — rejected with `gost`. |
 | `zone`    | no                      |          | gcloud zone (omit to use your `gcloud config` default zone). |
 | `project` | no                      |          | gcloud project (omit to use your `gcloud config` default project). |
 | `iap`     | no                      | `true`   | `true` → `--tunnel-through-iap` (IAP-TCP-forwarding role required); `false` → direct SSH. |
@@ -140,24 +172,59 @@ It is reaped automatically after 120 s of idle time, and `disconnect` closes it 
 `-L <local>:<host>:<port>` flag; the framework never runs a remote command.
 
 The connection goes through `127.0.0.1:<local>` while the DSN's `host=` is preserved for TLS SNI
-and certificate verification — a `sslmode=verify-full` DSN keeps working through the forward.
+and certificate verification — a `sslmode=verify-full` DSN keeps working through the forward
+(an IP-literal DSN host needs `sslmode=require`).
+
+**`tunnel=gost`** — the first call to ANY gost target spawns one `gost -C "$PG_TRIAGE_GOST_CONFIG"`
+(cwd = that file's directory) and waits until that target's `127.0.0.1:<local>` accepts TCP.
+Every gost target holds the same process; a target is released after 120 s idle (or on
+`disconnect`), and gost stops when the LAST holder is released. `tunnel_status` shows such
+tunnels with `kind: gost`, `shared: true` and the shared pid. Readiness proves gost's listener
+only — a bad proxy or SOCKS credential surfaces as a psycopg connect error within 5 s. If a gost
+you started yourself with that same file is already serving every port, the MCP adopts it
+instead of spawning, and never stops it: `disconnect` and idle reaping only drop the MCP's
+hold. `tunnel_status` shows it as `owner: adopted`.
+
+### gost (shared SOCKS proxy)
+
+Point `PG_TRIAGE_GOST_CONFIG` in `scripts/db/.env` at your `gost.yaml` (absolute, or relative
+to the workspace root). Keep the SOCKS credential file `socks.auth` beside it; the tools check
+it exists and never open it. A gost you started yourself with that same file is adopted for
+connecting and never stopped by the MCP or by `tunnel.sh kill`.
+
+`--selftest` runs a preflight for every `tunnel=gost` sidecar and fails LOUDLY (a `!!!` banner)
+when `gost` is not installed, `PG_TRIAGE_GOST_CONFIG` is unset or names a missing file,
+`socks.auth` is missing (existence only — never read), or a `local` port is not a service port
+in that `gost.yaml`. It also prints a non-failing `WARN` for each prod target still connecting
+directly.
 
 ### Prerequisites
 
 ```bash
 gcloud auth login
 # The IAP-TCP-forwarding role on the VM project (when iap=true)
+
+brew install gost        # tunnel=gost
 ```
 
 ### Port-in-use behaviour
 
-If `127.0.0.1:<local>` is already listening when the MCP tries to open the tunnel, the call is
-**refused** — the MCP never adopts or kills a tunnel it did not open. Clear the orphan with:
+A `gcloud` port already listening is **refused** — the MCP never adopts or kills a gcloud tunnel
+it did not open. A `gost` port already listening is **adopted** only when the process table
+proves it is this `gost.yaml`'s gost; the call is refused, naming the failed condition, when:
+
+- the listener is not a `gost` process, or is not yours;
+- more than one process listens, or one gost does not serve EVERY port declared in `gost.yaml`;
+- its `-C` config does not resolve to `PG_TRIAGE_GOST_CONFIG` (a different config);
+- it started before that file last changed (stale — restart it);
+- it is an orphan of an earlier MCP session (ppid 1 with the MCP's own argv).
+
+Nothing is sent to the port to decide this: a connect to gost dials prod. Inspect and clear with:
 
 ```bash
-scripts/db/tunnel.sh status    # see what is open
-scripts/db/tunnel.sh kill      # kill all orphans
-scripts/db/tunnel.sh kill main # kill one target by name
+scripts/db/tunnel.sh status    # each gost labelled MCP-owned | MCP orphan | manual | detached manual
+scripts/db/tunnel.sh kill      # kills MCP orphans; SPARES a manual gost and prints how you stop it
+scripts/db/tunnel.sh kill main # one target by name
 ```
 
 `tunnel.sh` is **not** granted to agents. `gcloud compute ssh` with a different operand would
@@ -193,6 +260,13 @@ mechanism:
 4. **Pagination** — results capped at 200 rows/page so a wide table can't flood context.
 5. **Lazy + teardown** — `min_size=0` pools hold no prod connection until first use, and
    `disconnect()` drops every pool when a job is done; the managed process stays up but idle.
+6. **Connect failures say why, never what** — a pool timeout carries a classified reason
+   (`authentication failed (wrong password, or the role does not exist; …)`, `connection
+   refused (…)`, `rejected by pg_hba.conf (…)`, …) captured at the source by the pool's
+   connection class. A classified reason is a fixed string; only the unclassified fallback
+   carries error text, exact-value scrubbed against the DSN. `psycopg.pool` warnings (raw libpq
+   text on stderr) are silenced, and a DSN libpq cannot parse is refused by variable NAME —
+   its parse error would echo the fragment it choked on, which can be the password.
 
 Credentials live only in `scripts/db/.env`, read only by this server process — never through
 the agent, the MCP config, or the transcript. Do not Read/cat/grep the `.env`.

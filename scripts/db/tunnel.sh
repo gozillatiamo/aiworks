@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# tunnel.sh — inspect / clear the pg-triage SSH tunnels.
+# tunnel.sh — inspect / clear the pg-triage tunnels: per-target gcloud SSH forwards and the
+# ONE shared `gost` SOCKS forwarder every tunnel=gost target rides on.
 #
 # The MCP server (pg_triage_mcp.py) owns its own tunnels: it opens them lazily, reaps any
 # tunnel idle past its timeout, and closes everything on `disconnect` and on exit. This script
 # is the HUMAN's view of that — for confirming nothing is left open, and for clearing an orphan
-# left by a hard-killed session.
+# left by a hard-killed session (a gost labelled `MCP orphan`). A gost a PERSON started
+# (`gost -C "$PG_TRIAGE_GOST_CONFIG"`, labelled `manual` / `detached manual`) is adopted by the
+# MCP for connecting and never stopped — not by the MCP, and not by `kill` here either.
 #
 # It is deliberately NOT granted to agents: `gcloud compute ssh` with a different `--` operand
 # is a shell on the production VM, so no agent gets a path to that command.
@@ -19,7 +22,36 @@
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$DIR/../.." && pwd)"
 ENV_FILE="${PG_TRIAGE_ENV:-$DIR/.env}"
+
+# The gost.yaml this machine declared (PG_TRIAGE_GOST_CONFIG in the .env — absolute, or relative
+# to the workspace root), resolved the same way gcloud_tunnel.gost_config does. Empty when unset.
+gost_config() {
+  local raw
+  [[ -f "$ENV_FILE" ]] || return 0
+  raw="$(awk -F= '/^[ \t]*PG_TRIAGE_GOST_CONFIG=/ { sub(/^[^=]*=/, ""); gsub(/^[ \t"]+|[ \t"]+$/, ""); print; exit }' "$ENV_FILE")"
+  [[ -n "$raw" ]] || return 0
+  [[ "$raw" == /* ]] || raw="$ROOT/$raw"
+  ( cd "$(dirname "$raw")" 2>/dev/null && echo "$(pwd -P)/$(basename "$raw")" ) || echo "$raw"
+}
+GOST_CONFIG="$(gost_config)"
+
+# Who owns a gost pid — the same identification gcloud_tunnel._external_gost applies, so this
+# script and the MCP agree: an MCP-spawned gost is a direct child of the python running
+# pg_triage_mcp.py and carries the absolute gost.yaml path in its argv; one with ppid 1 and that
+# same argv is an orphan of a hard-killed session; everything else is a person's.
+gost_owner() {
+  local pid="$1" ppid args pargs
+  ppid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  args="$(ps -o args= -p "$pid" 2>/dev/null)"
+  if [[ "$ppid" == "1" ]]; then
+    [[ -n "$GOST_CONFIG" && "$args" == *"-C $GOST_CONFIG"* ]] && echo "MCP orphan" || echo "detached manual"
+    return 0
+  fi
+  pargs="$(ps -o args= -p "$ppid" 2>/dev/null)"
+  [[ "$pargs" == *pg_triage_mcp.py* ]] && echo "MCP-owned" || echo "manual"
+}
 
 # Target table parsed out of the .env: NAME<TAB>LOCAL_PORT<TAB>VM<TAB>TUNNEL_KIND per line.
 # Both PGPROD_<NAME>_TUNNEL and PGSTG_<NAME>_TUNNEL are read; the env prefix is stripped so
@@ -53,7 +85,7 @@ targets() {
 listener_pids() { lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null || true; }
 
 status() {
-  local any=0 rows pids
+  local any=0 rows pids label pid
   rows="$(targets)"
   if [[ -z "$rows" ]]; then
     echo "no tunnel targets configured — copy scripts/db/.env.example to scripts/db/.env"
@@ -65,35 +97,62 @@ status() {
       echo "n/a     $name  (tunnel=none — nothing for this script to manage)"
       continue
     fi
+    label="${vm/#-/tunnel}"; [[ "$kind" == "gost" ]] && label=gost
     pids="$(listener_pids "$port")"
     if [[ -n "$pids" ]]; then
       any=1
-      echo "OPEN    $name  (${vm/#-/tunnel})  127.0.0.1:$port  pid(s): $(echo "$pids" | tr '\n' ' ')"
+      echo "OPEN    $name  ($label)  127.0.0.1:$port  pid(s): $(echo "$pids" | tr '\n' ' ')"
       # shellcheck disable=SC2086
       ps -o pid=,etime=,command= -p $(echo "$pids" | tr '\n' ' ') 2>/dev/null |
         sed 's/^/          /' | cut -c1-160
     else
-      echo "closed  $name  (${vm/#-/tunnel})  127.0.0.1:$port"
+      echo "closed  $name  ($label)  127.0.0.1:$port"
     fi
   done <<< "$rows"
+  # The shared gost process itself — one per machine, serving every tunnel=gost target.
+  local owner hint
+  for pid in $(pgrep -x gost || true); do
+    any=1
+    owner="$(gost_owner "$pid")"
+    case "$owner" in
+      "MCP orphan") hint="clear with: tunnel.sh kill" ;;
+      MCP-owned)    hint="stopped by the MCP on disconnect / idle reap" ;;
+      *)            hint="the MCP uses it for connecting and never stops it" ;;
+    esac
+    echo "gost    pid $pid  — $owner (shared SOCKS forwarder, every tunnel=gost target; $hint)"
+    ps -o pid=,ppid=,etime=,command= -p "$pid" 2>/dev/null | sed 's/^/          /' | cut -c1-160
+  done
   [[ "$any" -eq 0 ]] && echo "nothing open — zero connections to a deployed Postgres"
   return 0
 }
 
 kill_one() {
-  local want="$1" found=0 killed
+  local want="$1" found=0 killed owner kept=""
   while IFS=$'\t' read -r name port vm kind; do
     [[ "$name" == "$want" ]] || continue
     found=1
     if [[ "$kind" == "none" ]]; then echo "n/a     $name has tunnel=none — nothing to kill"; continue; fi
     killed=0
     for pid in $(listener_pids "$port"); do
+      if [[ "$kind" == "gost" ]]; then
+        owner="$(gost_owner "$pid")"
+        if [[ "$owner" == *manual ]]; then
+          [[ " $kept " == *" $pid "* ]] && continue
+          kept="$kept $pid"
+          echo "kept    gost pid $pid ($owner — yours; stop it with Ctrl-C in its terminal, or kill $pid)"
+          continue
+        fi
+      fi
       kill "$pid" 2>/dev/null && killed=1
     done
     sleep 1
-    for pid in $(listener_pids "$port"); do kill -9 "$pid" 2>/dev/null || true; done
-    if [[ "$killed" -eq 1 ]]; then echo "killed  $name tunnel on :$port"
-    else echo "closed  $name already had no listener on :$port"; fi
+    for pid in $(listener_pids "$port"); do
+      [[ " $kept " == *" $pid "* ]] || kill -9 "$pid" 2>/dev/null || true
+    done
+    if [[ "$killed" -eq 1 && "$kind" == "gost" ]]; then
+      echo "killed  $name via gost on :$port — gost is shared, every tunnel=gost target is now closed"
+    elif [[ "$killed" -eq 1 ]]; then echo "killed  $name tunnel on :$port"
+    elif [[ -z "$kept" ]]; then echo "closed  $name already had no listener on :$port"; fi
   done <<< "$(targets)"
   [[ "$found" -eq 1 ]] || { echo "unknown target: $want (see scripts/db/.env)" >&2; return 2; }
 }

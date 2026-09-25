@@ -39,6 +39,11 @@ import sys
 DSN_VAR = "PGSTG_DSN"  # base DSN for a single staging instance
 TARGET_PREFIX = "PGSTG_"  # per-target DSN: PGSTG_<NAME>
 DB_PREFIX = "PGSTG_DB_"  # database for a target on the base DSN: PGSTG_DB_<NAME>
+# Shard targets (`shard_<hex>`, declared on the prod side) map to one database pattern instead
+# of sixteen PGSTG_DB_SHARD_<HEX> lines: `%s` is the hex. An explicit PGSTG_DB_<NAME> still wins.
+DB_SHARD_FMT_VAR = "PGSTG_DB_SHARD_FMT"
+DEFAULT_DB_SHARD_FMT = "shard_%s"
+_SHARD_KEY_RE = re.compile(r"^shard_([0-9a-f])$")
 
 # `PGSTG_DSN` and `PGSTG_DB_*` share the target prefix, so they must never be read as targets
 # named "dsn" / "db_…". A target you actually want to call "dsn" is the one name this scheme
@@ -67,8 +72,16 @@ def db_var(name: str) -> str:
 
 
 def dbname(name: str) -> str:
-    """The staging database for a target — the configured override, else the target name."""
-    return os.environ.get(db_var(name)) or name.strip().lower()
+    """The staging database for a target — the configured override, else the shard pattern for
+    a `shard_<hex>` key, else the target name."""
+    override = os.environ.get(db_var(name))
+    if override:
+        return override
+    key = name.strip().lower()
+    m = _SHARD_KEY_RE.match(key)
+    if m:
+        return os.environ.get(DB_SHARD_FMT_VAR, DEFAULT_DB_SHARD_FMT).replace("%s", m.group(1))
+    return key
 
 
 def base_dsn() -> str | None:
@@ -158,6 +171,15 @@ def _selftest() -> int:
         os.environ[DB_PREFIX + "SHARD0"] = "shard_0"
         check("PGSTG_DB_<NAME> overrides the database", dbname("shard0") == "shard_0")
         check("override reaches the DSN", "dbname=shard_0" in dsn("shard0"), dsn("shard0"))
+
+        # shard keys: one pattern, not sixteen PGSTG_DB_SHARD_<HEX> lines
+        os.environ.pop(DB_SHARD_FMT_VAR, None)
+        check("shard_a defaults to shard_a", dbname("shard_a") == "shard_a", dbname("shard_a"))
+        os.environ[DB_SHARD_FMT_VAR] = "tenant_%s"
+        check("PGSTG_DB_SHARD_FMT maps shard_3", dbname("shard_3") == "tenant_3", dbname("shard_3"))
+        os.environ[DB_SHARD_FMT_VAR] = "odd%name_%s"
+        check("a stray % is literal", dbname("shard_c") == "odd%name_c", dbname("shard_c"))
+        os.environ.pop(DB_SHARD_FMT_VAR, None)
 
         os.environ[TARGET_PREFIX + "MAIN"] = "postgresql://ro:pw@other:5432/whatever"
         check("per-target DSN wins over the base", dsn("main").startswith("postgresql://ro:pw@other"))

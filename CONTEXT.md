@@ -422,11 +422,42 @@ keys, our cluster objects. The fourth reads what the **cloud provider** measures
 
 **tunnel sidecar**:
 An opt-in companion variable (`PGPROD_<NAME>_TUNNEL` / `PGSTG_<NAME>_TUNNEL`) declared beside a
-triage target's DSN. It tells the MCP server to open a `gcloud compute ssh -N -L` port-forward
-lazily when that target is first queried, and to reap it on idle or disconnect. The sidecar is
+triage target's DSN. It tells the MCP server to open a `gcloud compute ssh -N -L` port-forward,
+or the shared `gost` SOCKS forwarder (`tunnel=gost`, one process for every gost target), lazily
+when that target is first queried, and to reap it on idle or disconnect. The sidecar is
 additive — the DSN is unchanged — and the MCP owns the tunnel lifecycle so no agent ever needs a
-`gcloud` Bash grant.
+`gcloud` Bash grant. For `tunnel=gost` the MCP may instead ride an **adopted gost** it never owns.
 → [ADR 0017](docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md)
+
+**adopted gost**:
+A `gost -C <PG_TRIAGE_GOST_CONFIG>` the MCP found already serving every declared port and
+identified from the process table (one process, this user, this config, started after the config
+last changed). The MCP uses it for connecting and never stops it — `disconnect`, idle reaping
+and `tunnel.sh kill` all spare it. `tunnel_status` reports `owner: adopted`; `tunnel.sh status`
+labels it `manual`.
+→ [ADR 0017](docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md) (addendum — adoption)
+
+**named target**:
+A triage target that is only a name — `PGPROD_<NAME>` (or `PGSTG_<NAME>` / `PGSTG_DB_<NAME>`)
+addressed as `target="<name>"`. `list_targets` reports it as `kind: named`. Nothing about the
+topology is assumed of it; a database is a named target unless a **shard token** or a **shard
+sidecar** declares otherwise.
+→ [ADR 0017](docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md) (addendum — shard role)
+
+**shard token**:
+The `SHARD_<hex>` segment that, as the LAST segment of a target var (`PGPROD_SHARD_<HEX>`,
+`PGPROD_<LABEL>_SHARD_<HEX>`), declares that var as shard `<hex>`. The target key becomes
+`shard_<hex>` (`kind: shard`), addressed as `target="<hex>"` or resolved by
+`resolve_shard(routing_key)` from the routing key's first character. `PGPROD_SHARD0` — no
+underscore before the digit — carries no token and stays a **named target**.
+→ [ADR 0017](docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md) (addendum — shard role)
+
+**shard sidecar**:
+`PGPROD_<NAME>_SHARD=<hex>` — the other way to declare the role, for a **named target** whose var
+name cannot change. Additive like a **tunnel sidecar**; never itself a target; refused on a var
+that already carries a **shard token**. Two vars claiming one hex is a conflict: the shard is
+deliberately unconfigured and `list_targets` names every claimant (`conflict: [vars]`).
+→ [ADR 0017](docs/adr/0017-triage-tunnels-are-declared-beside-the-dsn.md) (addendum — shard role)
 
 **reachability**:
 Being able to open a TCP connection to a host — via a tunnel, a VPN, or direct routing. A

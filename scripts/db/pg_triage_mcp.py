@@ -59,6 +59,8 @@ the MCP when done" teardown, without needing to kill the managed process.
 from __future__ import annotations
 
 import atexit
+import difflib
+import logging
 import json
 import os
 import re
@@ -66,13 +68,15 @@ import signal
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
-from dotenv import load_dotenv
+import psycopg
+from dotenv import dotenv_values, load_dotenv
 from mcp.server.fastmcp import FastMCP
-from psycopg.conninfo import make_conninfo
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 # Value-exact PII provenance (scripts/lib/pii_provenance.py). Every row this server hands back
 # came from PRODUCTION by definition, so each personal value in it is vaulted as a keyed hash
@@ -80,6 +84,7 @@ from psycopg_pool import ConnectionPool
 # from a ticket or Slack post while leaving identical-looking local/staging data alone.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import gcloud_tunnel  # noqa: E402 — stdlib-only tunnel helper, shared with redis_triage
+import pg_prod  # noqa: E402  — declared shard role of a PGPROD_ var, shared with prod_repro_seed.py
 import pg_staging  # noqa: E402  — staging DSN resolution, shared with prod_repro_seed.py
 import triage_policy  # noqa: E402  — the production gate; load-bearing, so never optional
 
@@ -99,6 +104,7 @@ MAX_PAGE_SIZE = 200
 DEFAULT_PAGE_SIZE = 200
 POOL_MAX_SIZE = 4
 POOL_MAX_IDLE_S = 60
+POOL_TIMEOUT_S = 30.0  # psycopg_pool's default; a constant so the selftest can shrink it
 
 ENV_PROD = "prod"
 ENV_STAGING = "staging"
@@ -120,8 +126,14 @@ WATCHDOG_TICK_S = 10        # how often the watchdog checks
 TUNNEL_READY_TIMEOUT_S = 45 # how long to wait for the port-forward to answer
 
 _pools: dict[str, ConnectionPool] = {}
-_tunnels: dict[str, gcloud_tunnel.Tunnel] = {}  # keyed by pool key (env:target)
+_tunnels: dict[str, gcloud_tunnel.Tunnel] = {}  # keyed by pool key (env:target); gost targets share one proc
 _lock = threading.RLock()   # guards both _pools and _tunnels
+_connect_errors: dict[str, str] = {}  # pool key -> last scrubbed connect reason (see _CapturingConn)
+
+# psycopg_pool logs every failed connect at WARNING with the raw libpq text; with no handler
+# configured Python's lastResort prints it to stderr — host, user and (for a malformed DSN)
+# password fragments. The tool error now carries a scrubbed reason instead.
+logging.getLogger("psycopg.pool").setLevel(logging.CRITICAL + 1)
 _watchdog: threading.Thread | None = None
 
 mcp = FastMCP("pg-triage")
@@ -140,46 +152,252 @@ def _resolve_env(env: str | None) -> str:
     return e
 
 
+SHARD_KEY_PREFIX = "shard_"  # the target key of a declared shard: shard_<hex>
+
+
 def _env_var(key: str) -> str:
-    """Env var backing a target: 'main' -> PGPROD_MAIN, 'shard0' -> PGPROD_SHARD0."""
+    """Env var backing a target: 'main' -> PGPROD_MAIN; 'shard_0' -> whichever var DECLARES
+    shard 0 (`pg_prod.shard_var`; ValueError naming both vars on a conflict)."""
+    if key.startswith(SHARD_KEY_PREFIX):
+        return pg_prod.shard_var(key[len(SHARD_KEY_PREFIX):])
     return ENV_PREFIX + re.sub(r"[^A-Z0-9]+", "_", key.strip().upper())
 
 
 def _target_key(target: str | None = None) -> str:
     """Canonicalize a request to a lowercase target name.
 
-    A target is just a name you configured via `PGPROD_<NAME>` in the .env — there is no
-    topology/sharding logic here, so the name is used verbatim (lowercased)."""
+    A target is a name you configured via `PGPROD_<NAME>` in the .env, used verbatim
+    (lowercased). The one shorthand: a single hex `0-f` means the declared shard `shard_<hex>`
+    (see `pg_prod`)."""
     if not target or not target.strip():
         raise ValueError(
             "provide a `target` — a configured prod target name (e.g. 'main'); see list_targets"
         )
-    return target.strip().lower()
+    t = target.strip().lower()
+    if len(t) == 1 and t in pg_prod.HEX:
+        return SHARD_KEY_PREFIX + t
+    return t
+
+
+def _shard_key(routing_key: str) -> str:
+    """`shard_<hex>` for a routing key whose FIRST character is the shard hex. Nothing else is
+    inferred: a first character outside 0-f is refused, never guessed."""
+    rk = (routing_key or "").strip()
+    if not rk or rk[0].lower() not in pg_prod.HEX:
+        raise ValueError("routing_key must start with the shard hex 0-f (see resolve_shard)")
+    return SHARD_KEY_PREFIX + rk[0].lower()
+
+
+def _key_from(target: str | None, routing_key: str | None) -> str:
+    """Exactly one of `target` | `routing_key` names the target for a data tool."""
+    if target and routing_key:
+        raise ValueError("pass either `target` or `routing_key`, not both")
+    if routing_key:
+        return _shard_key(routing_key)
+    return _target_key(target)
+
+
+# --- the name grammar: ONE classifier for every PGPROD_/PGSTG_ key -------------------------
+
+STAGING_PREFIX = pg_staging.TARGET_PREFIX  # PGSTG_<NAME>: a per-target staging DSN
+STAGING_DB_PREFIX = pg_staging.DB_PREFIX  # PGSTG_DB_<NAME>: a database on the base PGSTG_DSN
+_NAME_RE = re.compile(r"^[A-Z0-9]+(_[A-Z0-9]+)*$")  # UPPER_SNAKE; single underscores only
+
+REASON_UPPER = "names are UPPER_SNAKE"
+REASON_DSN = "reserved: PGSTG_DSN is the staging base DSN; prod has one DSN per target"
+REASON_EMPTY = "empty value"
+REASON_MULTILINE = "value spans lines — an unbalanced quote swallowed the lines after it"
+REASON_NOT_DSN = "not a valid libpq DSN (looks like a sidecar? name it …_TUNNEL)"
+REASON_BARE_HEX = "a bare hex is not a target name; declare the shard role"
+REASON_SHARD_CONFLICT = pg_prod.REASON_CONFLICT
+SHARD_SUFFIX = pg_prod.SHARD_SUFFIX
+
+
+def _classify(
+    prefix: str, var: str, value: str | None = None, env: Mapping[str, str] | None = None
+) -> tuple[str | None, str | None, str | None]:
+    """Classify one env var name (+ optional value) under a prefix -> (key, reason, did_you_mean).
+
+    The ONE place the target-name grammar lives; discovery, `list_targets` and `--selftest` all
+    call it, so a name can never be accepted by one and rejected by another.
+
+      key      the target key ('<name>') when the var is usable, else None
+      reason   a FIXED string saying why it is not usable (None when usable, or not ours)
+      did_you_mean  the spelling to use instead, when a rule can suggest one
+
+    A var that is not ours at all, a `_TUNNEL` sidecar, or the staging base `PGSTG_DSN` is
+    (None, None, None). A value is only checked when given. `env` is the mapping sibling vars
+    are read from (the process env by default; the file's values in the file report). NEVER put
+    exception text into `reason`: a libpq parse error can echo a fragment of the value (a
+    password) — only fixed strings, booleans and key NAMES ever leave.
+    """
+    if env is None:
+        env = os.environ
+    if not var.upper().startswith(prefix):
+        return None, None, None
+    if var.upper().endswith(TUNNEL_SUFFIX):
+        return None, None, None  # a sidecar, never a target (A5); orphans are checked elsewhere
+    suffix = var[len(prefix):]
+    fixed = prefix + suffix.upper()
+    if fixed != var:  # wrong case somewhere: diagnose the upper-cased form, never accept it
+        key, _, dym = _classify(prefix, fixed, env=env)
+        return None, REASON_UPPER, dym or (fixed if key else None)
+    if not _NAME_RE.match(suffix):
+        return None, REASON_UPPER, _closest(prefix, var)
+
+    check_dsn = True
+    if prefix == STAGING_PREFIX and var == pg_staging.DSN_VAR:
+        return None, None, None  # the base DSN, never a target
+    if prefix == STAGING_PREFIX and suffix.startswith("DB_"):
+        name, check_dsn = suffix[3:], False  # a database name on the base DSN
+        if name.startswith(pg_prod.TOKEN):  # a shard database is the pattern, never a mapping
+            return None, pg_prod.REASON_SHARD, pg_staging.DB_SHARD_FMT_VAR
+    else:
+        name = suffix
+    if name == "DSN":
+        return None, REASON_DSN, None
+    if prefix == ENV_PREFIX and suffix.endswith(SHARD_SUFFIX):
+        # `PGPROD_<NAME>_SHARD=<hex>` declares the shard role of PGPROD_<NAME> — a sidecar, so
+        # never a target; refused on a name that already carries SHARD_<hex>.
+        base = var[: -len(SHARD_SUFFIX)]
+        if pg_prod.name_hex(base) != (None, None):
+            return None, pg_prod.REASON_SHARD_SIDECAR_REFUSED, None
+        if value is None:
+            return None, None, None
+        return None, pg_prod.shard_value(value)[1], None
+    if prefix == ENV_PREFIX and len(name) == 1 and name.lower() in pg_prod.HEX:
+        return None, REASON_BARE_HEX, pg_prod.default_var(name)
+    if not name or not name[0].isalpha():
+        return None, REASON_UPPER, _closest(prefix, var)
+    key = name.lower()
+    if prefix == ENV_PREFIX:
+        hex_, bad = pg_prod.name_hex(var)
+        if bad:
+            return None, bad, None
+        if hex_ is None:  # no token: a sidecar may still declare the role
+            hex_ = pg_prod.shard_value(env.get(var + SHARD_SUFFIX))[0] if env.get(var + SHARD_SUFFIX) else None
+        if hex_:
+            key = SHARD_KEY_PREFIX + hex_
+
+    if value is not None:
+        if value == "":
+            return None, REASON_EMPTY, None
+        if "\n" in value:
+            return None, REASON_MULTILINE, None
+        if check_dsn:
+            try:
+                conninfo_to_dict(value)
+            except Exception:  # never surface the message — it can echo part of the value
+                return None, REASON_NOT_DSN, None
+    return key, None, None
+
+
+def _closest(prefix: str, var: str) -> str | None:
+    """difflib fallback for an unrecognized name: the nearest usable var in the process env."""
+    candidates = [
+        v for v in os.environ if v.startswith(prefix) and v != var and _NAME_RE.match(v[len(prefix):])
+    ]
+    hits = difflib.get_close_matches(var, candidates, n=1)
+    return hits[0] if hits else None
+
+
+def _prefix(env: str) -> str:
+    return ENV_PREFIX if env == ENV_PROD else STAGING_PREFIX
+
+
+def _kind(key: str) -> str:
+    return "shard" if key.startswith(SHARD_KEY_PREFIX) else "named"
 
 
 def _configured_targets(env: str) -> list[str]:
-    """Target names this machine declares for an environment. Prod: every `PGPROD_<NAME>` with a
-    value. Staging: every named `PGSTG_<NAME>` / `PGSTG_DB_<NAME>` — with only a base
-    `PGSTG_DSN` set, ANY target name resolves, so the list is what was named, not what is
-    reachable.
+    """Target names this machine declares for an environment — every usable `PGPROD_<NAME>`,
+    or `PGSTG_<NAME>` / `PGSTG_DB_<NAME>`, per `_classify`, so a `_TUNNEL` sidecar or a
+    sidecar-shaped value can never become a phantom target (ADR 0017). With only a base
+    `PGSTG_DSN` set, ANY staging name resolves, so the list is what was named, not what is
+    reachable."""
+    prefix = _prefix(env)
+    keys = {key for var, val in os.environ.items() if (key := _classify(prefix, var, val)[0])}
+    if env == ENV_PROD:  # a shard two vars claim is unconfigured (fails closed); list_targets shows why
+        keys -= {SHARD_KEY_PREFIX + h for h in _shard_conflicts()}
+    return sorted(keys)
 
-    `_TUNNEL` sidecars are excluded: `PGPROD_MAIN_TUNNEL` is a sidecar, not a target named
-    `main_tunnel`. A target may not be named `…_tunnel` (same class of limitation as `dsn`
-    in RESERVED)."""
-    if env == ENV_STAGING:
-        return pg_staging.configured_targets()
-    return sorted(
-        k[len(ENV_PREFIX):].lower()
-        for k, v in os.environ.items()
-        if k.startswith(ENV_PREFIX) and v and not k.endswith(TUNNEL_SUFFIX)
-    )
+
+def _unrecognized() -> list[dict]:
+    """Every PGPROD_/PGSTG_ var in the process env the server cannot use, by name + fixed reason."""
+    out = []
+    for env in ENVS:
+        for var, value in os.environ.items():
+            _, reason, dym = _classify(_prefix(env), var, value)
+            if reason:
+                out.append({"env": env, "var": var, "reason": reason, "did_you_mean": dym})
+    for hex_, vars_ in sorted(_shard_conflicts().items()):
+        for var in vars_:
+            out.append({"env": ENV_PROD, "var": var,
+                        "reason": REASON_SHARD_CONFLICT.format(hex=hex_, vars=" + ".join(vars_)), "did_you_mean": None})
+    return out
+
+
+def _shard_conflicts(env: Mapping[str, str] | None = None) -> dict[str, list[str]]:
+    """hex -> the vars claiming it, for every hex more than one var claims (fails closed)."""
+    claims = pg_prod.shard_claims(os.environ if env is None else env)
+    return {h: v for h, v in claims.items() if len(v) > 1}
+
+
+REASON_SHADOWED = "set in the file but the process env overrides it (override=False)"
+REASON_ORPHAN = "orphan sidecar: no {base} DSN"
+REASON_SIDECAR_OF_SIDECAR = "a _TUNNEL belongs on the DSN var, not on its _SHARD sidecar"
+
+
+def _file_key_report(path: Path) -> list[tuple[str, str]]:
+    """Every PGPROD_/PGSTG_ key in a dotenv FILE with a verdict -> [(status, line)].
+
+    Reads key NAMES and classifies values in-process; a line carries only the var name, the
+    target key/kind and a FIXED reason — never a value. `status` is 'ok' | 'WARN' | 'FAIL'."""
+    values = {k: v or "" for k, v in dotenv_values(path).items()}
+    conflicts = _shard_conflicts(values)
+    conflict = {v: h for h, vs in conflicts.items() for v in vs}
+    out: list[tuple[str, str]] = []
+    for var, val in values.items():
+        prefix = next((p for p in (ENV_PREFIX, STAGING_PREFIX) if var.upper().startswith(p)), None)
+        if prefix is None:
+            continue
+        if var.upper().endswith(TUNNEL_SUFFIX):
+            base = var[: -len(TUNNEL_SUFFIX)]
+            if prefix == ENV_PREFIX and base.endswith(SHARD_SUFFIX):
+                out.append(("FAIL", f"{var} — {REASON_SIDECAR_OF_SIDECAR}"))
+            elif prefix == ENV_PREFIX and not (values.get(base) or os.environ.get(base)):
+                out.append(("WARN", f"{var} — {REASON_ORPHAN.format(base=base)}"))
+            else:
+                out.append(("ok", f"{var} -> sidecar of {base}"))
+            continue
+        key, reason, dym = _classify(prefix, var, val, env=values)
+        if reason:
+            out.append(("FAIL", f"{var} — {reason}" + (f"; did you mean {dym}?" if dym else "")))
+        elif var in conflict:
+            out.append(("FAIL", f"{var} — {REASON_SHARD_CONFLICT.format(hex=conflict[var], vars=' + '.join(conflicts[conflict[var]]))}"))
+        elif var in os.environ and os.environ[var] != val:
+            out.append(("FAIL", f"{var} — {REASON_SHADOWED}"))
+        elif prefix == ENV_PREFIX and var.endswith(SHARD_SUFFIX):
+            base = var[: -len(SHARD_SUFFIX)]
+            if not (values.get(base) or os.environ.get(base)):
+                out.append(("WARN", f"{var} — {REASON_ORPHAN.format(base=base)}"))
+            else:
+                out.append(("ok", f"{var} -> declares shard role of {base}"))
+        elif key is None:
+            out.append(("ok", f"{var} -> staging base DSN"))
+        else:
+            out.append(("ok", f"{var} -> target {key} ({_kind(key)})"))
+    return out
 
 
 def _configured(env: str, key: str) -> bool:
     """Whether a target has credentials here. Booleans only — never a DSN."""
     if env == ENV_STAGING:
         return pg_staging.configured(key)
-    return bool(os.environ.get(_env_var(key)))
+    try:
+        return bool(os.environ.get(_env_var(key)))
+    except ValueError:  # a shard two vars claim reads unconfigured — fails closed
+        return False
 
 
 def _dsn(env: str, key: str) -> str:
@@ -198,6 +416,102 @@ def _pool_key(env: str, key: str) -> str:
     return f"{env}:{key}"
 
 
+# --- connect-failure reasons -------------------------------------------------------------
+#
+# `PoolTimeout` carries nothing (`raise ... from None`), and SQLSTATE is None on every
+# connect-phase failure, so a reason is classified from the libpq message TEXT. Every
+# classified reason is a fixed string — nothing from the error text survives except on the
+# unclassified row, where the detail is exact-value scrubbed against the conninfo.
+# First match wins; the order matters (a TLS handshake that times out is a timeout).
+
+_REASON_MALFORMED_DSN = "malformed DSN (details withheld: libpq echoes DSN fragments)"
+_REASON_RULES: tuple[tuple[tuple[str, ...], str], ...] = (  # (every needle present) -> reason
+    (("timeout expired",), "timeout: no answer within connect_timeout"),
+    (('missing "="',), _REASON_MALFORMED_DSN),
+    (("invalid percent-encoded",), _REASON_MALFORMED_DSN),
+    (("invalid connection option",), _REASON_MALFORMED_DSN),
+    (("connection is bad: invalid",), _REASON_MALFORMED_DSN),
+    (("unterminated quoted string",), _REASON_MALFORMED_DSN),
+    (("password authentication failed",),
+     "authentication failed (wrong password, or the role does not exist; Postgres does not say which)"),
+    (('role "', "does not exist"), "authentication failed: role does not exist"),
+    (("no pg_hba.conf entry",), "rejected by pg_hba.conf (this client/user/database is not allowed)"),
+    (('database "', "does not exist"), "database does not exist"),
+    (("too many clients",), "server has no free connection slots"),
+    (("remaining connection slots",), "server has no free connection slots"),
+    (("starting up",), "server not accepting connections (starting, stopping or in recovery)"),
+    (("shutting down",), "server not accepting connections (starting, stopping or in recovery)"),
+    (("in recovery",), "server not accepting connections (starting, stopping or in recovery)"),
+    (("ssl",), "TLS/SSL failure"),
+    (("certificate",), "TLS/SSL failure"),
+    (("tls",), "TLS/SSL failure"),
+    (("connection refused",), "connection refused (nothing listening; is the tunnel up?)"),
+    (("failed to resolve host",), "host name did not resolve"),
+    (("could not translate host name",), "host name did not resolve"),
+    (("server closed the connection unexpectedly",),
+     "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+    (("connection reset",), "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+)
+
+
+def _scrub_detail(text: str, conninfo: str) -> str | None:
+    """The unclassified row's detail: every conninfo VALUE replaced exactly (longest first),
+    then quoted runs, key=value pairs and scheme://… shapes. None when the conninfo itself
+    does not parse — then nothing is safe to echo."""
+    try:
+        values = [str(v) for v in conninfo_to_dict(conninfo).values() if str(v)]
+    except Exception:
+        return None
+    if not values:  # nothing known to scrub against -> nothing is safe to echo
+        return None
+    line = text.splitlines()[0] if text else ""
+    for marker in ("failed: ", "FATAL:"):
+        if marker in line:
+            line = line.rsplit(marker, 1)[1]
+    for v in sorted(values, key=len, reverse=True):
+        line = line.replace(v, "<redacted>")
+    line = re.sub(r'"[^"]*"|\'[^\']*\'', '"<redacted>"', line)
+    line = re.sub(r"\w+=\S+|\w+://\S+", "<redacted>", line)
+    return line.strip()[:120]
+
+
+class _CapturingConn(psycopg.Connection):
+    """Per-pool connection class: records the scrubbed reason of a failed connect under its
+    pool key, at the source, with the conninfo in hand. Only the string survives the except
+    block. A successful connect clears the entry."""
+
+    pool_key = ""
+
+    @classmethod
+    def connect(cls, conninfo: str = "", **kwargs):
+        try:
+            conn = super().connect(conninfo, **kwargs)
+        except Exception as exc:
+            _connect_errors[cls.pool_key] = _connect_reason(exc, conninfo)
+            raise
+        _connect_errors.pop(cls.pool_key, None)
+        return conn
+
+
+def _connect_reason(exc: BaseException, conninfo: str) -> str:
+    """Classify a connect failure into a secret-free reason string. Never raises."""
+    name = type(exc).__name__
+    try:
+        text = str(exc)
+        low = text.lower()
+        if isinstance(exc, psycopg.errors.ConnectionTimeout):
+            return _REASON_RULES[0][1]
+        if isinstance(exc, psycopg.ProgrammingError):
+            return _REASON_MALFORMED_DSN
+        for needles, reason in _REASON_RULES:
+            if all(n in low for n in needles):
+                return reason
+        detail = _scrub_detail(text, conninfo)
+        return f"unclassified connection failure ({name})" + (f": {detail}" if detail else "")
+    except Exception:
+        return f"unclassified connection failure ({name})"
+
+
 def _tunnel_var(env: str, key: str) -> str:
     """Env var backing a tunnel sidecar for one target.
 
@@ -206,7 +520,7 @@ def _tunnel_var(env: str, key: str) -> str:
     """
     if env == ENV_STAGING:
         return pg_staging.TARGET_PREFIX + pg_staging._suffix(key) + TUNNEL_SUFFIX
-    return ENV_PREFIX + re.sub(r"[^A-Z0-9]+", "_", key.strip().upper()) + TUNNEL_SUFFIX
+    return _env_var(key) + TUNNEL_SUFFIX
 
 
 def _tunnel_spec(env: str, key: str) -> gcloud_tunnel.TunnelSpec | None:
@@ -249,19 +563,25 @@ def _reap_idle() -> None:
     """Watchdog: reap pools and tunnels that have been idle past IDLE_TIMEOUT_S."""
     while True:
         time.sleep(WATCHDOG_TICK_S)
-        now = time.time()
-        with _lock:
-            for pk, tun in list(_tunnels.items()):
-                dead = not gcloud_tunnel.is_alive(tun)
-                if dead or (now - tun.last_used > IDLE_TIMEOUT_S):
-                    pool = _pools.pop(pk, None)
-                    if pool is not None:
-                        try:
-                            pool.close()
-                        except Exception:
-                            pass
-                    gcloud_tunnel.close_tunnel(tun)
-                    _tunnels.pop(pk, None)
+        _reap_once(time.time())
+
+
+def _reap_once(now: float) -> None:
+    """One watchdog tick. Every teardown goes through close_tunnel, which leaves an adopted
+    gost running — reaping it drops only the MCP's pool."""
+    with _lock:
+        for pk, tun in list(_tunnels.items()):
+            dead = not gcloud_tunnel.is_alive(tun)
+            if dead or (now - tun.last_used > IDLE_TIMEOUT_S):
+                pool = _pools.pop(pk, None)
+                _connect_errors.pop(pk, None)
+                if pool is not None:
+                    try:
+                        pool.close()
+                    except Exception:
+                        pass
+                gcloud_tunnel.close_tunnel(tun)
+                _tunnels.pop(pk, None)
 
 
 def _pool(env: str, key: str) -> ConnectionPool:
@@ -292,24 +612,35 @@ def _pool(env: str, key: str) -> ConnectionPool:
         if env == ENV_PROD:
             triage_policy.assert_prod_allowed("PRODUCTION Postgres triage")
 
-        conninfo = _dsn(env, key)
-        spec = _tunnel_spec(env, key)
+        # A DSN libpq cannot parse is refused by NAME: its parse error echoes the fragment it
+        # choked on, which for `password=x y` is the password.
+        if env == ENV_PROD:
+            var = _env_var(key)
+        else:
+            var = pg_staging.target_var(key) if os.environ.get(pg_staging.target_var(key)) else pg_staging.DSN_VAR
+        try:
+            conninfo = _dsn(env, key)
+            spec = _tunnel_spec(env, key)
 
-        if spec is not None and spec.kind == "gcloud":
-            _start_watchdog()
-            tun = gcloud_tunnel.open_tunnel(spec)  # blocks up to TUNNEL_READY_TIMEOUT_S
-            _tunnels[pk] = tun
-            # hostaddr routes libpq to 127.0.0.1 while host= stays for TLS SNI and certificate
-            # verification — a sslmode=verify-full DSN keeps working through the forward.
-            conninfo = make_conninfo(
-                conninfo, hostaddr="127.0.0.1", port=spec.local_port, connect_timeout=5
-            )
+            if spec is not None and spec.kind != "none":  # gcloud, or the shared gost forwarder
+                _start_watchdog()
+                tun = gcloud_tunnel.open_tunnel(spec)  # blocks up to TUNNEL_READY_TIMEOUT_S
+                _tunnels[pk] = tun
+                # hostaddr routes libpq to 127.0.0.1 while host= stays for TLS SNI and certificate
+                # verification — a sslmode=verify-full DSN keeps working through the forward.
+                conninfo = make_conninfo(
+                    conninfo, hostaddr="127.0.0.1", port=spec.local_port, connect_timeout=5
+                )
+        except psycopg.ProgrammingError:
+            raise ValueError(f"{var} is not a valid DSN (details withheld)") from None
 
         pool = ConnectionPool(
             conninfo=conninfo,
+            connection_class=type("_Conn", (_CapturingConn,), {"pool_key": pk}),
             min_size=0,
             max_size=POOL_MAX_SIZE,
             max_idle=POOL_MAX_IDLE_S,
+            timeout=POOL_TIMEOUT_S,
             kwargs={"autocommit": True, "options": CONN_OPTIONS},
             open=True,
             name=pk,
@@ -382,11 +713,17 @@ def _query(
         tun = _tunnels.get(_pool_key(env, key))
         if tun is not None:
             tun.last_used = time.time()
-    with pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(sql, params)
-            cols = [d.name for d in cur.description] if cur.description else []
-            rows = cur.fetchall() if cur.description else []
+    pk = _pool_key(env, key)
+    try:
+        with pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql, params)
+                cols = [d.name for d in cur.description] if cur.description else []
+                rows = cur.fetchall() if cur.description else []
+    except PoolTimeout as exc:
+        # PoolTimeout carries nothing (`from None`); the worker that failed recorded why.
+        reason = _connect_errors.get(pk, "none recorded (pool saturated, or first connect still in flight)")
+        raise PoolTimeout(f"{pk}: {exc}; last connect error: {reason}") from None
     if _vaults(env) and rows:
         try:
             pii_provenance.record_rows(cols, rows)
@@ -411,9 +748,11 @@ def list_targets() -> dict:
         pool_keys = set(_pools)
         tunnel_snapshot = {pk: (t.spec, gcloud_tunnel.is_alive(t)) for pk, t in _tunnels.items()}
     envs = {}
+    conflicts = _shard_conflicts()
     for env in ENVS:
         names = sorted(
             set(_configured_targets(env))
+            | ({SHARD_KEY_PREFIX + h for h in conflicts} if env == ENV_PROD else set())
             | {pk.split(":", 1)[1] for pk in pool_keys if pk.startswith(f"{env}:")}
         )
         entries = []
@@ -421,14 +760,16 @@ def list_targets() -> dict:
             pk = _pool_key(env, key)
             entry: dict = {
                 "target": key,
+                "kind": _kind(key),
                 "configured": _configured(env, key),
                 "pool_open": pk in pool_keys,
-                **(
-                    {"database": pg_staging.dbname(key)}
-                    if env == ENV_STAGING
-                    else {"env_var": _env_var(key)}
-                ),
             }
+            if env == ENV_STAGING:
+                entry["database"] = pg_staging.dbname(key)
+            elif key[len(SHARD_KEY_PREFIX):] in conflicts and _kind(key) == "shard":
+                entry["conflict"] = conflicts[key[len(SHARD_KEY_PREFIX):]]  # fails closed: no env_var
+            else:
+                entry["env_var"] = _env_var(key)
             # Tunnel sidecar fields — display only; never a DSN
             try:
                 spec = _tunnel_spec(env, key)
@@ -446,6 +787,7 @@ def list_targets() -> dict:
     return _jsonable(
         {
             "envs": envs,
+            "unrecognized": _unrecognized(),
             "prod_allowed": prod_allowed,
             "policy": f"triage.prod = {str(prod_allowed).lower()} ({policy_source})",
             "staging": pg_staging.describe(),
@@ -456,12 +798,29 @@ def list_targets() -> dict:
 
 
 @mcp.tool()
-def list_schemas(env: str | None = None, target: str | None = None) -> dict:
+def resolve_shard(routing_key: str) -> dict:
+    """Which declared shard a routing key maps to: shard = its FIRST character (hex 0-f). Pure
+    lookup, no DB access. Only meaningful when targets declare shard roles (see
+    `scripts/db/README.md`, "Shards"); a first character outside 0-f is refused, never guessed."""
+    key = _shard_key(routing_key)
+    hex_ = key[len(SHARD_KEY_PREFIX):]
+    try:
+        env_var: str | None = pg_prod.shard_var(hex_)
+        conflict: list[str] = []
+    except ValueError:
+        env_var, conflict = None, _shard_conflicts().get(hex_, [])
+    return _jsonable({"routing_key": routing_key, "shard": hex_, "target": key, "env_var": env_var,
+                      **({"conflict": conflict} if conflict else {}),
+                      "configured": _configured(ENV_PROD, key)})
+
+
+@mcp.tool()
+def list_schemas(env: str | None = None, target: str | None = None, routing_key: str | None = None) -> dict:
     """List user schemas on a target (excludes pg_* and information_schema).
     Provide `env` ('staging' | 'prod') and `target` — a configured target name (see
-    list_targets)."""
+    list_targets) — or `routing_key` (a key whose first character is the shard hex)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     cols, rows = _query(
         e,
         key,
@@ -478,11 +837,12 @@ def list_objects(
     target: str | None = None,
     schema: str = "public",
     object_type: str | None = None,
+    routing_key: str | None = None,
 ) -> dict:
     """List tables/views in a schema on a target. `object_type` optionally filters to
-    'table' or 'view'. Provide `env` and `target`."""
+    'table' or 'view'. Provide `env` and `target` (or `routing_key`)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     sql = (
         "SELECT table_schema, table_name, table_type FROM information_schema.tables "
         "WHERE table_schema = %s"
@@ -503,11 +863,12 @@ def get_object_details(
     env: str | None = None,
     target: str | None = None,
     schema: str = "public",
+    routing_key: str | None = None,
 ) -> dict:
     """Describe a table/view: its columns (name, type, nullability, default) and indexes.
-    Provide `env` and `target`."""
+    Provide `env` and `target` (or `routing_key`)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     _, columns = _query(
         e,
         key,
@@ -534,13 +895,14 @@ def explain_query(
     env: str | None = None,
     target: str | None = None,
     analyze: bool = False,
+    routing_key: str | None = None,
 ) -> dict:
     """Return the query plan for a read-only query. `analyze=False` (default) plans without
     running it; `analyze=True` runs EXPLAIN (ANALYZE, BUFFERS) — note that actually EXECUTES
     the query against the target, so leave it off unless you need real timings. Provide `env`
-    and `target`."""
+    and `target` (or `routing_key`)."""
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     body = _assert_read_only(sql)
     prefix = "EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT TEXT) " if analyze else "EXPLAIN (VERBOSE, FORMAT TEXT) "
     cols, rows = _query(e, key, prefix + body)
@@ -555,11 +917,13 @@ def execute_sql(
     target: str | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    routing_key: str | None = None,
 ) -> dict:
     """Run a READ-ONLY query against one target, paginated.
 
-    Provide `env` ('staging' | 'prod' — required, never defaulted) and `target` — a configured
-    target name (see list_targets). Only SELECT/WITH/TABLE/VALUES, one statement. Results are
+    Provide `env` ('staging' | 'prod' — required, never defaulted) and exactly one of `target`
+    — a configured target name (see list_targets) — or `routing_key` (shard = its first
+    character, see resolve_shard). Only SELECT/WITH/TABLE/VALUES, one statement. Results are
     paged at `page_size` (max 200) rows; `page` is 1-based. Include an ORDER BY so pages are
     stable — OFFSET paging over an unordered query can repeat or skip rows between pages.
     `has_more` in the result tells you whether to fetch the next page.
@@ -568,7 +932,7 @@ def execute_sql(
     redaction: true for prod, false for staging (staging is not the production boundary).
     """
     e = _resolve_env(env)
-    key = _target_key(target)
+    key = _key_from(target, routing_key)
     body = _assert_read_only(sql)
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), MAX_PAGE_SIZE))
@@ -595,10 +959,12 @@ def disconnect(env: str | None = None) -> dict:
     """Close open connection pools and any tunnel sidecars — the teardown for a triage job.
     Closes BOTH environments by default; pass `env` to close just one. Leaves zero open
     connections and zero tunnels; the MCP process stays up but idle. Always call this when
-    the investigation is done."""
+    the investigation is done. An adopted gost (started outside the MCP) is left running and
+    reported under `adopted_left_running` — only the MCP's hold on it is released."""
     only = _resolve_env(env) if env else None
     closed_pools: list[str] = []
     closed_tunnels: list[str] = []
+    adopted: list[dict] = []
     with _lock:
         # Close pools BEFORE tunnels — killing the forward under an open pool leaves psycopg
         # handing out sockets to nothing.
@@ -610,28 +976,35 @@ def disconnect(env: str | None = None) -> dict:
             finally:
                 closed_pools.append(pk)
                 _pools.pop(pk, None)
+                _connect_errors.pop(pk, None)
         for pk in list(_tunnels):
             if only and not pk.startswith(f"{only}:"):
                 continue
-            gcloud_tunnel.close_tunnel(_tunnels.pop(pk))
+            tun = _tunnels.pop(pk)
+            gcloud_tunnel.close_tunnel(tun)
             closed_tunnels.append(pk)
+            if tun.adopted_pid is not None:
+                adopted.append({"pool_key": pk, "pid": tun.adopted_pid})
     return {
         "closed": closed_pools,
         "tunnels_closed": closed_tunnels,
+        "adopted_left_running": adopted,
         "open_pools": list(_pools),
     }
 
 
 @mcp.tool()
 def tunnel_status() -> dict:
-    """Report open tunnel sidecars: pid, up_seconds, idle_seconds, time-to-reap, and the local
-    port forward. Touches no database — reads only in-process tunnel state."""
+    """Report open tunnel sidecars: owner (self | adopted), pid, up_seconds, idle_seconds,
+    time-to-reap, and the local port forward. Touches no database — reads only in-process
+    tunnel state. An adopted gost is never stopped by the MCP; `teardown` says so."""
     now = time.time()
     with _lock:
         entries = []
         for pk, tun in _tunnels.items():
             env, _, target = pk.partition(":")
             idle_s = now - tun.last_used
+            adopted = tun.adopted_pid is not None
             entries.append(
                 _jsonable(
                     {
@@ -639,12 +1012,25 @@ def tunnel_status() -> dict:
                         "env": env,
                         "target": target,
                         "kind": tun.spec.kind,
+                        "owner": "adopted" if adopted else "self",
+                        "teardown": (
+                            "never stopped by the MCP — started outside it; disconnect or idle "
+                            "only drops the MCP's connection. Stop it yourself (Ctrl-C in its terminal)."
+                            if adopted else
+                            f"released on disconnect or after {IDLE_TIMEOUT_S} s idle; "
+                            "the shared gost stops with its last holder"
+                        ),
+                        "shared": tun.spec.kind == "gost",
                         "forward": (
-                            f"127.0.0.1:{tun.spec.local_port}"
-                            f" -> {tun.spec.host}:{tun.spec.port}"
+                            f"127.0.0.1:{tun.spec.local_port} -> "
+                            + (
+                                "gost (PG_TRIAGE_GOST_CONFIG)"
+                                if tun.spec.kind == "gost"
+                                else f"{tun.spec.host}:{tun.spec.port}"
+                            )
                         ),
                         "tunnel_open": gcloud_tunnel.is_alive(tun),
-                        "pid": tun.proc.pid if tun.proc is not None else None,
+                        "pid": tun.proc.pid if tun.proc is not None else tun.adopted_pid,
                         "up_seconds": round(now - tun.opened_at, 1),
                         "idle_seconds": round(idle_s, 1),
                         "reaped_in_seconds": max(0.0, round(IDLE_TIMEOUT_S - idle_s, 1)),
@@ -667,6 +1053,7 @@ def _close_all() -> None:
             except Exception:
                 pass
         _pools.clear()
+        _connect_errors.clear()
         for tun in list(_tunnels.values()):
             gcloud_tunnel.close_tunnel(tun)
         _tunnels.clear()
@@ -724,6 +1111,344 @@ def _selftest() -> int:
         if not cond:
             failures += 1
         print(f"  {'ok  ' if cond else 'FAIL'} {label}{(' — ' + detail) if detail else ''}")
+
+    def _raises(fn, needle: str) -> bool:
+        try:
+            fn()
+        except ValueError as exc:
+            return needle in str(exc)
+        return False
+
+    # --- classifier: the one name grammar (synthetic names + values, never the real file) ---
+    print("classifier:")
+    _dsn_ok = "postgresql://ro:pw@h:5432/db"
+
+    def cls(var: str, value: str | None = _dsn_ok, prefix: str = ENV_PREFIX):
+        return _classify(prefix, var, value)
+
+    check("PGPROD_REPORTING -> reporting", cls("PGPROD_REPORTING") == ("reporting", None, None))
+    check("PGPROD_HOST1_RO -> host1_ro", cls("PGPROD_HOST1_RO") == ("host1_ro", None, None))
+    check("A5 PGPROD_ZZ_TUNNEL is not a target", cls("PGPROD_ZZ_TUNNEL") == (None, None, None))
+    # shard role — opt-in, by declaration only
+    check("PGPROD_HOST1_SHARD_0 -> shard_0 (token)", cls("PGPROD_HOST1_SHARD_0") == ("shard_0", None, None))
+    check("PGPROD_SHARD_F -> shard_f (bare token)", cls("PGPROD_SHARD_F") == ("shard_f", None, None))
+    check("PGPROD_X_SHARD_00 refused (token grammar)", cls("PGPROD_X_SHARD_00")[1] == pg_prod.REASON_SHARD_TOKEN)
+    check("PGPROD_0 refused: bare hex, advise a declared name",
+          cls("PGPROD_0") == (None, REASON_BARE_HEX, "PGPROD_SHARD_0"))
+    check("sidecar declares the role of a named var",
+          _classify(ENV_PREFIX, "PGPROD_HOST1", _dsn_ok, env={"PGPROD_HOST1_SHARD": "a"}) == ("shard_a", None, None))
+    check("_SHARD sidecar is never a target", _classify(ENV_PREFIX, "PGPROD_HOST1_SHARD", "a") == (None, None, None))
+    check("_SHARD sidecar with a list value refused", cls("PGPROD_HOST1_SHARD", "0,1")[1] == pg_prod.REASON_LIST)
+    check("_SHARD sidecar on a token name refused",
+          cls("PGPROD_HOST1_SHARD_0_SHARD", "0")[1] == pg_prod.REASON_SHARD_SIDECAR_REFUSED)
+    check("target 'a' -> shard_a", _target_key("A") == "shard_a")
+    check("target 'main' stays named", _target_key("main") == "main")
+    check("routing_key resolves by first char", _key_from(None, "0abc-def") == "shard_0")
+    check("routing_key outside 0-f refused", _raises(lambda: _key_from(None, "zzz"), "routing_key"))
+    check("target + routing_key refused", _raises(lambda: _key_from("main", "0abc"), "not both"))
+    check("PGPROD_DSN reserved", cls("PGPROD_DSN")[1] == REASON_DSN)
+    check("PGPROD_1X refused: name starts with a letter", cls("PGPROD_1X")[1] == REASON_UPPER)
+    check("PGPROD_A__B refused: single underscores", cls("PGPROD_A__B")[1] == REASON_UPPER)
+    for bad_case in ("PGPROD_host1_ro", "pgprod_host1_ro"):
+        check(f"{bad_case} -> UPPER_SNAKE, did you mean PGPROD_HOST1_RO",
+              cls(bad_case) == (None, REASON_UPPER, "PGPROD_HOST1_RO"))
+    r = cls("PGPROD_REPORTING", "tunnel=gost;local=65441")
+    check("sidecar-shaped value is not a DSN", r[:2] == (None, REASON_NOT_DSN))
+    check("libpq error text never surfaces", "65441" not in (r[1] or "") and "tunnel" not in (r[1] or ""))
+    check("empty value", cls("PGPROD_REPORTING", "")[1] == REASON_EMPTY)
+    check("value spans lines", cls("PGPROD_REPORTING", f"{_dsn_ok}\nPGPROD_X={_dsn_ok}")[1] == REASON_MULTILINE)
+    check("not ours", cls("OTHER_THING") == (None, None, None))
+    stg = lambda var, value=_dsn_ok: cls(var, value, STAGING_PREFIX)  # noqa: E731
+    check("PGSTG_DSN is not a target", stg("PGSTG_DSN") == (None, None, None))
+    check("PGSTG_REPORTING -> reporting (per-target DSN)", stg("PGSTG_REPORTING") == ("reporting", None, None))
+    check("PGSTG_DB_REPORTING -> reporting (dbname, not a DSN)", stg("PGSTG_DB_REPORTING", "db") == ("reporting", None, None))
+    check("PGSTG_DB_REPORTING empty", stg("PGSTG_DB_REPORTING", "")[1] == REASON_EMPTY)
+    check("PGSTG_REPORTING sidecar-shaped value refused", stg("PGSTG_REPORTING", "tunnel=gost;local=1")[1] == REASON_NOT_DSN)
+    check("PGSTG_MAIN_TUNNEL is a sidecar", stg("PGSTG_MAIN_TUNNEL") == (None, None, None))
+    check("PGSTG_DB_SHARD_X refused; advise the pattern var",
+          stg("PGSTG_DB_SHARD_X", "shard_x") == (None, pg_prod.REASON_SHARD, pg_staging.DB_SHARD_FMT_VAR))
+
+    # --- discovery: synthetic prod + staging vars, set and restored in-process --------------
+    print("discovery:")
+    _syn = {"PGPROD_ZZQ": _dsn_ok, "PGPROD_zzbad": _dsn_ok, "PGSTG_ZZQ": _dsn_ok, "PGSTG_DB_ZZW": "zzw_db"}
+    saved_syn = {k: os.environ.pop(k, None) for k in _syn}
+    os.environ.update(_syn)
+    try:
+        check("zzq discovered on prod", "zzq" in _configured_targets(ENV_PROD) and _configured(ENV_PROD, "zzq"))
+        check("zzq + zzw discovered on staging", {"zzq", "zzw"} <= set(_configured_targets(ENV_STAGING)))
+        check("zzw dbname mapped", pg_staging.dbname("zzw") == "zzw_db")
+        check("wrong-case PGPROD_zzbad is not a target", "zzbad" not in _configured_targets(ENV_PROD))
+        unrec = [u for u in _unrecognized() if u["var"] == "PGPROD_zzbad"]
+        check("unrecognized names PGPROD_zzbad -> PGPROD_ZZBAD",
+              bool(unrec) and unrec[0]["env"] == ENV_PROD and unrec[0]["did_you_mean"] == "PGPROD_ZZBAD")
+        lt = list_targets()
+        entry = next((e for e in lt["envs"][ENV_PROD] if e["target"] == "zzq"), None)
+        check("list_targets has zzq (named)", entry is not None and entry["kind"] == "named")
+        check("list_targets.unrecognized names PGPROD_zzbad", "PGPROD_zzbad" in {u["var"] for u in lt["unrecognized"]})
+        # shard role: a token name declares shard_0; a second claimant fails it closed
+        os.environ["PGPROD_ZZH_SHARD_0"] = _dsn_ok
+        check("token var discovered as shard_0", "shard_0" in _configured_targets(ENV_PROD))
+        check("shard_0 resolves to the token var", _env_var("shard_0") == "PGPROD_ZZH_SHARD_0")
+        entry = next((e for e in list_targets()["envs"][ENV_PROD] if e["target"] == "shard_0"), None)
+        check("list_targets has shard_0 (shard)", entry is not None and entry["kind"] == "shard")
+        os.environ["PGPROD_ZZI"] = _dsn_ok
+        os.environ["PGPROD_ZZI_SHARD"] = "0"
+        check("conflicted shard_0 is not configured",
+              "shard_0" not in _configured_targets(ENV_PROD) and _configured(ENV_PROD, "shard_0") is False)
+        entry = next((e for e in list_targets()["envs"][ENV_PROD] if e["target"] == "shard_0"), None)
+        check("list_targets names both claimants",
+              entry is not None and set(entry.get("conflict", [])) == {"PGPROD_ZZH_SHARD_0", "PGPROD_ZZI"})
+        check("unrecognized names both claimants",
+              {"PGPROD_ZZH_SHARD_0", "PGPROD_ZZI"} <= {u["var"] for u in _unrecognized()})
+    finally:
+        for k in ("PGPROD_ZZH_SHARD_0", "PGPROD_ZZI", "PGPROD_ZZI_SHARD"):
+            os.environ.pop(k, None)
+        for k, v in saved_syn.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    # --- file report: a synthetic dotenv file; only key names + fixed reasons may print ---
+    print("file report:")
+    import tempfile
+
+    _fixture = (
+        "PGPROD_ZZA=postgresql://ro:pw@h/db1\n"
+        "PGPROD_ZZA_TUNNEL=tunnel=gost;local=65441\n"
+        "PGPROD_ZZORPHAN_TUNNEL=tunnel=gost;local=65442\n"
+        "PGPROD_ZZB=tunnel=gost;local=65443\n"
+        "PGPROD_ZZC=\n"
+        "PGPROD_ZZSHADOW=postgresql://ro:pw@h/db2\n"
+        "PGPROD_zzcase=postgresql://ro:pw@h/db3\n"
+        "PGSTG_DSN=postgresql://ro:pw@h/db4\n"
+        "PGSTG_DB_ZZW=zzw_db\n"
+        "PGSTG_ZZQ=postgresql://ro:pw@h/db5\n"
+        'PGPROD_ZZD="postgresql://ro:pw@h/db6\n'
+        'PGPROD_ZZE=postgresql://ro:pw@h/db7"\n'
+        "PGPROD_ZZF_SHARD_1=postgresql://ro:pw@h/db9\n"
+        "PGPROD_ZZG=postgresql://ro:pw@h/db10\n"
+        "PGPROD_ZZG_SHARD=2\n"
+        "PGPROD_ZZG_SHARD_TUNNEL=tunnel=gost;local=65444\n"
+        "PGPROD_ZZORPHAN2_SHARD=3\n"
+    )
+    saved_shadow = os.environ.pop("PGPROD_ZZSHADOW", None)
+    os.environ["PGPROD_ZZSHADOW"] = "postgresql://ro:other@h/db8"
+    with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as fh:
+        fh.write(_fixture)
+    try:
+        rep = {line.split(" ", 1)[0]: (status, line) for status, line in _file_key_report(Path(fh.name))}
+        joined = "\n".join(line for _, line in rep.values())
+        check("fixture: named target ok + sidecar ok",
+              rep["PGPROD_ZZA"] == ("ok", "PGPROD_ZZA -> target zza (named)")
+              and rep["PGPROD_ZZA_TUNNEL"] == ("ok", "PGPROD_ZZA_TUNNEL -> sidecar of PGPROD_ZZA"))
+        check("fixture: orphan sidecar warns",
+              rep["PGPROD_ZZORPHAN_TUNNEL"] == ("WARN", f"PGPROD_ZZORPHAN_TUNNEL — {REASON_ORPHAN.format(base='PGPROD_ZZORPHAN')}"))
+        check("fixture: sidecar-shaped DSN fails", rep["PGPROD_ZZB"] == ("FAIL", f"PGPROD_ZZB — {REASON_NOT_DSN}"))
+        check("fixture: empty fails", rep["PGPROD_ZZC"] == ("FAIL", f"PGPROD_ZZC — {REASON_EMPTY}"))
+        check("fixture: process env shadows the file", rep["PGPROD_ZZSHADOW"] == ("FAIL", f"PGPROD_ZZSHADOW — {REASON_SHADOWED}"))
+        check("fixture: wrong case fails with did-you-mean",
+              rep["PGPROD_zzcase"] == ("FAIL", f"PGPROD_zzcase — {REASON_UPPER}; did you mean PGPROD_ZZCASE?"))
+        check("fixture: PGSTG_DSN is the base DSN", rep["PGSTG_DSN"] == ("ok", "PGSTG_DSN -> staging base DSN"))
+        check("fixture: PGSTG_DB_ZZW ok (named)", rep["PGSTG_DB_ZZW"] == ("ok", "PGSTG_DB_ZZW -> target zzw (named)"))
+        check("fixture: PGSTG_ZZQ ok (named)", rep["PGSTG_ZZQ"] == ("ok", "PGSTG_ZZQ -> target zzq (named)"))
+        check("fixture: unbalanced quote swallows the next line",
+              rep["PGPROD_ZZD"][0] == "FAIL" and REASON_MULTILINE in rep["PGPROD_ZZD"][1] and "PGPROD_ZZE" not in rep)
+        check("fixture: token var -> shard_1", rep["PGPROD_ZZF_SHARD_1"] == ("ok", "PGPROD_ZZF_SHARD_1 -> target shard_1 (shard)"))
+        check("fixture: sidecar-declared -> shard_2", rep["PGPROD_ZZG"] == ("ok", "PGPROD_ZZG -> target shard_2 (shard)"))
+        check("fixture: _SHARD sidecar line", rep["PGPROD_ZZG_SHARD"] == ("ok", "PGPROD_ZZG_SHARD -> declares shard role of PGPROD_ZZG"))
+        check("fixture: sidecar of a sidecar fails", rep["PGPROD_ZZG_SHARD_TUNNEL"][0] == "FAIL")
+        check("fixture: orphan _SHARD warns", rep["PGPROD_ZZORPHAN2_SHARD"][0] == "WARN")
+        check("fixture: no value ever surfaces",
+              all(s not in joined for s in ("pw", "other", "db1", "db8", "db9", "db10", "65441", "65442", "65443", "65444", "zzw_db")))
+    finally:
+        os.unlink(fh.name)
+        if saved_shadow is None:
+            os.environ.pop("PGPROD_ZZSHADOW", None)
+        else:
+            os.environ["PGPROD_ZZSHADOW"] = saved_shadow
+
+    check("PYTHON_DOTENV_DISABLED is not set", not os.environ.get("PYTHON_DOTENV_DISABLED"),
+          "" if not os.environ.get("PYTHON_DOTENV_DISABLED") else "set — load_dotenv silently skipped scripts/db/.env")
+    if ENV_PATH.exists():
+        for status, line in _file_key_report(ENV_PATH):
+            check(line, status != "FAIL") if status != "WARN" else print(f"  WARN {line}")
+
+    # --- connect reasons: every input embeds a synthetic secret + every DSN value; no output may ---
+    print("connect reasons:")
+    _cr_secret = "zz-s3cr3t-PW-canary"
+    _cr_values = (_cr_secret, "zzreader", "10.9.9.9", "6543", "zzreports")
+    _cr_dsn = "host=10.9.9.9 port=6543 user=zzreader password=zz-s3cr3t-PW-canary dbname=zzreports"
+    _cr_tail = f' (host=10.9.9.9 port=6543 user=zzreader password={_cr_secret} dbname=zzreports)'
+    _OpErr = psycopg.OperationalError
+    _cr_cases: list[tuple[str, BaseException, str]] = [
+        ("timeout (class)", psycopg.errors.ConnectionTimeout("connection timeout expired" + _cr_tail),
+         "timeout: no answer within connect_timeout"),
+        ("timeout (text)", _OpErr("connection failed: timeout expired" + _cr_tail),
+         "timeout: no answer within connect_timeout"),
+        ("malformed (class)", psycopg.ProgrammingError(f'missing "=" after "{_cr_secret}" in connection info string'),
+         _REASON_MALFORMED_DSN),
+        ("malformed (text)", _OpErr(f'invalid percent-encoded token: "{_cr_secret}"' + _cr_tail), _REASON_MALFORMED_DSN),
+        ("auth failed", _OpErr('connection failed: FATAL:  password authentication failed for user "zzreader"' + _cr_tail),
+         "authentication failed (wrong password, or the role does not exist; Postgres does not say which)"),
+        ("role missing", _OpErr('FATAL:  role "zzreader" does not exist' + _cr_tail),
+         "authentication failed: role does not exist"),
+        ("pg_hba", _OpErr('FATAL:  no pg_hba.conf entry for host "10.9.9.9", user "zzreader", database "zzreports"' + _cr_tail),
+         "rejected by pg_hba.conf (this client/user/database is not allowed)"),
+        ("db missing", _OpErr('FATAL:  database "zzreports" does not exist' + _cr_tail), "database does not exist"),
+        ("too many clients", _OpErr("FATAL:  sorry, too many clients already" + _cr_tail), "server has no free connection slots"),
+        ("slots reserved", _OpErr("FATAL:  remaining connection slots are reserved" + _cr_tail), "server has no free connection slots"),
+        ("starting up", _OpErr("FATAL:  the database system is starting up" + _cr_tail),
+         "server not accepting connections (starting, stopping or in recovery)"),
+        ("shutting down", _OpErr("FATAL:  the database system is shutting down" + _cr_tail),
+         "server not accepting connections (starting, stopping or in recovery)"),
+        ("in recovery", _OpErr("FATAL:  the database system is in recovery mode" + _cr_tail),
+         "server not accepting connections (starting, stopping or in recovery)"),
+        ("ssl", _OpErr("connection failed: SSL error: certificate verify failed" + _cr_tail), "TLS/SSL failure"),
+        ("refused", _OpErr('connection to server at "10.9.9.9", port 6543 failed: Connection refused' + _cr_tail),
+         "connection refused (nothing listening; is the tunnel up?)"),
+        ("dns", _OpErr('could not translate host name "10.9.9.9" to address' + _cr_tail), "host name did not resolve"),
+        ("dns (resolve)", _OpErr("failed to resolve host" + _cr_tail), "host name did not resolve"),
+        ("dropped", _OpErr("server closed the connection unexpectedly" + _cr_tail),
+         "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+        ("reset", _OpErr("connection reset by peer" + _cr_tail),
+         "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+    ]
+    _cr_results: list[str] = []
+    for label, exc, expected in _cr_cases:
+        got = _connect_reason(exc, _cr_dsn)
+        _cr_results.append(got)
+        check(f"reason: {label}", got == expected, got[:90])
+    # real libpq parse errors, not hand-written text
+    for label, bad in (("keyword", f"host=h password=a {_cr_secret}"),
+                       ("percent", f"postgresql://u:hunter2%zz{_cr_secret}@h/d")):
+        try:
+            conninfo_to_dict(bad)
+            check(f"reason: real malformed DSN ({label})", False, "conninfo_to_dict did not raise")
+        except psycopg.ProgrammingError as exc:
+            got = _connect_reason(exc, bad)
+            _cr_results.append(got)
+            check(f"reason: real malformed DSN ({label})", got == _REASON_MALFORMED_DSN, got[:90])
+    # unclassified: the only row that carries error text — every DSN value must be scrubbed
+    _cr_unk = _OpErr(f"weird failure: host=10.9.9.9 user=zzreader pw {_cr_secret} db 'zzreports' on 6543 postgresql://zzreader:{_cr_secret}@10.9.9.9:6543/zzreports")
+    got = _connect_reason(_cr_unk, _cr_dsn)
+    _cr_results.append(got)
+    check("reason: unclassified carries the class name", got.startswith("unclassified connection failure (OperationalError)"), got[:90])
+    check("reason: unclassified detail keeps no DSN value", all(v not in got for v in _cr_values), got[:120])
+    got = _connect_reason(_cr_unk, f"host=h password=a {_cr_secret}")
+    _cr_results.append(got)
+    check("reason: unclassified + malformed conninfo has no detail", got == "unclassified connection failure (OperationalError)", got[:90])
+    got = _connect_reason(_OpErr(f"boom {_cr_secret}"), "")
+    _cr_results.append(got)
+    check("reason: empty conninfo still scrubs the detail", _cr_secret not in got, got[:90])
+    check("reason: NO output carries the secret or any DSN value",
+          all(v not in r for r in _cr_results for v in _cr_values))
+
+    # --- connect surfacing: a real pool against a loopback fake server; the tool error carries ---
+    # the reason, and neither it nor stderr carries the secret, the user or the port.
+    print("connect surfacing:")
+    import contextlib as _ctx
+    import io as _io
+    import struct as _struct
+
+    def _fake_pg(code: bytes, msg: bytes) -> int:
+        """Answers SSL/GSS requests with N, then the startup message with a FATAL ErrorResponse."""
+        srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(8)
+
+        def serve(c: _socket.socket) -> None:
+            with c:
+                while True:
+                    head = c.recv(4)
+                    if len(head) < 4:
+                        return
+                    body = c.recv(_struct.unpack("!I", head)[0] - 4)
+                    if _struct.unpack("!I", body[:4])[0] in (80877103, 80877104):  # SSLRequest / GSSENCRequest
+                        c.sendall(b"N")
+                        continue
+                    break
+                fields = b"SFATAL\0VFATAL\0C" + code + b"\0M" + msg + b"\0\0"
+                c.sendall(b"E" + _struct.pack("!I", len(fields) + 4) + fields)
+
+        def loop() -> None:
+            while True:
+                try:
+                    c, _ = srv.accept()
+                except OSError:
+                    return
+                threading.Thread(target=serve, args=(c,), daemon=True).start()
+
+        threading.Thread(target=loop, name="fake-pg", daemon=True).start()
+        return srv.getsockname()[1]
+
+    global POOL_TIMEOUT_S
+    _cs_secret = "zz-s3cr3t-PW-canary"
+    _cs_saved = {k: os.environ.get(k) for k in (pg_staging.DSN_VAR, "PGSTG_DB_ZZX")}
+    _cs_saved_timeout = POOL_TIMEOUT_S
+    _cs_port = _fake_pg(b"28P01", b'password authentication failed for user "zzreader"')
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _closed:
+        _closed.bind(("127.0.0.1", 0))
+        _cs_closed_port = _closed.getsockname()[1]  # bound but never listening -> refused
+
+    class _Records(logging.Handler):
+        """Every log record that propagates to root — the stderr leak is a `psycopg.pool` WARNING
+        emitted by a handler bound to the ORIGINAL stderr, which redirect_stderr cannot see."""
+
+        def __init__(self) -> None:
+            super().__init__(logging.DEBUG)
+            self.lines: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.lines.append(f"{record.name}: {record.getMessage()}")
+
+    def _surface(dsn: str) -> tuple[BaseException | None, str]:
+        os.environ[pg_staging.DSN_VAR] = dsn
+        err_out = _io.StringIO()
+        records = _Records()
+        logging.getLogger().addHandler(records)
+        try:
+            with _ctx.redirect_stderr(err_out):
+                execute_sql(sql="SELECT 1", env=ENV_STAGING, target="zzx")
+            return None, err_out.getvalue()
+        except Exception as exc:  # noqa: BLE001 — the whole point is to inspect what surfaces
+            return exc, err_out.getvalue() + "\n".join(records.lines)
+        finally:
+            logging.getLogger().removeHandler(records)
+            disconnect(env=ENV_STAGING)
+
+    try:
+        os.environ["PGSTG_DB_ZZX"] = "zzx"
+        POOL_TIMEOUT_S = 2
+        for label, port, expect in (
+            ("auth failure", _cs_port, "authentication failed"),
+            ("closed port", _cs_closed_port, "connection refused"),
+        ):
+            exc, err = _surface(
+                f"host=127.0.0.1 port={port} user=zzreader password={_cs_secret} dbname=x sslmode=disable"
+            )
+            msg = str(exc)
+            check(f"{label}: raises PoolTimeout", isinstance(exc, PoolTimeout), type(exc).__name__)
+            check(f"{label}: names the pool key", "staging:zzx" in msg, msg[:100])
+            check(f"{label}: carries the reason", expect in msg, msg[:140])
+            check(f"{label}: no secret/user/port in the error",
+                  all(s not in msg for s in (_cs_secret, "zzreader", str(port))), msg[:140])
+            check(f"{label}: no secret/user/port on stderr or in any log record",
+                  all(s not in err for s in (_cs_secret, "zzreader", str(port))), err[:140])
+            check(f"{label}: disconnect clears the recorded reason", "staging:zzx" not in _connect_errors)
+        exc, err = _surface(f"host=h password=a {_cs_secret}")
+        msg = str(exc)
+        check("malformed PGSTG_DSN: ValueError", isinstance(exc, ValueError), type(exc).__name__)
+        check("malformed PGSTG_DSN: names the variable", pg_staging.DSN_VAR in msg, msg[:100])
+        check("malformed PGSTG_DSN: no secret in the error or stderr",
+              _cs_secret not in msg and _cs_secret not in err, msg[:100])
+    finally:
+        POOL_TIMEOUT_S = _cs_saved_timeout
+        for k, v in _cs_saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
     print("tunnel checks:")
 
@@ -798,41 +1523,124 @@ def _selftest() -> int:
     prod_allowed, _ = triage_policy.resolve("prod")
     if not prod_allowed:
         test_pk = _pool_key(ENV_PROD, "_selftest_gate")
-        try:
-            # Temporarily inject a fake prod target + tunnel sidecar
-            os.environ[ENV_PREFIX + "_SELFTEST_GATE"] = "postgresql://ro:pw@fake:5432/db"
-            os.environ[ENV_PREFIX + "_SELFTEST_GATE_TUNNEL"] = (
-                "tunnel=gcloud;host=fake-db;local=15503;vm=fake-vm"
-            )
-            _pool(ENV_PROD, "_selftest_gate")
-            check("A9 prod gate before tunnel spawn", False, "PermissionError not raised")
-        except PermissionError:
-            check("A9 prod gate before tunnel spawn", True)
-            # Verify no tunnel was opened
-            with _lock:
-                check("A9 no tunnel spawned before gate", test_pk not in _tunnels)
-        finally:
-            os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE", None)
-            os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE_TUNNEL", None)
+        for sidecar in (
+            "tunnel=gcloud;host=fake-db;local=15503;vm=fake-vm",
+            "tunnel=gost;local=65432",
+        ):
+            kind = sidecar.split(";")[0].split("=")[1]
+            try:
+                # Temporarily inject a fake prod target + tunnel sidecar
+                os.environ[ENV_PREFIX + "_SELFTEST_GATE"] = "postgresql://ro:pw@fake:5432/db"
+                os.environ[ENV_PREFIX + "_SELFTEST_GATE_TUNNEL"] = sidecar
+                _pool(ENV_PROD, "_selftest_gate")
+                check(f"A9 prod gate before {kind} spawn", False, "PermissionError not raised")
+            except PermissionError:
+                check(f"A9 prod gate before {kind} spawn", True)
+                # Verify no tunnel was opened
+                with _lock:
+                    check(f"A9 no {kind} tunnel spawned before gate", test_pk not in _tunnels)
+                if kind == "gost":
+                    check("A9 no shared gost spawned before gate", not gcloud_tunnel.gost_running())
+            finally:
+                os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE", None)
+                os.environ.pop(ENV_PREFIX + "_SELFTEST_GATE_TUNNEL", None)
     else:
         print("  skip A9 — triage.prod is on; a human verifies this case with prod gated off")
 
-    # Port uniqueness across all configured targets
+    # Adopted gost is never stopped: every MCP teardown path against a live stand-in process.
+    # Hermetic — a `sleep` plays the person's gost; no gost, no DB.
+    import subprocess as _sp
+    _adopt_pk = _pool_key(ENV_PROD, "_selftest_adopt")
+    _adopt_spec = gcloud_tunnel.parse_spec("PGPROD_SELFTEST_ADOPT_TUNNEL", "tunnel=gost;local=65432")
+    _sleeper = _sp.Popen(["sleep", "60"])
+    _victim = _sp.Popen(["sleep", "60"])  # a self-owned tunnel the reaper MUST kill (contrast)
+
+    def _adopted(last_used: float) -> gcloud_tunnel.Tunnel:
+        return gcloud_tunnel.Tunnel(spec=_adopt_spec, proc=None, log_path=None, opened_at=time.time(),
+                                    last_used=last_used, adopted_pid=_sleeper.pid)
+    try:
+        with _lock:
+            _tunnels[_adopt_pk] = _adopted(time.time())
+        entry = next(e for e in tunnel_status()["tunnels"] if e["pool_key"] == _adopt_pk)
+        check("adopted: tunnel_status owner=adopted", entry["owner"] == "adopted")
+        check("adopted: tunnel_status pid is the real pid", entry["pid"] == _sleeper.pid)
+        check("adopted: tunnel_status teardown says never stopped", "never stopped" in entry["teardown"])
+
+        closed = disconnect(env=ENV_PROD)
+        check("adopted: disconnect releases the hold", _adopt_pk in closed["tunnels_closed"])
+        check("adopted: disconnect reports adopted_left_running",
+              [e["pool_key"] for e in closed["adopted_left_running"]] == [_adopt_pk])
+        check("adopted: disconnect leaves the process running", _sleeper.poll() is None)
+
+        with _lock:
+            _tunnels[_adopt_pk] = _adopted(0.0)   # idle since the epoch -> reaped on this tick
+            _victim_pk = _pool_key(ENV_PROD, "_selftest_victim")
+            _tunnels[_victim_pk] = gcloud_tunnel.Tunnel(
+                spec=gcloud_tunnel.parse_spec("PGPROD_SELFTEST_VICTIM_TUNNEL",
+                                              "tunnel=gcloud;host=h;local=15599;vm=v"),
+                proc=_victim, log_path=None, opened_at=0.0, last_used=0.0)
+        _reap_once(time.time())
+        with _lock:
+            check("adopted: reaper drops the entry", _adopt_pk not in _tunnels)
+            check("contrast: reaper drops the self-owned entry", _victim_pk not in _tunnels)
+        check("adopted: reaper leaves the process running", _sleeper.poll() is None)
+        check("contrast: reaper DOES stop a self-owned tunnel", _victim.poll() is not None)
+
+        with _lock:
+            _tunnels[_adopt_pk] = _adopted(time.time())
+        _close_all()
+        with _lock:
+            check("adopted: _close_all clears the entry", not _tunnels)
+        check("adopted: _close_all leaves the process running", _sleeper.poll() is None)
+    finally:
+        with _lock:
+            _tunnels.pop(_adopt_pk, None)
+        for p in (_sleeper, _victim):
+            if p.poll() is None:
+                p.kill()
+            p.wait()
+
+    # Port invariants across all configured targets: gcloud ports unique; gost ports may repeat
+    # (two shards per host) but must not overlap gcloud ports; nothing on 5432.
     all_specs: list[tuple[str, str, gcloud_tunnel.TunnelSpec]] = []
+    direct_prod: list[str] = []
     for env in ENVS:
         for key in _configured_targets(env):
             try:
                 spec = _tunnel_spec(env, key)
             except ValueError:
                 continue
-            if spec is not None and spec.kind == "gcloud":
-                all_specs.append((env, key, spec))
-    ports = [s.local_port for _, _, s in all_specs]
-    check("local ports are unique across all specs", len(ports) == len(set(ports)),
+            if spec is None or spec.kind == "none":
+                if env == ENV_PROD:
+                    direct_prod.append(_env_var(key))
+                continue
+            all_specs.append((env, key, spec))
+    gcloud_specs = [s for s in all_specs if s[2].kind == "gcloud"]
+    gost_specs = [s for s in all_specs if s[2].kind == "gost"]
+    ports = [s.local_port for _, _, s in gcloud_specs]
+    check("gcloud local ports are unique", len(ports) == len(set(ports)),
           f"duplicates: {[p for p in ports if ports.count(p) > 1]}")
+    overlap = set(ports) & {s.local_port for _, _, s in gost_specs}
+    check("gcloud ports disjoint from gost ports", not overlap, f"shared: {sorted(overlap)}")
     bad_5432 = [(env, key) for env, key, s in all_specs if s.local_port == 5432]
     check("no spec forwards to 5432 (local dev Postgres)", not bad_5432,
           f"offenders: {bad_5432}")
+
+    # gost preflight (A6): binary, gost.yaml, socks.auth existence, declared port — loud on miss.
+    if gost_specs:
+        problems: list[str] = []
+        for env, key, spec in gost_specs:
+            problems += gcloud_tunnel.gost_preflight(spec)
+        for line in dict.fromkeys(problems):  # dedupe, keep order (banner prints once)
+            print(f"  {line}")
+        check(f"gost preflight ({len(gost_specs)} target(s))", not problems)
+    else:
+        print("  skip gost preflight — no tunnel=gost sidecar configured")
+
+    # Policy: production only through the SOCKS proxy. Advisory for now (not a failure).
+    for var in direct_prod:
+        print(f"  WARN {var} connects directly — policy requires the SOCKS proxy; "
+              f"add {var}_TUNNEL=tunnel=gost;local=<port>")
 
     print("selftest ok" if not failures else f"{failures} tunnel check(s) FAILED")
     return 1 if failures else 0
@@ -867,6 +1675,15 @@ def _verify(env: str, target: str) -> int:
     if not _configured(e, key):
         print(f"  FAIL {e} target {key!r} is unconfigured — see --selftest for what is set")
         return 1
+    spec = _tunnel_spec(e, _target_key(target))
+    uses_gost = spec is not None and spec.kind == "gost"
+    if uses_gost:
+        problems = gcloud_tunnel.gost_preflight(spec)
+        if problems:
+            print("  FAIL gost preflight:")
+            for line in problems:
+                print(f"  {line}")
+            return 1
 
     vault_tmp = Path(tempfile.mkdtemp(prefix="pg-triage-verify-vault-"))
     prev_vault = os.environ.get("PII_VAULT_DIR")
@@ -944,8 +1761,15 @@ def _verify(env: str, target: str) -> int:
         else:
             print("  skip prod-gate check — triage.prod is on, so prod is legitimately reachable")
 
-        # 8) teardown
+        # 8) teardown — an adopted gost (a person's own) must SURVIVE disconnect
+        owners = {e["pool_key"]: (e["owner"], e["pid"]) for e in tunnel_status()["tunnels"]}
+        adopted_pids = [pid for owner, pid in owners.values() if owner == "adopted"]
         closed = disconnect()
+        if adopted_pids:
+            check("disconnect leaves the adopted gost running",
+                  all(gcloud_tunnel._pid_exists(p) for p in adopted_pids), str(adopted_pids))
+            check("disconnect reports it under adopted_left_running",
+                  {e["pid"] for e in closed["adopted_left_running"]} == set(adopted_pids))
         check(
             "disconnect leaves zero open pools",
             not closed["open_pools"],
@@ -955,6 +1779,8 @@ def _verify(env: str, target: str) -> int:
             "disconnect result has tunnels_closed key",
             "tunnels_closed" in closed,
         )
+        if uses_gost and not adopted_pids:
+            check("disconnect stops the shared gost", not gcloud_tunnel.gost_running())
     finally:
         if prev_vault is None:
             os.environ.pop("PII_VAULT_DIR", None)

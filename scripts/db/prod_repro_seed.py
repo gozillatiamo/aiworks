@@ -111,6 +111,7 @@ ENV_PATH = Path(__file__).parent / ".env"
 # vault it records into (keyed hashes of the prod values seen, never the values), so those same
 # values are redacted later if they surface in a ticket or a chat post.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import pg_prod  # noqa: E402  — declared shard role (shard_<hex> -> the var that declares it)
 import pg_staging  # noqa: E402  — staging DSN resolution, shared with pg_triage_mcp.py
 import pii_provenance  # noqa: E402  (path must be set first)
 import triage_policy  # noqa: E402  — the production gate, the same one the triage MCPs enforce
@@ -172,13 +173,25 @@ def source_dsn(env: str, key: str) -> str:
         sys.exit(str(exc))
 
 
-def target_key(target: str | None) -> str:
+def target_key(target: str | None, routing_key: str | None = None) -> str:
+    """`target` names a target ('main', or a shard hex 'a' -> 'shard_a'); `routing_key` instead
+    resolves the shard from its first character (see pg_prod). Exactly one of them."""
+    if target and routing_key:
+        raise ValueError("source takes either `target` or `routing_key`, not both")
+    if routing_key:
+        hex_ = routing_key.strip().lower()[:1]
+        if hex_ not in pg_prod.HEX:
+            raise ValueError("routing_key must start with the shard hex 0-f")
+        return "shard_" + hex_
     if not target or not target.strip():
-        raise ValueError("source needs a `target` (a configured prod target name, e.g. 'main')")
-    return target.strip().lower()
+        raise ValueError("source needs a `target` (a configured prod target name, e.g. 'main') or a `routing_key`")
+    key = target.strip().lower()
+    return "shard_" + key if len(key) == 1 and key in pg_prod.HEX else key
 
 
 def prod_env_var(key: str) -> str:
+    if key.startswith("shard_"):
+        return pg_prod.shard_var(key[len("shard_"):])
     return PROD_ENV_PREFIX + re.sub(r"[^A-Z0-9]+", "_", key.strip().upper())
 
 
@@ -230,7 +243,7 @@ def normalize_seeds(spec: dict) -> list[dict]:
     for i, s in enumerate(seeds):
         src = s.get("source", {})
         env = resolve_env(src.get("env"))
-        key = target_key(src.get("target"))
+        key = target_key(src.get("target"), src.get("routing_key"))
         name = s.get("name") or key
         out.append({
             "name": name,
@@ -522,7 +535,28 @@ def do_selftest(_args) -> int:
             gate_ok, gate_note = False, "prod source failed on the DSN lookup, not the gate"
     print(f"  spec requires source.env: {'PASS' if spec_env_required else 'FAIL'}")
     print(f"  prod gate: {'PASS' if gate_ok else 'FAIL'} — {gate_note}")
-    return 0 if (ok and spec_env_required and gate_ok) else 1
+
+    # shard role: a hex target or a routing_key resolves to shard_<hex>, backed by the var
+    # that DECLARES the shard (never a fixed name).
+    saved_tok = os.environ.pop("PGPROD_ZZH_SHARD_0", None)
+    os.environ["PGPROD_ZZH_SHARD_0"] = "postgresql://ro:pw@h/db"
+    try:
+        shard_ok = (target_key("0") == "shard_0" and target_key(None, "0abc") == "shard_0"
+                    and target_key("main") == "main"
+                    and prod_env_var("shard_0") == "PGPROD_ZZH_SHARD_0"
+                    and prod_env_var("shard_1") == pg_prod.default_var("1"))
+        try:
+            target_key(None, "zzz")
+            shard_ok = False
+        except ValueError:
+            pass
+    finally:
+        if saved_tok is None:
+            os.environ.pop("PGPROD_ZZH_SHARD_0", None)
+        else:
+            os.environ["PGPROD_ZZH_SHARD_0"] = saved_tok
+    print(f"  shard role: {'PASS' if shard_ok else 'FAIL'} — hex target / routing_key -> shard_<hex> -> declaring var")
+    return 0 if (ok and spec_env_required and gate_ok and shard_ok) else 1
 
 
 def main() -> int:
