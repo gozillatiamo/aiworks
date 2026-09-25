@@ -680,17 +680,20 @@ ck_exit "…so the run exits non-zero"           1 "$RC"
 #
 # The fixture breaks two things at once: a chmod the fix really closes, and an over-budget
 # CLAUDE.md whose fix is an editor — so one finding must clear and the other must be named as
-# still open. This is the only case that runs --fix for real; every command it can reach is a
-# chmod inside $T.
+# still open. The fixture also has no .graphifyignore, which is the second survivor the count
+# below expects. This is the only case that runs --fix for real; every command it can reach is
+# a chmod inside $T.
 W="$T/refereed"; make_ws "$W"; stage "$W"
 chmod -x "$W/demo-repo/scripts/dev.sh"
 { printf '# repo\n'; for i in $(seq 1 130); do printf 'line %s\n' "$i"; done; } > "$W/demo-repo/CLAUDE.md"
-# AIWORKS_TRANSCRIPT_DIR is pinned at an empty fixture path because this case asserts on a
-# COUNT of surviving findings, and the context-window drift check samples the developer's own
-# session transcripts. Unpinned, the suite passed or failed by how the machine had been used
-# that week — which is not a test. HOME is deliberately NOT pinned: the sibling headroom checks
-# read the real plugin registry, so moving HOME just makes THOSE fire and breaks the same count.
-OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/no-transcripts" \
+# BOTH machine-global headroom inputs are pinned at empty fixture paths because this case asserts
+# on a COUNT of surviving findings: the context-window drift check samples the developer's own
+# session transcripts (AIWORKS_TRANSCRIPT_DIR), and the badge price-table check reads the real
+# savings ledger (HEADROOM_STATE_DIR — an unpriced session there adds a third survivor). Unpinned,
+# the suite passed or failed by how the machine had been used that week — which is not a test.
+# HOME is deliberately NOT pinned: the sibling headroom checks read the real plugin registry, so
+# moving HOME just makes THOSE fire and breaks the same count.
+OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/no-transcripts" HEADROOM_STATE_DIR="$T/no-headroom-ledger" \
        "$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y 2>&1)"; RC=$?
 ck "the runner says it RAN a command, not that it fixed one"  "✓ ran"        "$OUT"
 ck "a second pass re-checks the findings"                    "re-checked:"  "$OUT"
@@ -701,7 +704,8 @@ ck "…named, so nobody has to diff two runs by eye"  "still open  CLAUDE.md ove
                                        || bad "the fix really ran" "dev.sh is still not executable"
 ck_exit "the verdict follows the re-check, not the first pass" 0 "$RC"
 # Same run under --strict: what survived is a warning, and --strict fails on one.
-OUT="$("$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y --strict 2>&1)"; RC=$?
+OUT="$(AIWORKS_TRANSCRIPT_DIR="$T/no-transcripts" HEADROOM_STATE_DIR="$T/no-headroom-ledger" \
+       "$W/scripts/aiworks-doctor.sh" --skip mcp,services,credentials,disk --fix -y --strict 2>&1)"; RC=$?
 ck_exit "a warning that survived the fix still fails --strict" 1 "$RC"
 
 # 21b — the referee must survive being invoked by a RELATIVE path. The script cd's to $ROOT
