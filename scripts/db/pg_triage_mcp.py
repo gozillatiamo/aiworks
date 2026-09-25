@@ -59,6 +59,7 @@ the MCP when done" teardown, without needing to kill the managed process.
 from __future__ import annotations
 
 import atexit
+import logging
 import json
 import os
 import re
@@ -68,11 +69,12 @@ import threading
 import time
 from pathlib import Path
 
+import psycopg
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-from psycopg.conninfo import make_conninfo
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 # Value-exact PII provenance (scripts/lib/pii_provenance.py). Every row this server hands back
 # came from PRODUCTION by definition, so each personal value in it is vaulted as a keyed hash
@@ -99,6 +101,7 @@ MAX_PAGE_SIZE = 200
 DEFAULT_PAGE_SIZE = 200
 POOL_MAX_SIZE = 4
 POOL_MAX_IDLE_S = 60
+POOL_TIMEOUT_S = 30.0  # psycopg_pool's default; a constant so the selftest can shrink it
 
 ENV_PROD = "prod"
 ENV_STAGING = "staging"
@@ -122,6 +125,12 @@ TUNNEL_READY_TIMEOUT_S = 45 # how long to wait for the port-forward to answer
 _pools: dict[str, ConnectionPool] = {}
 _tunnels: dict[str, gcloud_tunnel.Tunnel] = {}  # keyed by pool key (env:target); gost targets share one proc
 _lock = threading.RLock()   # guards both _pools and _tunnels
+_connect_errors: dict[str, str] = {}  # pool key -> last scrubbed connect reason (see _CapturingConn)
+
+# psycopg_pool logs every failed connect at WARNING with the raw libpq text; with no handler
+# configured Python's lastResort prints it to stderr — host, user and (for a malformed DSN)
+# password fragments. The tool error now carries a scrubbed reason instead.
+logging.getLogger("psycopg.pool").setLevel(logging.CRITICAL + 1)
 _watchdog: threading.Thread | None = None
 
 mcp = FastMCP("pg-triage")
@@ -198,6 +207,102 @@ def _pool_key(env: str, key: str) -> str:
     return f"{env}:{key}"
 
 
+# --- connect-failure reasons -------------------------------------------------------------
+#
+# `PoolTimeout` carries nothing (`raise ... from None`), and SQLSTATE is None on every
+# connect-phase failure, so a reason is classified from the libpq message TEXT. Every
+# classified reason is a fixed string — nothing from the error text survives except on the
+# unclassified row, where the detail is exact-value scrubbed against the conninfo.
+# First match wins; the order matters (a TLS handshake that times out is a timeout).
+
+_REASON_MALFORMED_DSN = "malformed DSN (details withheld: libpq echoes DSN fragments)"
+_REASON_RULES: tuple[tuple[tuple[str, ...], str], ...] = (  # (every needle present) -> reason
+    (("timeout expired",), "timeout: no answer within connect_timeout"),
+    (('missing "="',), _REASON_MALFORMED_DSN),
+    (("invalid percent-encoded",), _REASON_MALFORMED_DSN),
+    (("invalid connection option",), _REASON_MALFORMED_DSN),
+    (("connection is bad: invalid",), _REASON_MALFORMED_DSN),
+    (("unterminated quoted string",), _REASON_MALFORMED_DSN),
+    (("password authentication failed",),
+     "authentication failed (wrong password, or the role does not exist; Postgres does not say which)"),
+    (('role "', "does not exist"), "authentication failed: role does not exist"),
+    (("no pg_hba.conf entry",), "rejected by pg_hba.conf (this client/user/database is not allowed)"),
+    (('database "', "does not exist"), "database does not exist"),
+    (("too many clients",), "server has no free connection slots"),
+    (("remaining connection slots",), "server has no free connection slots"),
+    (("starting up",), "server not accepting connections (starting, stopping or in recovery)"),
+    (("shutting down",), "server not accepting connections (starting, stopping or in recovery)"),
+    (("in recovery",), "server not accepting connections (starting, stopping or in recovery)"),
+    (("ssl",), "TLS/SSL failure"),
+    (("certificate",), "TLS/SSL failure"),
+    (("tls",), "TLS/SSL failure"),
+    (("connection refused",), "connection refused (nothing listening; is the tunnel up?)"),
+    (("failed to resolve host",), "host name did not resolve"),
+    (("could not translate host name",), "host name did not resolve"),
+    (("server closed the connection unexpectedly",),
+     "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+    (("connection reset",), "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+)
+
+
+def _scrub_detail(text: str, conninfo: str) -> str | None:
+    """The unclassified row's detail: every conninfo VALUE replaced exactly (longest first),
+    then quoted runs, key=value pairs and scheme://… shapes. None when the conninfo itself
+    does not parse — then nothing is safe to echo."""
+    try:
+        values = [str(v) for v in conninfo_to_dict(conninfo).values() if str(v)]
+    except Exception:
+        return None
+    if not values:  # nothing known to scrub against -> nothing is safe to echo
+        return None
+    line = text.splitlines()[0] if text else ""
+    for marker in ("failed: ", "FATAL:"):
+        if marker in line:
+            line = line.rsplit(marker, 1)[1]
+    for v in sorted(values, key=len, reverse=True):
+        line = line.replace(v, "<redacted>")
+    line = re.sub(r'"[^"]*"|\'[^\']*\'', '"<redacted>"', line)
+    line = re.sub(r"\w+=\S+|\w+://\S+", "<redacted>", line)
+    return line.strip()[:120]
+
+
+class _CapturingConn(psycopg.Connection):
+    """Per-pool connection class: records the scrubbed reason of a failed connect under its
+    pool key, at the source, with the conninfo in hand. Only the string survives the except
+    block. A successful connect clears the entry."""
+
+    pool_key = ""
+
+    @classmethod
+    def connect(cls, conninfo: str = "", **kwargs):
+        try:
+            conn = super().connect(conninfo, **kwargs)
+        except Exception as exc:
+            _connect_errors[cls.pool_key] = _connect_reason(exc, conninfo)
+            raise
+        _connect_errors.pop(cls.pool_key, None)
+        return conn
+
+
+def _connect_reason(exc: BaseException, conninfo: str) -> str:
+    """Classify a connect failure into a secret-free reason string. Never raises."""
+    name = type(exc).__name__
+    try:
+        text = str(exc)
+        low = text.lower()
+        if isinstance(exc, psycopg.errors.ConnectionTimeout):
+            return _REASON_RULES[0][1]
+        if isinstance(exc, psycopg.ProgrammingError):
+            return _REASON_MALFORMED_DSN
+        for needles, reason in _REASON_RULES:
+            if all(n in low for n in needles):
+                return reason
+        detail = _scrub_detail(text, conninfo)
+        return f"unclassified connection failure ({name})" + (f": {detail}" if detail else "")
+    except Exception:
+        return f"unclassified connection failure ({name})"
+
+
 def _tunnel_var(env: str, key: str) -> str:
     """Env var backing a tunnel sidecar for one target.
 
@@ -260,6 +365,7 @@ def _reap_once(now: float) -> None:
             dead = not gcloud_tunnel.is_alive(tun)
             if dead or (now - tun.last_used > IDLE_TIMEOUT_S):
                 pool = _pools.pop(pk, None)
+                _connect_errors.pop(pk, None)
                 if pool is not None:
                     try:
                         pool.close()
@@ -297,24 +403,35 @@ def _pool(env: str, key: str) -> ConnectionPool:
         if env == ENV_PROD:
             triage_policy.assert_prod_allowed("PRODUCTION Postgres triage")
 
-        conninfo = _dsn(env, key)
-        spec = _tunnel_spec(env, key)
+        # A DSN libpq cannot parse is refused by NAME: its parse error echoes the fragment it
+        # choked on, which for `password=x y` is the password.
+        if env == ENV_PROD:
+            var = _env_var(key)
+        else:
+            var = pg_staging.target_var(key) if os.environ.get(pg_staging.target_var(key)) else pg_staging.DSN_VAR
+        try:
+            conninfo = _dsn(env, key)
+            spec = _tunnel_spec(env, key)
 
-        if spec is not None and spec.kind != "none":  # gcloud, or the shared gost forwarder
-            _start_watchdog()
-            tun = gcloud_tunnel.open_tunnel(spec)  # blocks up to TUNNEL_READY_TIMEOUT_S
-            _tunnels[pk] = tun
-            # hostaddr routes libpq to 127.0.0.1 while host= stays for TLS SNI and certificate
-            # verification — a sslmode=verify-full DSN keeps working through the forward.
-            conninfo = make_conninfo(
-                conninfo, hostaddr="127.0.0.1", port=spec.local_port, connect_timeout=5
-            )
+            if spec is not None and spec.kind != "none":  # gcloud, or the shared gost forwarder
+                _start_watchdog()
+                tun = gcloud_tunnel.open_tunnel(spec)  # blocks up to TUNNEL_READY_TIMEOUT_S
+                _tunnels[pk] = tun
+                # hostaddr routes libpq to 127.0.0.1 while host= stays for TLS SNI and certificate
+                # verification — a sslmode=verify-full DSN keeps working through the forward.
+                conninfo = make_conninfo(
+                    conninfo, hostaddr="127.0.0.1", port=spec.local_port, connect_timeout=5
+                )
+        except psycopg.ProgrammingError:
+            raise ValueError(f"{var} is not a valid DSN (details withheld)") from None
 
         pool = ConnectionPool(
             conninfo=conninfo,
+            connection_class=type("_Conn", (_CapturingConn,), {"pool_key": pk}),
             min_size=0,
             max_size=POOL_MAX_SIZE,
             max_idle=POOL_MAX_IDLE_S,
+            timeout=POOL_TIMEOUT_S,
             kwargs={"autocommit": True, "options": CONN_OPTIONS},
             open=True,
             name=pk,
@@ -387,11 +504,17 @@ def _query(
         tun = _tunnels.get(_pool_key(env, key))
         if tun is not None:
             tun.last_used = time.time()
-    with pool.connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(sql, params)
-            cols = [d.name for d in cur.description] if cur.description else []
-            rows = cur.fetchall() if cur.description else []
+    pk = _pool_key(env, key)
+    try:
+        with pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql, params)
+                cols = [d.name for d in cur.description] if cur.description else []
+                rows = cur.fetchall() if cur.description else []
+    except PoolTimeout as exc:
+        # PoolTimeout carries nothing (`from None`); the worker that failed recorded why.
+        reason = _connect_errors.get(pk, "none recorded (pool saturated, or first connect still in flight)")
+        raise PoolTimeout(f"{pk}: {exc}; last connect error: {reason}") from None
     if _vaults(env) and rows:
         try:
             pii_provenance.record_rows(cols, rows)
@@ -617,6 +740,7 @@ def disconnect(env: str | None = None) -> dict:
             finally:
                 closed_pools.append(pk)
                 _pools.pop(pk, None)
+                _connect_errors.pop(pk, None)
         for pk in list(_tunnels):
             if only and not pk.startswith(f"{only}:"):
                 continue
@@ -693,6 +817,7 @@ def _close_all() -> None:
             except Exception:
                 pass
         _pools.clear()
+        _connect_errors.clear()
         for tun in list(_tunnels.values()):
             gcloud_tunnel.close_tunnel(tun)
         _tunnels.clear()
@@ -750,6 +875,182 @@ def _selftest() -> int:
         if not cond:
             failures += 1
         print(f"  {'ok  ' if cond else 'FAIL'} {label}{(' — ' + detail) if detail else ''}")
+
+    # --- connect reasons: every input embeds a synthetic secret + every DSN value; no output may ---
+    print("connect reasons:")
+    _cr_secret = "zz-s3cr3t-PW-canary"
+    _cr_values = (_cr_secret, "zzreader", "10.9.9.9", "6543", "zzreports")
+    _cr_dsn = "host=10.9.9.9 port=6543 user=zzreader password=zz-s3cr3t-PW-canary dbname=zzreports"
+    _cr_tail = f' (host=10.9.9.9 port=6543 user=zzreader password={_cr_secret} dbname=zzreports)'
+    _OpErr = psycopg.OperationalError
+    _cr_cases: list[tuple[str, BaseException, str]] = [
+        ("timeout (class)", psycopg.errors.ConnectionTimeout("connection timeout expired" + _cr_tail),
+         "timeout: no answer within connect_timeout"),
+        ("timeout (text)", _OpErr("connection failed: timeout expired" + _cr_tail),
+         "timeout: no answer within connect_timeout"),
+        ("malformed (class)", psycopg.ProgrammingError(f'missing "=" after "{_cr_secret}" in connection info string'),
+         _REASON_MALFORMED_DSN),
+        ("malformed (text)", _OpErr(f'invalid percent-encoded token: "{_cr_secret}"' + _cr_tail), _REASON_MALFORMED_DSN),
+        ("auth failed", _OpErr('connection failed: FATAL:  password authentication failed for user "zzreader"' + _cr_tail),
+         "authentication failed (wrong password, or the role does not exist; Postgres does not say which)"),
+        ("role missing", _OpErr('FATAL:  role "zzreader" does not exist' + _cr_tail),
+         "authentication failed: role does not exist"),
+        ("pg_hba", _OpErr('FATAL:  no pg_hba.conf entry for host "10.9.9.9", user "zzreader", database "zzreports"' + _cr_tail),
+         "rejected by pg_hba.conf (this client/user/database is not allowed)"),
+        ("db missing", _OpErr('FATAL:  database "zzreports" does not exist' + _cr_tail), "database does not exist"),
+        ("too many clients", _OpErr("FATAL:  sorry, too many clients already" + _cr_tail), "server has no free connection slots"),
+        ("slots reserved", _OpErr("FATAL:  remaining connection slots are reserved" + _cr_tail), "server has no free connection slots"),
+        ("starting up", _OpErr("FATAL:  the database system is starting up" + _cr_tail),
+         "server not accepting connections (starting, stopping or in recovery)"),
+        ("shutting down", _OpErr("FATAL:  the database system is shutting down" + _cr_tail),
+         "server not accepting connections (starting, stopping or in recovery)"),
+        ("in recovery", _OpErr("FATAL:  the database system is in recovery mode" + _cr_tail),
+         "server not accepting connections (starting, stopping or in recovery)"),
+        ("ssl", _OpErr("connection failed: SSL error: certificate verify failed" + _cr_tail), "TLS/SSL failure"),
+        ("refused", _OpErr('connection to server at "10.9.9.9", port 6543 failed: Connection refused' + _cr_tail),
+         "connection refused (nothing listening; is the tunnel up?)"),
+        ("dns", _OpErr('could not translate host name "10.9.9.9" to address' + _cr_tail), "host name did not resolve"),
+        ("dns (resolve)", _OpErr("failed to resolve host" + _cr_tail), "host name did not resolve"),
+        ("dropped", _OpErr("server closed the connection unexpectedly" + _cr_tail),
+         "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+        ("reset", _OpErr("connection reset by peer" + _cr_tail),
+         "connection dropped during handshake (forwarder up, upstream unreachable?)"),
+    ]
+    _cr_results: list[str] = []
+    for label, exc, expected in _cr_cases:
+        got = _connect_reason(exc, _cr_dsn)
+        _cr_results.append(got)
+        check(f"reason: {label}", got == expected, got[:90])
+    # real libpq parse errors, not hand-written text
+    for label, bad in (("keyword", f"host=h password=a {_cr_secret}"),
+                       ("percent", f"postgresql://u:hunter2%zz{_cr_secret}@h/d")):
+        try:
+            conninfo_to_dict(bad)
+            check(f"reason: real malformed DSN ({label})", False, "conninfo_to_dict did not raise")
+        except psycopg.ProgrammingError as exc:
+            got = _connect_reason(exc, bad)
+            _cr_results.append(got)
+            check(f"reason: real malformed DSN ({label})", got == _REASON_MALFORMED_DSN, got[:90])
+    # unclassified: the only row that carries error text — every DSN value must be scrubbed
+    _cr_unk = _OpErr(f"weird failure: host=10.9.9.9 user=zzreader pw {_cr_secret} db 'zzreports' on 6543 postgresql://zzreader:{_cr_secret}@10.9.9.9:6543/zzreports")
+    got = _connect_reason(_cr_unk, _cr_dsn)
+    _cr_results.append(got)
+    check("reason: unclassified carries the class name", got.startswith("unclassified connection failure (OperationalError)"), got[:90])
+    check("reason: unclassified detail keeps no DSN value", all(v not in got for v in _cr_values), got[:120])
+    got = _connect_reason(_cr_unk, f"host=h password=a {_cr_secret}")
+    _cr_results.append(got)
+    check("reason: unclassified + malformed conninfo has no detail", got == "unclassified connection failure (OperationalError)", got[:90])
+    got = _connect_reason(_OpErr(f"boom {_cr_secret}"), "")
+    _cr_results.append(got)
+    check("reason: empty conninfo still scrubs the detail", _cr_secret not in got, got[:90])
+    check("reason: NO output carries the secret or any DSN value",
+          all(v not in r for r in _cr_results for v in _cr_values))
+
+    # --- connect surfacing: a real pool against a loopback fake server; the tool error carries ---
+    # the reason, and neither it nor stderr carries the secret, the user or the port.
+    print("connect surfacing:")
+    import contextlib as _ctx
+    import io as _io
+    import struct as _struct
+
+    def _fake_pg(code: bytes, msg: bytes) -> int:
+        """Answers SSL/GSS requests with N, then the startup message with a FATAL ErrorResponse."""
+        srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(8)
+
+        def serve(c: _socket.socket) -> None:
+            with c:
+                while True:
+                    head = c.recv(4)
+                    if len(head) < 4:
+                        return
+                    body = c.recv(_struct.unpack("!I", head)[0] - 4)
+                    if _struct.unpack("!I", body[:4])[0] in (80877103, 80877104):  # SSLRequest / GSSENCRequest
+                        c.sendall(b"N")
+                        continue
+                    break
+                fields = b"SFATAL\0VFATAL\0C" + code + b"\0M" + msg + b"\0\0"
+                c.sendall(b"E" + _struct.pack("!I", len(fields) + 4) + fields)
+
+        def loop() -> None:
+            while True:
+                try:
+                    c, _ = srv.accept()
+                except OSError:
+                    return
+                threading.Thread(target=serve, args=(c,), daemon=True).start()
+
+        threading.Thread(target=loop, name="fake-pg", daemon=True).start()
+        return srv.getsockname()[1]
+
+    global POOL_TIMEOUT_S
+    _cs_secret = "zz-s3cr3t-PW-canary"
+    _cs_saved = {k: os.environ.get(k) for k in (pg_staging.DSN_VAR, "PGSTG_DB_ZZX")}
+    _cs_saved_timeout = POOL_TIMEOUT_S
+    _cs_port = _fake_pg(b"28P01", b'password authentication failed for user "zzreader"')
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _closed:
+        _closed.bind(("127.0.0.1", 0))
+        _cs_closed_port = _closed.getsockname()[1]  # bound but never listening -> refused
+
+    class _Records(logging.Handler):
+        """Every log record that propagates to root — the stderr leak is a `psycopg.pool` WARNING
+        emitted by a handler bound to the ORIGINAL stderr, which redirect_stderr cannot see."""
+
+        def __init__(self) -> None:
+            super().__init__(logging.DEBUG)
+            self.lines: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.lines.append(f"{record.name}: {record.getMessage()}")
+
+    def _surface(dsn: str) -> tuple[BaseException | None, str]:
+        os.environ[pg_staging.DSN_VAR] = dsn
+        err_out = _io.StringIO()
+        records = _Records()
+        logging.getLogger().addHandler(records)
+        try:
+            with _ctx.redirect_stderr(err_out):
+                execute_sql(sql="SELECT 1", env=ENV_STAGING, target="zzx")
+            return None, err_out.getvalue()
+        except Exception as exc:  # noqa: BLE001 — the whole point is to inspect what surfaces
+            return exc, err_out.getvalue() + "\n".join(records.lines)
+        finally:
+            logging.getLogger().removeHandler(records)
+            disconnect(env=ENV_STAGING)
+
+    try:
+        os.environ["PGSTG_DB_ZZX"] = "zzx"
+        POOL_TIMEOUT_S = 2
+        for label, port, expect in (
+            ("auth failure", _cs_port, "authentication failed"),
+            ("closed port", _cs_closed_port, "connection refused"),
+        ):
+            exc, err = _surface(
+                f"host=127.0.0.1 port={port} user=zzreader password={_cs_secret} dbname=x sslmode=disable"
+            )
+            msg = str(exc)
+            check(f"{label}: raises PoolTimeout", isinstance(exc, PoolTimeout), type(exc).__name__)
+            check(f"{label}: names the pool key", "staging:zzx" in msg, msg[:100])
+            check(f"{label}: carries the reason", expect in msg, msg[:140])
+            check(f"{label}: no secret/user/port in the error",
+                  all(s not in msg for s in (_cs_secret, "zzreader", str(port))), msg[:140])
+            check(f"{label}: no secret/user/port on stderr or in any log record",
+                  all(s not in err for s in (_cs_secret, "zzreader", str(port))), err[:140])
+            check(f"{label}: disconnect clears the recorded reason", "staging:zzx" not in _connect_errors)
+        exc, err = _surface(f"host=h password=a {_cs_secret}")
+        msg = str(exc)
+        check("malformed PGSTG_DSN: ValueError", isinstance(exc, ValueError), type(exc).__name__)
+        check("malformed PGSTG_DSN: names the variable", pg_staging.DSN_VAR in msg, msg[:100])
+        check("malformed PGSTG_DSN: no secret in the error or stderr",
+              _cs_secret not in msg and _cs_secret not in err, msg[:100])
+    finally:
+        POOL_TIMEOUT_S = _cs_saved_timeout
+        for k, v in _cs_saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
     print("tunnel checks:")
 
@@ -913,7 +1214,7 @@ def _selftest() -> int:
                 continue
             if spec is None or spec.kind == "none":
                 if env == ENV_PROD:
-                    direct_prod.append(_prod_env_var(key))
+                    direct_prod.append(_env_var(key))
                 continue
             all_specs.append((env, key, spec))
     gcloud_specs = [s for s in all_specs if s[2].kind == "gcloud"]

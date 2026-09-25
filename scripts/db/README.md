@@ -234,6 +234,13 @@ mechanism:
 4. **Pagination** — results capped at 200 rows/page so a wide table can't flood context.
 5. **Lazy + teardown** — `min_size=0` pools hold no prod connection until first use, and
    `disconnect()` drops every pool when a job is done; the managed process stays up but idle.
+6. **Connect failures say why, never what** — a pool timeout carries a classified reason
+   (`authentication failed (wrong password, or the role does not exist; …)`, `connection
+   refused (…)`, `rejected by pg_hba.conf (…)`, …) captured at the source by the pool's
+   connection class. A classified reason is a fixed string; only the unclassified fallback
+   carries error text, exact-value scrubbed against the DSN. `psycopg.pool` warnings (raw libpq
+   text on stderr) are silenced, and a DSN libpq cannot parse is refused by variable NAME —
+   its parse error would echo the fragment it choked on, which can be the password.
 
 Credentials live only in `scripts/db/.env`, read only by this server process — never through
 the agent, the MCP config, or the transcript. Do not Read/cat/grep the `.env`.
