@@ -257,13 +257,12 @@ winfile="$STAGE_STATE_DIR/chrome-window"
 prof_dir="$(stage_chrome_profile)"
 prof_name="$(stage_chrome_profile_name)"
 stored="$(cat "$winfile" 2>/dev/null || printf '')"
-winid="${stored%%|*}"
-stored_prof="${stored#*|}"
-[[ "$stored_prof" == "$stored" ]] && stored_prof=""      # no "|" in the file at all
-[[ "$winid" =~ ^[0-9]+$ ]] || winid=""
-if [[ -n "$winid" && "$stored_prof" != "$prof_dir" ]]; then
+winid="$(stage_window_reusable "$stored" "$prof_dir")"
+if [[ -z "$winid" && "${stored%%|*}" =~ ^[0-9]+$ ]]; then   # numeric id, wrong (or absent) profile
+  stored_prof="${stored#*|}"
+  [[ "$stored_prof" == "$stored" ]] && stored_prof=""      # no "|" in the file at all
   slog "remembered window is profile '${stored_prof:-unknown}', want '$prof_dir' — discarding it"
-  winid=""; rm -f "$winfile" 2>/dev/null
+  rm -f "$winfile" 2>/dev/null
 fi
 
 # No usable window yet: create one IN THE RIGHT PROFILE. AppleScript cannot do this — `make new
