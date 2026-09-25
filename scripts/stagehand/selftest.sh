@@ -26,8 +26,11 @@ PASS=0 FAIL=0
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/stagehand-selftest.XXXXXX")"
 cleanup() {
   [[ -n "${wt:-}" && -d "${wt:-}" ]] && git -C "$ROOT" worktree remove --force "$wt" >/dev/null 2>&1
-  rm -rf "$tmp" "$ROOT/.selftest-repo" 2>/dev/null
+  rm -rf "$tmp" "$ROOT/$FAKE" 2>/dev/null
 }
+# Repo-relative fixtures must live under $ROOT (the resolver walks STAGE_ROOT), so they are named
+# per-process: two concurrent runs otherwise rm -rf each other's fixture mid-case.
+FAKE=".selftest-repo.$$"
 trap cleanup EXIT
 
 ok()   { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
@@ -45,6 +48,11 @@ payload() {   # payload <json> → path
 # specifically test the kill switch set STAGEHAND=off explicitly and still win, since `off` is checked
 # first.
 export STAGEHAND=on
+# Isolated state dir. lib.sh defaults STAGE_STATE_DIR to the SAME per-checkout dir the live hooks
+# use, and show.sh debounces BEFORE it honours --dry-run — so a stamp left by a live hook, a
+# back-to-back or a concurrent run silences a case here, and this suite's own stamps leak back into
+# the live dir. $tmp is removed by cleanup.
+export STAGE_STATE_DIR="$tmp/state"
 run_dry() { "$SHOW" --dry-run --payload "$1" 2>/dev/null; }
 
 printf '\nGATES\n'
@@ -152,12 +160,12 @@ fdry() { "$FOLLOW" --dry-run --text "$1" 2>/dev/null; }
 PREFIX="$(bash -c ". '$DIR/lib.sh'; stage_cfg tracker.ticket_prefix FM")"
 PREFIX="${PREFIX%%,*}"   # several may be listed ("FM,OPS"); fixtures use the first
 TBASE="$(bash -c ". '$DIR/lib.sh'; stage_cfg tracker.base_url")"
-fake="$ROOT/.selftest-repo"
+fake="$ROOT/$FAKE"
 rm -rf "$fake"; mkdir -p "$fake"
 git -C "$fake" init -q 2>/dev/null
 git -C "$fake" remote add origin git@gitlab.com:outer-group/inner-group/thing.git 2>/dev/null
 
-out="$(fdry '.selftest-repo!14 is the one to look at')"
+out="$(fdry "$FAKE!14 is the one to look at")"
 check "prose: <repo>!<iid> resolves through the repo's own git remote" \
   'https://gitlab.com/outer-group/inner-group/thing/-/merge_requests/14' "$out"
 case "$out" in *'/thing/-/merge_requests/14'*) ok "the nested group survives — the remote decides, not a guess" ;;
@@ -207,11 +215,11 @@ out="$(STAGEHAND=off "$FOLLOW" --dry-run --text 'SHOW: scripts/stagehand/lib.sh'
 
 printf '\nINTERACT (open, then work inside the window)\n'
 
-fake2="$ROOT/.selftest-repo"
+fake2="$ROOT/$FAKE"
 rm -rf "$fake2"; mkdir -p "$fake2"
 git -C "$fake2" init -q 2>/dev/null
 git -C "$fake2" remote add origin git@gitlab.com:outer-group/thing.git 2>/dev/null
-out="$(fdry 'SHOW: .selftest-repo!555 ~signature_key')"
+out="$(fdry "SHOW: $FAKE!555 ~signature_key")"
 check "a focus phrase becomes a URL text fragment" '#:~:text=signature_key' "$out"
 # A phrase names an identifier, and an identifier lives in the diff. Measured on the real page:
 # innerText holds 3 occurrences and the highlighter reports hit:3 there.
@@ -221,7 +229,7 @@ check "a focus phrase on an MR targets the diff" '/-/merge_requests/555/diffs' "
 case "$out" in *signaturekey*) bad "an underscore survives markdown stripping" "snake_case was mangled" ;;
                *) ok "an underscore survives markdown stripping" ;; esac
 
-out="$(fdry 'SHOW: .selftest-repo!555')"
+out="$(fdry "SHOW: $FAKE!555")"
 case "$out" in *'#:~:text='*) bad "no phrase means no text fragment" "$out" ;;
                *) ok "no phrase means no text fragment" ;; esac
 rm -rf "$fake2"
@@ -240,7 +248,7 @@ i5="$("$SHOW" --ident 'https://gitlab.com/a/b/-/merge_requests/141')"
 [[ "$i4" != "$i5" ]] && ok "MR 14 and MR 141 are different pages" || bad "MR 14 and MR 141 are different pages" "$i4"
 
 # The editor lands on the phrase, not on the first line of the file.
-probe3="$ROOT/scripts/stagehand/.selftest-phrase.txt"
+probe3="$ROOT/scripts/stagehand/.selftest-phrase.$$.txt"
 printf 'one\ntwo\nTARGET_PHRASE here\nfour\n' > "$probe3"
 out="$("$SHOW" --dry-run --tool Edit --file "$probe3" --phrase 'TARGET_PHRASE' 2>/dev/null)"
 check "a focus phrase drives the editor line" '"line":"3"' "$out"
@@ -416,17 +424,22 @@ if [[ -n "$acct" ]]; then
   pname="$(bash -c ". '$DIR/lib.sh'; stage_chrome_profile_name" 2>/dev/null)"
   [[ -n "$pdir" ]] && ok "browser_account '$acct' resolves to a Chrome profile ($pdir / $pname)" \
                    || bad "browser_account resolves to a Chrome profile" "no profile matched $acct in Chrome's Local State"
-  sf="$(bash -c ". '$DIR/lib.sh'; printf '%s' \"\$STAGE_STATE_DIR/chrome-window\"" 2>/dev/null)"
-  if [[ -f "$sf" ]]; then
-    got="$(cat "$sf")"
-    [[ "$got" == *"|$pdir" ]] && ok "the remembered browser window records the right profile ($got)" \
-                              || bad "the remembered browser window records the right profile" "state=$got want suffix |$pdir"
-  else
-    printf '  skip no browser window remembered yet\n'
-  fi
 else
   printf '  skip stagehand.browser_account is not set\n'
 fi
+# The reuse rule itself, on fixtures — never on the live state file, whose content depends on what
+# the real hooks last did on this machine.
+reusable() { bash -c ". '$DIR/lib.sh'; stage_window_reusable \"\$1\" \"\$2\"" _ "$1" "$2" 2>/dev/null; }
+[[ "$(reusable '123|Default' 'Default')" == "123" ]] && ok "a remembered window in the wanted profile is reused" \
+                                                     || bad "a remembered window in the wanted profile is reused" "got '$(reusable '123|Default' 'Default')'"
+[[ -z "$(reusable '123|Profile 2' 'Default')" ]]     && ok "a window in another profile is discarded" \
+                                                     || bad "a window in another profile is discarded" "reused it"
+[[ -z "$(reusable '123' 'Default')" ]]               && ok "an old-format file with no profile is discarded" \
+                                                     || bad "an old-format file with no profile is discarded" "reused it"
+[[ -z "$(reusable 'abc|Default' 'Default')" ]]       && ok "a non-numeric window id is discarded" \
+                                                     || bad "a non-numeric window id is discarded" "reused it"
+[[ "$(reusable '123|' '')" == "123" ]]               && ok "no profile wanted, none stored: reused (original semantics)" \
+                                                     || bad "no profile wanted, none stored: reused (original semantics)" "got '$(reusable '123|' '')'"
 
 if [[ "${1:-}" == "--live" ]]; then
   printf '\nLIVE (moves a real window, then puts it back)\n'

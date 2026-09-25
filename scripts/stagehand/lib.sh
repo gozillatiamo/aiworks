@@ -154,6 +154,18 @@ stage_gate_or_exit() {
 STAGE_STATE_DIR="${STAGE_STATE_DIR:-${TMPDIR:-/tmp}/stagehand-$(printf '%s' "$STAGE_ROOT" | shasum -a 256 | cut -c1-12)}"
 stage_mkdirs() { mkdir -p "$STAGE_STATE_DIR" 2>/dev/null || true; }
 
+# stage_window_reusable <stored "<id>|<profile>"> <wanted profile-dir> → prints the id when the
+# remembered window can be reused, else nothing. Reusable = numeric id AND the stored profile equals
+# the wanted one (both empty counts as equal, matching show.sh's original inline check). An old-format
+# file with no "|" reads as an empty profile.
+stage_window_reusable() {
+  local stored="$1" want="$2" id prof
+  id="${stored%%|*}"; prof="${stored#*|}"
+  [[ "$prof" == "$stored" ]] && prof=""
+  [[ "$id" =~ ^[0-9]+$ && "$prof" == "$want" ]] && printf '%s' "$id"
+  return 0
+}
+
 stage_sha() { printf '%s' "$1" | shasum -a 256 | cut -c1-40; }
 stage_now() { date +%s; }
 

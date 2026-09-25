@@ -96,6 +96,11 @@ const LINES = []
 const SPAWNED = []
 const PROMPTS = {}
 const PHASES = []
+// approvalTick (#197) no longer spawns an agent: it LOGS the commands the orchestrating session
+// runs. One log entry per call, one `  <repo> !<pr>:` line per ticked PR/MR inside it.
+const TICKS = () => LINES.filter((l) => l.startsWith('[approve] ') && l.includes('ready to tick'))
+const tickedIn = (l) => [...l.matchAll(/^  (\S+) !\d+:$/gm)].map((m) => m[1])
+const TICKED = () => TICKS().flatMap(tickedIn)
 
 const REPO_PLAN = (repo, base) => ({
   repo, title: 'T', acceptance: [`${repo} does its part`],
@@ -773,7 +778,6 @@ const BASE = {
         'plan-guard:FM-12': planGuardOk(['db']),
         'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
         'approval-probe:FM-12:db': { approved: 'yes', command: 'scripts/vcs/pr-view.sh 7 --approved' },
-        'approve:FM-12:db': { posted: [{ repo: 'db', pr: 7, note: 'already approved — nothing to do' }], failed: [] },
       }
       await runOnce(ARGS, canned)
       report('G9A_probe_spawned', SPAWNED.includes('approval-probe:FM-12:db'))
@@ -793,16 +797,16 @@ const BASE = {
         'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
         'approval-probe:FM-12:db': { approved: 'unknown', note: 'approvals disabled on this instance' },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { posted: [{ repo: 'db', pr: 7 }], failed: [] },
       }
       await runOnce(ARGS, canned)
       report('G9B_reviewer_still_spawned', SPAWNED.includes('review:FM-12:db#1'))
       report('G9B_unknown_logged_as_unapproved', LINES.some((l) => l.includes('approval state UNKNOWN') && l.includes('never skipping')))
-      report('G9B_tick_still_posted', SPAWNED.includes('approve:FM-12:db'))
+      report('G9B_tick_still_posted', TICKED().includes('db'), `ticked=${JSON.stringify(TICKED())}`)
     } else if (SCENARIO === 'G9C') {
       // The tick is ORCHESTRATOR-owned and lands per gate-that-was-cleared: code repos at the end
-      // of Review, the test-suite repo after ITS gate passes (it has no reviewer at all). And the
-      // brief must carry the VCS_REPO rule — PR numbers collide across repos here.
+      // of Review, the test-suite repo after ITS gate passes (it has no reviewer at all). It is
+      // LOGGED as commands for in-session execution (#197), and the command must route VCS_REPO —
+      // PR numbers collide across repos here.
       const canned = {
         ...BASE,
         'run-state:FM-12': { rows: [] },
@@ -816,21 +820,22 @@ const BASE = {
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'open-pr:FM-12:e2e': { pr_url: 'https://y/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { posted: [{ repo: 'db', pr: 7 }], failed: [] },
         'test-suite:FM-12:e2e': { passed: true, failures: [], receipt: { command: 'scripts/dev.sh test a', exit_code: 0, summary_line: '3 passed' } },
         'audit:FM-12:e2e': { posted: true, detail: 'run r1 stamp matches' },
-        'approve:FM-12:e2e': { posted: [{ repo: 'e2e', pr: 7 }], failed: [] },
         'notify:FM-12': { permalink: 'https://slack/x' },
         'summary:FM-12': { path: 'x.md' },
       }
       await runOnce(ARGS, canned)
-      const code = PROMPTS['approve:FM-12:db'] || ''
-      report('G9C_code_repo_ticked', SPAWNED.includes('approve:FM-12:db'))
-      report('G9C_suite_repo_ticked_separately', SPAWNED.includes('approve:FM-12:e2e'))
-      report('G9C_tick_before_status_move', SPAWNED.indexOf('approve:FM-12:db') < SPAWNED.indexOf('status:FM-12:ready_to_test'))
-      report('G9C_brief_forces_vcs_repo', code.includes('VCS_REPO=') && code.includes('COLLIDE across repos'))
-      report('G9C_brief_forbids_merge', code.includes('Do NOT merge anything'))
-      report('G9C_brief_treats_idempotent_as_success', code.includes('already approved') && code.includes('is a SUCCESS'))
+      const t = TICKS()
+      const code = t[0] || ''
+      report('G9C_code_repo_ticked', JSON.stringify(tickedIn(code)) === '["db"]', `ticked=${JSON.stringify(TICKED())}`)
+      report('G9C_suite_repo_ticked_separately', t.length === 2 && JSON.stringify(tickedIn(t[1])) === '["e2e"]', `ticks=${t.length}`)
+      const i = LINES.indexOf(code), j = LINES.findIndex((l) => l.startsWith('[status] FM-12 → Ready to test'))
+      report('G9C_tick_before_status_move', i >= 0 && j >= 0 && i < j, `tick=${i} status=${j}`)
+      report('G9C_command_routes_vcs_repo', code.includes('remote get-url origin') && code.includes('VCS_REPO=') && code.includes('pr-approve.sh 7'))
+      report('G9C_command_never_merges', !t.some((l) => l.includes('merge-pr.sh')))
+      // Idempotence of the tick itself is proved by scripts/vcs/approve-selftest.sh.
+      report('G9C_tick_runs_in_session', code.includes('run in-session, never via a background agent'))
       report('G9C_audit_reads_the_marker', (PROMPTS['audit:FM-12:e2e'] || '').includes('find-ticket-comment.sh') && (PROMPTS['audit:FM-12:e2e'] || '').includes('[test-report · e2e]'))
       report('G9C_report_step_upserts', (PROMPTS['test-suite:FM-12:e2e'] || '').includes('upsert-ticket-comment.sh') && (PROMPTS['test-suite:FM-12:e2e'] || '').includes('never `add-ticket-comment.sh`'))
     } else if (SCENARIO === 'G9D') {
@@ -852,8 +857,8 @@ const BASE = {
         'summary:FM-12': { path: 'x.md' },
       }
       await runOnce(ARGS, canned)
-      report('G9D_no_tick_anywhere', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
-      report('G9D_clean_repo_not_ticked_alone', !SPAWNED.includes('approve:FM-12:db'))
+      report('G9D_no_tick_anywhere', !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
+      report('G9D_clean_repo_not_ticked_alone', !TICKED().includes('db'))
     } else if (SCENARIO === 'G10') {
       // ADR 0024, the accepted gap — `svc` declares NEITHER guard nor perf, so a QA-attributed fix
       // there gets no agent check at all: the suite re-run is the only bar, exactly as before. The
@@ -962,10 +967,8 @@ const BASE = {
           'xrepo-fix:FM-12:app#1': { work_branch: 'feature/FM-12', summary: 'index added', status: 'complete', commits: 1, fixed: ['app/migrations/x.sql'] },
           'xrepo-regate:FM-12:app#1': { approved: true, tests_green: true, tests_receipt: 'ok' },
           'review:FM-12:svc#2': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: ['t1'], still_open: [] },
-          'approve:FM-12:db+svc+app': { posted: [{ repo: 'db' }, { repo: 'svc' }, { repo: 'app' }], failed: [] },
           'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'scripts/dev.sh test e2e', exit_code: 0, summary_line: '9 passed' } },
           'audit:FM-12:e2e': { posted: true, detail: 'run r1 stamp matches' },
-          'approve:FM-12:e2e': { posted: [{ repo: 'e2e' }], failed: [] },
           'notify:FM-12': { sent: true },
         }
         const result = await runOnce(ARGS, canned)
@@ -1029,11 +1032,11 @@ const BASE = {
         report('G16b_but_cannot_reach_ready', status !== 'awaiting-human-ship' && status !== 'merge-skipped', `got=${status}`)
         report('G16b_records_it_as_blocking', LINES.some((l) => l.includes('BLOCKING RECORDED (multiple-open-prs)')))
         report('G16b_review_still_ran', SPAWNED.some((l) => l.startsWith('review:')))
-        report('G16b_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
+        report('G16b_nothing_approved', !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
       } else {
         const why = { G16a: 'a target that cannot be made right', G16d: 'a non-convergent assert' }[SCENARIO]
         report(`G16_${SCENARIO}_halts_on_${why.replace(/\W+/g, '_')}`, status === 'target-branch-halt', `got=${status}`)
-        report(`G16_${SCENARIO}_nothing_approved`, !SPAWNED.some((l) => l.startsWith('approve:')))
+        report(`G16_${SCENARIO}_nothing_approved`, !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
         report(`G16_${SCENARIO}_banner_names_the_target_branch`, LINES.some((l) => l.includes('TARGET BRANCH')))
         // This one deliberately STAYS a halt: without the base ref on the remote there is no
         // `git diff base...head` to review, so sending reviewers at it buys misleading findings.
@@ -1154,7 +1157,7 @@ const BASE = {
         report(`${SCENARIO}_no_longer_returns_${dead.replace(/\W+/g, '_')}`, st !== dead, `got=${st}`)
       }
       report(`${SCENARIO}_repo_did_not_reach_ready`, st !== 'awaiting-human-ship' && st !== 'merge-skipped', `got=${st}`)
-      report(`${SCENARIO}_nothing_approved`, !SPAWNED.some((l) => l.startsWith('approve:')))
+      report(`${SCENARIO}_nothing_approved`, !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
       if (SCENARIO === 'G19a') {
         report('G19a_suite_failure_reaches_the_developer', fixPrompts.includes('THE SUITE DID NOT RUN'))
         report('G19a_brief_quotes_what_the_gate_got', fixPrompts.includes('docker daemon unreachable'))
@@ -1524,7 +1527,7 @@ const BASE = {
         report('G29_gate_is_told_to_write_no_state_row', gp.includes('Write NO row, whatever your verdict'))
         report('G29_logged_for_the_operator', LINES.some((l) => l.includes('ADVISORY GATE')))
         // Authority: none. The tick is ticket-wide (ADR-0022), so it is all or nothing.
-        report('G29_nothing_is_approved', !SPAWNED.some((l) => l.startsWith('approve:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('approve:')))}`)
+        report('G29_nothing_is_approved', !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
         report('G29_ticket_is_not_advanced', !SPAWNED.includes('status:FM-12:ready_to_merge') && !SPAWNED.includes('status:FM-12:ready_to_test') && !SPAWNED.includes('status:FM-12:testing'))
         report('G29_never_reaches_merge', !PHASES.includes('Merge'))
         // The ending is about the repos, not the gate: a green advisory gate must not relabel the run.
@@ -1535,7 +1538,7 @@ const BASE = {
         report('G30_gate_does_not_run_on_an_unfit_candidate', !SPAWNED.some((l) => l.startsWith('test-suite:')), `spawned=${JSON.stringify(SPAWNED.filter((l) => l.startsWith('test-suite:')))}`)
         report('G30_no_advisory_log', !LINES.some((l) => l.includes('ADVISORY GATE')))
         report('G30_returns_as_it_always_did', !!result && result.status === 'repo-unresolved', `got=${result && result.status}`)
-        report('G30_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
+        report('G30_nothing_approved', !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
       }
     } else if (SCENARIO === 'G39' || SCENARIO === 'G39B') {
       // An already-satisfied repo is FINISHED, and three places used to read it as broken:
@@ -1569,7 +1572,6 @@ const BASE = {
         'review:FM-12:app#2': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: ['db shape'], still_open: [] },
         'guard:FM-12:app#2': { approved: true, tests_green: true, comments: [] },
         'perf:FM-12:app#2': { approved: true, tests_green: true, comments: [] },
-        'approve:FM-12': { approved: true },
         'summary:FM-12': { path: 'x.md' },
       }
       const result = await runOnce(ARGS, canned)
@@ -1609,7 +1611,7 @@ const BASE = {
       report('G40_not_reported_as_a_pass', !!result && result.status === 'already-satisfied')
       report('G40_gate_unavailable_is_stated', /no candidate build to run against/.test(result?.testSuiteGateUnavailable || ''))
       report('G40_says_the_suite_work_is_unvalidated', /unvalidated/.test(result?.decision_needed || ''))
-      report('G40_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:FM-12')))
+      report('G40_nothing_approved', !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
     } else if (SCENARIO.startsWith('G44')) {
       // THE LAST NON-BUDGET STOPS. The goal behind this branch is that budget exhaustion should be
       // close to the only thing that ends a run, so every remaining terminal path was swept. Three
@@ -1630,7 +1632,6 @@ const BASE = {
         'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'ok', status: 'complete', fixed: [] },
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12': { approved: true },
         'summary:FM-12': { path: 'x.md' },
       }
       if (SCENARIO === 'G44_SCOPE' || SCENARIO === 'G44_SCOPE_DEAD') {
@@ -1692,7 +1693,6 @@ const BASE = {
         'build-continue:FM-12:db#2': PARTIAL(3),
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12': { approved: true },
         'summary:FM-12': { path: 'x.md' },
       }
       const result = await runOnce(ARGS, canned)
@@ -1741,7 +1741,6 @@ const BASE = {
         'build:FM-12:db': DONE,
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { approved: true },
         'notify:FM-12': { sent: true },
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
       }
@@ -1823,7 +1822,6 @@ const BASE = {
         'build:FM-12:db': DONE,
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { approved: true },
         'notify:FM-12': { sent: true },
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
         // The probe reports what it READ. It no longer authors a command, and the two integers are
@@ -1881,7 +1879,6 @@ const BASE = {
         'build:FM-12:db': DONE,
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { approved: true },
         'notify:FM-12': { sent: true },
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
       }
@@ -2041,7 +2038,6 @@ const BASE = {
         'kickoff:FM-12:db': REPO_PLAN('db', 'develop'),
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { approved: true },
         'notify:FM-12': { sent: true },
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
       }
@@ -2090,7 +2086,6 @@ const BASE = {
         'build:FM-12:db': DONE,
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { approved: true },
         'notify:FM-12': { sent: true },
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
       }
@@ -2157,7 +2152,6 @@ const BASE = {
           'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: ['db/src/x.ts'] },
           'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
           'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-          'approve:FM-12:db': { approved: true },
           'notify:FM-12': { sent: true },
           'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
         }
@@ -2240,7 +2234,6 @@ const BASE = {
         'build:FM-12:db': { work_branch: 'feature/FM-12', summary: 'built', status: 'complete', fixed: ['db/src/x.ts'] },
         'open-pr:FM-12:db': { pr_url: 'https://x/7', pr_number: 7 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12:db': { approved: true },
         'notify:FM-12': { sent: true },
         'summary:FM-12': { summary_path: 'x.md', token_table_appended: true, note: 'ok' },
       }
@@ -2307,7 +2300,6 @@ const BASE = {
         'open-pr:FM-12:db': { pr_url: 'https://x/1', pr_number: 1 },
         'open-pr:FM-12:e2e': { pr_url: 'https://x/2', pr_number: 2 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12': { approved: true },
         'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
         'audit:FM-12:e2e': { posted: true, detail: 'posted' },
         'notify:FM-12': { sent: true },
@@ -2347,7 +2339,6 @@ const BASE = {
         'review:FM-12:app#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
         'guard:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
         'perf:FM-12:app#1': { approved: true, tests_green: true, comments: [] },
-        'approve:FM-12': { approved: true },
         'test-suite:FM-12:e2e': { passed: true, receipt: { command: 'x', exit_code: 0, summary_line: '5 passed' } },
         'audit:FM-12:e2e': { posted: true, detail: 'posted' },
         'notify:FM-12': { sent: true },
@@ -2405,7 +2396,6 @@ const BASE = {
         'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
         'review:FM-12:db#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
         'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12': { approved: true },
         'summary:FM-12': { path: 'x.md' },
       }
       await runOnce(ARGS, canned)
@@ -2448,7 +2438,6 @@ const BASE = {
         'verify-satisfied:FM-12:db': { upheld: SCENARIO === 'G32', reason: SCENARIO === 'G32' ? 'all four checks hold' : 'A2 is uncited and the generic path does not cover it — db/src/route.ts', checked: ['git show a1b2c3d'] },
         'open-pr:FM-12:svc': { pr_url: 'https://x/8', pr_number: 8 },
         'review:FM-12:svc#1': { approved: true, tests_green: true, tests_receipt: 'ok', comments: [], resolved_threads: [], still_open: [] },
-        'approve:FM-12': { approved: true },
         'summary:FM-12': { path: 'x.md' },
       }
       const result = await runOnce(ARGS, canned)
@@ -2492,7 +2481,7 @@ const BASE = {
         report('G34_not_reported_as_nothing_delivered', !!result && result.status !== 'nothing-delivered')
         report('G34_carries_the_citations_out', JSON.stringify(result?.satisfied || []).includes('a1b2c3d'))
         report('G34_names_the_decision', /Close the ticket/.test(result?.decision_needed || ''))
-        report('G34_nothing_merged_or_opened', !SPAWNED.some((l) => l.startsWith('open-pr:') || l.startsWith('approve:')))
+        report('G34_nothing_merged_or_opened', !SPAWNED.some((l) => l.startsWith('open-pr:')) && !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
       } else {
         report('G35_unusable_citation_costs_no_verifier', !SPAWNED.includes('verify-satisfied:FM-12:db'))
         report('G35_repo_stops', !!result && result.status === 'repo-unresolved')
@@ -2536,7 +2525,7 @@ const BASE = {
         `got=${JSON.stringify(((result && result.blockingByRepo) || []).flatMap((b) => b.items.map((i) => i.kind)))}`)
       report('G31_blocked_row_is_still_written', sp.includes('app-blocked.json') && sp.includes('"status":"done"') && sp.includes('suite-unverified'))
       report('G31_gate_never_ran', !SPAWNED.some((l) => l.startsWith('test-suite:')))
-      report('G31_nothing_approved', !SPAWNED.some((l) => l.startsWith('approve:')))
+      report('G31_nothing_approved', !TICKS().length, `ticked=${JSON.stringify(TICKED())}`)
     } else if (SCENARIO === 'G17') {
       // R12 — writeSummary used to write ONE fixed path with Write, so every invocation destroyed
       // the previous round's summary. That is why one postmortem's timeline had to be rebuilt from
