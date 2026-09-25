@@ -59,6 +59,7 @@ the MCP when done" teardown, without needing to kill the managed process.
 from __future__ import annotations
 
 import atexit
+import difflib
 import logging
 import json
 import os
@@ -67,10 +68,11 @@ import signal
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 import psycopg
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from mcp.server.fastmcp import FastMCP
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
@@ -166,22 +168,147 @@ def _target_key(target: str | None = None) -> str:
     return target.strip().lower()
 
 
-def _configured_targets(env: str) -> list[str]:
-    """Target names this machine declares for an environment. Prod: every `PGPROD_<NAME>` with a
-    value. Staging: every named `PGSTG_<NAME>` / `PGSTG_DB_<NAME>` — with only a base
-    `PGSTG_DSN` set, ANY target name resolves, so the list is what was named, not what is
-    reachable.
+# --- the name grammar: ONE classifier for every PGPROD_/PGSTG_ key -------------------------
 
-    `_TUNNEL` sidecars are excluded: `PGPROD_MAIN_TUNNEL` is a sidecar, not a target named
-    `main_tunnel`. A target may not be named `…_tunnel` (same class of limitation as `dsn`
-    in RESERVED)."""
-    if env == ENV_STAGING:
-        return pg_staging.configured_targets()
-    return sorted(
-        k[len(ENV_PREFIX):].lower()
-        for k, v in os.environ.items()
-        if k.startswith(ENV_PREFIX) and v and not k.endswith(TUNNEL_SUFFIX)
-    )
+STAGING_PREFIX = pg_staging.TARGET_PREFIX  # PGSTG_<NAME>: a per-target staging DSN
+STAGING_DB_PREFIX = pg_staging.DB_PREFIX  # PGSTG_DB_<NAME>: a database on the base PGSTG_DSN
+_NAME_RE = re.compile(r"^[A-Z0-9]+(_[A-Z0-9]+)*$")  # UPPER_SNAKE; single underscores only
+
+REASON_UPPER = "names are UPPER_SNAKE"
+REASON_DSN = "reserved: PGSTG_DSN is the staging base DSN; prod has one DSN per target"
+REASON_EMPTY = "empty value"
+REASON_MULTILINE = "value spans lines — an unbalanced quote swallowed the lines after it"
+REASON_NOT_DSN = "not a valid libpq DSN (looks like a sidecar? name it …_TUNNEL)"
+
+
+def _classify(
+    prefix: str, var: str, value: str | None = None, env: Mapping[str, str] | None = None
+) -> tuple[str | None, str | None, str | None]:
+    """Classify one env var name (+ optional value) under a prefix -> (key, reason, did_you_mean).
+
+    The ONE place the target-name grammar lives; discovery, `list_targets` and `--selftest` all
+    call it, so a name can never be accepted by one and rejected by another.
+
+      key      the target key ('<name>') when the var is usable, else None
+      reason   a FIXED string saying why it is not usable (None when usable, or not ours)
+      did_you_mean  the spelling to use instead, when a rule can suggest one
+
+    A var that is not ours at all, a `_TUNNEL` sidecar, or the staging base `PGSTG_DSN` is
+    (None, None, None). A value is only checked when given. `env` is the mapping sibling vars
+    are read from (the process env by default; the file's values in the file report). NEVER put
+    exception text into `reason`: a libpq parse error can echo a fragment of the value (a
+    password) — only fixed strings, booleans and key NAMES ever leave.
+    """
+    if env is None:
+        env = os.environ
+    if not var.upper().startswith(prefix):
+        return None, None, None
+    if var.upper().endswith(TUNNEL_SUFFIX):
+        return None, None, None  # a sidecar, never a target (A5); orphans are checked elsewhere
+    suffix = var[len(prefix):]
+    fixed = prefix + suffix.upper()
+    if fixed != var:  # wrong case somewhere: diagnose the upper-cased form, never accept it
+        key, _, dym = _classify(prefix, fixed, env=env)
+        return None, REASON_UPPER, dym or (fixed if key else None)
+    if not _NAME_RE.match(suffix):
+        return None, REASON_UPPER, _closest(prefix, var)
+
+    check_dsn = True
+    if prefix == STAGING_PREFIX and var == pg_staging.DSN_VAR:
+        return None, None, None  # the base DSN, never a target
+    if prefix == STAGING_PREFIX and suffix.startswith("DB_"):
+        name, check_dsn = suffix[3:], False  # a database name on the base DSN
+    else:
+        name = suffix
+    if name == "DSN":
+        return None, REASON_DSN, None
+    if not name or not name[0].isalpha():
+        return None, REASON_UPPER, _closest(prefix, var)
+    key = name.lower()
+
+    if value is not None:
+        if value == "":
+            return None, REASON_EMPTY, None
+        if "\n" in value:
+            return None, REASON_MULTILINE, None
+        if check_dsn:
+            try:
+                conninfo_to_dict(value)
+            except Exception:  # never surface the message — it can echo part of the value
+                return None, REASON_NOT_DSN, None
+    return key, None, None
+
+
+def _closest(prefix: str, var: str) -> str | None:
+    """difflib fallback for an unrecognized name: the nearest usable var in the process env."""
+    candidates = [
+        v for v in os.environ if v.startswith(prefix) and v != var and _NAME_RE.match(v[len(prefix):])
+    ]
+    hits = difflib.get_close_matches(var, candidates, n=1)
+    return hits[0] if hits else None
+
+
+def _prefix(env: str) -> str:
+    return ENV_PREFIX if env == ENV_PROD else STAGING_PREFIX
+
+
+def _kind(key: str) -> str:
+    return "named"
+
+
+def _configured_targets(env: str) -> list[str]:
+    """Target names this machine declares for an environment — every usable `PGPROD_<NAME>`,
+    or `PGSTG_<NAME>` / `PGSTG_DB_<NAME>`, per `_classify`, so a `_TUNNEL` sidecar or a
+    sidecar-shaped value can never become a phantom target (ADR 0017). With only a base
+    `PGSTG_DSN` set, ANY staging name resolves, so the list is what was named, not what is
+    reachable."""
+    prefix = _prefix(env)
+    return sorted({key for var, val in os.environ.items() if (key := _classify(prefix, var, val)[0])})
+
+
+def _unrecognized() -> list[dict]:
+    """Every PGPROD_/PGSTG_ var in the process env the server cannot use, by name + fixed reason."""
+    out = []
+    for env in ENVS:
+        for var, value in os.environ.items():
+            _, reason, dym = _classify(_prefix(env), var, value)
+            if reason:
+                out.append({"env": env, "var": var, "reason": reason, "did_you_mean": dym})
+    return out
+
+
+REASON_SHADOWED = "set in the file but the process env overrides it (override=False)"
+REASON_ORPHAN = "orphan sidecar: no {base} DSN"
+
+
+def _file_key_report(path: Path) -> list[tuple[str, str]]:
+    """Every PGPROD_/PGSTG_ key in a dotenv FILE with a verdict -> [(status, line)].
+
+    Reads key NAMES and classifies values in-process; a line carries only the var name, the
+    target key/kind and a FIXED reason — never a value. `status` is 'ok' | 'WARN' | 'FAIL'."""
+    values = {k: v or "" for k, v in dotenv_values(path).items()}
+    out: list[tuple[str, str]] = []
+    for var, val in values.items():
+        prefix = next((p for p in (ENV_PREFIX, STAGING_PREFIX) if var.upper().startswith(p)), None)
+        if prefix is None:
+            continue
+        if var.upper().endswith(TUNNEL_SUFFIX):
+            base = var[: -len(TUNNEL_SUFFIX)]
+            if prefix == ENV_PREFIX and not (values.get(base) or os.environ.get(base)):
+                out.append(("WARN", f"{var} — {REASON_ORPHAN.format(base=base)}"))
+            else:
+                out.append(("ok", f"{var} -> sidecar of {base}"))
+            continue
+        key, reason, dym = _classify(prefix, var, val, env=values)
+        if reason:
+            out.append(("FAIL", f"{var} — {reason}" + (f"; did you mean {dym}?" if dym else "")))
+        elif var in os.environ and os.environ[var] != val:
+            out.append(("FAIL", f"{var} — {REASON_SHADOWED}"))
+        elif key is None:
+            out.append(("ok", f"{var} -> staging base DSN"))
+        else:
+            out.append(("ok", f"{var} -> target {key} ({_kind(key)})"))
+    return out
 
 
 def _configured(env: str, key: str) -> bool:
@@ -549,6 +676,7 @@ def list_targets() -> dict:
             pk = _pool_key(env, key)
             entry: dict = {
                 "target": key,
+                "kind": _kind(key),
                 "configured": _configured(env, key),
                 "pool_open": pk in pool_keys,
                 **(
@@ -574,6 +702,7 @@ def list_targets() -> dict:
     return _jsonable(
         {
             "envs": envs,
+            "unrecognized": _unrecognized(),
             "prod_allowed": prod_allowed,
             "policy": f"triage.prod = {str(prod_allowed).lower()} ({policy_source})",
             "staging": pg_staging.describe(),
@@ -875,6 +1004,115 @@ def _selftest() -> int:
         if not cond:
             failures += 1
         print(f"  {'ok  ' if cond else 'FAIL'} {label}{(' — ' + detail) if detail else ''}")
+
+    # --- classifier: the one name grammar (synthetic names + values, never the real file) ---
+    print("classifier:")
+    _dsn_ok = "postgresql://ro:pw@h:5432/db"
+
+    def cls(var: str, value: str | None = _dsn_ok, prefix: str = ENV_PREFIX):
+        return _classify(prefix, var, value)
+
+    check("PGPROD_REPORTING -> reporting", cls("PGPROD_REPORTING") == ("reporting", None, None))
+    check("PGPROD_HOST1_RO -> host1_ro", cls("PGPROD_HOST1_RO") == ("host1_ro", None, None))
+    check("A5 PGPROD_ZZ_TUNNEL is not a target", cls("PGPROD_ZZ_TUNNEL") == (None, None, None))
+    check("PGPROD_DSN reserved", cls("PGPROD_DSN")[1] == REASON_DSN)
+    check("PGPROD_1X refused: name starts with a letter", cls("PGPROD_1X")[1] == REASON_UPPER)
+    check("PGPROD_A__B refused: single underscores", cls("PGPROD_A__B")[1] == REASON_UPPER)
+    for bad_case in ("PGPROD_host1_ro", "pgprod_host1_ro"):
+        check(f"{bad_case} -> UPPER_SNAKE, did you mean PGPROD_HOST1_RO",
+              cls(bad_case) == (None, REASON_UPPER, "PGPROD_HOST1_RO"))
+    r = cls("PGPROD_REPORTING", "tunnel=gost;local=65441")
+    check("sidecar-shaped value is not a DSN", r[:2] == (None, REASON_NOT_DSN))
+    check("libpq error text never surfaces", "65441" not in (r[1] or "") and "tunnel" not in (r[1] or ""))
+    check("empty value", cls("PGPROD_REPORTING", "")[1] == REASON_EMPTY)
+    check("value spans lines", cls("PGPROD_REPORTING", f"{_dsn_ok}\nPGPROD_X={_dsn_ok}")[1] == REASON_MULTILINE)
+    check("not ours", cls("OTHER_THING") == (None, None, None))
+    stg = lambda var, value=_dsn_ok: cls(var, value, STAGING_PREFIX)  # noqa: E731
+    check("PGSTG_DSN is not a target", stg("PGSTG_DSN") == (None, None, None))
+    check("PGSTG_REPORTING -> reporting (per-target DSN)", stg("PGSTG_REPORTING") == ("reporting", None, None))
+    check("PGSTG_DB_REPORTING -> reporting (dbname, not a DSN)", stg("PGSTG_DB_REPORTING", "db") == ("reporting", None, None))
+    check("PGSTG_DB_REPORTING empty", stg("PGSTG_DB_REPORTING", "")[1] == REASON_EMPTY)
+    check("PGSTG_REPORTING sidecar-shaped value refused", stg("PGSTG_REPORTING", "tunnel=gost;local=1")[1] == REASON_NOT_DSN)
+    check("PGSTG_MAIN_TUNNEL is a sidecar", stg("PGSTG_MAIN_TUNNEL") == (None, None, None))
+
+    # --- discovery: synthetic prod + staging vars, set and restored in-process --------------
+    print("discovery:")
+    _syn = {"PGPROD_ZZQ": _dsn_ok, "PGPROD_zzbad": _dsn_ok, "PGSTG_ZZQ": _dsn_ok, "PGSTG_DB_ZZW": "zzw_db"}
+    saved_syn = {k: os.environ.pop(k, None) for k in _syn}
+    os.environ.update(_syn)
+    try:
+        check("zzq discovered on prod", "zzq" in _configured_targets(ENV_PROD) and _configured(ENV_PROD, "zzq"))
+        check("zzq + zzw discovered on staging", {"zzq", "zzw"} <= set(_configured_targets(ENV_STAGING)))
+        check("zzw dbname mapped", pg_staging.dbname("zzw") == "zzw_db")
+        check("wrong-case PGPROD_zzbad is not a target", "zzbad" not in _configured_targets(ENV_PROD))
+        unrec = [u for u in _unrecognized() if u["var"] == "PGPROD_zzbad"]
+        check("unrecognized names PGPROD_zzbad -> PGPROD_ZZBAD",
+              bool(unrec) and unrec[0]["env"] == ENV_PROD and unrec[0]["did_you_mean"] == "PGPROD_ZZBAD")
+        lt = list_targets()
+        entry = next((e for e in lt["envs"][ENV_PROD] if e["target"] == "zzq"), None)
+        check("list_targets has zzq (named)", entry is not None and entry["kind"] == "named")
+        check("list_targets.unrecognized names PGPROD_zzbad", "PGPROD_zzbad" in {u["var"] for u in lt["unrecognized"]})
+    finally:
+        for k, v in saved_syn.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    # --- file report: a synthetic dotenv file; only key names + fixed reasons may print ---
+    print("file report:")
+    import tempfile
+
+    _fixture = (
+        "PGPROD_ZZA=postgresql://ro:pw@h/db1\n"
+        "PGPROD_ZZA_TUNNEL=tunnel=gost;local=65441\n"
+        "PGPROD_ZZORPHAN_TUNNEL=tunnel=gost;local=65442\n"
+        "PGPROD_ZZB=tunnel=gost;local=65443\n"
+        "PGPROD_ZZC=\n"
+        "PGPROD_ZZSHADOW=postgresql://ro:pw@h/db2\n"
+        "PGPROD_zzcase=postgresql://ro:pw@h/db3\n"
+        "PGSTG_DSN=postgresql://ro:pw@h/db4\n"
+        "PGSTG_DB_ZZW=zzw_db\n"
+        "PGSTG_ZZQ=postgresql://ro:pw@h/db5\n"
+        'PGPROD_ZZD="postgresql://ro:pw@h/db6\n'
+        'PGPROD_ZZE=postgresql://ro:pw@h/db7"\n'
+    )
+    saved_shadow = os.environ.pop("PGPROD_ZZSHADOW", None)
+    os.environ["PGPROD_ZZSHADOW"] = "postgresql://ro:other@h/db8"
+    with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as fh:
+        fh.write(_fixture)
+    try:
+        rep = {line.split(" ", 1)[0]: (status, line) for status, line in _file_key_report(Path(fh.name))}
+        joined = "\n".join(line for _, line in rep.values())
+        check("fixture: named target ok + sidecar ok",
+              rep["PGPROD_ZZA"] == ("ok", "PGPROD_ZZA -> target zza (named)")
+              and rep["PGPROD_ZZA_TUNNEL"] == ("ok", "PGPROD_ZZA_TUNNEL -> sidecar of PGPROD_ZZA"))
+        check("fixture: orphan sidecar warns",
+              rep["PGPROD_ZZORPHAN_TUNNEL"] == ("WARN", f"PGPROD_ZZORPHAN_TUNNEL — {REASON_ORPHAN.format(base='PGPROD_ZZORPHAN')}"))
+        check("fixture: sidecar-shaped DSN fails", rep["PGPROD_ZZB"] == ("FAIL", f"PGPROD_ZZB — {REASON_NOT_DSN}"))
+        check("fixture: empty fails", rep["PGPROD_ZZC"] == ("FAIL", f"PGPROD_ZZC — {REASON_EMPTY}"))
+        check("fixture: process env shadows the file", rep["PGPROD_ZZSHADOW"] == ("FAIL", f"PGPROD_ZZSHADOW — {REASON_SHADOWED}"))
+        check("fixture: wrong case fails with did-you-mean",
+              rep["PGPROD_zzcase"] == ("FAIL", f"PGPROD_zzcase — {REASON_UPPER}; did you mean PGPROD_ZZCASE?"))
+        check("fixture: PGSTG_DSN is the base DSN", rep["PGSTG_DSN"] == ("ok", "PGSTG_DSN -> staging base DSN"))
+        check("fixture: PGSTG_DB_ZZW ok (named)", rep["PGSTG_DB_ZZW"] == ("ok", "PGSTG_DB_ZZW -> target zzw (named)"))
+        check("fixture: PGSTG_ZZQ ok (named)", rep["PGSTG_ZZQ"] == ("ok", "PGSTG_ZZQ -> target zzq (named)"))
+        check("fixture: unbalanced quote swallows the next line",
+              rep["PGPROD_ZZD"][0] == "FAIL" and REASON_MULTILINE in rep["PGPROD_ZZD"][1] and "PGPROD_ZZE" not in rep)
+        check("fixture: no value ever surfaces",
+              all(s not in joined for s in ("pw", "other", "db1", "db8", "65441", "65442", "65443", "zzw_db")))
+    finally:
+        os.unlink(fh.name)
+        if saved_shadow is None:
+            os.environ.pop("PGPROD_ZZSHADOW", None)
+        else:
+            os.environ["PGPROD_ZZSHADOW"] = saved_shadow
+
+    check("PYTHON_DOTENV_DISABLED is not set", not os.environ.get("PYTHON_DOTENV_DISABLED"),
+          "" if not os.environ.get("PYTHON_DOTENV_DISABLED") else "set — load_dotenv silently skipped scripts/db/.env")
+    if ENV_PATH.exists():
+        for status, line in _file_key_report(ENV_PATH):
+            check(line, status != "FAIL") if status != "WARN" else print(f"  WARN {line}")
 
     # --- connect reasons: every input embeds a synthetic secret + every DSN value; no output may ---
     print("connect reasons:")
