@@ -153,14 +153,15 @@ Two read-only MCP servers let an agent read **production ground truth** instead 
 `redis_triage` for Redis keys and Streams ([`scripts/redis/`](scripts/redis/README.md)).
 Both are read-only by construction and disconnect when done.
 
-They live in **local scope**, not the shared `.mcp.json`: Claude Code spawns every enabled server
-in every session, and prod triage is occasional work, so the machines that do it are the ones that
-carry it. Opt in with one line in your git-ignored `workspace.config.local.yaml`:
+They live in **Claude local scope; Cursor/Codex project scope (git-ignored overlays)**, not the
+shared `.mcp.json`: Claude Code spawns every enabled server in every session, and prod triage is
+occasional work, so the machines that do it are the ones that carry it. Opt in with one line in
+your git-ignored `workspace.config.local.yaml`:
 
 ```sh
 cp scripts/db/.env.example    scripts/db/.env      # read-only DSNs, per target and per env
 cp scripts/redis/.env.example scripts/redis/.env   # Redis targets (+ tunnel, if you need one)
-scripts/triage-mcp.sh sync                         # register the servers (local scope)
+scripts/triage-mcp.sh sync                         # register the servers (Claude local scope; Cursor/Codex project scope)
 scripts/triage-mcp.sh status                       # policy + what is registered
 ```
 

@@ -359,9 +359,10 @@ planning:
 
 # ── Deployed-env triage (read-only staging + prod MCPs) ────────────────────────
 triage:
-  enabled: true                    # REGISTRATION (default ON). Whether THIS machine carries the
-                                   #   read-only triage MCP servers (pg_triage → scripts/db,
-                                   #   redis_triage → scripts/redis) in LOCAL scope. `aiworks sync`
+  enabled: true                    # REGISTRATION (default ON). Whether THIS machine/checkout carries
+                                   #   the read-only triage MCP servers (pg_triage → scripts/db,
+                                   #   redis_triage → scripts/redis) in Claude local scope; Cursor/Codex
+                                   #   project scope (git-ignored overlays). `aiworks sync`
                                    #   reconciles registration against this flag, both directions.
                                    #   ON by default because STAGING triage needs no authorization
                                    #   — making everyone flip a flag before they can look at

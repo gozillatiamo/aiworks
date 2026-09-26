@@ -19,6 +19,9 @@
 #   .cursor/rules/repos/<repo>/  (root only) each repo's instruction and rules with
 #                             every glob prefixed by the repo dir, so they work for a
 #                             session opened at the workspace root — see below
+#   .cursor/mcp.json (root)  .mcp.json's servers plus the triage MCPs, project-scope
+#                             and git-ignored (docs/adr/0038) — never the shared,
+#                             committed .mcp.json a repo-only session also reads
 #
 # hook-shim.sh is a copy rather than a symlink on purpose: the .cursor/ layer is
 # committed into each product repo so a standalone clone still works, and a symlink
@@ -530,11 +533,28 @@ do_target() {
   # 3. Rules: per-file, because the extension has to change.
   sync_rules "$base"
 
-  # 4. MCP: only at the root. Repos that ship their own .cursor/mcp.json (a
-  #    repo-specific server like next-devtools) keep it — matching what a
-  #    repo-only Claude Code session sees today, which is also nothing extra.
+  # 4. MCP: only at the root, and generated rather than linked — the root's
+  #    .cursor/mcp.json is .mcp.json's servers PLUS the triage MCPs, project scope
+  #    (docs/adr/0038). `scripts/harnesses/triage_mcp.py` owns preserving whatever
+  #    triage entries are already there; this projector only re-renders the file.
+  #    Repos that ship their own .cursor/mcp.json (a repo-specific server like
+  #    next-devtools) keep it — matching what a repo-only Claude Code session sees
+  #    today, which is also nothing extra.
   if [[ "$is_root" -eq 1 ]]; then
-    link "$base/.cursor/mcp.json" "../.mcp.json" "mcp.json"
+    local mp="$base/.cursor/mcp.json"
+    if [[ -L "$mp" ]]; then
+      if [[ "$CHECK" -eq 1 ]]; then drift "mcp.json is still the legacy link to ../.mcp.json"
+      else rm -f "$mp"; fi
+    fi
+    if [[ ! -L "$mp" ]]; then
+      local gen; gen="$(mktemp)"
+      if python3 "$ROOT/scripts/harnesses/triage_mcp.py" --root "$ROOT" --render cursor > "$gen" 2>/dev/null; then
+        emit "$mp" "mcp.json" < "$gen"
+      else
+        note "mcp.json: scripts/harnesses/triage_mcp.py --render cursor failed — left alone"
+      fi
+      rm -f "$gen"
+    fi
   elif [[ -f "$base/.cursor/mcp.json" ]]; then
     dim "keeping this repo's own .cursor/mcp.json"
   fi
@@ -806,6 +826,21 @@ remove_cursor_target() { # <base> <label> <is-root>
     elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned ${p#"$base"/} remains"
     else rm -f "$p"; CHANGED=$((CHANGED+1)); ok "removed ${p#"$base"/}"; fi
   done
+
+  # The root's generated (not linked) project-scope mcp.json (docs/adr/0038) — only
+  # when its content still matches what this projector would render, so a repo's own
+  # hand-written .cursor/mcp.json (a real file too) is never touched by mistake.
+  p="$base/.cursor/mcp.json"
+  if [[ "$is_root" -eq 1 && -f "$p" && ! -L "$p" ]]; then
+    tmp="$(mktemp)"
+    if python3 "$ROOT/scripts/harnesses/triage_mcp.py" --root "$ROOT" --render cursor > "$tmp" 2>/dev/null \
+       && cmp -s "$tmp" "$p"; then
+      if [[ "$DRY" -eq 1 ]]; then warn "would remove ${p#"$base"/}"
+      elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned ${p#"$base"/} remains"
+      else rm -f "$p"; CHANGED=$((CHANGED+1)); ok "removed ${p#"$base"/}"; fi
+    fi
+    rm -f "$tmp"
+  fi
 
   if [[ -d "$base/.cursor/rules" ]]; then
     while IFS= read -r p; do

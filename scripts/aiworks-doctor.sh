@@ -1572,13 +1572,14 @@ check_triage() {
     # which is a tooling gap (group 6 owns it) wearing a triage finding's clothes.
     skip $g "triage MCPs" "jq not on PATH — cannot read the registration"
   else
-    local out missing stale legacy drift
+    local out missing stale legacy global drift
     out="$("$sh" status 2>/dev/null)"
     missing="$(printf '%s\n' "$out" | grep -c 'not registered' || true)"
     stale="$(  printf '%s\n' "$out" | grep -c 'STALE path' || true)"
     legacy="$( printf '%s\n' "$out" | grep -c 'LEGACY registration still present' || true)"
+    global="$( printf '%s\n' "$out" | grep -c 'GLOBAL leftover' || true)"
     drift="$(  printf '%s\n' "$out" | grep -c 'registered with a DIFFERENT command' || true)"
-    missing="${missing:-0}"; stale="${stale:-0}"; legacy="${legacy:-0}"; drift="${drift:-0}"
+    missing="${missing:-0}"; stale="${stale:-0}"; legacy="${legacy:-0}"; global="${global:-0}"; drift="${drift:-0}"
     if [[ "$missing" -gt 0 ]]; then
       fail $g "$missing triage MCP(s) not registered" \
            "aiworks sync no longer registers them — this is the command that does" \
@@ -1596,12 +1597,20 @@ check_triage() {
       warn $g "a pre-0005 triage registration is still present" \
            "two servers over the same fleet until it is removed" \
            "scripts/triage-mcp.sh sync"
+    elif [[ "$global" -gt 0 ]]; then
+      # Cursor/Codex project scope (docs/adr/0038) already wins over a machine-global
+      # registration; the global copy is a leftover from before project scope that now only
+      # leaks this workspace's triage servers into every OTHER workspace on this machine.
+      warn $g "$global triage MCP(s) still registered machine-globally by this workspace" \
+           "project scope already wins here; the global copy leaks into every other workspace on this machine" \
+           "scripts/triage-mcp.sh sync"
     elif [[ "$drift" -gt 0 ]]; then
       warn $g "a triage MCP is registered with a different command" \
            "left alone on purpose — somebody set that up by hand" \
            "see: scripts/triage-mcp.sh status"
     else
-      pass $g "triage MCPs" "pg_triage · redis_triage · k8s_triage registered (local scope)"
+      pass $g "triage MCPs" \
+           "pg_triage · redis_triage · k8s_triage · monitoring_triage registered (Claude local scope, Cursor/Codex project scope)"
     fi
   fi
 

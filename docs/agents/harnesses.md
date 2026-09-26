@@ -20,7 +20,7 @@ updates. A Harness absent from the set is left exactly as it is on disk.
 A person may set a non-empty `harnesses:` in git-ignored `workspace.config.local.yaml`. When
 present, that file **wins outright**: it is the highest-priority source for every consumer —
 `aiworks sync`, `aiworks doctor`, CLI install/authentication, native plugins and status lines,
-machine-local MCP registrations. It may name a Harness the shared file does not carry; the
+project-scope triage registrations. It may name a Harness the shared file does not carry; the
 projection it produces is this machine's to commit and share.
 
 What makes that safe is the rule that **sync never removes a projection**. Dropping an id from
@@ -52,7 +52,7 @@ Every other Harness is a projection:
 | Agents | `.claude/agents/*.md` | `.cursor/agents` symlink | generated `.codex/agents/*.toml` |
 | Instruction rules | `.claude/rules/*.md` | `.cursor/rules/*.mdc` links/slices | generated scope index + direct-read hook |
 | Hooks | `.claude/settings.json` + `.claude/hooks/` | generated wiring + shim | generated wiring + shim |
-| MCP | `.mcp.json` | `.cursor/mcp.json` symlink | generated `.codex/config.toml` tables |
+| MCP | `.mcp.json` | generated `.cursor/mcp.json` (root: `.mcp.json` + registered triage) | generated `.codex/config.toml` tables (root adds registered triage) |
 | Workflows | `.claude/workflows/src/*.js` | shared runtime, Cursor adapter | shared runtime, Codex adapter |
 | Status line | Harness-native | command-driven Cursor form | native Codex footer items |
 
