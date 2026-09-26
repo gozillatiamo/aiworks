@@ -8,10 +8,11 @@
 #   k8s_triage         scripts/k8s/k8s_triage_mcp.py               read-only staging + prod Kubernetes
 #   monitoring_triage  scripts/monitoring/monitoring_triage_mcp.py read-only staging + prod Cloud Monitoring
 #
-# All four are registered in each selected Harness's **machine-local scope** (`~/.claude.json`,
-# `~/.codex/config.toml`, or `~/.cursor/mcp.json`), never in committed `.mcp.json`, so prod
-# credentials never enter the shared repo. Registration commands contain paths only; servers read
-# their own protected local configuration at runtime.
+# Claude stays machine-local scope (`~/.claude.json`); Cursor and Codex register in **this root's
+# own project scope** (`<root>/.cursor/mcp.json`, `<root>/.codex/config.toml` — generated and
+# git-ignored, never `.mcp.json`, docs/adr/0038), so two checkouts on one machine each own their
+# registration instead of contending for one global entry. Registration commands contain paths
+# only; servers read their own protected local configuration at runtime.
 #
 # Registration is ON by default, because STAGING triage needs no authorization and a flag you have
 # to flip before you can look at staging is friction with no payer. PRODUCTION is the part that

@@ -15,7 +15,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so already in context. Keys documented in
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
-  `docs/adr/` — why the workspace is shaped this way (`0001`–`0037`).
+  `docs/adr/` — why the workspace is shaped this way (`0001`–`0038`).
 - `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
   (Hermes is next). ⚠️ The Workflow tool weighs the script **FILE** before parsing it — 524,288 bytes, no delivery
   parameter exempt — so under Claude Code a workflow is ALWAYS delivered comment-stripped: `node

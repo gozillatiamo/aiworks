@@ -37,6 +37,9 @@ exception rather than the price of entry.
 Registration is still explicit, though: `aiworks sync` does **not** perform it (`docs/adr/0009`) —
 `scripts/triage-mcp.sh sync` does, and `aiworks doctor` reports when it is owed.
 
+Amended by `docs/adr/0038`: Claude keeps machine-local scope; Cursor and Codex register in this
+root's own project scope instead.
+
 ## The production gate lives inside the servers, not in the registration
 
 `triage.prod` could have been enforced at registration time — the reconcile script reads the config

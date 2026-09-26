@@ -537,6 +537,28 @@ OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
 ck_exit "a healthy triage source keeps exit 0"         0 "$RC"
 ck "a healthy triage source raises no finding"        "ABSENT:triage MCP source broken" "$OUT"
 
+# a machine-global leftover from before Cursor/Codex went project scope (docs/adr/0038) is a
+# WARN, not a FAIL: project scope already wins here, so nothing is actually broken, but the
+# leftover leaks this workspace's triage servers into every other workspace on this machine.
+W="$T/triage-global-leftover"; make_ws "$W"; stage "$W"
+mkdir -p "$W/scripts/db"; printf 'x = 1\n' > "$W/scripts/db/pg_triage_mcp.py"
+cp "$ROOT/scripts/python-sources-selftest.sh" "$W/scripts/"
+cat > "$W/scripts/triage-mcp.sh" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "status" ]]; then
+  printf '  triage.enabled = true  (default)\n'
+  printf '    - pg_triage — registered (project scope)\n'
+  printf '    ! cursor/pg_triage — GLOBAL leftover from this workspace; sync removes it\n'
+fi
+exit 0
+EOF
+chmod +x "$W/scripts/triage-mcp.sh"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
+ck_exit "a GLOBAL leftover keeps exit 0 (warn, not fail)" 0 "$RC"
+ck "the finding names the global leftover"    "triage MCP(s) still registered machine-globally" "$OUT"
+FOUT="$("$W/scripts/aiworks-doctor.sh" --only triage --fix -n 2>&1)"
+ck "the fix names the script that owns it"    "scripts/triage-mcp.sh sync" "$FOUT"
+
 # ── 21 · the savings badge can be wired and still measure nothing ─────────────────
 # The plugin's doctor copies scripts/statusline.sh to ~/.claude but never scripts/lib/, and the
 # statusline's compute() returns zeros without attribution.jq beside it — silently. Measured on a

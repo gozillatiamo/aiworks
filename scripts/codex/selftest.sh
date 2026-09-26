@@ -80,6 +80,33 @@ second="$(python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE")"
 printf '%s' "$second" | grep -q 'changed=0 drift=0'
 python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --check >/dev/null
 
+# ── Root-only triage tables (docs/adr/0038) — generate.py merges scripts/harnesses/triage_mcp.py ──
+# No triage scripts here yet: config.toml carries no triage tables, and the two checks above
+# stay green (no-regression against a workspace with no triage at all).
+for rel in scripts/db/pg_triage_mcp.py scripts/redis/redis_triage_mcp.py \
+           scripts/k8s/k8s_triage_mcp.py scripts/monitoring/monitoring_triage_mcp.py; do
+  mkdir -p "$FIXTURE/$(dirname "$rel")"
+  printf '#!/usr/bin/env python3\n' > "$FIXTURE/$rel"
+done
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --triage on . >/dev/null
+F="$(cd "$FIXTURE" && pwd -P)"
+grep -q '^\[mcp_servers.pg_triage\]' "$FIXTURE/.codex/config.toml"
+grep -q "$F/scripts/db/pg_triage_mcp.py" "$FIXTURE/.codex/config.toml"
+plain="$(python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE")"
+printf '%s' "$plain" | grep -q 'changed=0 drift=0'
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --check >/dev/null
+
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --triage off . >/dev/null
+grep -A3 '^\[mcp_servers.pg_triage\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
+plain2="$(python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE")"
+printf '%s' "$plain2" | grep -q 'changed=0 drift=0'
+grep -A3 '^\[mcp_servers.pg_triage\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
+
+# A product-repo target never gains triage tables — triage exists for a root session only.
+REPO="$FIXTURE/demo-repo"; mkdir -p "$REPO"
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --triage on "$REPO" >/dev/null
+! grep -q mcp_servers.pg_triage "$REPO/.codex/config.toml" 2>/dev/null
+
 allowed='{"cwd":"FIXTURE","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rg marker src"}}'
 allowed="${allowed/FIXTURE/$FIXTURE}"
 test -z "$(printf '%s' "$allowed" | PYTHONPATH="$ROOT/scripts/codex" python3 "$ROOT/scripts/codex/tool_guard.py" reviewer)"

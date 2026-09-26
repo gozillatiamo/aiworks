@@ -26,7 +26,7 @@ are linked on every root run.)
 | Skills | `.claude/skills/` | `.cursor/skills` → symlink (dir) |
 | Plugin skills (`caveman`, …) | `~/.claude/plugins/…` | `.claude/skills/<name>` → symlink — **generated, git-ignored** |
 | Subagents | `.claude/agents/` | `.cursor/agents` → symlink (dir) |
-| MCP | `.mcp.json` (root) | `.cursor/mcp.json` → symlink (root only) |
+| MCP | `.mcp.json` (root) | `.cursor/mcp.json` → generated (root only, `docs/adr/0038`) |
 | Hooks | `hooks` in `.claude/settings.json` | `.cursor/hooks.json` — **generated** |
 | Permissions | `permissions` in `.claude/settings.json` | `.cursor/cli.json` — **generated** |
 | — | `scripts/cursor/hook-shim.template.sh` | `.cursor/hooks/hook-shim.sh` — **copied** |
@@ -232,7 +232,9 @@ Change a hook by editing it under `.claude/hooks/`. Change the *translation* by 
 4. Open `<workspace>.code-workspace`, or open one repo at a time. Not the meta-repo folder.
 
 MCP servers need a one-time per-server approval in Cursor (`cursor-agent mcp list` shows them as
-`not loaded (needs approval)` until then).
+`not loaded (needs approval)` until then). The root's `.cursor/mcp.json` is generated and
+git-ignored (`docs/adr/0038`) — it carries `.mcp.json`'s servers plus this checkout's own triage
+registrations, so it is never the file to hand-edit or commit.
 
 ## The one commit that fails: prettier refuses a symlink
 

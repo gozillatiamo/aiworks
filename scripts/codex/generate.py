@@ -33,6 +33,13 @@ JSON_MARKER = MARKER
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent.parent
 
+# Root-only triage merge (docs/adr/0038) lives in the harnesses module so `triage-mcp.sh` and
+# this generator share one definition of "expected"/"preserve". `sys.path` is rooted at THIS
+# file's own real location, not at `--root`, so a fixture pointed at by `--root` still resolves
+# the real `scripts/harnesses/` beside the real `scripts/codex/`.
+sys.path.insert(0, str(SCRIPT_DIR.parent / "harnesses"))
+import triage_mcp  # noqa: E402
+
 
 class Projection:
     def __init__(self, check: bool = False, dry_run: bool = False) -> None:
@@ -420,12 +427,15 @@ def agent_toml(base: Path, source: Path, projection: Projection) -> tuple[str, s
     return name, "\n".join(lines)
 
 
-def mcp_toml(mcp_path: Path) -> list[str]:
+def load_mcp_servers(mcp_path: Path) -> dict:
     if not mcp_path.is_file():
-        return []
-    data = json.loads(mcp_path.read_text(encoding="utf-8"))
+        return {}
+    return dict(json.loads(mcp_path.read_text(encoding="utf-8")).get("mcpServers") or {})
+
+
+def mcp_toml(servers: dict) -> list[str]:
     lines: list[str] = []
-    for name, server in (data.get("mcpServers") or {}).items():
+    for name, server in servers.items():
         table = f"mcp_servers.{name}"
         lines.extend([f"[{table}]"])
         if server.get("type") == "sse" and server.get("url"):
@@ -438,6 +448,11 @@ def mcp_toml(mcp_path: Path) -> list[str]:
             lines.append(f"command = {toml_string(str(server['command']))}")
             if server.get("args"):
                 lines.append(f"args = {toml_array([str(item) for item in server['args']])}")
+        # A full-table MASK (docs/adr/0038): a project entry with `enabled: false` overrides a
+        # same-named entry the user layer (a sibling workspace's global registration) provides,
+        # since Codex merges project tables into that layer field by field.
+        if server.get("enabled") is False:
+            lines.append("enabled = false")
         if server.get("url") and server.get("type") != "sse":
             lines.append(f"url = {toml_string(str(server['url']))}")
         if server.get("cwd"):
@@ -476,7 +491,7 @@ def mcp_toml(mcp_path: Path) -> list[str]:
     return lines
 
 
-def config_toml(base: Path) -> str:
+def config_toml(base: Path, is_root: bool, triage_mode: str, projection: Projection) -> str:
     lines = [
         TOML_MARKER,
         "#:schema https://developers.openai.com/codex/config-schema.json",
@@ -499,7 +514,15 @@ def config_toml(base: Path) -> str:
         "]",
         "",
     ]
-    lines.extend(mcp_toml(base / ".mcp.json"))
+    servers = load_mcp_servers(base / ".mcp.json")
+    if is_root:
+        # Triage exists for a session at the workspace root only (docs/adr/0038) — a product
+        # repo's own config.toml never gains these tables, matching the Cursor overlay.
+        triage, notes = triage_mcp.codex_triage(base, triage_mode, base / ".codex" / "config.toml")
+        for note in notes:
+            projection.note(note)
+        servers = {**servers, **triage}
+    lines.extend(mcp_toml(servers))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -547,7 +570,7 @@ def prune_generated_agents(base: Path, expected: set[str], projection: Projectio
             projection.ok(f"removed stale agents/{path.name}")
 
 
-def project_target(root: Path, base: Path, repo_dirs: list[str], is_root: bool, projection: Projection) -> None:
+def project_target(root: Path, base: Path, repo_dirs: list[str], is_root: bool, triage_mode: str, projection: Projection) -> None:
     label = "workspace root" if is_root else base.name
     projection.target = label
     print(f"\n==> Codex projection: {label}")
@@ -576,7 +599,7 @@ def project_target(root: Path, base: Path, repo_dirs: list[str], is_root: bool, 
     else:
         projection.note("no .claude/settings.json; no source hooks to project")
 
-    projection.emit_text(base / ".codex" / "config.toml", config_toml(base), "config.toml")
+    projection.emit_text(base / ".codex" / "config.toml", config_toml(base, is_root, triage_mode, projection), "config.toml")
     projection.emit_text(
         base / ".codex" / "generated" / "rules.json",
         rules_index(root, base, repo_dirs, is_root, projection),
@@ -673,6 +696,8 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--dry-run", "-n", action="store_true")
     parser.add_argument("--remove", action="store_true")
+    parser.add_argument("--triage", choices=("preserve", "on", "off"), default="preserve",
+                         help="root-only triage table mode (docs/adr/0038); ignored elsewhere")
     args = parser.parse_args()
 
     root = args.root.resolve()
@@ -690,7 +715,7 @@ def main() -> int:
         if args.remove:
             remove_target(base, projection)
         else:
-            project_target(root, base, repo_dirs, is_root, projection)
+            project_target(root, base, repo_dirs, is_root, args.triage, projection)
 
     print(f"\nCodex projection: changed={projection.changed} drift={len(projection.drifts)} notes={len(projection.notes)}")
     for message in projection.blocked:

@@ -8,7 +8,8 @@ server to spin up.
 It is ground truth for root-causing a live issue — read-only, with a clean teardown. The driving
 skill is `pg-triage` (`.claude/skills/pg-triage/`).
 
-It lives in **local scope**, deliberately *not* in the shared `.mcp.json`, so prod credentials
+It lives in **Claude local scope; Cursor/Codex project scope (git-ignored overlays)**, deliberately
+*not* in the shared `.mcp.json`, so prod credentials
 never enter the shared repo. Register it with `scripts/triage-mcp.sh sync` — **you** run that,
 `aiworks sync` does not (`docs/adr/0009`); `aiworks doctor` reports when it is owed. Registration
 is on by default (`triage.enabled`) because **staging needs no authorization**; **production**
@@ -81,7 +82,7 @@ Declare no shard vars and every target behaves as a plain named database, as bef
    uv run scripts/db/pg_triage_mcp.py --selftest
    ```
 
-3. **Register it** — `aiworks` does this for you in local scope (personal, this project only):
+3. **Register it** — Claude local scope; Cursor/Codex project scope (git-ignored overlays), personal, this project only:
 
    ```bash
    ./aiworks setup                  # or, on its own: scripts/triage-mcp.sh sync

@@ -31,7 +31,8 @@ The whole session is **read-only and reversible-by-nature**: no writes, no migra
 
 ## Preflight — is the MCP available?
 
-The `pg_triage` MCP lives in **local scope**, deliberately not in the shared `.mcp.json`. It is
+The `pg_triage` MCP lives in **Claude local scope; Cursor/Codex project scope (git-ignored
+overlays)**, deliberately not in the shared `.mcp.json`. It is
 registered by `scripts/triage-mcp.sh sync`, which each person runs themselves (`aiworks sync` does
 not — `docs/adr/0009`), and the DSNs are per-machine too. Before anything else,
 check that its tools are present and what is configured — call `list_targets`, which also reports

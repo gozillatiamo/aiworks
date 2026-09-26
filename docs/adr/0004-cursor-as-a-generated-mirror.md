@@ -39,6 +39,10 @@ so a rule added later cannot silently lose its Cursor scoping.
 Exactly three files are generated rather than linked, because their formats have no shared shape:
 `.cursor/hooks.json`, `.cursor/cli.json`, and `.cursor/hooks/hook-shim.sh`.
 
+A fourth joined them under `docs/adr/0038`: the root's `.cursor/mcp.json` was a symlink to
+`../.mcp.json` and is now generated too, since it carries `.mcp.json`'s servers plus this root's own
+triage registrations (project scope, git-ignored) — a shape no symlink can hold.
+
 ## The hook shim is the one deliberate copy
 
 Cursor and Claude Code speak nearly the same hook protocol — `tool_name`, `tool_input.file_path`,

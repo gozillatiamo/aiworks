@@ -65,6 +65,10 @@ logic itself. The group is split by cost, using the same intra-group `--deep` fe
   --fix` therefore can never run `bootstrap-sa.sh` — a script that grants IAM on a GCP project must
   stay something a human types, having read what it does.
 
+Same rule holds for Cursor and Codex once they moved to project scope (`docs/adr/0038`): their
+projectors run in **preserve** mode and never add a triage entry themselves — only
+`scripts/triage-mcp.sh sync` does, so bring-up still never bootstraps deployed access.
+
 `triage.enabled: false` silences the whole thing: the doctor group skips, and the sync stanza does
 not print at all. Registration is what that key has always governed (`0005`), so a workspace that
 opted out of triage sees no reminders about it anywhere.
