@@ -1605,6 +1605,31 @@ check_triage() {
     fi
   fi
 
+  # ── the triage servers' SOURCE: registered is not the same as starts ──
+  # A server that does not parse, or references a name that is never defined, dies on import
+  # — and every session then shows CONNECTION_CLOSED while the registration above reads green.
+  # The parse + undefined-name guard is the detector; this only runs it over the entry files
+  # and the shared modules they import. Files a workspace does not have are simply not checked.
+  local guard="$DIR/python-sources-selftest.sh" src=() f
+  for f in "$DIR"/db/pg_triage_mcp.py "$DIR"/redis/redis_triage_mcp.py \
+           "$DIR"/k8s/k8s_triage_mcp.py "$DIR"/monitoring/monitoring_triage_mcp.py \
+           "$DIR"/lib/*.py; do
+    [[ -f "$f" ]] && src+=("$f")
+  done
+  if [[ ${#src[@]} -gt 0 && -x "$guard" ]]; then
+    local gout grc
+    gout="$("$guard" "${src[@]}" 2>&1)"; grc=$?
+    case $grc in
+      0) pass $g "triage MCP sources" "${#src[@]} file(s) parse and every name resolves" ;;
+      1) fail $g "triage MCP source broken" \
+              "$(printf '%s\n' "$gout" | grep -m1 '^FAIL ' | sed 's/^FAIL //') — the server dies on import and every session shows CONNECTION_CLOSED" \
+              "scripts/python-sources-selftest.sh" ;;
+      *) warn $g "triage MCP source check not run" \
+              "$(printf '%s\n' "$gout" | grep -m1 'NOT RUN' || echo "guard exited $grc")" \
+              "scripts/python-sources-selftest.sh" ;;
+    esac
+  fi
+
   # ── the read-only Kubernetes identity (--deep) ──
   local k="$DIR/k8s/setup.sh"
   if [[ ! -x "$k" ]]; then

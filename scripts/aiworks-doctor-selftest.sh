@@ -520,6 +520,23 @@ ck_exit "a disabled triage keeps exit 0"  0 "$RC"
 ck "a disabled triage reads as skipped"   "triage.enabled is false"          "$OUT"
 ck "a disabled triage checks nothing"     "ABSENT:kubernetes triage identity" "$OUT"
 
+# a triage server whose source does not parse dies on import — every session then sees
+# CONNECTION_CLOSED while the registration still reads green. The doctor runs the parse +
+# undefined-name guard over the server entry files and scripts/lib, so the outage is a FAIL.
+W="$T/triage-broken"; make_ws "$W"; stage "$W"
+cp "$ROOT/scripts/python-sources-selftest.sh" "$W/scripts/"
+mkdir -p "$W/scripts/db"; printf 'x = "\n' > "$W/scripts/db/pg_triage_mcp.py"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
+ck_exit "a broken triage source fails the doctor"      1 "$RC"
+ck "the finding names the broken source"              "triage MCP source broken"      "$OUT"
+ck "the fix line points at the guard"                 "scripts/python-sources-selftest.sh" "$OUT"
+W="$T/triage-healthy-src"; make_ws "$W"; stage "$W"
+cp "$ROOT/scripts/python-sources-selftest.sh" "$W/scripts/"
+mkdir -p "$W/scripts/db"; printf 'x = 1\n' > "$W/scripts/db/pg_triage_mcp.py"
+OUT="$("$W/scripts/aiworks-doctor.sh" --only triage 2>&1)"; RC=$?
+ck_exit "a healthy triage source keeps exit 0"         0 "$RC"
+ck "a healthy triage source raises no finding"        "ABSENT:triage MCP source broken" "$OUT"
+
 # ── 21 · the savings badge can be wired and still measure nothing ─────────────────
 # The plugin's doctor copies scripts/statusline.sh to ~/.claude but never scripts/lib/, and the
 # statusline's compute() returns zeros without attribution.jq beside it — silently. Measured on a
