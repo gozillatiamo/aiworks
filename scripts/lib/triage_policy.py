@@ -23,6 +23,7 @@ section+key scan `scripts/triage-mcp.sh` does in awk, and the two must agree on 
 policy. Values are cached per file mtime, so a per-call read is a `stat`, not a re-parse.
 
   uv run scripts/lib/triage_policy.py status      # resolved policy + where each value came from
+  uv run scripts/lib/triage_policy.py projects    # this workspace's GCP project ids (monitoring.targets values)
   uv run scripts/lib/triage_policy.py --selftest  # parse/precedence/default cases, no config edits
 """
 
@@ -127,6 +128,59 @@ def prod_allowed() -> bool:
     return resolve("prod")[0]
 
 
+def _parse_targets(path: Path) -> dict[str, str]:
+    """Read `monitoring.targets` — a flat `<product>/<env>: <project-id>` mapping.
+
+    Deliberately hand-parsed rather than pulling in PyYAML: the block is two levels deep and one
+    value type, and a triage server that cannot start because a dependency failed to resolve is
+    worse than one that understands a narrow slice of YAML. Anything more elaborate than this
+    shape belongs in the example config as prose, not in the live file (docs/adr/0006). Not
+    routed through `_parse()` (`SECTION`/`DEAD_KEY_SECTION` only, one level deep) — `targets` is
+    two levels deep and needs its own scan.
+    """
+    if not path.exists():
+        return {}
+    out: dict[str, str] = {}
+    in_monitoring = False
+    in_targets = False
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.rstrip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*:", line):  # a new top-level section
+            in_monitoring = line.startswith("monitoring:")
+            in_targets = False
+            continue
+        if not in_monitoring:
+            continue
+        if re.match(r"^\s{1,2}targets:\s*$", line):
+            in_targets = True
+            continue
+        if re.match(r"^\s{1,2}[A-Za-z_]", line):  # another key at the monitoring level
+            in_targets = False
+            continue
+        if in_targets:
+            m = re.match(r"^\s{3,6}([A-Za-z0-9_.-]+/[A-Za-z0-9_-]+):\s*([A-Za-z0-9_.-]+)\s*$", line)
+            if m:
+                out[m.group(1)] = m.group(2)
+    return out
+
+
+def monitoring_targets() -> dict[str, str]:
+    """`<product>/<env>` -> GCP project id, from `monitoring.targets`. Local-first per key: shared
+    supplies every key, local overrides individually (same precedence as `resolve()`)."""
+    merged: dict[str, str] = {}
+    for name in (SHARED_FILE, LOCAL_FILE):  # shared first, then local wins per key
+        merged.update(_parse_targets(root() / name))
+    return merged
+
+
+def workspace_projects() -> set[str]:
+    """The GCP project ids this workspace declares — the k8s-triage scope allowlist. Empty means
+    this workspace has not declared `monitoring.targets` anywhere (docs/adr/0039)."""
+    return set(monitoring_targets().values())
+
+
 def dead_key_present() -> str | None:
     """The config file still carrying the removed `prod_triage.enabled` key, if any.
 
@@ -160,6 +214,14 @@ def assert_prod_allowed(what: str = "production") -> None:
 
 
 # --- entrypoint ---------------------------------------------------------------------------
+
+
+def _projects() -> int:
+    """One workspace GCP project id per line, sorted, no header — a plain word list a shell
+    script can `read` line by line. Empty output (exit 0) means unscoped."""
+    for project in sorted(workspace_projects()):
+        print(project)
+    return 0
 
 
 def _status() -> int:
@@ -243,6 +305,64 @@ def _selftest() -> int:
         (tmp / SHARED_FILE).write_text("triage:\n  prod: false\n")
         _cache.clear()
         check("non-boolean falls through to the next file", prod_allowed() is False)
+
+        # 9) monitoring.targets absent -> empty mapping and empty project set
+        _cache.clear()
+        check("no monitoring.targets: empty mapping", monitoring_targets() == {})
+        check("no monitoring.targets: empty project set", workspace_projects() == set())
+
+        # 10) shared-only block parsed; a key after `targets:` at the monitoring level ends it,
+        # so anything indented under THAT key is not mistaken for another target
+        (tmp / LOCAL_FILE).write_text("")
+        (tmp / SHARED_FILE).write_text(
+            "monitoring:\n"
+            "  targets:\n"
+            "    app/staging: proj-a\n"
+            "    app/prod: proj-a\n"
+            "  other_key: ignored\n"
+            "    app/leaked: proj-x\n"
+        )
+        _cache.clear()
+        check(
+            "shared-only targets parsed, a later monitoring key ends the block",
+            monitoring_targets() == {"app/staging": "proj-a", "app/prod": "proj-a"},
+        )
+        check("workspace_projects is the set of values", workspace_projects() == {"proj-a"})
+
+        # 11) local overrides one key's project; shared supplies the rest (same precedence as
+        # every other key this module resolves)
+        (tmp / LOCAL_FILE).write_text("monitoring:\n  targets:\n    app/prod: proj-b\n")
+        _cache.clear()
+        check(
+            "local overrides one key, shared supplies the rest",
+            monitoring_targets() == {"app/staging": "proj-a", "app/prod": "proj-b"},
+        )
+        check("workspace_projects reflects the override", workspace_projects() == {"proj-a", "proj-b"})
+
+        # 12) a comment line or a blank line inside the block is ignored, not treated as an entry
+        (tmp / LOCAL_FILE).write_text("")
+        (tmp / SHARED_FILE).write_text(
+            "monitoring:\n"
+            "  targets:\n"
+            "    # a comment inside the block\n"
+            "\n"
+            "    app/staging: proj-a\n"
+        )
+        _cache.clear()
+        check(
+            "comment/blank line inside targets: is ignored",
+            monitoring_targets() == {"app/staging": "proj-a"},
+        )
+
+        # 13) a malformed entry (no product/env slash) is skipped, not raised
+        (tmp / SHARED_FILE).write_text(
+            "monitoring:\n  targets:\n    noSlashHere: proj-a\n    app/staging: proj-b\n"
+        )
+        _cache.clear()
+        check(
+            "a malformed entry with no '/' is skipped",
+            monitoring_targets() == {"app/staging": "proj-b"},
+        )
     finally:
         if prev is None:
             os.environ.pop("TRIAGE_POLICY_ROOT", None)
@@ -258,4 +378,6 @@ def _selftest() -> int:
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         raise SystemExit(_selftest())
+    if len(sys.argv) > 1 and sys.argv[1] == "projects":
+        raise SystemExit(_projects())
     raise SystemExit(_status())

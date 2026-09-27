@@ -108,53 +108,9 @@ _descriptor_cache: dict[str, dict] = {}
 # --- targets -----------------------------------------------------------------------------
 
 
-def _config_files() -> list[Path]:
-    """Local-first, matching every other reader of this config."""
-    root = triage_policy.root()
-    return [root / "workspace.config.local.yaml", root / "workspace.config.yaml"]
-
-
-def _parse_targets(path: Path) -> dict[str, str]:
-    """Read `monitoring.targets` — a flat `<product>/<env>: <project-id>` mapping.
-
-    Deliberately hand-parsed rather than pulling in PyYAML: the block is two levels deep and one
-    value type, and a triage server that cannot start because a dependency failed to resolve is
-    worse than one that understands a narrow slice of YAML. Anything more elaborate than this
-    shape belongs in the example config as prose, not in the live file (docs/adr/0006).
-    """
-    if not path.exists():
-        return {}
-    out: dict[str, str] = {}
-    in_monitoring = False
-    in_targets = False
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.rstrip()
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*:", line):  # a new top-level section
-            in_monitoring = line.startswith("monitoring:")
-            in_targets = False
-            continue
-        if not in_monitoring:
-            continue
-        if re.match(r"^\s{1,2}targets:\s*$", line):
-            in_targets = True
-            continue
-        if re.match(r"^\s{1,2}[A-Za-z_]", line):  # another key at the monitoring level
-            in_targets = False
-            continue
-        if in_targets:
-            m = re.match(r"^\s{3,6}([A-Za-z0-9_.-]+/[A-Za-z0-9_-]+):\s*([A-Za-z0-9_.-]+)\s*$", line)
-            if m:
-                out[m.group(1)] = m.group(2)
-    return out
-
-
 def _targets() -> dict[str, dict]:
     """{"<product>/<env>": {...}} for every declared Cloud Monitoring scope."""
-    merged: dict[str, str] = {}
-    for path in reversed(_config_files()):  # shared first, local wins
-        merged.update(_parse_targets(path))
+    merged = triage_policy.monitoring_targets()
 
     out: dict[str, dict] = {}
     for name, project in merged.items():
