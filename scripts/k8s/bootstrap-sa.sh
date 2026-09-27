@@ -39,6 +39,10 @@
 #   --allow-prod      required before it will touch a PRODUCTION cluster. Bootstrap staging first.
 #   -n, --dry-run     print every mutating command instead of running it.
 #
+# Workspace scope (docs/adr/0039): when `monitoring.targets` declares any project, this script
+# refuses a context whose GKE project is not in that set — bootstrap / status / revoke alike. An
+# empty allowlist keeps today's unscoped behaviour (every context allowed).
+#
 # CRD groups drift: the extra ClusterRole is generated from the API groups that exist in THIS
 # cluster right now. `scripts/k8s/setup.sh` reports when new groups appear, and re-running this
 # script is how you pick them up.
@@ -51,6 +55,7 @@ die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 dim()  { printf '    %s%s%s\n'   "$c_dim"  "$*" "$c_off"; }
 say()  { printf '  %s\n' "$*"; }
 
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SA_NAME="k8s-triage"
 EXTRA_ROLE="k8s-triage-extra"
 BIND_VIEW="k8s-triage-view"
@@ -64,7 +69,7 @@ while [[ $# -gt 0 ]]; do
     --grant)      GRANTS+=("${2:-}"); shift 2 ;;
     --allow-prod) ALLOW_PROD=1; shift ;;
     -n|--dry-run) DRY=1; shift ;;
-    -h|--help)    sed -n '3,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '3,48p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)            die "unknown argument: $1" ;;
   esac
 done
@@ -87,6 +92,15 @@ case "$CLUSTER" in
 esac
 PRODUCT="${CLUSTER%-$ENV}"
 SA_EMAIL="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
+
+# Refuse foreign-org contexts before any gcloud/kubectl mutation (docs/adr/0039). Same allowlist
+# as setup.sh / k8s_triage_mcp: values of monitoring.targets. Empty ⇒ unscoped.
+SCOPE="$(python3 "$ROOT/scripts/lib/triage_policy.py" projects 2>/dev/null || true)"
+if [[ -n "$SCOPE" ]] && ! printf '%s\n' "$SCOPE" | grep -qxF -- "$PROJECT"; then
+  die "project $PROJECT (context $CTX) is out of scope for this workspace — not in monitoring.targets.
+  Add that project under monitoring.targets if it belongs here, or pick an in-scope context
+  (scripts/k8s/setup.sh lists them)."
+fi
 
 say ""
 say "context   $CTX"

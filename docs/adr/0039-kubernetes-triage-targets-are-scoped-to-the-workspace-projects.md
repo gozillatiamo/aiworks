@@ -65,6 +65,9 @@ now labelled `"scope": "unscoped"` in `list_targets()` and a dim line in `setup.
   rows get no gcloud/kubectl round-trip, no owner command, and do not count toward `problems`; they
   are named once in a dim "out of scope for this workspace" block so the fix (add the project under
   `monitoring.targets`) is visible, never silently swallowed.
+- `bootstrap-sa.sh` refuses bootstrap / status / revoke when the context's GKE project is not in
+  that allowlist (empty allowlist stays unscoped). An explicit `--context` is therefore not a
+  bypass of the workspace boundary.
 - `aiworks-doctor.sh --deep` reports **skip** (not warn) when this workspace has monitoring.targets
   but zero in-scope GKE clusters — that is a Cloud-Run-only product like feeed-cs working as
   intended, not a gap.
@@ -85,6 +88,3 @@ now labelled `"scope": "unscoped"` in `list_targets()` and a dim line in `setup.
   create the `k8s-triage@` identity for its own project — `monitoring_triage_mcp.py --verify` is
   the only probe until `bootstrap-sa.sh` grows a `--project` mode without the RBAC half. Recorded
   as future work, not attempted here.
-- **`bootstrap-sa.sh` itself is unchanged.** An explicit `--context` from a project owner is a
-  deliberate act; no allowlist check was added there. Revisit only if someone bootstraps a foreign
-  project by mistake.

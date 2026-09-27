@@ -44,8 +44,9 @@ current context would leak into the human's own next `kubectl`.
 Every derived cluster is then filtered to this workspace's own GCP projects — the values of
 `monitoring.targets` (`docs/adr/0039`). A foreign org's cluster on the same laptop's kubeconfig is
 never addressed: `setup.sh` ignores it (no owner command, no gcloud/kubectl round-trip, not
-counted as a problem) and the MCP's `list_targets()` never lists it. Declaring no
-`monitoring.targets` anywhere keeps today's behaviour — every derived cluster is a target.
+counted as a problem), the MCP's `list_targets()` never lists it, and `bootstrap-sa.sh` refuses
+bootstrap / status / revoke for that context. Declaring no `monitoring.targets` anywhere keeps
+today's behaviour — every derived cluster is a target.
 
 A cluster nobody has bootstrapped is still *listed* but not *readable* — it fails closed with the
 command that onboards it.
