@@ -24,6 +24,7 @@ policy. Values are cached per file mtime, so a per-call read is a `stat`, not a 
 
   uv run scripts/lib/triage_policy.py status      # resolved policy + where each value came from
   uv run scripts/lib/triage_policy.py projects    # this workspace's GCP project ids (monitoring.targets values)
+  uv run scripts/lib/triage_policy.py targets     # <product>/<env>\\t<project-id>, one per line
   uv run scripts/lib/triage_policy.py --selftest  # parse/precedence/default cases, no config edits
 """
 
@@ -224,6 +225,14 @@ def _projects() -> int:
     return 0
 
 
+def _targets() -> int:
+    """One `<product>/<env>\\t<project-id>` line per monitoring.targets entry, sorted by key.
+    Empty output (exit 0) means none declared — monitoring-only bootstrap fails closed on that."""
+    for key, project in sorted(monitoring_targets().items()):
+        print(f"{key}\t{project}")
+    return 0
+
+
 def _status() -> int:
     print(f"root: {root()}")
     for key in ("enabled", "prod"):
@@ -339,6 +348,17 @@ def _selftest() -> int:
         )
         check("workspace_projects reflects the override", workspace_projects() == {"proj-a", "proj-b"})
 
+        import contextlib
+        import io
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            _targets()
+        check(
+            "targets CLI prints key\\tproject sorted",
+            buf.getvalue() == "app/prod\tproj-b\napp/staging\tproj-a\n",
+        )
+
         # 12) a comment line or a blank line inside the block is ignored, not treated as an entry
         (tmp / LOCAL_FILE).write_text("")
         (tmp / SHARED_FILE).write_text(
@@ -380,4 +400,6 @@ if __name__ == "__main__":
         raise SystemExit(_selftest())
     if len(sys.argv) > 1 and sys.argv[1] == "projects":
         raise SystemExit(_projects())
+    if len(sys.argv) > 1 and sys.argv[1] == "targets":
+        raise SystemExit(_targets())
     raise SystemExit(_status())

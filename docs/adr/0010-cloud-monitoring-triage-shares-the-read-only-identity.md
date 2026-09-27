@@ -1,6 +1,6 @@
 # Cloud Monitoring triage shares the read-only identity, and owns its correctness contract
 
-**Status:** Accepted
+**Status:** Accepted · **Amended:** projects with no GKE cluster (`--project --monitoring-only`)
 
 `docs/adr/0007` gave Kubernetes triage a separate read-only service account rather than borrowing
 the human's credential. This extends that decision to a second GCP surface — Cloud Monitoring —
@@ -121,6 +121,23 @@ moved. It is deliberately short and explicitly not authoritative — a catalog a
 every GCP service is stale the week it is written. A stale entry is safe: `read_timeseries`
 resolves the descriptor first, so a renamed metric type fails loudly instead of answering wrongly.
 
+## Projects with no GKE cluster
+
+The shared identity is still correct when the GCP project has **no GKE** — Cloud Run, VMs,
+Memorystore, Cloud SQL, and so on. `scripts/k8s/bootstrap-sa.sh --project <id> --monitoring-only`
+creates `k8s-triage@<project>` and grants only `roles/monitoring.viewer` plus impersonation
+(`roles/iam.serviceAccountTokenCreator` via `--grant`). It does not call kubectl, does not create
+ClusterRoles, and does not grant `roles/container.clusterViewer`.
+
+Scope differs from `--context` mode on one point: an **empty** `monitoring.targets` allowlist
+**refuses** monitoring-only bootstrap. There is no GKE cluster fingerprint to trust — the only
+anchor is a hand-typed project id — so undeclared projects fail closed. `--context` mode keeps
+empty ⇒ unscoped per `docs/adr/0039`.
+
+Prod is derived from target **keys**: if any `monitoring.targets` key whose value equals the
+project ends in `/prod`, bootstrap requires `--allow-prod` (parity with the GKE prod gate).
+Runtime prod reads stay gated by `triage.prod` inside the MCP (`docs/adr/0005`).
+
 ## Consequences
 
 - `aiworks sync` still does not bootstrap anything (`docs/adr/0009` holds). The new server is
@@ -133,3 +150,7 @@ resolves the descriptor first, so a renamed metric type fails loudly instead of 
   `roles/monitoring.viewer`. `--verify` is the proof that it landed.
 - The `oncall` agent gains the skill and the tool grants. No autonomous gate consumes it: like its
   siblings it is on-demand, invoked when an investigation reaches the infrastructure boundary.
+- `scripts/k8s/setup.sh` diagnoses monitoring-only projects (SA, impersonation, monitoring.viewer)
+  and prints the exact `--project --monitoring-only` command. A GKE-less workspace with
+  `monitoring.targets` declared therefore gets warn/pass from `aiworks doctor --deep` instead of
+  skip.

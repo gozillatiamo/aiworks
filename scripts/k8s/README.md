@@ -6,7 +6,7 @@ system actually holds instead of what the manifests say it should.
 | file | what it is |
 |---|---|
 | `k8s_triage_mcp.py` | the MCP server — read-only, staging + prod |
-| `bootstrap-sa.sh` | **admin**, once per cluster: creates the read-only identity and proves it |
+| `bootstrap-sa.sh` | **admin**, once per cluster — or once per project with no GKE (`--project --monitoring-only`) |
 | `setup.sh` | **everyone**, a doctor: says what is missing and the command that fixes it |
 
 ## Why there is a separate identity
@@ -80,16 +80,57 @@ Step 3 ends by asserting the property rather than assuming it — `get pods` / `
 `bootstrap-sa.sh status --context <ctx>` re-prints that table any time.
 `bootstrap-sa.sh revoke --context <ctx>` removes the bindings again.
 
+## Admin runbook — a project with no GKE cluster (Cloud Monitoring only)
+
+Some workspaces declare `monitoring.targets` for a GCP project that has **no GKE** (Cloud Run,
+VMs, managed databases). The same `k8s-triage@<project>` identity still carries
+`roles/monitoring.viewer` (`docs/adr/0010`). Bootstrap it without a kubeconfig context:
+
+Prerequisite — declare the project under `monitoring.targets` (empty allowlist refuses):
+
+```yaml
+monitoring:
+  targets:
+    app/staging: my-project-123456
+    app/prod: my-project-123456
+```
+
+```bash
+# preview — kubectl not required
+scripts/k8s/bootstrap-sa.sh --project my-project-123456 --monitoring-only -n
+
+# apply (staging-only project)
+scripts/k8s/bootstrap-sa.sh --project my-project-123456 --monitoring-only
+
+# any */prod key maps to this project → --allow-prod required
+scripts/k8s/bootstrap-sa.sh --project my-project-123456 --monitoring-only --allow-prod
+
+scripts/k8s/bootstrap-sa.sh --project my-project-123456 --monitoring-only --grant someone@example.com
+scripts/k8s/bootstrap-sa.sh status --project my-project-123456 --monitoring-only
+scripts/k8s/bootstrap-sa.sh revoke --project my-project-123456 --monitoring-only
+```
+
+Then prove the read path (IAM impersonation can take a minute to propagate):
+
+```bash
+uv run scripts/monitoring/monitoring_triage_mcp.py --verify app/staging
+scripts/k8s/setup.sh
+```
+
+`revoke` removes only `roles/monitoring.viewer`. A shared staging+prod project still needs
+`--allow-prod` at bootstrap; runtime prod reads stay gated by `triage.prod` on the MCP.
+
 ### What it creates
 
-| object | scope | why |
-|---|---|---|
-| service account `k8s-triage` | GCP project | the identity; no key is ever generated |
-| `roles/container.clusterViewer` | GCP project | reach the control plane — grants no object access |
-| `clusterrole/k8s-triage-extra` | cluster | nodes, metrics, and the CRD groups present at bootstrap |
-| `clusterrolebinding/k8s-triage-view` | cluster | the upstream `view` role |
-| `clusterrolebinding/k8s-triage-extra` | cluster | the role above |
-| `roles/iam.serviceAccountTokenCreator` | the SA | who may impersonate it |
+| object | scope | GKE | monitoring-only | why |
+|---|---|---|---|---|
+| service account `k8s-triage` | GCP project | ✓ | ✓ | the identity; no key is ever generated |
+| `roles/container.clusterViewer` | GCP project | ✓ | — | reach the control plane — grants no object access |
+| `roles/monitoring.viewer` | GCP project | ✓ | ✓ | read Cloud Monitoring time series |
+| `clusterrole/k8s-triage-extra` | cluster | ✓ | — | nodes, metrics, and the CRD groups present at bootstrap |
+| `clusterrolebinding/k8s-triage-view` | cluster | ✓ | — | the upstream `view` role |
+| `clusterrolebinding/k8s-triage-extra` | cluster | ✓ | — | the role above |
+| `roles/iam.serviceAccountTokenCreator` | the SA | ✓ | ✓ | who may impersonate it |
 
 ## Teammate setup
 
@@ -101,7 +142,8 @@ scripts/k8s/setup.sh
 
 Run it yourself — `aiworks sync` does **not** (`docs/adr/0009`); it only reminds you this step is
 manual, and `aiworks doctor --deep` scores the result. `setup.sh` only reads, always exits 0, and
-prints the exact command for each gap — including the ones an owner has to run for you.
+prints the exact command for each gap — including the ones an owner has to run for you. It covers
+monitoring-only projects too and needs only `gcloud` (kubectl is optional when there is no GKE).
 
 ## Production
 

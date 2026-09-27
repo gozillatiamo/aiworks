@@ -82,8 +82,5 @@ now labelled `"scope": "unscoped"` in `list_targets()` and a dim line in `setup.
   on. Access stays IAM-gated and prod stays `triage.prod`-gated regardless; scoping only removes
   the exposure where a workspace has declared its projects. This is not full isolation, and is not
   claimed to be.
-- **The non-GKE bootstrap gap is now visible, not solved.** `bootstrap-sa.sh` still derives its
-  project from a GKE context, so a Cloud-Run-only workspace has no scripted way to create the
-  `k8s-triage@` identity for its own project — `monitoring_triage_mcp.py --verify` is the only
-  probe until `bootstrap-sa.sh` grows a `--project` mode without the RBAC half. Recorded as
-  future work, not attempted here.
+- **The non-GKE bootstrap gap is closed.** See `docs/adr/0010` §Projects with no GKE cluster —
+  `bootstrap-sa.sh --project <id> --monitoring-only` creates the shared identity without RBAC.

@@ -11,6 +11,10 @@
 #   2. permission to impersonate    roles/iam.serviceAccountTokenCreator on the triage identity,
 #                                   granted by an owner of that GCP project
 #
+# A workspace project that has **no GKE cluster** is still checked: SA exists, you may impersonate
+# it, and `roles/monitoring.viewer` is bound — then this script prints the exact
+# `bootstrap-sa.sh --project … --monitoring-only` command when anything is missing (docs/adr/0010).
+#
 # So this is a DOCTOR, not an installer: it reads, it never writes, and it prints the exact
 # command that unblocks each gap — including the one somebody else has to run. It always exits 0,
 # because a teammate who does not work on Kubernetes should not be told they are broken.
@@ -37,9 +41,14 @@ say() { [[ $QUIET -eq 1 ]] || printf '  %s\n' "$*"; }
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SA_NAME="k8s-triage"
 
-if ! command -v kubectl >/dev/null 2>&1 || ! command -v gcloud >/dev/null 2>&1; then
-  [[ $QUIET -eq 1 ]] || dim "kubectl or gcloud not installed — skipping Kubernetes triage checks"
+if ! command -v gcloud >/dev/null 2>&1; then
+  [[ $QUIET -eq 1 ]] || dim "gcloud not installed — skipping deployed-env triage checks"
   exit 0
+fi
+HAVE_KUBECTL=1
+if ! command -v kubectl >/dev/null 2>&1; then
+  HAVE_KUBECTL=0
+  [[ $QUIET -eq 1 ]] || dim "kubectl not installed — checking monitoring-only projects only"
 fi
 
 # This workspace's own GCP projects (docs/adr/0039) — the values of `monitoring.targets`. A
@@ -47,6 +56,7 @@ fi
 # means unscoped: no `monitoring.targets` declared anywhere, so every context stays in scope —
 # today's behaviour.
 SCOPE="$(python3 "$ROOT/scripts/lib/triage_policy.py" projects 2>/dev/null)"
+TARGETS="$(python3 "$ROOT/scripts/lib/triage_policy.py" targets 2>/dev/null || true)"
 
 # Targets, derived the same way the MCP derives them: from each context's CLUSTER reference
 # (gke_<project>_<region>_<cluster>), never from the context's personal alias. The embedded Python
@@ -54,6 +64,7 @@ SCOPE="$(python3 "$ROOT/scripts/lib/triage_policy.py" projects 2>/dev/null)"
 # Read with a while-loop, not `mapfile` — that builtin arrived in bash 4 and macOS ships 3.2
 # as /bin/bash (see the interpreter note in scripts/aiworks).
 ROWS=(); OUT_ROWS=(); NROWS=0; NOUT=0
+if [[ $HAVE_KUBECTL -eq 1 ]]; then
 while IFS= read -r _row || [[ -n "$_row" ]]; do   # `|| [[ -n ]]` keeps a last line with no trailing \n
   [[ -n "$_row" ]] || continue
   case "$_row" in
@@ -79,11 +90,28 @@ for c in d.get("contexts") or []:
             print("\t".join([product, env, project, cluster, alias, in_scope]))
             break
 ' | sort -u)
-
-if [[ $((NROWS + NOUT)) -eq 0 ]]; then
-  [[ $QUIET -eq 1 ]] || dim "no GKE clusters in this kubeconfig — nothing to check"
-  exit 0
 fi
+
+# Projects in monitoring.targets that have no in-scope GKE row (monitoring-only).
+GKE_PROJECTS=""
+for row in "${ROWS[@]+"${ROWS[@]}"}"; do
+  IFS=$'\t' read -r _PRODUCT _ENV _PROJECT _CLUSTER _ALIAS _FLAG <<<"$row"
+  GKE_PROJECTS="$GKE_PROJECTS$_PROJECT"$'\n'
+done
+MON_ONLY_PROJECTS=""
+if [[ -n "$SCOPE" ]]; then
+  while IFS= read -r p || [[ -n "$p" ]]; do
+    [[ -n "$p" ]] || continue
+    if ! printf '%s' "$GKE_PROJECTS" | grep -qxF -- "$p"; then
+      MON_ONLY_PROJECTS="$MON_ONLY_PROJECTS$p"$'\n'
+    fi
+  done <<<"$SCOPE"
+fi
+NMON=0
+while IFS= read -r p || [[ -n "$p" ]]; do
+  [[ -n "$p" ]] || continue
+  NMON=$((NMON + 1))
+done <<<"$MON_ONLY_PROJECTS"
 
 print_out_of_scope() {
   dim "out of scope for this workspace — not checked:"
@@ -93,19 +121,14 @@ print_out_of_scope() {
   done
 }
 
-if [[ $NROWS -eq 0 ]]; then
+if [[ $((NROWS + NOUT + NMON)) -eq 0 ]]; then
+  [[ $QUIET -eq 1 ]] || dim "no GKE clusters and no monitoring.targets projects — nothing to check"
+  exit 0
+fi
+
+if [[ $NROWS -eq 0 && $NMON -eq 0 ]]; then
   if [[ $QUIET -eq 0 ]]; then
     dim "no GKE cluster in this workspace's project(s): ${SCOPE//$'\n'/, } — nothing to check for Kubernetes"
-    STAGING_HINT="$(python3 -c '
-import sys
-sys.path.insert(0, "'"$ROOT"'/scripts/lib")
-import triage_policy
-staging = sorted(k for k in triage_policy.monitoring_targets() if k.endswith("/staging"))
-print(staging[0] if staging else "")
-' 2>/dev/null)"
-    if [[ -n "$STAGING_HINT" ]]; then
-      dim "check Cloud Monitoring instead:  uv run scripts/monitoring/monitoring_triage_mcp.py --verify $STAGING_HINT"
-    fi
     say ""
     print_out_of_scope
   fi
@@ -113,7 +136,7 @@ print(staging[0] if staging else "")
 fi
 
 say ""
-HEADER="Kubernetes triage — $NROWS target(s) in this workspace's projects"
+HEADER="Deployed-env triage identity — $NROWS GKE target(s), $NMON monitoring-only project(s)"
 [[ $NOUT -gt 0 ]] && HEADER="$HEADER ($NOUT out of scope, not checked)"
 say "$HEADER"
 [[ -n "$SCOPE" ]] || [[ $QUIET -eq 1 ]] || dim "unscoped: no monitoring.targets declared — every GKE context in this kubeconfig is checked"
@@ -185,6 +208,52 @@ print(len(n))' 2>/dev/null | head -1)"
     dim "note: $live CRD groups exist, $granted are readable — re-run bootstrap-sa.sh to pick up the new ones"
   fi
 done
+
+# Monitoring-only projects (in monitoring.targets, no in-scope GKE row).
+while IFS= read -r P || [[ -n "$P" ]]; do
+  [[ -n "$P" ]] || continue
+  SA="${SA_NAME}@${P}.iam.gserviceaccount.com"
+  KEYS="$(printf '%s\n' "$TARGETS" | awk -F'\t' -v p="$P" '$2==p{print $1}')"
+  KEYS_CSV="$(printf '%s\n' "$KEYS" | paste -sd, -)"
+  IS_PROD=0
+  while IFS= read -r k; do
+    [[ "$k" == */prod ]] && IS_PROD=1
+  done <<<"$KEYS"
+  SUFFIX=""
+  [[ $IS_PROD -eq 1 ]] && SUFFIX=" --allow-prod"
+  FIRST_KEY="$(printf '%s\n' "$KEYS" | head -1)"
+
+  say ""
+  say "  $KEYS_CSV  ($P, no GKE)"
+
+  if ! gcloud iam service-accounts describe "$SA" --project "$P" >/dev/null 2>&1; then
+    warn "triage identity does not exist in $P"
+    dim "an owner of $P runs:  scripts/k8s/bootstrap-sa.sh --project $P --monitoring-only$SUFFIX"
+    problems=$((problems + 1))
+    continue
+  fi
+
+  if ! gcloud auth print-access-token --impersonate-service-account="$SA" >/dev/null 2>&1; then
+    warn "you may not impersonate $SA"
+    dim "an owner of $P runs:"
+    dim "  gcloud iam service-accounts add-iam-policy-binding $SA \\"
+    dim "    --project $P --member user:\$(gcloud config get-value account) \\"
+    dim "    --role roles/iam.serviceAccountTokenCreator"
+    problems=$((problems + 1))
+    continue
+  fi
+
+  if gcloud projects get-iam-policy "$P" --flatten="bindings[].members" \
+       --filter="bindings.members:serviceAccount:$SA AND bindings.role:roles/monitoring.viewer" \
+       --format="value(bindings.role)" 2>/dev/null | grep -q .; then
+    ok "ready — Cloud Monitoring triage (monitoring-only project)"
+    [[ -n "$FIRST_KEY" ]] && dim "prove it:  uv run scripts/monitoring/monitoring_triage_mcp.py --verify $FIRST_KEY"
+  else
+    warn "roles/monitoring.viewer is MISSING — monitoring_triage will 403 on every read"
+    dim "an owner of $P runs:  scripts/k8s/bootstrap-sa.sh --project $P --monitoring-only$SUFFIX"
+    problems=$((problems + 1))
+  fi
+done <<<"$MON_ONLY_PROJECTS"
 
 say ""
 if [[ $problems -eq 0 ]]; then

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# bootstrap-sa.sh — create the READ-ONLY deployed-environment triage identity for one cluster.
+# bootstrap-sa.sh — create the READ-ONLY deployed-environment triage identity for one cluster
+# (or one GCP project with no GKE — Cloud Monitoring only).
 #
 # The triage MCPs never use your own kubeconfig credential. They impersonate a dedicated service
 # account whose permissions come from the cluster's RBAC and from project IAM, so "read-only" is
@@ -20,7 +21,8 @@
 # grants them back: `k8s-triage-extra` names only non-core API groups plus nodes and metrics, so
 # there is no rule under which the identity can read a Secret or open a shell.
 #
-# RUN AS A HUMAN, ONCE PER CLUSTER. It WRITES: a service account, two project IAM bindings, and two
+# RUN AS A HUMAN, ONCE PER CLUSTER — or once per GCP project with --project --monitoring-only when
+# there is no GKE. It WRITES: a service account, project IAM bindings, and (GKE mode only) two
 # ClusterRoleBindings. Everything it writes is read-only in effect and removable (see `revoke`).
 # Re-running is safe and is how an already-bootstrapped project picks up a newly added role: each
 # grant checks for an existing binding first and reports it rather than rewriting it.
@@ -29,19 +31,28 @@
 #   scripts/k8s/bootstrap-sa.sh --context <ctx> [--grant <email>] [-n]
 #   scripts/k8s/bootstrap-sa.sh status --context <ctx>
 #   scripts/k8s/bootstrap-sa.sh revoke --context <ctx>          # remove the bindings again
+#   scripts/k8s/bootstrap-sa.sh --project <id> --monitoring-only [--grant <email>] [--allow-prod] [-n]
+#   scripts/k8s/bootstrap-sa.sh status|revoke --project <id> --monitoring-only
 #
 #   --context <ctx>   kubeconfig context to operate on; project + cluster + env are DERIVED from
 #                     its `cluster` field (gke_<project>_<region>_<cluster>), never from the
 #                     context's own name, which is a personal alias and differs per machine.
+#   --project <id>    GCP project id for monitoring-only bootstrap (requires --monitoring-only).
+#                     No kubectl. Creates the SA + roles/monitoring.viewer + impersonation only —
+#                     no ClusterRole, no roles/container.clusterViewer. The project MUST be a
+#                     value of monitoring.targets (empty allowlist refuses — fail closed).
+#   --monitoring-only with --project: Cloud Monitoring identity only (docs/adr/0010 §no GKE).
 #   --grant <email>   also grant this person roles/iam.serviceAccountTokenCreator on the SA, i.e.
 #                     the right to impersonate it. Repeatable. Defaults to the active gcloud
 #                     account on a bootstrap run.
-#   --allow-prod      required before it will touch a PRODUCTION cluster. Bootstrap staging first.
+#   --allow-prod      required before it will touch a PRODUCTION cluster, or a project that any
+#                     monitoring.targets */prod key maps to. Bootstrap staging first.
 #   -n, --dry-run     print every mutating command instead of running it.
 #
 # Workspace scope (docs/adr/0039): when `monitoring.targets` declares any project, this script
 # refuses a context whose GKE project is not in that set — bootstrap / status / revoke alike. An
-# empty allowlist keeps today's unscoped behaviour (every context allowed).
+# empty allowlist keeps today's unscoped behaviour for --context (every context allowed).
+# --project --monitoring-only always fails closed on an empty allowlist.
 #
 # CRD groups drift: the extra ClusterRole is generated from the API groups that exist in THIS
 # cluster right now. `scripts/k8s/setup.sh` reports when new groups appear, and re-running this
@@ -61,20 +72,232 @@ EXTRA_ROLE="k8s-triage-extra"
 BIND_VIEW="k8s-triage-view"
 BIND_EXTRA="k8s-triage-extra"
 
-ACTION="bootstrap"; CTX=""; DRY=0; ALLOW_PROD=0; GRANTS=()
+ACTION="bootstrap"; CTX=""; PROJECT_ARG=""; MON_ONLY=0; DRY=0; ALLOW_PROD=0; GRANTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     bootstrap|status|revoke) ACTION="$1"; shift ;;
-    --context)    CTX="${2:-}"; shift 2 ;;
-    --grant)      GRANTS+=("${2:-}"); shift 2 ;;
-    --allow-prod) ALLOW_PROD=1; shift ;;
-    -n|--dry-run) DRY=1; shift ;;
-    -h|--help)    sed -n '3,48p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *)            die "unknown argument: $1" ;;
+    --context)         CTX="${2:-}"; shift 2 ;;
+    --project)         PROJECT_ARG="${2:-}"; shift 2 ;;
+    --monitoring-only) MON_ONLY=1; shift ;;
+    --grant)           GRANTS+=("${2:-}"); shift 2 ;;
+    --allow-prod)      ALLOW_PROD=1; shift ;;
+    -n|--dry-run)      DRY=1; shift ;;
+    -h|--help)         sed -n '3,59p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)                 die "unknown argument: $1" ;;
   esac
 done
 
-command -v gcloud  >/dev/null 2>&1 || die "gcloud is required"
+command -v gcloud >/dev/null 2>&1 || die "gcloud is required"
+
+if [[ $MON_ONLY -eq 1 && -n "$CTX" ]]; then
+  die "--context and --project/--monitoring-only are mutually exclusive"
+fi
+if [[ $MON_ONLY -eq 1 && -z "$PROJECT_ARG" ]]; then
+  die "--monitoring-only requires --project <id>"
+fi
+if [[ -n "$PROJECT_ARG" && $MON_ONLY -eq 0 ]]; then
+  die "--project is only valid with --monitoring-only (use --context for a GKE cluster)"
+fi
+
+# Execute, or preview under -n. Silences stdout itself so that call sites never redirect it —
+# a `>/dev/null` on the call would swallow the preview line and make a dry run look like a real
+# one. stderr is left alone so a failure still explains itself.
+run() {
+  if [[ $DRY -eq 1 ]]; then dim "would run: $*"; return 0; fi
+  "$@" >/dev/null
+}
+
+# Report a mutation in the tense that actually happened.
+did() { if [[ $DRY -eq 1 ]]; then dim "would: $*"; else ok "$*"; fi; }
+
+has_project_role() {
+  local role="$1"
+  gcloud projects get-iam-policy "$PROJECT" --flatten="bindings[].members" \
+    --filter="bindings.members:serviceAccount:$SA_EMAIL AND bindings.role:$role" \
+    --format="value(bindings.role)" 2>/dev/null | grep -q .
+}
+
+grant_project_role() {
+  local role="$1" why="$2"
+  if has_project_role "$role"; then
+    ok "$role already granted"
+    return 0
+  fi
+  # Retried, because IAM propagation after the SA is created is eventually consistent and the
+  # first attempt can fail with a "does not exist" that resolves itself seconds later.
+  local granted=0 last="" attempt
+  for attempt in $(seq 1 10); do
+    if [[ $DRY -eq 1 ]]; then
+      dim "would grant $role to $SA_EMAIL on $PROJECT"
+      granted=1; break
+    fi
+    last="$(gcloud projects add-iam-policy-binding "$PROJECT" \
+      --member "serviceAccount:$SA_EMAIL" \
+      --role "$role" \
+      --condition=None --quiet 2>&1 >/dev/null)"
+    if [[ $? -eq 0 ]]; then granted=1; break; fi
+    case "$last" in
+      *"does not exist"*) dim "IAM has not caught up yet (attempt $attempt/10) — retrying"; sleep 4 ;;
+      *) break ;;
+    esac
+  done
+  if [[ $granted -eq 0 ]]; then
+    case "$last" in
+      *PERMISSION_DENIED*|*"setIamPolicy"*|*"Permission "*)
+        die "could not grant $role — this needs resourcemanager.projects.setIamPolicy (owner). roles/editor is NOT enough; ask an owner of $PROJECT to run this script." ;;
+      *) die "could not grant $role: $last" ;;
+    esac
+  fi
+  did "$role granted  ($why)"
+}
+
+ensure_sa() {
+  if gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT" >/dev/null 2>&1; then
+    ok "service account already exists"
+  else
+    run gcloud iam service-accounts create "$SA_NAME" \
+      --project "$PROJECT" \
+      --display-name "Kubernetes read-only triage" \
+      --description "Impersonated by the k8s_triage MCP. Read-only; see docs/adr/0007." \
+      || die "could not create the service account (need roles/iam.serviceAccountAdmin or owner on $PROJECT)"
+    did "service account created"
+    # A freshly created SA is not immediately visible to the IAM policy API: binding a role to it
+    # right away fails with "Service account ... does not exist", which reads like a permission
+    # problem and is not one. Wait for it to resolve before going on.
+    if [[ $DRY -eq 0 ]]; then
+      for _ in $(seq 1 30); do
+        gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT" >/dev/null 2>&1 && break
+        sleep 2
+      done
+    fi
+  fi
+}
+
+grant_impersonation() {
+  if [[ ${#GRANTS[@]} -eq 0 ]]; then
+    me="$(gcloud config get-value account 2>/dev/null)"
+    [[ -n "$me" && "$me" != "(unset)" ]] && GRANTS=("$me")
+  fi
+  for person in "${GRANTS[@]}"; do
+    [[ -n "$person" ]] || continue
+    run gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+      --project "$PROJECT" \
+      --member "user:$person" \
+      --role roles/iam.serviceAccountTokenCreator \
+      --quiet \
+      && did "$person may impersonate the identity" \
+      || warn "could not grant impersonation to $person"
+  done
+}
+
+# ── monitoring-only (no GKE) ─────────────────────────────────────────────────────
+if [[ $MON_ONLY -eq 1 ]]; then
+  [[ "$PROJECT_ARG" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] \
+    || die "not a GCP project id: $PROJECT_ARG"
+  PROJECT="$PROJECT_ARG"
+  SA_EMAIL="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
+
+  TARGETS="$(python3 "$ROOT/scripts/lib/triage_policy.py" targets 2>/dev/null || true)"
+  if [[ -z "$TARGETS" ]]; then
+    die "monitoring.targets declares no project; declare \`<product>/<env>: <id>\` first
+  (docs/adr/0010 — monitoring-only bootstrap fails closed on an empty allowlist)."
+  fi
+  KEYS="$(printf '%s\n' "$TARGETS" | awk -F'\t' -v p="$PROJECT" '$2==p{print $1}')"
+  if [[ -z "$KEYS" ]]; then
+    die "project $PROJECT is out of scope for this workspace — not in monitoring.targets.
+  Add that project under monitoring.targets if it belongs here, or pick an in-scope project
+  (scripts/k8s/setup.sh lists them)."
+  fi
+  KEYS_CSV="$(printf '%s\n' "$KEYS" | paste -sd, -)"
+  IS_PROD=0
+  while IFS= read -r k; do
+    [[ "$k" == */prod ]] && IS_PROD=1
+  done <<<"$KEYS"
+
+  say ""
+  say "mode      monitoring-only (no GKE)"
+  say "project   $PROJECT"
+  say "targets   $KEYS_CSV"
+  say "identity  $SA_EMAIL"
+  say ""
+
+  if [[ $IS_PROD -eq 1 && "$ACTION" == "bootstrap" && $ALLOW_PROD -eq 0 ]]; then
+    die "refusing to bootstrap a PRODUCTION cluster without --allow-prod. Bootstrap staging first and run the acceptance checks there."
+  fi
+
+  if [[ "$ACTION" == "status" ]]; then
+    if gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT" >/dev/null 2>&1; then
+      ok "service account exists"
+    else
+      dim "service account missing"
+    fi
+    if has_project_role roles/monitoring.viewer; then
+      ok "roles/monitoring.viewer granted"
+    else
+      dim "roles/monitoring.viewer NOT granted"
+    fi
+    say ""
+    say "impersonators (roles/iam.serviceAccountTokenCreator):"
+    creators="$(gcloud iam service-accounts get-iam-policy "$SA_EMAIL" --project "$PROJECT" \
+      --flatten=bindings[].members \
+      --filter=bindings.role:roles/iam.serviceAccountTokenCreator \
+      --format='value(bindings.members)' 2>/dev/null || true)"
+    if [[ -n "$creators" ]]; then
+      while IFS= read -r m; do [[ -n "$m" ]] && dim "  $m"; done <<<"$creators"
+    else
+      dim "  none"
+    fi
+    say ""
+    say "prove Cloud Monitoring (after IAM has propagated):"
+    while IFS= read -r k; do
+      [[ -n "$k" ]] && dim "  uv run scripts/monitoring/monitoring_triage_mcp.py --verify $k"
+    done <<<"$KEYS"
+    exit 0
+  fi
+
+  if [[ "$ACTION" == "revoke" ]]; then
+    if has_project_role roles/monitoring.viewer; then
+      run gcloud projects remove-iam-policy-binding "$PROJECT" \
+        --member "serviceAccount:$SA_EMAIL" \
+        --role roles/monitoring.viewer \
+        --condition=None --quiet
+      did "roles/monitoring.viewer removed from $PROJECT"
+    else
+      ok "roles/monitoring.viewer not granted — nothing to revoke"
+    fi
+    if has_project_role roles/container.clusterViewer; then
+      warn "roles/container.clusterViewer is still granted — Kubernetes triage on this project keeps working; Cloud Monitoring triage stops"
+    fi
+    dim "the service account and its tokenCreator bindings were left in place — remove them with:"
+    dim "  gcloud iam service-accounts delete $SA_EMAIL --project $PROJECT"
+    exit 0
+  fi
+
+  # bootstrap
+  ensure_sa
+  grant_project_role roles/monitoring.viewer "read Cloud Monitoring time series — scripts/monitoring/"
+  grant_impersonation
+
+  if [[ $DRY -eq 1 ]]; then
+    say ""
+    dim "dry run — nothing was changed. Re-run without -n to apply."
+    exit 0
+  fi
+
+  if ! has_project_role roles/monitoring.viewer; then
+    die "roles/monitoring.viewer is not bound to $SA_EMAIL after bootstrap; do NOT rely on it until this is resolved"
+  fi
+  say ""
+  say "prove it (IAM impersonation can take a minute to propagate):"
+  while IFS= read -r k; do
+    [[ -n "$k" ]] && dim "  uv run scripts/monitoring/monitoring_triage_mcp.py --verify $k"
+  done <<<"$KEYS"
+  say ""
+  ok "$PROJECT is ready for Cloud Monitoring triage (no GKE — Kubernetes RBAC not applicable)"
+  exit 0
+fi
+
+# ── GKE (--context) mode ─────────────────────────────────────────────────────────
 command -v kubectl >/dev/null 2>&1 || die "kubectl is required"
 [[ -n "$CTX" ]] || die "--context is required (kubectl config get-contexts)"
 
@@ -113,17 +336,6 @@ if [[ "$ENV" == "prod" && "$ACTION" == "bootstrap" && $ALLOW_PROD -eq 0 ]]; then
   die "refusing to bootstrap a PRODUCTION cluster without --allow-prod. Bootstrap staging first and run the acceptance checks there."
 fi
 
-# Execute, or preview under -n. Silences stdout itself so that call sites never redirect it —
-# a `>/dev/null` on the call would swallow the preview line and make a dry run look like a real
-# one. stderr is left alone so a failure still explains itself.
-run() {
-  if [[ $DRY -eq 1 ]]; then dim "would run: $*"; return 0; fi
-  "$@" >/dev/null
-}
-
-# Report a mutation in the tense that actually happened.
-did() { if [[ $DRY -eq 1 ]]; then dim "would: $*"; else ok "$*"; fi; }
-
 # ── status ────────────────────────────────────────────────────────────────────────
 if [[ "$ACTION" == "status" ]]; then
   if gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT" >/dev/null 2>&1; then
@@ -131,9 +343,7 @@ if [[ "$ACTION" == "status" ]]; then
   else
     dim "service account missing"
   fi
-  if gcloud projects get-iam-policy "$PROJECT" --flatten="bindings[].members" \
-       --filter="bindings.members:serviceAccount:$SA_EMAIL AND bindings.role:roles/container.clusterViewer" \
-       --format="value(bindings.role)" 2>/dev/null | grep -q .; then
+  if has_project_role roles/container.clusterViewer; then
     ok "roles/container.clusterViewer granted"
   else
     dim "roles/container.clusterViewer NOT granted"
@@ -168,67 +378,13 @@ if [[ "$ACTION" == "revoke" ]]; then
 fi
 
 # ── 1. service account ────────────────────────────────────────────────────────────
-if gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT" >/dev/null 2>&1; then
-  ok "service account already exists"
-else
-  run gcloud iam service-accounts create "$SA_NAME" \
-    --project "$PROJECT" \
-    --display-name "Kubernetes read-only triage" \
-    --description "Impersonated by the k8s_triage MCP. Read-only; see docs/adr/0007." \
-    || die "could not create the service account (need roles/iam.serviceAccountAdmin or owner on $PROJECT)"
-  did "service account created"
-  # A freshly created SA is not immediately visible to the IAM policy API: binding a role to it
-  # right away fails with "Service account ... does not exist", which reads like a permission
-  # problem and is not one. Wait for it to resolve before going on.
-  if [[ $DRY -eq 0 ]]; then
-    for _ in $(seq 1 30); do
-      gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT" >/dev/null 2>&1 && break
-      sleep 2
-    done
-  fi
-fi
+ensure_sa
 
 # ── 2. authn: reach the control plane, and read what GCP measures ────────────────
 # Two project roles on the SAME identity, granted the same way. One triage identity per project
 # carries every read-only deployed-environment capability we have (docs/adr/0010): a second
 # service account would double this ceremony for the same trust boundary, and both roles are
 # viewers — the marginal reach of holding them together is a metric read.
-grant_project_role() {
-  local role="$1" why="$2"
-  if gcloud projects get-iam-policy "$PROJECT" --flatten="bindings[].members" \
-       --filter="bindings.members:serviceAccount:$SA_EMAIL AND bindings.role:$role" \
-       --format="value(bindings.role)" 2>/dev/null | grep -q .; then
-    ok "$role already granted"
-    return 0
-  fi
-  # Retried, because IAM propagation after the SA is created is eventually consistent and the
-  # first attempt can fail with a "does not exist" that resolves itself seconds later.
-  local granted=0 last="" attempt
-  for attempt in $(seq 1 10); do
-    if [[ $DRY -eq 1 ]]; then
-      dim "would grant $role to $SA_EMAIL on $PROJECT"
-      granted=1; break
-    fi
-    last="$(gcloud projects add-iam-policy-binding "$PROJECT" \
-      --member "serviceAccount:$SA_EMAIL" \
-      --role "$role" \
-      --condition=None --quiet 2>&1 >/dev/null)"
-    if [[ $? -eq 0 ]]; then granted=1; break; fi
-    case "$last" in
-      *"does not exist"*) dim "IAM has not caught up yet (attempt $attempt/10) — retrying"; sleep 4 ;;
-      *) break ;;
-    esac
-  done
-  if [[ $granted -eq 0 ]]; then
-    case "$last" in
-      *PERMISSION_DENIED*|*"setIamPolicy"*|*"Permission "*)
-        die "could not grant $role — this needs resourcemanager.projects.setIamPolicy (owner). roles/editor is NOT enough; ask an owner of $PROJECT to run this script." ;;
-      *) die "could not grant $role: $last" ;;
-    esac
-  fi
-  did "$role granted  ($why)"
-}
-
 grant_project_role roles/container.clusterViewer "reach the control plane, nothing more"
 grant_project_role roles/monitoring.viewer "read Cloud Monitoring time series — scripts/monitoring/"
 
@@ -297,20 +453,7 @@ bind "$BIND_VIEW"  view
 bind "$BIND_EXTRA" "$EXTRA_ROLE"
 
 # ── 4. who may impersonate it ─────────────────────────────────────────────────────
-if [[ ${#GRANTS[@]} -eq 0 ]]; then
-  me="$(gcloud config get-value account 2>/dev/null)"
-  [[ -n "$me" && "$me" != "(unset)" ]] && GRANTS=("$me")
-fi
-for person in "${GRANTS[@]}"; do
-  [[ -n "$person" ]] || continue
-  run gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
-    --project "$PROJECT" \
-    --member "user:$person" \
-    --role roles/iam.serviceAccountTokenCreator \
-    --quiet \
-    && did "$person may impersonate the identity" \
-    || warn "could not grant impersonation to $person"
-done
+grant_impersonation
 
 # ── 5. prove it ───────────────────────────────────────────────────────────────────
 if [[ $DRY -eq 1 ]]; then
