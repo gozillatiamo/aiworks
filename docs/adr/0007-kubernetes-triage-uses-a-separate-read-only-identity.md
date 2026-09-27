@@ -1,6 +1,7 @@
 # Kubernetes triage authenticates as a separate read-only identity, not as you
 
-**Status:** Accepted
+**Status:** Accepted. Amended by `docs/adr/0039` (targets are scoped to the workspace's declared
+projects).
 
 The workspace already reaches deployed Postgres and Redis read-only (`docs/adr/0005`). Kubernetes
 was the missing half: a 502 with no matching trace in the service, a pod that restarted before

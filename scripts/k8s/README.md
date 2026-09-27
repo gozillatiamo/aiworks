@@ -26,7 +26,7 @@ nodes, metrics and non-core API groups — so no rule anywhere grants a Secret r
 The agent also has no `Bash(kubectl *)` / `Bash(gcloud *)` grant, so this server is the only path
 from a session to a cluster. A human still has their own credential in their own terminal.
 
-## Targets are derived, never configured
+## Targets are derived, then scoped to the workspace
 
 Each kubeconfig context names its cluster as `gke_<project>_<region>_<cluster>` — a string GKE
 writes, so it reads the same on every machine. The context's own name is a personal alias and is
@@ -40,6 +40,12 @@ gke_acme-5678_asia-southeast1_billing-prod   ->  product="billing" env="prod"
 `product` and `env` are required on every call and neither is defaulted, so an unnamed
 environment can never resolve to production. Nothing is written to `~/.kube/config`: switching the
 current context would leak into the human's own next `kubectl`.
+
+Every derived cluster is then filtered to this workspace's own GCP projects — the values of
+`monitoring.targets` (`docs/adr/0039`). A foreign org's cluster on the same laptop's kubeconfig is
+never addressed: `setup.sh` ignores it (no owner command, no gcloud/kubectl round-trip, not
+counted as a problem) and the MCP's `list_targets()` never lists it. Declaring no
+`monitoring.targets` anywhere keeps today's behaviour — every derived cluster is a target.
 
 A cluster nobody has bootstrapped is still *listed* but not *readable* — it fails closed with the
 command that onboards it.
@@ -86,7 +92,7 @@ Step 3 ends by asserting the property rather than assuming it — `get pods` / `
 
 ## Teammate setup
 
-Nothing to configure.
+Nothing to configure beyond `monitoring.targets`.
 
 ```bash
 scripts/k8s/setup.sh
