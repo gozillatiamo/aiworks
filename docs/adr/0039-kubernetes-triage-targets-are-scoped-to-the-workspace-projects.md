@@ -12,12 +12,12 @@ of that org's GKE contexts is derived too: `scripts/k8s/setup.sh` prints a `boot
 command for it, `aiworks doctor --deep` scores it, and the `k8s_triage` MCP lists it as something
 this session can address.
 
-On a Couple-T laptop, `setup.sh` derived `agent/{prod,staging}` and `onegame/{prod,staging}` —
-neither belongs to this workspace — and printed a `bootstrap-sa.sh --context ofb-…` command for
-each. This workspace's only declared GCP project is `gen-lang-client-0088446822`
-(`workspace.config.yaml` → `monitoring.targets`), and its product runs on Cloud Run plus a VM: no
-GKE cluster at all. Root cause: `scripts/k8s/setup.sh` and `k8s_triage_mcp.py` derive targets from
-**every** GKE context in the kubeconfig, with no notion of which project is this workspace's own.
+Concrete failure: a laptop whose kubeconfig also holds another employer's clusters sees
+`setup.sh` derive e.g. `other/{prod,staging}` and print a `bootstrap-sa.sh --context …` command
+for each, even though this workspace's only declared GCP project is under `monitoring.targets`
+and its product may run on Cloud Run plus a VM with **no** GKE cluster at all. Root cause:
+`scripts/k8s/setup.sh` and `k8s_triage_mcp.py` derive targets from **every** GKE context in the
+kubeconfig, with no notion of which project is this workspace's own.
 
 ## Decision
 
@@ -69,8 +69,7 @@ now labelled `"scope": "unscoped"` in `list_targets()` and a dim line in `setup.
   that allowlist (empty allowlist stays unscoped). An explicit `--context` is therefore not a
   bypass of the workspace boundary.
 - `aiworks-doctor.sh --deep` reports **skip** (not warn) when this workspace has monitoring.targets
-  but zero in-scope GKE clusters — that is a Cloud-Run-only product like feeed-cs working as
-  intended, not a gap.
+  but zero in-scope GKE clusters — that is a Cloud-Run-only product working as intended, not a gap.
 
 ## Consequences
 
@@ -84,7 +83,7 @@ now labelled `"scope": "unscoped"` in `list_targets()` and a dim line in `setup.
   the exposure where a workspace has declared its projects. This is not full isolation, and is not
   claimed to be.
 - **The non-GKE bootstrap gap is now visible, not solved.** `bootstrap-sa.sh` still derives its
-  project from a GKE context, so a Cloud-Run-only workspace (feeed-cs) has no scripted way to
-  create the `k8s-triage@` identity for its own project — `monitoring_triage_mcp.py --verify` is
-  the only probe until `bootstrap-sa.sh` grows a `--project` mode without the RBAC half. Recorded
-  as future work, not attempted here.
+  project from a GKE context, so a Cloud-Run-only workspace has no scripted way to create the
+  `k8s-triage@` identity for its own project — `monitoring_triage_mcp.py --verify` is the only
+  probe until `bootstrap-sa.sh` grows a `--project` mode without the RBAC half. Recorded as
+  future work, not attempted here.
