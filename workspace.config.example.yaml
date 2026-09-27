@@ -403,6 +403,7 @@ monitoring:
   targets:
     app/staging: my-project-123456   # <product>/<env>: <cloud-project-id>
     app/prod: my-project-123456
+    # the project ids here also scope k8s_triage / scripts/k8s/setup.sh (docs/adr/0039)
 
 # ── Artifacts (publishing an interactive doc as a shareable Claude Artifact) ────
 artifacts:

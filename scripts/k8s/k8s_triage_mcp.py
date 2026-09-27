@@ -25,6 +25,12 @@ every teammate's machine, while the context's own name is a personal alias and i
     gke_acme-1234_asia-southeast1_shop-staging    ->  product="shop"    env="staging"
     gke_acme-5678_asia-southeast1_billing-prod    ->  product="billing" env="prod"
 
+...then SCOPED to this workspace's own GCP projects: a derived cluster whose project is not a
+value of `monitoring.targets` is invisible to every tool here, so a foreign org's cluster on the
+same laptop's kubeconfig is never addressed, offered an owner command, or counted as a problem
+(docs/adr/0039). Declaring no `monitoring.targets` anywhere keeps today's behaviour — every
+derived cluster is a target.
+
 Both axes are chosen PER CALL and neither is defaulted — `list_targets()` reports what this
 machine can see, and an unnamed product or environment is an error rather than a guess. This
 server never writes to `~/.kube/config`: switching the current context would be a machine-wide
@@ -154,8 +160,21 @@ def _discover() -> dict[str, dict]:
     return out
 
 
+def _in_scope(found: dict[str, dict], projects: set[str]) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Split derived targets into (in_scope, out_of_scope) by GCP project.
+
+    An empty `projects` set means this workspace has declared no `monitoring.targets` anywhere —
+    unscoped, so everything derived is in scope (today's behaviour, docs/adr/0039)."""
+    if not projects:
+        return found, {}
+    in_scope, out_of_scope = {}, {}
+    for key, t in found.items():
+        (in_scope if t["project"] in projects else out_of_scope)[key] = t
+    return in_scope, out_of_scope
+
+
 def _targets() -> dict[str, dict]:
-    return _discover()
+    return _in_scope(_discover(), triage_policy.workspace_projects())[0]
 
 
 def _resolve(product: str | None, env: str | None) -> dict:
@@ -170,11 +189,17 @@ def _resolve(product: str | None, env: str | None) -> dict:
         raise ValueError(f"env must be one of {ENVS}; got {env!r}")
     found = _targets()
     key = f"{product}/{env}"
-    if key not in found:
+    if key in found:
+        return found[key]
+    _, out_of_scope = _in_scope(_discover(), triage_policy.workspace_projects())
+    if key in out_of_scope:
         raise ValueError(
-            f"no cluster for product={product!r} env={env!r}. Available: {sorted(found) or 'none'}"
+            f"cluster for product={product!r} env={env!r} (project {out_of_scope[key]['project']}) "
+            f"is not in this workspace's projects (monitoring.targets)"
         )
-    return found[key]
+    raise ValueError(
+        f"no cluster for product={product!r} env={env!r}. Available: {sorted(found) or 'none'}"
+    )
 
 
 # --- authentication ----------------------------------------------------------------------
@@ -371,13 +396,16 @@ def _project(kind: str, obj: dict) -> dict:
 
 @mcp.tool()
 def list_targets() -> dict:
-    """Every cluster this machine can address, derived from kubeconfig. Call this first.
+    """Every cluster this machine can address, derived from kubeconfig and scoped to this
+    workspace's own GCP projects (`monitoring.targets`). Call this first.
 
     `product` and `env` from a row here are what every other tool expects. A target being listed
     means a kubeconfig entry exists — not that the read-only identity has been bootstrapped in it
-    (run scripts/k8s/setup.sh to check that) and not that production is unlocked.
+    (run scripts/k8s/setup.sh to check that) and not that production is unlocked. A cluster in a
+    foreign org's project is never listed here — it is simply not this workspace's to address.
     """
     found = _targets()
+    projects = triage_policy.workspace_projects()
     prod_ok = triage_policy.prod_allowed()
     rows = []
     for key in sorted(found):
@@ -394,6 +422,7 @@ def list_targets() -> dict:
         )
     return {
         "targets": rows,
+        "scope": sorted(projects) if projects else "unscoped",
         "prod_allowed": prod_ok,
         "note": (
             "Production targets are refused unless `triage.prod: true` "
@@ -677,8 +706,17 @@ def _selftest() -> int:
         ok = ok and cond
 
     check("kubeconfig readable", bool(_load_kubeconfig()), str(_kubeconfig_path()))
-    found = _targets()
-    check("at least one GKE target derived", bool(found), f"{len(found)} found")
+    projects = triage_policy.workspace_projects()
+    found, out_of_scope = _in_scope(_discover(), projects)
+    if projects and not found:
+        # A declared allowlist with zero in-scope clusters (e.g. a Cloud-Run-only workspace on a
+        # multi-org laptop) is not a failure of this server — say so instead of FAILing.
+        print(
+            f"  ..    no in-scope GKE target — this workspace's project(s): "
+            f"{', '.join(sorted(projects))} ({len(out_of_scope)} out-of-scope cluster(s) ignored)"
+        )
+    else:
+        check("at least one GKE target derived", bool(found), f"{len(found)} found")
     for key in sorted(found):
         t = found[key]
         print(f"        {key:<24} {t['cluster']:<18} {t['project']}")
@@ -698,7 +736,23 @@ def _selftest() -> int:
         check("an unknown env is rejected", False)
     except ValueError:
         check("an unknown env is rejected", True)
+
+    # A pure check of the scope filter itself (docs/adr/0039), independent of this machine's
+    # real kubeconfig or config — two synthetic targets in different projects.
+    fake = {"a/staging": {"project": "proj-a"}, "b/staging": {"project": "proj-b"}}
+    fake_in, fake_out = _in_scope(fake, {"proj-a"})
+    check(
+        "_in_scope splits derived targets by project",
+        set(fake_in) == {"a/staging"} and set(fake_out) == {"b/staging"},
+    )
+    fake_in_unscoped, fake_out_unscoped = _in_scope(fake, set())
+    check(
+        "_in_scope: an empty allowlist is unscoped (everything in)",
+        set(fake_in_unscoped) == set(fake) and not fake_out_unscoped,
+    )
+
     print(f"  triage.prod = {triage_policy.prod_allowed()}")
+    print(f"  scope = {sorted(projects) if projects else 'unscoped'}")
     return 0 if ok else 1
 
 
@@ -706,7 +760,14 @@ def _verify(env: str) -> int:
     """Live acceptance run: read something, and confirm the identity cannot read a Secret."""
     found = {k: v for k, v in _targets().items() if v["env"] == env}
     if not found:
-        print(f"no target with env={env}")
+        projects = triage_policy.workspace_projects()
+        if projects:
+            print(
+                f"no target with env={env} in this workspace's project(s): "
+                f"{', '.join(sorted(projects))}"
+            )
+        else:
+            print(f"no target with env={env}")
         return 1
     rc = 0
     for key, t in sorted(found.items()):

@@ -2,8 +2,10 @@
 #
 # setup.sh — check that this machine can use the k8s_triage MCP, and say exactly what is missing.
 #
-# There is nothing to configure. The MCP derives its targets from the kubeconfig, so a teammate
-# needs only two things per cluster, neither of which this script can grant itself:
+# There is nothing to configure beyond `monitoring.targets` (docs/adr/0039): the MCP derives its
+# targets from the kubeconfig, then keeps only the ones in this workspace's own GCP projects — the
+# values of that block. A teammate needs only two things per IN-SCOPE cluster, neither of which
+# this script can grant itself:
 #
 #   1. a kubeconfig entry           gcloud container clusters get-credentials ...
 #   2. permission to impersonate    roles/iam.serviceAccountTokenCreator on the triage identity,
@@ -19,7 +21,7 @@
 # `aiworks doctor --deep` scores the result.
 #
 # Usage:
-#   scripts/k8s/setup.sh            # check every GKE target this kubeconfig can see
+#   scripts/k8s/setup.sh            # check every in-scope GKE target this kubeconfig can see
 #   scripts/k8s/setup.sh --quiet    # only report problems (what `aiworks doctor --deep` calls)
 set -uo pipefail
 
@@ -40,16 +42,27 @@ if ! command -v kubectl >/dev/null 2>&1 || ! command -v gcloud >/dev/null 2>&1; 
   exit 0
 fi
 
+# This workspace's own GCP projects (docs/adr/0039) — the values of `monitoring.targets`. A
+# context outside this set is a foreign org's cluster on the same laptop, never addressed. Empty
+# means unscoped: no `monitoring.targets` declared anywhere, so every context stays in scope —
+# today's behaviour.
+SCOPE="$(python3 "$ROOT/scripts/lib/triage_policy.py" projects 2>/dev/null)"
+
 # Targets, derived the same way the MCP derives them: from each context's CLUSTER reference
-# (gke_<project>_<region>_<cluster>), never from the context's personal alias.
+# (gke_<project>_<region>_<cluster>), never from the context's personal alias. The embedded Python
+# appends a 6th column, `in`/`out`, from SCOPE (empty SCOPE ⇒ every row is `in`).
 # Read with a while-loop, not `mapfile` — that builtin arrived in bash 4 and macOS ships 3.2
 # as /bin/bash (see the interpreter note in scripts/aiworks).
-ROWS=(); NROWS=0
+ROWS=(); OUT_ROWS=(); NROWS=0; NOUT=0
 while IFS= read -r _row || [[ -n "$_row" ]]; do   # `|| [[ -n ]]` keeps a last line with no trailing \n
   [[ -n "$_row" ]] || continue
-  ROWS+=("$_row"); NROWS=$((NROWS+1))
-done < <(kubectl config view -o json 2>/dev/null | python3 -c '
-import json, sys
+  case "$_row" in
+    *$'\t'in) ROWS+=("$_row"); NROWS=$((NROWS+1)) ;;
+    *)        OUT_ROWS+=("$_row"); NOUT=$((NOUT+1)) ;;
+  esac
+done < <(kubectl config view -o json 2>/dev/null | K8S_SCOPE="$SCOPE" python3 -c '
+import json, os, sys
+scope = set(os.environ.get("K8S_SCOPE", "").split())
 try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
 for c in d.get("contexts") or []:
@@ -62,21 +75,52 @@ for c in d.get("contexts") or []:
     for env in ("prod", "staging"):
         if cluster.endswith("-" + env):
             product = cluster[: -len(env) - 1]
-            print("\t".join([product, env, project, cluster, alias]))
+            in_scope = "in" if (not scope or project in scope) else "out"
+            print("\t".join([product, env, project, cluster, alias, in_scope]))
             break
 ' | sort -u)
 
-if [[ $NROWS -eq 0 ]]; then
+if [[ $((NROWS + NOUT)) -eq 0 ]]; then
   [[ $QUIET -eq 1 ]] || dim "no GKE clusters in this kubeconfig — nothing to check"
   exit 0
 fi
 
+print_out_of_scope() {
+  dim "out of scope for this workspace — not checked:"
+  for row in "${OUT_ROWS[@]+"${OUT_ROWS[@]}"}"; do
+    IFS=$'\t' read -r PRODUCT ENV PROJECT _CLUSTER _ALIAS _FLAG <<<"$row"
+    dim "  $PRODUCT/$ENV  ($PROJECT)"
+  done
+}
+
+if [[ $NROWS -eq 0 ]]; then
+  if [[ $QUIET -eq 0 ]]; then
+    dim "no GKE cluster in this workspace's project(s): ${SCOPE//$'\n'/, } — nothing to check for Kubernetes"
+    STAGING_HINT="$(python3 -c '
+import sys
+sys.path.insert(0, "'"$ROOT"'/scripts/lib")
+import triage_policy
+staging = sorted(k for k in triage_policy.monitoring_targets() if k.endswith("/staging"))
+print(staging[0] if staging else "")
+' 2>/dev/null)"
+    if [[ -n "$STAGING_HINT" ]]; then
+      dim "check Cloud Monitoring instead:  uv run scripts/monitoring/monitoring_triage_mcp.py --verify $STAGING_HINT"
+    fi
+    say ""
+    print_out_of_scope
+  fi
+  exit 0
+fi
+
 say ""
-say "Kubernetes triage — $NROWS target(s) derived from kubeconfig"
+HEADER="Kubernetes triage — $NROWS target(s) in this workspace's projects"
+[[ $NOUT -gt 0 ]] && HEADER="$HEADER ($NOUT out of scope, not checked)"
+say "$HEADER"
+[[ -n "$SCOPE" ]] || [[ $QUIET -eq 1 ]] || dim "unscoped: no monitoring.targets declared — every GKE context in this kubeconfig is checked"
 
 problems=0
 for row in "${ROWS[@]+"${ROWS[@]}"}"; do
-  IFS=$'\t' read -r PRODUCT ENV PROJECT CLUSTER ALIAS <<<"$row"
+  IFS=$'\t' read -r PRODUCT ENV PROJECT CLUSTER ALIAS _FLAG <<<"$row"
   SA="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
   say ""
   say "  $PRODUCT/$ENV  ($CLUSTER)"
@@ -148,5 +192,9 @@ if [[ $problems -eq 0 ]]; then
 else
   warn "$problems target(s) need attention — see the commands above"
   dim "targets that are not ready simply fail closed; the rest keep working."
+fi
+if [[ $NOUT -gt 0 && $QUIET -eq 0 ]]; then
+  say ""
+  print_out_of_scope
 fi
 exit 0

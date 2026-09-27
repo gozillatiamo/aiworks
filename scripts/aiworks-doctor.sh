@@ -1646,18 +1646,19 @@ check_triage() {
   elif [[ $DEEP == 0 ]]; then
     skip $g "kubernetes triage identity" "--deep only (gcloud + kubectl, per cluster)"
   else
-    # --quiet prints nothing at all when there is nothing to check (no kubectl/gcloud, or no
-    # GKE cluster in this kubeconfig), a ✓ per ready target, and a "N target(s) need attention"
-    # line otherwise. It always exits 0, so the text is the verdict.
+    # --quiet prints nothing at all when there is nothing to check (no kubectl/gcloud, no in-scope
+    # GKE cluster — kubeconfig ∩ this workspace's monitoring.targets projects, docs/adr/0039), a
+    # ✓ per ready target, and a "N target(s) need attention" line otherwise. It always exits 0,
+    # so the text is the verdict.
     local kout; kout="$("$k" --quiet 2>&1)"
     if [[ -z "${kout//[[:space:]]/}" ]]; then
-      skip $g "kubernetes triage identity" "no GKE target in this kubeconfig (or kubectl/gcloud absent)"
+      skip $g "kubernetes triage identity" "no in-scope GKE target (kubeconfig ∩ monitoring.targets), or kubectl/gcloud absent"
     elif printf '%s\n' "$kout" | grep -q 'need attention'; then
       warn $g "the Kubernetes triage identity is not ready" \
            "scripts/k8s/setup.sh names the gap and its owner command, per cluster" \
            "see: scripts/k8s/setup.sh   (then a GCP project owner runs scripts/k8s/bootstrap-sa.sh --context <ctx>)"
     else
-      pass $g "kubernetes triage identity" "every derived target reads and cannot write"
+      pass $g "kubernetes triage identity" "every in-scope target reads and cannot write"
     fi
   fi
 }
