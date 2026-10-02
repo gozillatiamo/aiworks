@@ -150,5 +150,65 @@ case "$out" in *': ***'*) ok "--dry-run masks the key" ;; *) bad "--dry-run mask
 ck "--dry-run prints the body" promql "$(sed -n '/^{/,$p' <<<"$out" | jq -r '.compositeQuery.queryType')"
 no_secret "dry-run" "$out"
 
+# --- M3: dashboards list / get / widget --------------------------------------------------------
+D1=00000000-0000-4000-8000-000000000001
+D2=00000000-0000-4000-8000-000000000002
+PQ='sum by (service_name) (rate(http_requests_total{deployment_environment="$deployment_environment"}[5m]))'
+DASH1="$(jq -n --arg pq "$PQ" --arg id "$D1" '{uuid: $id, data: {title: "Consumer Lag", tags: ["streams"],
+  variables: {"v1": {name: "deployment_environment", selectedValue: null, type: "QUERY"},
+              "v2": {name: "service", selectedValue: "api", type: "TEXTBOX"}},
+  widgets: [
+    {id: "w-promql", title: "Lag by env", panelTypes: "graph",
+     query: {queryType: "promql", promql: [{name: "A", query: $pq, disabled: false, legend: ""}],
+             builder: {queryData: [], queryFormulas: []}, clickhouse_sql: []}},
+    {id: "w-builder", title: "Requests", panelTypes: "graph",
+     query: {queryType: "builder", promql: [],
+             builder: {queryData: [{queryName: "A", dataSource: "metrics", aggregateOperator: "sum_rate",
+                                    aggregateAttribute: {key: "http_requests_total"}, expression: "A", disabled: false,
+                                    filters: {items: [{key: {key: "service"}, op: "=", value: "{{.service}}"}], op: "AND"}}],
+                       queryFormulas: [{queryName: "F1", expression: "A*2", disabled: false}]},
+             clickhouse_sql: []}},
+    {id: "w-ch", title: "Raw SQL", panelTypes: "table",
+     query: {promql: [], builder: {queryData: [], queryFormulas: []},
+             clickhouse_sql: [{name: "A", query: "SELECT count() FROM signoz_logs.logs", disabled: false}]}}
+  ]}}')"
+DASH2="$(jq -n --arg id "$D2" '{uuid: $id, data: {title: "Other", tags: [], widgets: []}}')"
+reset_fx
+jq -n --argjson a "$DASH1" --argjson b "$DASH2" '{status: "success", data: [$a, $b]}' | fixture /api/v1/dashboards
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+
+out="$("$GD" --help 2>&1)"; ck "get-dashboard.sh --help exits 0" 0 $?
+out="$("$GD" list 2>/dev/null)"; ck "list exits 0" 0 $?
+ck "list has one row per dashboard" 2 "$(jq 'length' <<<"$out")"
+ck "list row fields" "$D1 Consumer Lag streams 3" "$(jq -r '.[0] | "\(.id) \(.title) \(.tags|join(",")) \(.widgets)"' <<<"$out")"
+ck "list url" "http://signoz.test/api/v1/dashboards" "$(grep -o 'http://signoz.test[^ ]*' "$FAKE_DIR/argv.log")"
+case "$(cat "$FAKE_DIR/argv.log")" in *'-X GET'*) ok "list method is GET" ;; *) bad "list method is GET" "$(cat "$FAKE_DIR/argv.log")" ;; esac
+out="$("$GD" list --search 'consumer' 2>/dev/null)"
+ck "--search is case-insensitive on title" "$D1" "$(jq -r '.[].id' <<<"$out")"
+out="$("$GD" list --search 'nomatch' 2>/dev/null)"; ck "--search with no match gives []" '[]' "$(jq -c . <<<"$out")"
+no_secret "list" "$out"
+
+out="$("$GD" get "$D1" 2>/dev/null)"; ck "get exits 0" 0 $?
+ck "get title" "Consumer Lag" "$(jq -r '.title' <<<"$out")"
+ck "get variables" 'deployment_environment=null service=api' "$(jq -r '[.variables[] | "\(.name)=\(.default)"] | join(" ")' <<<"$out")"
+ck "get widget table" 'w-promql|Lag by env|graph|promql|A w-builder|Requests|graph|builder|A,F1 w-ch|Raw SQL|table|clickhouse_sql|A' \
+  "$(jq -r '[.widgets[] | "\(.id)|\(.title)|\(.panel_type)|\(.query_type)|\(.queries|join(","))"] | join(" ")' <<<"$out")"
+ck "get url" "http://signoz.test/api/v1/dashboards/$D1" "$(grep -o 'http://signoz.test[^ ]*' "$FAKE_DIR/argv.log" | tail -1)"
+
+out="$("$GD" widget "$D1" w-promql 2>/dev/null)"; ck "widget exits 0" 0 $?
+ck "widget prints the PromQL text exact" "$PQ" "$(jq -r '.queries.promql[0].query' <<<"$out")"
+ck "widget carries query_type" promql "$(jq -r '.query_type' <<<"$out")"
+out="$("$GD" widget "$D1" w-builder 2>/dev/null)"
+ck "builder widget prints query data" 'A sum_rate' "$(jq -r '.queries.builder.queryData[0] | "\(.queryName) \(.aggregateOperator)"' <<<"$out")"
+out="$("$GD" widget "$D1" w-ch 2>/dev/null)"
+ck "clickhouse widget prints SQL" 'SELECT count() FROM signoz_logs.logs' "$(jq -r '.queries.clickhouse_sql[0].query' <<<"$out")"
+
+out="$("$GD" widget "$D1" w-nope 2>&1)"; ck "unknown widget exits 1" 1 $?
+case "$out" in *'w-promql'*'Lag by env'*'w-builder'*'w-ch'*) ok "unknown widget lists valid ids + titles" ;; *) bad "unknown widget lists valid ids + titles" "$out" ;; esac
+out="$("$GD" get "$D2" 2>&1)"; ck "unknown dashboard exits 1" 1 $?
+case "$out" in *'signoz HTTP 404'*) ok "unknown dashboard names HTTP 404" ;; *) bad "unknown dashboard names HTTP 404" "$out" ;; esac
+"$GD" 2>/dev/null; ck "no subcommand exits 2" 2 $?
+"$GD" widget "$D1" 2>/dev/null; ck "widget without id exits 2" 2 $?
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]
