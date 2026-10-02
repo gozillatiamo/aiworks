@@ -370,7 +370,7 @@ triage:
                                    #   servers out of every session on this machine.
   prod: false                      # PRODUCTION access (default OFF), per PERSON. Enforced INSIDE
                                    #   the servers (scripts/lib/triage_policy.py): an `env="prod"`
-                                   #   / `prod=true` target call is refused until this is true,
+                                   #   / `REDISPROD_` target call is refused until this is true,
                                    #   even on a machine that holds the prod credentials. Read
                                    #   LOCAL-FIRST, so put `triage: {prod: true}` in your
                                    #   git-ignored workspace.config.local.yaml — it takes effect

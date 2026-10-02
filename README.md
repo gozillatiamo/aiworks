@@ -207,7 +207,7 @@ the names to your setup:
 > Production Redis access is ONLY through the redis-triage MCP, tool prefix
 > `mcp__redis_triage__*` — typed READ tools only, with no command passthrough. That server
 > owns its own port-forward and forwards the Redis port ONLY; it is never a remote shell, and the
-> agent holds no `gcloud` grant. Treat every call against a `prod=true` target as a sensitive
+> agent holds no `gcloud` grant. Treat every call against a `REDISPROD_` target as a sensitive
 > read-only production read; if any call under this prefix ever mutates Redis, treat it as a
 > production write. A local dev Redis (`mcp__redis`) stays writable. Prod Redis VALUES are never
 > persisted locally: the only sanctioned local repro path is `capture_shape` →

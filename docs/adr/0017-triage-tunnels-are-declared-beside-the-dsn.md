@@ -257,3 +257,31 @@ execs die together — a lone `kill <pid>` used to leave the parent holding the 
 **Supersedes.** "Port safety" for an identified ssh forward, and the "SessionEnd generalisation
 is deferred" bullet. The gost adoption addendum stands unchanged; this applies the same rule to
 `tunnel=gcloud`.
+
+## Addendum — the environment is the prefix: `REDISPROD_` / `REDISSTG_`
+
+The Redis MCP used to declare every target under one prefix, `REDISPROD_<NAME>`, with a `prod=<bool>`
+key inside the value deciding whether the target was production. That put the safety decision in
+the one place a copied line or a typo could flip it silently. Postgres never had this problem:
+its variable NAME carries the environment (`PGPROD_<NAME>` / `PGSTG_<NAME>`). Redis now follows
+the same convention.
+
+- `REDISPROD_<NAME>` is a production target: masked, vaulted, gated by `triage.prod` before any
+  tunnel is spawned. `REDISSTG_<NAME>` is a staging target: values as-is, ungated. Only a
+  variable literally named `REDISSTG_*` can ever be ungated.
+- A `prod=` key is refused by name with a fixed reason naming the two prefixes; an old-style
+  `REDISPROD_<NAME>=…;prod=false;…` line is reported and skipped, never reinterpreted as a gated
+  production target. A wrong-case or malformed `<NAME>` is reported with a did-you-mean, as
+  pg does — `list_targets` lists them under `unrecognized`. A report carries the variable name
+  only, never a value.
+- Targets are addressed as `[<env>:]<name>` (`prod:main`, `staging:main`); a bare `<name>`
+  resolves only when exactly one environment declares it, and one declared under both is refused
+  listing both qualified forms — a bare name never defaults to prod. No tool gained a parameter.
+- The tunnel signature label is the real variable name (`REDISPROD_X` / `REDISSTG_X`). The
+  readers (`owner_of`, both `tunnel.sh`, `triage-tunnel-reap.sh`) key on the pid only, so
+  tunnel, lock, process-group and adoption behaviour are unchanged. `scripts/redis/tunnel.sh`
+  reads both prefixes and prints `env:name`.
+
+**Migration.** A staging line is renamed to `REDISSTG_<NAME>` and loses `prod=false`; a
+production line keeps `REDISPROD_<NAME>` and drops `prod=true`. This is a breaking change for
+an existing per-machine env file: until renamed, the old lines are reported, not honoured.

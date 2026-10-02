@@ -36,8 +36,10 @@ would answer a production question with dev data):
 > `scripts/redis/README.md`): declare your targets in `scripts/redis/.env`, run
 > `scripts/triage-mcp.sh sync`, and restart the session.
 
-A `prod=false` target (staging/test) needs nothing further. **A `prod=true` target is gated per
-machine** — if a prod call returns a `triage.prod` PermissionError, that machine has not opted in.
+A `REDISSTG_` target (`target="staging:<name>"`) needs nothing further. **A `REDISPROD_` target
+(`target="prod:<name>"`) is gated per machine** — the variable's prefix decides, never a key
+inside its value, and a bare `<name>` declared under both prefixes is refused rather than
+defaulted — if a prod call returns a `triage.prod` PermissionError, that machine has not opted in.
 Don't reroute, and don't quietly answer from staging as if it were prod; say which target you can
 reach and ask:
 
@@ -61,14 +63,14 @@ rather than guessing a target name.
   `KEYS` is absent — use `scan_keys` (bounded, cursor-based). Always `inspect_key` before a
   bulk read; `hgetall_fields` / `set_members` refuse above 1000 elements and name the cursor
   tool to use instead.
-- **A `prod=true` target masks credentials at the source.** A value that is a credential by key
+- **A `REDISPROD_` target masks credentials at the source.** A value that is a credential by key
   name or by shape comes back as `<redis-secret:sha8>`. The digest is stable, so "same token"
   vs "different token" and "exists" vs "missing" are all still answerable — that is nearly
-  always the actual question. A `prod=false` target (a staging box) returns raw values.
+  always the actual question. A `REDISSTG_` target (a staging box) returns raw values.
 - **Know the egress line.** What may leave into a ticket / chat: key names, inner-system
   identity (any `*_code`, UUID), TTLs, counts, stream ids, group lag, amounts, and the masked
   digest. What may **not**: external-world PII in value form (phone, email, crypto wallet, bank
-  account, national id, a person's name) and any unmasked credential. Every value a `prod=true`
+  account, national id, a person's name) and any unmasked credential. Every value a `REDISPROD_`
   target returns is fingerprinted into the provenance vault, so the tracker / notify adapters
   redact exactly those values at egress — don't lean on it; prefer a count or a masked digest in
   the first place. See `docs/agents/pii-provenance.md`.

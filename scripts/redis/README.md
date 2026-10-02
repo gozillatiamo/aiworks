@@ -14,22 +14,38 @@ tunnel** — or skips it, with `tunnel=none`, when you already have a route.
 
 ## Targets
 
-Declared in `scripts/redis/.env`, one variable per target (see `.env.example`), addressed as
-`target="<name>"`:
+Declared in `scripts/redis/.env`, one variable per target (see `.env.example`). The **prefix
+decides the environment** — the same convention as `PGPROD_`/`PGSTG_` in `scripts/db/.env`:
 
 ```
-REDISPROD_<NAME>=host=<addr>;port=6379;local=<port>;prod=<bool>;tunnel=gcloud;vm=<vm>;zone=<zone>
+REDISPROD_<NAME>=host=<addr>;port=6379;local=<port>;tunnel=gcloud;vm=<vm>;zone=<zone>   # production
+REDISSTG_<NAME>=host=<addr>;port=6379;local=<port>;tunnel=gcloud;vm=<vm>;zone=<zone>    # staging
 ```
 
 | Key | Meaning |
 |---|---|
 | `host` · `port` | the Redis as seen from the tunnel host (or from you, with `tunnel=none`) |
 | `local` | the loopback port to forward to — **never 6379**, which is normally your LOCAL dev Redis; shadowing it would answer a production question with dev data |
-| `prod` | `true` (default) ⇒ credential masking + PII provenance · `false` ⇒ a staging box, values as-is |
 | `tunnel` | `gcloud` (default) ⇒ the server runs `gcloud compute ssh <vm> --zone=<zone> -- -N -L …` · `none` ⇒ already reachable |
+
+`REDISPROD_` ⇒ credential masking + PII provenance, and gated per machine (`triage.prod`).
+`REDISSTG_` ⇒ values as-is, ungated. There is **no `prod=` key**: a line carrying one is reported
+by variable name with a fixed reason and skipped — never reinterpreted — so a copied line cannot
+silently downgrade a production box. `<NAME>` is `UPPER_SNAKE`; a wrong-case or malformed name is
+reported with a did-you-mean (`list_targets` → `unrecognized`), not silently ignored.
+
+A target is addressed as `target="prod:<name>"` or `target="staging:<name>"`. A bare
+`target="<name>"` is accepted only when exactly one environment declares it; the same `<NAME>`
+under both prefixes is two distinct targets and a bare name is refused, listing both qualified
+forms — a bare name never resolves to prod by default. `list_targets` and `tunnel_status` show
+`env` and `env_var` per target.
 
 Nothing in that file is a credential — the access gate is your cloud IAM / network — but it is
 per-machine on purpose: a machine with no `.env` has no targets, which is the opt-in.
+
+**Migrating an existing env file:** a staging line is renamed to `REDISSTG_<NAME>` and loses its
+`prod=false`; a production line keeps `REDISPROD_<NAME>` and drops `prod=true`. Until renamed, an
+old-style line is reported and skipped.
 
 ## Setup (one-time, per machine)
 
@@ -46,10 +62,10 @@ uv run scripts/redis/redis_triage_mcp.py --selftest   # deps + guards + your tar
 scripts/triage-mcp.sh status        # policy + what is registered
 ```
 
-Restart the session so it connects; the `mcp__redis_triage__*` tools then appear. A `prod=false`
+Restart the session so it connects; the `mcp__redis_triage__*` tools then appear. A `REDISSTG_`
 target works from here on — staging needs no opt-in.
 
-**A `prod=true` target does**, and the server refuses it (before spawning a tunnel) until this
+**A `REDISPROD_` target does**, and the server refuses it (before spawning a tunnel) until this
 machine opts in. One line in your personal, git-ignored `workspace.config.local.yaml`, read live —
 no re-register, no restart:
 
@@ -120,7 +136,7 @@ guarantee and strictly better than any of these.)
    cardinality check refuses a bulk read above 1000 elements and names the cursor tool, results
    page at 200, and every connection carries a 15s socket timeout plus a
    `claude-redis-triage-<user>` client name so ops can see and kill it.
-5. **Secret masking at the source, on `prod=true` targets.** A value that is a credential by
+5. **Secret masking at the source, on `REDISPROD_` targets.** A value that is a credential by
    key name (`*token*`, `*session*`, `*auth*`, `*secret*`, `*password*`, …) or by shape (JWT,
    long hex, opaque base64) is returned as `<redis-secret:sha8>`. The digest is stable, so
    "same token / different token / missing" is still answerable; inside a JSON payload the
@@ -144,7 +160,7 @@ from the parsed target spec and no tool argument can reach the command line.
 
 ## The production gate
 
-A target declared `prod=true` is refused — before a tunnel is spawned — unless this machine opts in
+A `REDISPROD_` target is refused — before a tunnel is spawned — unless this machine opts in
 with `triage.prod: true` in the git-ignored `workspace.config.local.yaml`. Being able to reach the
 box (cloud IAM, a VPN, your own forward) is not permission. A `prod=false` target (staging/test) is
 ungated, and registration is on by default (`triage.enabled`) — though you register the server
