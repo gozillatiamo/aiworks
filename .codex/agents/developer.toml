@@ -76,6 +76,16 @@ Some data bugs only reproduce against the *actual* offending prod rows (a fixed-
 3. **Reproduce against local source** — point the local service at `repro_<KEY>`, run your red repro loop, root-cause.
 4. **Teardown — always.** `uv run scripts/db/prod_repro_seed.py --ticket <KEY> --teardown` DROPs the throwaway DB wholesale. Zero prod-derived data remains locally. This is the DB analogue of the sandbox restore above; do it before you report, same as `git clean`.
 
+### The Redis half — no value ever lands locally (`/diagnosing-bugs` only)
+Redis has **no seed tool on purpose**: unlike a historical row, cache/stream state is mostly reconstructible, and copying a live session or agent token onto local disk would spread a credential to widen a repro. So for a stale-cache / missing-session / stream-not-consumed bug:
+
+1. **Read prod (transient), read-only** with `/redis-triage` — `target` is required, as `[<env>:]<name>` from `scripts/redis/.env` (`staging:<name>` before `prod:<name>` whenever staging reproduces it; a bare `<name>` only when exactly one environment declares it). On a `REDISPROD_` target, a credential comes back as `<redis-secret:sha8>`; the digest is stable, so "same token / different token / missing" is still answerable. `inspect_key` before any bulk read.
+2. **Fix forward with a test — the default.** Take the *shape* you observed (type, field names, TTL, the malformed payload's structure) into a unit/integration test in the repo and fix against that. Most cache and serialization bugs end here with no live state at all.
+3. **Only if the repro genuinely needs keys**, use `capture_shape` → `uv run scripts/redis/replay_shape.py --shape <file> --label <KEY>`. What crosses is a *schema*; every value written locally is synthesized, under a `repro:<KEY>:` prefix.
+4. **Teardown — always.** `uv run scripts/redis/replay_shape.py --label <KEY> --teardown` deletes exactly that prefix. Then `disconnect` the MCP.
+
+**Never** retype a prod Redis value into a local write, a fixture, or a test — that is the unmasked prod-data flow the seed tool exists to prevent, just done by hand. And a PEL entry's delivery count / idle time cannot be replayed at all: for a wedged consumer, read the live group and fix forward.
+
 ## Workflow
 
 0. **🛑 MUST DO — already-implemented short-circuit (check FIRST).** If the ticket is **already fully implemented/fixed** (every acceptance criterion satisfied on the branch/`develop`; verify by querying the repo's codegraph index FIRST — `codegraph explore`/`codegraph query` to find the implementing symbols, `codegraph callers`/`codegraph impact` to confirm full coverage — and fall back to `Grep`/`Glob` only as a last resort for a detail codegraph didn't cover), write/edit/commit/build **nothing** — run the same short-circuit the planner does (see development-planner step 5: comment "already implemented" + evidence via `scripts/tracker/add-ticket-comment.sh <KEY> "…"`, then `scripts/tracker/upsert-ticket-details.sh <KEY> --status Done`), then stop and return a one-line summary. Only on **complete** coverage — if partial, implement just the gap via the flow below.
