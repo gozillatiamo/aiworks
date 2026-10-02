@@ -11,11 +11,13 @@ psycopg, redis, or any third-party package.
 The contract:
 
   parse_spec(label, spec) -> TunnelSpec   # raises ValueError, naming `label`
-  argv(spec) -> list[str]                 # pure; testable without spawning
+  argv(spec, log_path=None) -> list[str]  # pure; testable without spawning; `-E <log>` signs it
   open_tunnel(spec, ready=None) -> Tunnel # refuses a busy port — except a gost it can identify
-                                          # as this gost.yaml's (adopted: used, never stopped)
-  close_tunnel(tun) -> None
+                                          # as this gost.yaml's, or an ssh forward it can prove
+                                          # is this spec's (adopted: used, never stopped)
+  close_tunnel(tun) -> None               # kills the WHOLE process group it spawned
   is_alive(tun) -> bool
+  owner_of(args) -> int | None            # the MCP pid that spawned a signed forward
   gost_preflight(spec) -> list[str]       # problems (empty = ok); never opens socks.auth
   gost_running() -> bool
 
@@ -27,6 +29,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -42,6 +45,9 @@ GOST_CONFIG_VAR = "PG_TRIAGE_GOST_CONFIG"   # scripts/db/.env: gost.yaml path, a
 GOST_CONFIG: Path | None = None   # selftest seam; None -> resolved from GOST_CONFIG_VAR at call time
 GOST_AUTH_FILE = "socks.auth"   # existence is checked; the file is NEVER opened
 GOST_GUIDE = 'scripts/db/README.md ("gost (shared SOCKS proxy)")'
+TUNNEL_SH = "scripts/db/tunnel.sh"   # the status|kill remedy named in refusals; redis points it at its own
+SSH_COMMANDS = {"ssh"}               # lsof command names an adoptable forward may carry (selftest seam)
+_SIGNATURE = re.compile(r"(?:^|/)triage-tunnel-(\d+)-")   # -E <log>: the MCP pid that spawned the forward
 
 
 def gost_config() -> Path | None:
@@ -72,7 +78,8 @@ class Tunnel:
     log_path: Path | None
     opened_at: float
     last_used: float
-    adopted_pid: int | None = None  # a gost started OUTSIDE the MCP: used, never stopped (ADR 0017)
+    adopted_pid: int | None = None  # a gost/ssh started OUTSIDE the MCP: used, never stopped (ADR 0017)
+    owner_detail: str = ""          # how an adopted forward was identified (for tunnel_status)
 
 
 TUNNEL_READY_TIMEOUT_S = 45
@@ -155,13 +162,16 @@ def parse_spec(label: str, spec: str) -> TunnelSpec:
     )
 
 
-def argv(spec: TunnelSpec) -> list[str]:
+def argv(spec: TunnelSpec, log_path: "Path | str | None" = None) -> list[str]:
     """Build the gcloud argv list for a TunnelSpec — pure, never spawns.
 
     Produces:
       gcloud compute ssh <vm> [--zone=<zone>] [--project=<p>] [--tunnel-through-iap]
          --quiet -- -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=30
-         -L <local>:<host>:<port>
+         -L <local>:<host>:<port> [-E <log_path>]
+
+    `-E <log_path>` (ssh's own log-file option) is the ownership signature: the file is named
+    `triage-tunnel-<pid>-…` so a later process can tell whose forward it is (`owner_of`).
 
     Returns a list (never a shell string) so no element can reach the command line as a
     shell metacharacter.
@@ -185,7 +195,24 @@ def argv(spec: TunnelSpec) -> list[str]:
         "-L",
         f"{spec.local_port}:{spec.host}:{spec.port}",
     ]
+    if log_path is not None:
+        cmd += ["-E", str(log_path)]
     return cmd
+
+
+def owner_of(args: "list[str]") -> int | None:
+    """The MCP pid a signed forward belongs to (`-E …/triage-tunnel-<pid>-…log`), or None when the
+    argv carries no signature (a person's own forward, or one from before signatures)."""
+    for i, a in enumerate(args):
+        if a == "-E" and i + 1 < len(args):
+            m = _SIGNATURE.search(args[i + 1])
+        elif a.startswith("-E") and len(a) > 2:
+            m = _SIGNATURE.search(a[2:])
+        else:
+            continue
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def _port_in_use(port: int) -> bool:
@@ -221,21 +248,30 @@ def open_tunnel(
         return _open_gost(spec, ready, timeout)
 
     if _port_in_use(spec.local_port):
+        pid, detail, why = _external_ssh(spec, ready)
+        if pid is not None:
+            return Tunnel(
+                spec=spec, proc=None, log_path=None,
+                opened_at=time.time(), last_used=time.time(),
+                adopted_pid=pid, owner_detail=detail,
+            )
         raise RuntimeError(
-            f"127.0.0.1:{spec.local_port} is already in use — refusing to adopt a tunnel "
-            f"this process did not open (it may point somewhere else entirely). "
-            f"Inspect with `scripts/db/tunnel.sh status` and clear with "
-            f"`scripts/db/tunnel.sh kill`."
+            f"127.0.0.1:{spec.local_port} is already in use and cannot be adopted: {why}. "
+            f"Refusing a tunnel this process cannot prove is {spec.label}'s. "
+            f"Inspect with `{TUNNEL_SH} status` and clear with `{TUNNEL_SH} kill`."
         )
 
     log_fd, log_path_str = tempfile.mkstemp(
-        prefix=f"pg-tunnel-{spec.label.lower().replace('_', '-')}-", suffix=".log"
+        prefix=f"triage-tunnel-{os.getpid()}-{spec.label.lower().replace('_', '-')}-", suffix=".log"
     )
     log_path = Path(log_path_str)
 
-    cmd = argv(spec)
+    cmd = argv(spec, log_path)
     with open(log_fd, "wb") as fh:
-        proc = subprocess.Popen(cmd, stdout=fh, stderr=fh, stdin=subprocess.DEVNULL)
+        # Own session => own process group: teardown signals gcloud AND the ssh it forks.
+        proc = subprocess.Popen(
+            cmd, stdout=fh, stderr=fh, stdin=subprocess.DEVNULL, start_new_session=True,
+        )
 
     tun = Tunnel(
         spec=spec, proc=proc, log_path=log_path,
@@ -347,10 +383,11 @@ def _run(cmd: list[str]) -> str:
         return ""
 
 
-def _listeners(ports: set[int]) -> dict[int, tuple[int, str, int]]:
-    """port -> (pid, command, uid) for each 127.0.0.1 TCP listener lsof can see on `ports`.
+def _listener_rows(ports: set[int]) -> list[tuple[int, int, str, int]]:
+    """(port, pid, command, uid) for every 127.0.0.1 TCP listener lsof can see on `ports` —
+    one row per pid, so a port held by two processes shows twice. v6 (`[::1]`) is ignored.
     Reads the process table only — never connects (a connect to gost dials prod upstream)."""
-    seen: dict[int, tuple[int, str, int]] = {}
+    rows: list[tuple[int, int, str, int]] = []
     pid, cmd, uid = 0, "", -1
     for line in _run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcun"]).splitlines():
         tag, val = line[:1], line[1:]
@@ -362,9 +399,95 @@ def _listeners(ports: set[int]) -> dict[int, tuple[int, str, int]]:
             uid = int(val)
         elif tag == "n" and val.startswith("127.0.0.1:"):
             port = int(val.rsplit(":", 1)[1])
-            if port in ports:
-                seen[port] = (pid, cmd, uid)
-    return seen
+            if port in ports and (port, pid, cmd, uid) not in rows:
+                rows.append((port, pid, cmd, uid))
+    return rows
+
+
+def _listeners(ports: set[int]) -> dict[int, tuple[int, str, int]]:
+    """port -> (pid, command, uid), last listener wins (gost holds every port once)."""
+    return {port: (pid, cmd, uid) for port, pid, cmd, uid in _listener_rows(ports)}
+
+
+def _ps_args(pid: int) -> tuple[int, list[str]]:
+    """(ppid, argv words) of `pid`, (0, []) when ps cannot read it."""
+    words = _run(["ps", "-ww", "-o", "ppid=,args=", "-p", str(pid)]).split()   # -ww: never truncate argv
+    if len(words) < 2:
+        return 0, []
+    return int(words[0]), words[1:]
+
+
+def _forward_of(args: list[str]) -> str:
+    """The `-L` forward in an ssh argv, normalised to `local:host:port` (a `127.0.0.1:` or
+    `localhost:` bind prefix dropped, host lower-cased); "" when there is none."""
+    fwd = ""
+    for i, a in enumerate(args):
+        if a == "-L" and i + 1 < len(args):
+            fwd = args[i + 1]
+        elif a.startswith("-L") and len(a) > 2:
+            fwd = a[2:]
+    parts = fwd.lower().split(":")
+    if len(parts) == 4 and parts[0] in ("127.0.0.1", "localhost"):
+        parts = parts[1:]
+    return ":".join(parts) if len(parts) == 3 else ""
+
+
+def _external_ssh(spec: TunnelSpec, ready) -> tuple[int | None, str, str]:
+    """Identify an ssh forward started outside this process that serves `spec`.
+
+    Returns (pid, detail, "") when ONE process passes every check, (None, "", reason) otherwise.
+    Checks, in order (ADR 0017 addendum — an identified ssh forward is adopted for connecting,
+    never for killing): one listener; it is `ssh` and ours; its `-L` forward is exactly this
+    spec's; the VM is provable from its own argv (`start-iap-tunnel <vm>`) or its parent's
+    (`compute ssh <vm>`), zone/project matching when both sides declare them; its signature,
+    if any, names a LIVE owner (a dead owner's forward is an orphan — refuse, never reclaim);
+    and `ready()` passes when the caller gave one."""
+    rows = _listener_rows({spec.local_port})
+    if not rows:
+        return None, "", f"127.0.0.1:{spec.local_port} is busy but lsof shows no listener"
+    if len(rows) != 1:
+        return None, "", f"port is held by {len(rows)} processes"
+    _, pid, cmd, uid = rows[0]
+    if cmd not in SSH_COMMANDS:
+        return None, "", f"pid {pid} is {cmd!r}, not ssh"
+    if uid != os.getuid():
+        return None, "", f"pid {pid} belongs to another user"
+    ppid, args = _ps_args(pid)
+    if not args:
+        return None, "", f"pid {pid}: cannot read its argv"
+    want = f"{spec.local_port}:{spec.host.lower()}:{spec.port}"
+    got = _forward_of(args)
+    if got != want:
+        return None, "", f"pid {pid} forwards {got or 'nothing'!r}, not {want!r}"
+    via = ""
+    if "start-iap-tunnel" in args and args[args.index("start-iap-tunnel") + 1:][:1] == [spec.vm]:
+        via, scope = f"start-iap-tunnel {spec.vm}", args
+    else:
+        _, pargs = _ps_args(ppid) if ppid > 1 else (0, [])
+        for i in range(len(pargs) - 2):
+            if pargs[i:i + 3] == ["compute", "ssh", spec.vm]:
+                via, scope = f"gcloud compute ssh {spec.vm} (pid {ppid})", pargs
+                break
+    if not via:
+        return None, "", f"pid {pid}: cannot prove which VM it goes through (want {spec.vm!r})"
+    for flag, val in (("--zone", spec.zone), ("--project", spec.project)):
+        seen = [a.split("=", 1)[1] for a in scope if a.startswith(flag + "=")]
+        if val and seen and seen[0] != val:
+            return None, "", f"pid {pid}: {flag}={seen[0]}, not {val}"
+    owner = owner_of(args)
+    if owner is not None and not _pid_exists(owner):
+        return None, "", (
+            f"pid {pid} is an orphan of an earlier triage session (owner pid {owner} is gone)"
+        )
+    if ready is not None:
+        try:
+            ok = bool(ready())
+        except Exception:
+            ok = False
+        if not ok:
+            return None, "", f"pid {pid} listens but the service behind it does not answer (stale forward?)"
+    who = "unsigned (a person's own forward)" if owner is None else f"owner pid {owner}"
+    return pid, f"ssh pid {pid} via {via}, {who}", ""
 
 
 def _external_gost(ports: set[int]) -> tuple[int | None, str]:
@@ -505,9 +628,9 @@ def _pid_exists(pid: int) -> bool:
 
 
 def close_tunnel(tun: Tunnel) -> None:
-    """Terminate the port-forward process and remove the log file. A gost tunnel only releases
-    its hold; the shared gost process stops when the last holder closes. An ADOPTED gost is
-    never touched — the MCP did not start it and must not stop it."""
+    """Terminate the port-forward process GROUP and remove the log file. A gost tunnel only
+    releases its hold; the shared gost process stops when the last holder closes. An ADOPTED
+    gost or ssh forward is never touched — the MCP did not start it and must not stop it."""
     if tun.adopted_pid is not None:
         return  # ADR 0017 addendum 5: adopted for connecting, never for killing
     if tun.proc is None:
@@ -515,13 +638,36 @@ def close_tunnel(tun: Tunnel) -> None:
     if tun.spec.kind == "gost":
         _close_gost(tun)
         return
-    if tun.proc.poll() is None:
-        tun.proc.terminate()
-        try:
-            tun.proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            tun.proc.kill()
+    _terminate_group(tun.proc)
     _cleanup_log(tun.log_path)
+
+
+def _terminate_group(proc: subprocess.Popen) -> None:
+    """SIGTERM the process group `proc` leads (gcloud + the ssh it forked), wait 5 s, then
+    SIGKILL the group. A group that is already gone is not an error."""
+
+    def _signal_group(sig: int) -> None:
+        try:
+            os.killpg(proc.pid, sig)   # the group it leads (start_new_session=True)
+            return
+        except ProcessLookupError:
+            pass
+        try:
+            os.kill(proc.pid, sig)     # not a leader (a stand-in spawned in our own group)
+        except ProcessLookupError:
+            pass
+
+    if proc.poll() is None:
+        _signal_group(signal.SIGTERM)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+    _signal_group(signal.SIGKILL)
+    try:
+        proc.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def _cleanup_log(log_path: Path | None) -> None:
@@ -535,7 +681,7 @@ def _cleanup_log(log_path: Path | None) -> None:
 def is_alive(tun: Tunnel) -> bool:
     """Whether the tunnel process is still running.
 
-    Returns True for kind=none (direct connection — nothing to reap). An adopted gost is alive
+    Returns True for kind=none (direct connection — nothing to reap). An adopted forward is alive
     while its pid exists — a signal-0 probe, never a connect (a connect to gost dials upstream).
     """
     if tun.adopted_pid is not None:
@@ -661,6 +807,138 @@ def _selftest() -> int:
         sleeper.kill()   # the fixture owns it — module code never signals an adopted pid
         sleeper.wait()
     check("adopted: dead once the pid is gone", not is_alive(adopted))
+
+    # --- signature: argv -E <log> + owner_of ---------------------------------------------------
+    signed = argv(spec, "/tmp/triage-tunnel-4242-lbl-abc.log")
+    check("argv: unchanged without a log path", "-E" not in argv(spec))
+    check("argv: -E <log> appended after the forward", signed[-2:] == ["-E", "/tmp/triage-tunnel-4242-lbl-abc.log"])
+    check("owner_of: reads the pid out of -E", owner_of(signed) == 4242)
+    check("owner_of: glued -E form", owner_of(["ssh", "-E/x/triage-tunnel-7-l-q.log"]) == 7)
+    check("owner_of: unsigned argv is None", owner_of(argv(spec)) is None)
+    check("owner_of: a stray log name is not a signature", owner_of(["ssh", "-E", "/tmp/other.log"]) is None)
+
+    # --- ssh forwards: process-group teardown + adoption (hermetic stand-ins) -----------------
+    # `ssh` is a copy of the perl binary (a script would make lsof name the interpreter, so the
+    # command-name check could never see "ssh") that binds the -L port; `gcloud` is a shell
+    # parent that forks it and waits — the same shape as `gcloud compute ssh` forking the real
+    # ssh. The listener never accepts, so its backlog must outlast every probe the checks below
+    # make: a saturated backlog drops the SYN, `_port_in_use` reads False, and open_tunnel
+    # takes the spawn path against a port a stand-in already holds.
+    global SSH_COMMANDS
+    saved_ssh, saved_path = SSH_COMMANDS, os.environ.get("PATH", "")
+    with tempfile.TemporaryDirectory() as fxdir:
+        fx = Path(fxdir)
+        shutil.copy(shutil.which("perl") or "/usr/bin/perl", fx / "ssh")
+        listen = ['-e', 'use IO::Socket::INET; my ($i) = grep { $ARGV[$_] eq "-L" } 0..$#ARGV;'
+                  ' my ($p) = $ARGV[$i + 1] =~ /^(\\d+)/; my $s = IO::Socket::INET->new('
+                  'LocalAddr => "127.0.0.1", LocalPort => $p, Listen => 128, ReuseAddr => 1) or die; sleep 60',
+                  '--']
+        (fx / "gcloud").write_text(
+            f'#!/bin/sh\n"$(dirname "$0")/ssh" {listen[0]} \'{listen[1]}\' {listen[2]} "$@" &\nwait\n'
+        )
+        for f in ("ssh", "gcloud"):
+            (fx / f).chmod(0o755)
+        fixtures: list[subprocess.Popen] = []
+
+        def _free() -> int:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", 0))
+                return s.getsockname()[1]
+
+        def _wait_port(port: int) -> None:
+            for _ in range(60):
+                if _port_in_use(port):
+                    return
+                time.sleep(0.1)
+
+        def stand_in(port: int, host: str = "h", vm: str = "vmx", parent: bool = True,
+                     sig: str | None = None, extra: list[str] | None = None) -> subprocess.Popen:
+            tail = ["-N", "-L", f"{port}:{host}:6379"] + (["-E", sig] if sig else [])
+            cmd = ([str(fx / "gcloud"), "compute", "ssh", vm] + (extra or []) + ["--quiet", "--"] + tail
+                   if parent else [str(fx / "ssh")] + listen + tail)
+            proc = subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+            fixtures.append(proc)
+            _wait_port(port)
+            return proc
+
+        def refusal(spec_: TunnelSpec, ready=None) -> str:
+            try:
+                tun = open_tunnel(spec_, ready=ready, timeout=1)
+            except RuntimeError as exc:
+                return str(exc)
+            close_tunnel(tun)
+            return ""
+
+        def refused(label: str, needle: str, spec_str: str, ready=None) -> None:
+            msg = refusal(parse_spec("LBL", spec_str), ready=ready)
+            check(label, needle in msg, msg[:120])
+
+        try:
+            # S1: spawn path kills the whole group (parent `gcloud` AND the `ssh` it forked)
+            os.environ["PATH"] = f"{fx}:{saved_path}"
+            p = _free()
+            spec_grp = parse_spec("LBL", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx")
+            tun_grp = open_tunnel(spec_grp, timeout=10)
+            rows = _listener_rows({p})
+            child = rows[0][1] if rows else 0
+            check("group: spawned forward listens via a child", child not in (0, tun_grp.proc.pid))
+            check("group: log name carries the owner signature",
+                  owner_of(argv(spec_grp, tun_grp.log_path)) == os.getpid())
+            close_tunnel(tun_grp)
+            time.sleep(0.3)
+            check("group: close_tunnel kills the forked child too", not _pid_exists(child))
+            check("group: port released", not _port_in_use(p))
+            check("group: log removed", not tun_grp.log_path.exists())
+            os.environ["PATH"] = saved_path
+
+            # S3: adoption — identify, then adopt or refuse naming the failed condition
+            p = _free()
+            spec_ok = parse_spec("LBL", f"tunnel=gcloud;host=H;port=6379;local={p};vm=vmx;zone=z1")
+            manual = stand_in(p)
+            SSH_COMMANDS = {"not-a-forward"}
+            msg = refusal(spec_ok)
+            check("adopt: a non-ssh command is refused", "not ssh" in msg and TUNNEL_SH in msg, msg[:100])
+            SSH_COMMANDS = saved_ssh
+            tun_ad = open_tunnel(spec_ok, ready=lambda: True, timeout=1)
+            check("adopt: identified forward is adopted", tun_ad.adopted_pid == _listener_rows({p})[0][1]
+                  and tun_ad.proc is None, tun_ad.owner_detail)
+            check("adopt: owner_detail names the VM and 'unsigned'",
+                  "vmx" in tun_ad.owner_detail and "unsigned" in tun_ad.owner_detail)
+            close_tunnel(tun_ad)
+            close_tunnel(tun_ad)
+            check("adopt: close_tunnel never stops it", manual.poll() is None and is_alive(tun_ad))
+            check("adopt: an undeclared zone on the forward is not held against it",
+                  refusal(parse_spec("LBL", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx;zone=z2")) == "")
+            os.killpg(manual.pid, signal.SIGKILL); manual.wait()
+            time.sleep(0.2)
+            check("adopt: dead once the pid is gone", not is_alive(tun_ad))
+
+            p = _free(); stand_in(p, extra=["--zone=z1"])
+            refused("adopt: declared zone must match", "--zone=z1, not z2", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx;zone=z2")
+            check("adopt: matching zone adopts", refusal(
+                parse_spec("LBL", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx;zone=z1")) == "")
+
+            p = _free(); stand_in(p, host="other")
+            refused("adopt: wrong forward is refused", "forwards", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx")
+            p = _free(); stand_in(p, vm="vmy")
+            refused("adopt: wrong VM is refused", "cannot prove which VM", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx")
+            p = _free(); stand_in(p, parent=False)
+            refused("adopt: no VM proof is refused", "cannot prove which VM", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx")
+            dead = subprocess.Popen(["true"]); dead.wait()
+            p = _free(); stand_in(p, sig=f"/tmp/triage-tunnel-{dead.pid}-lbl-x.log")
+            refused("adopt: orphan of a dead owner is refused", "orphan", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx")
+            p = _free(); stand_in(p, sig=f"/tmp/triage-tunnel-{os.getpid()}-lbl-x.log")
+            tun_live = open_tunnel(parse_spec("LBL", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx"), timeout=1)
+            check("adopt: live-owner signature adopts", f"owner pid {os.getpid()}" in tun_live.owner_detail)
+            refused("adopt: ready() False refuses as stale", "does not answer", f"tunnel=gcloud;host=h;port=6379;local={p};vm=vmx", ready=lambda: False)
+        finally:
+            SSH_COMMANDS = saved_ssh
+            os.environ["PATH"] = saved_path
+            for proc in fixtures:
+                if proc.poll() is None:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
 
     # --- gost: preflight + shared process (hermetic temp config, never the declared gost.yaml) ----
     global GOST_BIN, GOST_CONFIG
