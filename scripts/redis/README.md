@@ -132,8 +132,11 @@ guarantee and strictly better than any of these.)
    (`docs/agents/pii-provenance.md`).
 7. **The tunnel closes itself.** Lazy: no tunnel exists until the first call for a target. A
    watchdog kills any tunnel idle for 120s; `disconnect` closes on demand; atexit/SIGTERM close
-   on exit; a `SessionEnd` hook (`.claude/hooks/redis-triage-tunnel-reap.sh`) reaps an orphan left
-   by a hard-killed session. "Must disconnect when done" is mechanical, not remembered.
+   on exit; a `SessionEnd` hook (`.claude/hooks/triage-tunnel-reap.sh`, shared with pg-triage)
+   reaps an MCP orphan left by a hard-killed session — a forward signed
+   `-E …/triage-tunnel-<pid>-…` whose owner pid is dead. It reads no `.env` and never touches an
+   unsigned forward (a person's own) or one whose MCP is still running. "Must disconnect when
+   done" is mechanical, not remembered.
 
 The agent is never granted `gcloud`. That is on purpose: `gcloud compute ssh <vm> -- <command>`
 is a shell on the production VM, so the tunnel lives inside this server, where the argv is built
