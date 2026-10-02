@@ -12,7 +12,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'EOF'
-Usage: open-pr.sh --title <t> [--base <b>] [--head <h>] [--body <b>]
+Usage: open-pr.sh --title <t> [--base <b>] [--head <h>] [--body <b>] [--remote <name>]
                   [--media <path|dir|url>]... [--ticket <KEY>] [--dry-run]
 
 Open (or reuse) a PR/MR for HEAD -> BASE in the current repo.
@@ -26,6 +26,11 @@ Options:
                    Use this for anything longer than a line: a writer must run BARE, and
                    --body "$(cat file)" is a command substitution, i.e. a compound command
                    the adapter guard denies. Mirrors tracker/upsert-ticket-details.sh.
+  --remote <name>  Git remote the head branch is pushed to before the PR/MR is opened
+                   (default: $VCS_REMOTE, else origin). Use it when the target repo
+                   (VCS_REPO) is reached through a remote other than origin — an upstream
+                   added to a clone whose origin is elsewhere — so the branch never lands
+                   on origin. Must name a remote of this checkout.
   --media  <ref>   A visual result to attach (image/video file, a directory of them,
                    or an http(s) URL). Repeatable. Each is hosted via the adapter and
                    appended to the body under a "## Visual results" section.
@@ -37,6 +42,7 @@ Options:
 
 Environment:
   VCS_PROVIDER       github | gitlab (default: auto-detected from the origin remote).
+  VCS_REMOTE         Default for --remote (default: origin).
   VCS_MEDIA_RELEASE  GitHub only: release tag used to host media (default: pr-media).
 EOF
 }
@@ -45,7 +51,7 @@ for a in "$@"; do case "$a" in -h|--help) usage; exit 0 ;; esac; done
 # shellcheck source=lib.sh
 . "$DIR/lib.sh"
 
-base=""; head=""; title=""; body=""; ticket=""; dry=0; media=()
+base=""; head=""; title=""; body=""; ticket=""; remote=""; dry=0; media=()
 need() { [[ -n "${1:-}" ]] || die "$2"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,6 +64,7 @@ while [[ $# -gt 0 ]]; do
                  shift 2 ;;
     --media)   need "${2:-}" "--media needs a value"; media+=("$2"); shift 2 ;;
     --ticket)  need "${2:-}" "--ticket needs a value"; ticket="$2"; shift 2 ;;
+    --remote)  need "${2:-}" "--remote needs a value"; remote="$2"; shift 2 ;;
     --dry-run) dry=1; shift ;;
     -*)        die "unknown option: $1   (see -h)" ;;
     *)         die "unexpected argument: $1   (see -h)" ;;
@@ -68,6 +75,12 @@ done
 [[ -n "$head" ]]  || head="$(git rev-parse --abbrev-ref HEAD)"
 [[ -n "$base" ]]  || base="$(vcs_default_branch)"
 [[ "$head" != "$base" ]] || die "head ($head) == base ($base) — nothing to open"
+# --remote overrides VCS_REMOTE (lib.sh defaulted it to origin); vcs_push_head reads the global.
+# Refuse an unknown remote HERE, before any upload or push: `git push -u <typo>` would fail late
+# and the provider would then report a missing branch, pointing the reader at the forge.
+[[ -n "$remote" ]] && VCS_REMOTE="$remote"
+git remote get-url "$VCS_REMOTE" >/dev/null 2>&1 \
+  || die "remote '$VCS_REMOTE' does not exist in this checkout (see: git remote -v) — nothing was pushed"
 
 # Attach the implementor's visual results, if any, under a "## Visual results" section.
 # Ticket defaults to the <PREFIX>-<n> embedded in the head branch (feature/FM-9 -> FM-9).

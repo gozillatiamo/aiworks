@@ -8,7 +8,7 @@ remote** when unset. All commands run against the repo in the current directory.
 | Script | Does |
 |---|---|
 | `default-branch.sh` | Print the repo's default/parent branch |
-| `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=`. `--media <ref>` (repeatable) attaches visual results to the body |
+| `open-pr.sh`        | Open (or reuse) a PR/MR for HEAD → BASE; prints the URL + `number=`. `--media <ref>` (repeatable) attaches visual results to the body; `--remote <name>` pushes the head branch to that remote instead of `origin` |
 | `find-prs.sh`       | Print the URL of every OPEN PR/MR in the current repo whose **title or source branch contains the ticket key** — one per line (read-only; never pushes/creates) |
 | `upload-media.sh`   | Host media (image/video files, a dir of them, or http(s) URLs) and print an embeddable **## Visual results** markdown section |
 | `pr-view.sh`        | Print `state=<MERGED\|OPEN\|CLOSED>` + `merge_sha=` + `approved=<yes\|no\|unknown>` + `target_branch=` + `source_branch=` (`--approved` prints just the last) |
@@ -76,6 +76,15 @@ Handled by the provider CLI, not this adapter:
   **bare repo id**, which it resolves through the `repos[].url` declared for that id. A
   bare id nothing declares is refused **before** the call — sent to the forge it returns
   `404 Project Not Found`, which reads like a broken adapter rather than a wrong argument.
+- **Naming the remote (`--remote` / `VCS_REMOTE`).** `VCS_REPO` redirects the API calls, but
+  the branch itself is pushed with `git push -u <remote> <head>`, and that remote is `origin`
+  unless told otherwise. A contribution to an **upstream** repo from a clone whose `origin` is
+  a private forge would therefore push the branch to the private forge and then ask the
+  upstream to open a PR/MR from a branch it never received. `open-pr.sh --remote <name>`
+  (default: `VCS_REMOTE`, else `origin`) pushes to that remote instead, and nothing else
+  changes — pair it with `VCS_REPO` naming the upstream project. The remote must exist in the
+  checkout (`git remote get-url <name>`); an unknown one is refused **before** any upload or
+  push, naming the remote. `--dry-run` prints the remote the push would use.
 - **Attaching visual results.** `open-pr.sh --media <ref>` (repeatable: file, directory,
   or http(s) URL) hosts each item and appends a **## Visual results** section to the body.
   Hosting differs by provider: **GitLab** uses the project uploads API (images and video

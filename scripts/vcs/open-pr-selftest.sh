@@ -127,6 +127,11 @@ case "$*" in
       wrong_cwd) printf 'git@gitlab.example.com:some/other-repo.git\n' ;;
       *)         printf 'git@gitlab.example.com:g/p.git\n' ;;
     esac ;;
+  # A second remote pointing at the SAME project on another host — the upstream-contribution
+  # shape `--remote` exists for (github.sh insists a non-origin remote is a github.com one).
+  # Any other remote name is unknown to this checkout.
+  "remote get-url upstream") printf 'git@github.com:g/p.git\n' ;;
+  "remote get-url "*)        printf "error: No such remote '%s'\n" "${*##* }" >&2; exit 2 ;;
 esac
 exit 0
 STUB
@@ -144,6 +149,16 @@ run() {
     ' _ "$DIR" 2>&1
 }
 calls() { cat "$TMP/calls" 2>/dev/null; }
+
+# run_cli <provider> <fixture> [open-pr.sh args…] -> the ENTRY SCRIPT, not the function: the
+# `--remote` option is parsed there, so it is the only way to prove the flag reaches the push.
+run_cli() {
+  local provider="$1" fixture="$2"; shift 2
+  CALLS="$TMP/calls"; : > "$CALLS"
+  PATH="$BIN:$PATH" FIXTURE="$fixture" CALLS="$CALLS" \
+  VCS_PROVIDER="$provider" VCS_REPO="g/p" \
+    "$DIR/open-pr.sh" --base develop --head feature/FM-1 --title "feat(FM-1): thing" --body "body" "$@" 2>&1
+}
 
 echo "── gitlab: a create that FAILS must say so (the silent-exit regression)"
 out="$(run gitlab fail_loud)"
@@ -198,6 +213,25 @@ has   "the PR the forge already has is returned"   "/pull/77"           "$out"
 hasnt "no false 'NOT created'"                     "was NOT created"    "$out"
 out="$(run github ok)"
 has   "happy path unchanged"                       "/pull/9"            "$out"
+
+echo "── open-pr.sh --remote: which remote the head branch is pushed to"
+out="$(run_cli gitlab ok)"; log="$(calls)"
+has   "default still pushes to origin"               "git push -u origin feature/FM-1"   "$log"
+has   "and opens the MR"                             "number=9"                          "$out"
+out="$(run_cli gitlab ok --remote upstream)"; log="$(calls)"
+has   "--remote upstream pushes to upstream"         "git push -u upstream feature/FM-1" "$log"
+hasnt "and NOT to origin"                            "push -u origin"                    "$log"
+has   "and still opens the MR"                       "number=9"                          "$out"
+out="$(run_cli gitlab ok --remote nosuch)"; rc=$?; log="$(calls)"
+[[ "$rc" -ne 0 ]] && ok "an unknown remote fails" || bad "an unknown remote fails" "exit != 0" "exit $rc"
+has   "and names the remote"                         "nosuch"                            "$out"
+hasnt "and nothing is pushed"                        "git push"                          "$log"
+hasnt "and no MR create is attempted"                "--method POST"                     "$log"
+out="$(run_cli gitlab ok --remote upstream --dry-run)"; log="$(calls)"
+has   "dry-run prints the chosen remote"             "git push -u upstream feature/FM-1" "$out"
+hasnt "and pushes nothing"                           "git push"                          "$log"
+out="$(run_cli github ok --remote upstream --dry-run)"
+has   "github dry-run prints the chosen remote too"  "git push -u upstream feature/FM-1" "$out"
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]
