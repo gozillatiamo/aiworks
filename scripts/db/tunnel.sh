@@ -53,6 +53,31 @@ gost_owner() {
   [[ "$pargs" == *pg_triage_mcp.py* ]] && echo "MCP-owned" || echo "manual"
 }
 
+# Who owns a gcloud ssh forward — the same identification gcloud_tunnel.owner_of applies, so
+# this script, the MCP and the SessionEnd reaper agree: an MCP-spawned forward carries
+# `-E …/triage-tunnel-<mcp-pid>-…log` in its argv. Owner alive -> MCP-owned; owner dead -> MCP
+# orphan. No signature -> a person's own (ppid 1 -> detached manual).
+ssh_owner() {
+  local pid="$1" args owner ppid
+  args="$(ps -ww -o args= -p "$pid" 2>/dev/null)"
+  owner="$(grep -oE '(^|/)triage-tunnel-[0-9]+-' <<< "$args" | head -1 | grep -oE '[0-9]+')"
+  if [[ -n "$owner" ]]; then
+    kill -0 "$owner" 2>/dev/null && echo "MCP-owned" || echo "MCP orphan"
+    return 0
+  fi
+  ppid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  [[ "$ppid" == "1" ]] && echo "detached manual" || echo "manual"
+}
+
+# What `kill` is aimed at: a gcloud forward leads its own process group (start_new_session), so
+# the group — the gcloud wrapper above the ssh dies with it. gost shares the MCP's group: pid only.
+kill_target() {
+  local kind="$1" pid="$2" pgid
+  if [[ "$kind" == "gost" ]]; then echo "$pid"; return 0; fi
+  pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  echo "-${pgid:-$pid}"
+}
+
 # Target table parsed out of the .env: NAME<TAB>LOCAL_PORT<TAB>VM<TAB>TUNNEL_KIND per line.
 # Both PGPROD_<NAME>_TUNNEL and PGSTG_<NAME>_TUNNEL are read; the env prefix is stripped so
 # the target names match what the MCP uses (lowercase, without the prefix).
@@ -102,9 +127,10 @@ status() {
     if [[ -n "$pids" ]]; then
       any=1
       echo "OPEN    $name  ($label)  127.0.0.1:$port  pid(s): $(echo "$pids" | tr '\n' ' ')"
-      # shellcheck disable=SC2086
-      ps -o pid=,etime=,command= -p $(echo "$pids" | tr '\n' ' ') 2>/dev/null |
-        sed 's/^/          /' | cut -c1-160
+      for pid in $pids; do
+        [[ "$kind" == "gost" ]] && printf '          ' || printf '          %-16s ' "$(ssh_owner "$pid")"
+        ps -o pid=,etime=,command= -p "$pid" 2>/dev/null | cut -c1-140
+      done
     else
       echo "closed  $name  ($label)  127.0.0.1:$port"
     fi
@@ -134,20 +160,19 @@ kill_one() {
     if [[ "$kind" == "none" ]]; then echo "n/a     $name has tunnel=none — nothing to kill"; continue; fi
     killed=0
     for pid in $(listener_pids "$port"); do
-      if [[ "$kind" == "gost" ]]; then
-        owner="$(gost_owner "$pid")"
-        if [[ "$owner" == *manual ]]; then
-          [[ " $kept " == *" $pid "* ]] && continue
-          kept="$kept $pid"
-          echo "kept    gost pid $pid ($owner — yours; stop it with Ctrl-C in its terminal, or kill $pid)"
-          continue
-        fi
+      [[ "$kind" == "gost" ]] && owner="$(gost_owner "$pid")" || owner="$(ssh_owner "$pid")"
+      if [[ "$owner" == *manual ]]; then
+        [[ " $kept " == *" $pid "* ]] && continue
+        kept="$kept $pid"
+        echo "kept    pid $pid ($owner — yours; stop it with Ctrl-C in its terminal, or kill $pid)"
+        continue
       fi
-      kill "$pid" 2>/dev/null && killed=1
+      kill -TERM -- "$(kill_target "$kind" "$pid")" 2>/dev/null && killed=1
     done
     sleep 1
     for pid in $(listener_pids "$port"); do
-      [[ " $kept " == *" $pid "* ]] || kill -9 "$pid" 2>/dev/null || true
+      [[ " $kept " == *" $pid "* ]] && continue
+      kill -KILL -- "$(kill_target "$kind" "$pid")" 2>/dev/null || true
     done
     if [[ "$killed" -eq 1 && "$kind" == "gost" ]]; then
       echo "killed  $name via gost on :$port — gost is shared, every tunnel=gost target is now closed"
