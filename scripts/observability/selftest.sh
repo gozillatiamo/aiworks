@@ -124,5 +124,31 @@ ck "bare ISO makes no request" 0 "$(grep -c . "$FAKE_DIR/argv.log" 2>/dev/null |
 "$GM" --promql up --from now --to -1h >/dev/null 2>&1; ck "--from after --to exits 2" 2 $?
 "$GM" --promql up --from -7d --step 1s >/dev/null 2>&1; ck "too many points refused" 2 $?
 
+# --- M2: --summary / --limit-series / --raw / --dry-run ----------------------------------------
+TWO='{"status":"success","data":{"result":[{"queryName":"A","series":[
+ {"labels":{"n":"x"},"values":[{"timestamp":1700000000000,"value":"1"},{"timestamp":1700000060000,"value":"2"}]},
+ {"labels":{"n":"y"},"values":[{"timestamp":1700000000000,"value":"9"},{"timestamp":1700000060000,"value":"8"}]}]}]}}'
+reset_fx; fixture /api/v4/query_range <<<"$TWO"
+out="$("$GM" --promql up --from -1h --summary 2>/dev/null)"; ck "--summary exits 0" 0 $?
+ck "--summary drops points" 'false' "$(jq '.series[0] | has("points")' <<<"$out")"
+ck "--summary keeps summary" 9 "$(jq '.series[0].summary.peak' <<<"$out")"
+
+reset_fx; fixture /api/v4/query_range <<<"$TWO"
+out="$("$GM" --promql up --from -1h --limit-series 1 2>"$T/err")"; ck "--limit-series exits 0" 0 $?
+ck "--limit-series 1 keeps the top series" 'y' "$(jq -r '[.series[].labels.n] | join(" ")' <<<"$out")"
+case "$(cat "$T/err")" in *'note: 1 more series not shown'*) ok "--limit-series notes the cut" ;; *) bad "--limit-series notes the cut" "$(cat "$T/err")" ;; esac
+
+reset_fx; fixture /api/v4/query_range <<<"$TWO"
+out="$("$GM" --promql up --from -1h --raw 2>/dev/null)"; ck "--raw exits 0" 0 $?
+ck "--raw is the provider response verbatim" "$(jq -c . <<<"$TWO")" "$(jq -c . <<<"$out")"
+
+reset_fx
+out="$("$GM" --promql up --from -1h --dry-run 2>&1)"; ck "--dry-run exits 0" 0 $?
+ck "--dry-run sends nothing" 0 "$(grep -c . "$FAKE_DIR/argv.log" 2>/dev/null || echo 0)"
+case "$out" in *'POST http://signoz.test/api/v4/query_range'*) ok "--dry-run prints method + URL" ;; *) bad "--dry-run prints method + URL" "$out" ;; esac
+case "$out" in *': ***'*) ok "--dry-run masks the key" ;; *) bad "--dry-run masks the key" "$out" ;; esac
+ck "--dry-run prints the body" promql "$(sed -n '/^{/,$p' <<<"$out" | jq -r '.compositeQuery.queryType')"
+no_secret "dry-run" "$out"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]
