@@ -10,6 +10,16 @@
 #   obs_query_logs FILTERS_JSON FROM_MS TO_MS [LIMIT] [RAW] — print log lines matching a semantic filter object in [FROM_MS, TO_MS).
 #                                                            FILTERS_JSON is provider-agnostic (any subset of service/severity/env/
 #                                                            body_contains/trace_id); the provider impl translates it. RAW=1 -> raw JSON.
+#   obs_http METHOD PATH [BODY]                            — the one HTTP path for the metrics/dashboard functions below; key in a
+#                                                            header file (never argv); dies `signoz HTTP <code>` on non-2xx;
+#                                                            OBS_DRY_RUN=1 prints the request (key masked) and sends nothing
+#   obs_query_promql QUERY FROM_MS TO_MS STEP_S            — PromQL range query -> {series:[{query,labels,points:[[ms,n|null]]}]}
+#   obs_query_composite CQ_JSON VARS_JSON FROM_MS TO_MS STEP_S — run a widget's own composite query, same output shape
+#   obs_list_dashboards                                    — [{id,title,tags,widgets}]
+#   obs_get_dashboard ID                                   — {id,title,variables:[{name,default}],widgets:[<raw widget>]}
+#   (OBS_RAW=1 makes the query functions print the provider response unparsed.)
+#
+# Shared here, provider-neutral: obs_epoch_ms, obs_duration_s, obs_step_s, obs_series_report.
 #
 # Like the vcs/tracker/notify adapters, this reads a git-ignored scripts/observability/.env
 # for the provider + secrets (already covered by the workspace's blanket .env / .env.* gitignore
@@ -88,6 +98,61 @@ obs_duration_s() {
     d) echo $(( n*86400 )) ;;
     *) die "unrecognized duration: $d (use 30s / 5m / 2h / 1d)" ;;
   esac
+}
+
+# obs_step_s FROM_MS TO_MS [STEP] -> the range query's step in seconds. An explicit STEP goes
+# through obs_duration_s; the default is max(60, range/300) rounded up to a whole minute (6h
+# gives 120s, about 180 points per series). Refuses more than 11000 points (Prometheus' own limit).
+obs_step_s() {
+  local range_s=$(( ($2 - $1) / 1000 )) step
+  if [[ -n "${3:-}" ]]; then
+    step="$(obs_duration_s "$3")"
+  else
+    step=$(( (range_s / 300 + 59) / 60 * 60 ))
+    [[ $step -lt 60 ]] && step=60
+  fi
+  if [[ $(( range_s / step )) -gt 11000 ]]; then
+    echo "error: step ${step}s over ${range_s}s is $(( range_s / step )) points (max 11000) — use --step $(( (range_s / 11000 + 59) / 60 * 60 ))s or larger" >&2
+    exit 2
+  fi
+  echo "$step"
+}
+
+# obs_series_report QUERY FROM_MS TO_MS STEP_S SUMMARY_ONLY LIMIT — stdin is a provider-normalized
+# `{series:[{labels, points:[[ms, number|null]]}]}`; prints the report shape
+# `{query, window:{from,to,step_s}, series:[{labels, summary, points}]}` sorted by summary.peak
+# descending. SUMMARY_ONLY=1 drops `points`; more than LIMIT series are cut with a stderr note.
+#
+# summary = {current, current_time, peak, peak_time, min, points, trend} over the NON-null
+# points (a NaN/Inf value is null and skipped). trend compares the mean of the first 10% of
+# points (at least 1) with the mean of the last 10%, as a ratio of |peak|: |r| < 0.05 flat,
+# r > 0 rising, else falling; fewer than 2 points is flat.
+obs_series_report() {
+  local total
+  local input; input="$(cat)"
+  total="$(printf '%s' "$input" | jq '.series | length')"
+  if [[ "$total" -eq 0 ]]; then echo "note: no series matched the query in this window" >&2; fi
+  if [[ "$total" -gt "$6" ]]; then echo "note: $(( total - $6 )) more series not shown (--limit-series $6)" >&2; fi
+  printf '%s' "$input" | jq --arg q "$1" --argjson from "$2" --argjson to "$3" --argjson step "$4" \
+    --argjson summary_only "$5" --argjson limit "$6" '
+    def iso: (. / 1000 | floor | todate);
+    def summarize:
+      (.points | map(select(.[1] != null))) as $p | ($p | length) as $n
+      | if $n == 0 then {current: null, current_time: null, peak: null, peak_time: null, min: null, points: 0, trend: "flat"}
+        else ($p | max_by(.[1])) as $pk | ($p | min_by(.[1])) as $mn | $p[-1] as $cur
+        | ([($n * 0.1 | ceil), 1] | max) as $k
+        | (($p[:$k] | map(.[1]) | add) / $k) as $head
+        | (($p[($n - $k):] | map(.[1]) | add) / $k) as $tail
+        | ([($pk[1] | fabs), 1e-9] | max) as $den
+        | (($tail - $head) / $den) as $r
+        | {current: $cur[1], current_time: ($cur[0] | iso), peak: $pk[1], peak_time: ($pk[0] | iso),
+           min: $mn[1], points: $n,
+           trend: (if $n < 2 or ($r | fabs) < 0.05 then "flat" elif $r > 0 then "rising" else "falling" end)}
+        end;
+    {query: $q, window: {from: ($from | iso), to: ($to | iso), step_s: $step},
+     series: ([.series[] | {labels, summary: summarize, points}]
+              | sort_by(.summary.peak // -1e308) | reverse | .[:$limit]
+              | if $summary_only == 1 then map(del(.points)) else . end)}'
 }
 
 # Which observability backend this workspace uses. Defaults to signoz (the only provider today).
