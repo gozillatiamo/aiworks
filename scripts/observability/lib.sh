@@ -149,7 +149,16 @@ obs_series_report() {
            min: $mn[1], points: $n,
            trend: (if $n < 2 or ($r | fabs) < 0.05 then "flat" elif $r > 0 then "rising" else "falling" end)}
         end;
-    {query: $q, window: {from: ($from | iso), to: ($to | iso), step_s: $step},
+    # The backend widens a step it finds too fine for the window (-7d at 1m came back 1980s apart),
+    # so a requested `step_s` can be a lie about the points. Report the spacing actually returned
+    # when it differs; the median of the first multi-point series is enough to tell.
+    def eff_step:
+      ([.series[] | .points | select(length > 1)] | first // []) as $p
+      | if ($p | length) < 2 then null
+        else ([range(1; $p | length) | ($p[.][0] - $p[. - 1][0]) / 1000] | sort | .[length / 2 | floor]) end;
+    eff_step as $eff
+    | {query: $q, window: ({from: ($from | iso), to: ($to | iso), step_s: $step}
+                           + (if $eff != null and $eff != $step then {effective_step_s: $eff} else {} end)),
      series: ([.series[] | {labels, summary: summarize, points}]
               | sort_by(.summary.peak // -1e308) | reverse | .[:$limit]
               | if $summary_only == 1 then map(del(.points)) else . end)}'

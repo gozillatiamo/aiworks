@@ -238,6 +238,30 @@ def _load_targets(env: Mapping[str, str] | None = None) -> tuple[dict[str, Targe
 
 TARGETS, UNRECOGNIZED = _load_targets()
 
+
+def _env_mtime() -> float:
+    try:
+        return ENV_PATH.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+_env_loaded_mtime = _env_mtime()
+
+
+def _refresh_targets() -> None:
+    """Re-read .env when it changed since the last load, so an edit (a swapped vm, a new target)
+    takes effect without restarting the session. Skipped while any tunnel is open — rebinding a
+    target under a live forward would leave it pointing at the old VM. ponytail: a variable
+    DELETED from .env stays loaded until restart (os.environ is never pruned)."""
+    global TARGETS, UNRECOGNIZED, _env_loaded_mtime
+    mtime = _env_mtime()
+    if mtime == _env_loaded_mtime or _tunnels:
+        return
+    load_dotenv(ENV_PATH, override=True)
+    TARGETS, UNRECOGNIZED = _load_targets()
+    _env_loaded_mtime = mtime
+
 IDLE_TIMEOUT_S = 120  # no tool call for this long -> the tunnel is killed
 WATCHDOG_TICK_S = 10
 SOCKET_TIMEOUT_S = 15
@@ -255,6 +279,7 @@ def _resolve(target: str | None, targets: dict[str, Target] | None = None) -> Ta
     environment declares it — one declared under both prefixes is refused, never defaulted to
     prod, so prod is only ever reached by asking for it explicitly."""
     if targets is None:
+        _refresh_targets()
         targets = TARGETS
     names = " | ".join(sorted(targets)) or "(none configured — see scripts/redis/.env.example)"
     if not target:
@@ -660,6 +685,7 @@ def list_targets() -> dict:
 
     Touches nothing remote — use it to sanity-check setup before querying and to see what
     `disconnect` would close."""
+    _refresh_targets()
     out = []
     if not TARGETS:
         return {

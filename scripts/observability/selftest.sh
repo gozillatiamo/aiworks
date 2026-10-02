@@ -154,34 +154,29 @@ no_secret "dry-run" "$out"
 D1=00000000-0000-4000-8000-000000000001
 D2=00000000-0000-4000-8000-000000000002
 PQ='sum by (service_name) (rate(http_requests_total{deployment_environment="$deployment_environment"}[5m]))'
-DASH1="$(jq -n --arg pq "$PQ" --arg id "$D1" '{uuid: $id, data: {title: "Consumer Lag", tags: ["streams"],
-  variables: {"v1": {name: "deployment_environment", selectedValue: null, type: "QUERY"},
-              "v2": {name: "service", selectedValue: "api", type: "TEXTBOX"}},
-  widgets: [
-    {id: "w-promql", title: "Lag by env", panelTypes: "graph",
-     query: {queryType: "promql", promql: [{name: "A", query: $pq, disabled: false, legend: ""}],
-             builder: {queryData: [], queryFormulas: []}, clickhouse_sql: []}},
-    {id: "w-builder", title: "Requests", panelTypes: "graph",
-     query: {queryType: "builder", promql: [],
-             builder: {queryData: [{queryName: "A", dataSource: "metrics", aggregateOperator: "sum_rate",
-                                    aggregateAttribute: {key: "http_requests_total"}, expression: "A", disabled: false,
-                                    filters: {items: [{key: {key: "service"}, op: "=", value: "{{.service}}"}], op: "AND"}}],
-                       queryFormulas: [{queryName: "F1", expression: "A*2", disabled: false}]},
-             clickhouse_sql: []}},
-    {id: "w-ch", title: "Raw SQL", panelTypes: "table",
-     query: {promql: [], builder: {queryData: [], queryFormulas: []},
-             clickhouse_sql: [{name: "A", query: "SELECT count() FROM signoz_logs.logs", disabled: false}]}}
-  ]}}')"
-DASH2="$(jq -n --arg id "$D2" '{uuid: $id, data: {title: "Other", tags: [], widgets: []}}')"
+# The v2 (Perses-style) document: panels keyed by id, queries under spec.queries[0].spec.plugin.spec.queries.
+v2panel() { jq -n --arg name "$1" --arg kind "$2" --argjson qs "$3" \
+  '{kind: "Panel", spec: {display: {name: $name}, plugin: {kind: $kind, spec: {}},
+    queries: [{kind: "time_series", spec: {plugin: {kind: "signoz/CompositeQuery", spec: {queries: $qs}}}}]}}'; }
+DASH1="$(jq -n --arg id "$D1" \
+  --argjson p1 "$(v2panel 'Lag by env' signoz/TimeSeriesPanel "$(jq -n --arg pq "$PQ" '[{type: "promql", spec: {name: "A", query: $pq, disabled: false, legend: "{{service_name}}", step: 0}}]')")" \
+  --argjson p2 "$(v2panel 'Requests' signoz/NumberPanel "$(jq -n '[{type: "builder_query", spec: {name: "A", signal: "metrics", disabled: false, aggregations: [{metricName: "http_requests_total"}]}}, {type: "builder_formula", spec: {name: "F1", expression: "A*2", disabled: false}}]')")" \
+  --argjson p3 "$(v2panel 'Raw SQL' signoz/TimeSeriesPanel "$(jq -n '[{type: "clickhouse_sql", spec: {name: "A", query: "SELECT count() FROM signoz_logs.logs", disabled: false, legend: ""}}]')")" \
+  '{id: $id, name: "consumer-lag", tags: [{key: "squad", value: "streams"}],
+    spec: {display: {name: "Consumer Lag"}, variables: [{kind: "ListVariable", spec: {name: "service", defaultValue: "api"}}],
+           panels: {"w-promql": $p1, "w-builder": $p2, "w-ch": $p3}}}')"
+# the list endpoint carries no panels, only the display name
+DASH2="$(jq -n --arg id "$D2" '{id: $id, name: "other", tags: [], spec: {display: {name: "Other"}}}')"
+DASH1L="$(jq 'del(.spec.panels, .spec.variables)' <<<"$DASH1")"
 reset_fx
-jq -n --argjson a "$DASH1" --argjson b "$DASH2" '{status: "success", data: [$a, $b]}' | fixture /api/v1/dashboards
-jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+jq -n --argjson a "$DASH1L" --argjson b "$DASH2" '{status: "success", data: {dashboards: [$a, $b], total: 2}}' | fixture /api/v2/dashboards
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v2/dashboards/$D1"
 
 out="$("$GD" --help 2>&1)"; ck "get-dashboard.sh --help exits 0" 0 $?
 out="$("$GD" list 2>/dev/null)"; ck "list exits 0" 0 $?
 ck "list has one row per dashboard" 2 "$(jq 'length' <<<"$out")"
-ck "list row fields" "$D1 Consumer Lag streams 3" "$(jq -r '.[0] | "\(.id) \(.title) \(.tags|join(",")) \(.widgets)"' <<<"$out")"
-ck "list url" "http://signoz.test/api/v1/dashboards" "$(grep -o 'http://signoz.test[^ ]*' "$FAKE_DIR/argv.log")"
+ck "list row fields" "$D1 Consumer Lag squad:streams null" "$(jq -r '.[0] | "\(.id) \(.title) \(.tags|join(",")) \(.widgets)"' <<<"$out")"
+ck "list url" "http://signoz.test/api/v2/dashboards" "$(grep -o 'http://signoz.test[^ ]*' "$FAKE_DIR/argv.log")"
 case "$(cat "$FAKE_DIR/argv.log")" in *'-X GET'*) ok "list method is GET" ;; *) bad "list method is GET" "$(cat "$FAKE_DIR/argv.log")" ;; esac
 out="$("$GD" list --search 'consumer' 2>/dev/null)"
 ck "--search is case-insensitive on title" "$D1" "$(jq -r '.[].id' <<<"$out")"
@@ -190,16 +185,16 @@ no_secret "list" "$out"
 
 out="$("$GD" get "$D1" 2>/dev/null)"; ck "get exits 0" 0 $?
 ck "get title" "Consumer Lag" "$(jq -r '.title' <<<"$out")"
-ck "get variables" 'deployment_environment=null service=api' "$(jq -r '[.variables[] | "\(.name)=\(.default)"] | join(" ")' <<<"$out")"
-ck "get widget table" 'w-promql|Lag by env|graph|promql|A w-builder|Requests|graph|builder|A,F1 w-ch|Raw SQL|table|clickhouse_sql|A' \
+ck "get variables" 'service=api' "$(jq -r '[.variables[] | "\(.name)=\(.default)"] | join(" ")' <<<"$out")"
+ck "get widget table" 'w-promql|Lag by env|graph|promql|A w-builder|Requests|value|builder|A,F1 w-ch|Raw SQL|graph|clickhouse_sql|A' \
   "$(jq -r '[.widgets[] | "\(.id)|\(.title)|\(.panel_type)|\(.query_type)|\(.queries|join(","))"] | join(" ")' <<<"$out")"
-ck "get url" "http://signoz.test/api/v1/dashboards/$D1" "$(grep -o 'http://signoz.test[^ ]*' "$FAKE_DIR/argv.log" | tail -1)"
+ck "get url" "http://signoz.test/api/v2/dashboards/$D1" "$(grep -o 'http://signoz.test[^ ]*' "$FAKE_DIR/argv.log" | tail -1)"
 
 out="$("$GD" widget "$D1" w-promql 2>/dev/null)"; ck "widget exits 0" 0 $?
 ck "widget prints the PromQL text exact" "$PQ" "$(jq -r '.queries.promql[0].query' <<<"$out")"
 ck "widget carries query_type" promql "$(jq -r '.query_type' <<<"$out")"
 out="$("$GD" widget "$D1" w-builder 2>/dev/null)"
-ck "builder widget prints query data" 'A sum_rate' "$(jq -r '.queries.builder.queryData[0] | "\(.queryName) \(.aggregateOperator)"' <<<"$out")"
+ck "builder widget prints query data" 'A metrics F1' "$(jq -r '.queries.builder | "\(.queryData[0].queryName) \(.queryData[0].signal) \(.queryFormulas[0].queryName)"' <<<"$out")"
 out="$("$GD" widget "$D1" w-ch 2>/dev/null)"
 ck "clickhouse widget prints SQL" 'SELECT count() FROM signoz_logs.logs' "$(jq -r '.queries.clickhouse_sql[0].query' <<<"$out")"
 
@@ -215,16 +210,16 @@ RUN='{"status":"success","data":{"result":[{"queryName":"A","series":[
  {"labels":{"service_name":"api"},"values":[{"timestamp":1700000000000,"value":"1"},{"timestamp":1700000120000,"value":"3"}]}]},
  {"queryName":"F1","series":[{"labels":{},"values":[{"timestamp":1700000000000,"value":"2"},{"timestamp":1700000120000,"value":"6"}]}]}]}}'
 reset_fx
-jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v2/dashboards/$D1"
 fixture /api/v4/query_range <<<"$RUN"
 
 out="$("$GD" widget "$D1" w-promql --run --from -6h --summary 2>&1)"; ck "unresolved variable refused (exit 1)" 1 $?
 case "$out" in *'deployment_environment'*) ok "refusal names the variable" ;; *) bad "refusal names the variable" "$out" ;; esac
-ck "refusal sends nothing" 1 "$(grep -c 'api/v1/dashboards' "$FAKE_DIR/argv.log")"
+ck "refusal sends nothing" 1 "$(grep -c 'api/v2/dashboards' "$FAKE_DIR/argv.log")"
 ck "refusal never reaches query_range" 0 "$(grep -c 'query_range' "$FAKE_DIR/argv.log")"
 
 reset_fx
-jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v2/dashboards/$D1"
 fixture /api/v4/query_range <<<"$RUN"
 out="$("$GD" widget "$D1" w-promql --run --from -6h --var deployment_environment=staging --summary 2>"$T/err")"; ck "promql widget --run exits 0" 0 $?
 body="$(cat "$FAKE_DIR/body.json")"
@@ -239,18 +234,14 @@ ck "run: --summary drops points" false "$(jq -rs '.[0].series[0] | has("points")
 no_secret "widget run" "$out"
 
 reset_fx
-jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v2/dashboards/$D1"
 fixture /api/v4/query_range <<<"$RUN"
-out="$("$GD" widget "$D1" w-builder --run --from -6h 2>"$T/err")"; ck "builder widget --run exits 0" 0 $?
-body="$(cat "$FAKE_DIR/body.json")"
-ck "run: composite is builder" builder "$(jq -r '.compositeQuery.queryType' <<<"$body")"
-ck "run: builderQueries keyed by queryName incl. formulas" 'A F1' "$(jq -r '.compositeQuery.builderQueries | keys | join(" ")' <<<"$body")"
-ck "run: dashboard default fills {{.service}}" api "$(jq -r '.variables.service' <<<"$body")"
-ck "run: a block per query name" 'A F1' "$(jq -rs '[.[].query] | join(" ")' <<<"$out")"
-ck "run: series routed to their query" '6' "$(jq -rs '.[1].series[0].summary.peak' <<<"$out")"
+out="$("$GD" widget "$D1" w-builder --run --from -6h 2>&1)"; ck "builder widget --run refused (exit 1)" 1 $?
+case "$out" in *'v2 dashboard shape'*) ok "builder refusal explains the v2 shape" ;; *) bad "builder refusal explains the v2 shape" "$out" ;; esac
+ck "builder refusal never reaches query_range" 0 "$(grep -c 'query_range' "$FAKE_DIR/argv.log")"
 
 reset_fx
-jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v2/dashboards/$D1"
 out="$("$GD" widget "$D1" w-ch --run --from -1h --dry-run 2>&1)"; ck "widget --run --dry-run exits 0" 0 $?
 ck "run dry-run never reaches query_range" 0 "$(grep -c 'query_range' "$FAKE_DIR/argv.log")"
 case "$out" in *'POST http://signoz.test/api/v4/query_range'*) ok "run dry-run prints method + URL" ;; *) bad "run dry-run prints method + URL" "$out" ;; esac
@@ -258,11 +249,17 @@ ck "run: chQueries keyed by name" 'SELECT count() FROM signoz_logs.logs' "$(sed 
 no_secret "widget dry-run" "$out"
 
 reset_fx
-jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v2/dashboards/$D1"
 fixture /api/v4/query_range <<<'{"status":"success","data":{"result":"something else"}}'
 out="$("$GD" widget "$D1" w-ch --run --from -1h 2>"$T/err")"; ck "unrecognized result shape exits 0" 0 $?
 case "$(cat "$T/err")" in *note:*) ok "unrecognized shape notes on stderr" ;; *) bad "unrecognized shape notes on stderr" "$(cat "$T/err")" ;; esac
 ck "unrecognized shape prints raw" 'something else' "$(jq -r '.data.result' <<<"$out")"
+
+# --- the backend widens a step it finds too fine; the report must say what it really returned ----
+reset_fx
+fixture /api/v4/query_range <<<'{"status":"success","data":{"result":[{"queryName":"A","series":[{"labels":{},"values":[{"timestamp":1700000000000,"value":"1"},{"timestamp":1700001980000,"value":"2"}]}]}]}}'
+out="$("$GM" --promql 'up' --from -6h --step 60s --summary 2>/dev/null)"
+ck "report names the step the backend actually used" '60 1980' "$(jq -r '"\(.window.step_s) \(.window.effective_step_s)"' <<<"$out")"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

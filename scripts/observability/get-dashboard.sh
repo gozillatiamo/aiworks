@@ -91,6 +91,11 @@ case "$sub" in
       jq "$JQ_DEFS"' wsummary + {queries: .query}' <<<"$w"
       exit 0
     fi
+    if jq -e '.query.v5 == true' <<<"$w" >/dev/null; then
+      echo "error: widget '$wid' is a builder query in the v2 dashboard shape, which this adapter cannot run" \
+           "(/api/v4/query_range takes the v4 builder shape) — read it with 'widget' and run its PromQL/SQL equivalent via get-metric.sh" >&2
+      exit 1
+    fi
     # --run: the widget's own composite query, disabled entries dropped, keyed the way the
     # query_range API expects (promQueries / builderQueries incl. formulas / chQueries).
     cq="$(jq -c "$JQ_DEFS"' (qtype) as $t | .query as $q
@@ -101,7 +106,9 @@ case "$sub" in
          else {} end)' <<<"$w")"
     # Variables the query references ($name or {{.name}}; `__*` are the backend's own) resolve
     # from --var, then the dashboard default; anything left is refused before any request.
-    refs="$(jq -r '[.. | strings] | join("\n")' <<<"$cq" \
+    # A legend is a display template ({{label}} of the SERIES), not a query reference: skip it, or
+    # every legend label reads as an unresolved variable and refuses a runnable widget.
+    refs="$(jq -r 'walk(if type == "object" then del(.legend) else . end) | [.. | strings] | join("\n")' <<<"$cq" \
       | grep -oE '\$[A-Za-z_][A-Za-z0-9_.]*|\{\{[[:space:]]*\.?[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*\}\}' \
       | sed -E 's/^\$//; s/^\{\{[[:space:]]*\.?//; s/[[:space:]]*\}\}$//' | grep -v '^__' | sort -u || true)"
     unresolved=()
