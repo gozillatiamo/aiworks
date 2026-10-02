@@ -45,6 +45,22 @@ targets() {
 
 listener_pids() { lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null || true; }
 
+# Who owns a listener — the same identification gcloud_tunnel.owner_of applies, so this script,
+# the MCP and the SessionEnd reaper agree: an MCP-spawned forward carries
+# `-E …/triage-tunnel-<mcp-pid>-…log` in its argv. Owner alive -> MCP-owned; owner dead -> MCP
+# orphan. No signature -> a person's own (ppid 1 -> detached manual).
+ssh_owner() {
+  local pid="$1" args owner ppid
+  args="$(ps -ww -o args= -p "$pid" 2>/dev/null)"
+  owner="$(grep -oE '(^|/)triage-tunnel-[0-9]+-' <<< "$args" | head -1 | grep -oE '[0-9]+')"
+  if [[ -n "$owner" ]]; then
+    kill -0 "$owner" 2>/dev/null && echo "MCP-owned" || echo "MCP orphan"
+    return 0
+  fi
+  ppid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  [[ "$ppid" == "1" ]] && echo "detached manual" || echo "manual"
+}
+
 status() {
   local any=0 rows pids
   rows="$(targets)"
@@ -62,9 +78,10 @@ status() {
     if [[ -n "$pids" ]]; then
       any=1
       echo "OPEN    $name  (${vm/#-/tunnel})  127.0.0.1:$port  pid(s): $(echo "$pids" | tr '\n' ' ')"
-      # shellcheck disable=SC2086
-      ps -o pid=,etime=,command= -p $(echo "$pids" | tr '\n' ' ') 2>/dev/null |
-        sed 's/^/          /' | cut -c1-160
+      for pid in $pids; do
+        printf '          %-16s ' "$(ssh_owner "$pid")"
+        ps -o pid=,etime=,command= -p "$pid" 2>/dev/null | cut -c1-140
+      done
     else
       echo "closed  $name  (${vm/#-/tunnel})  127.0.0.1:$port"
     fi
@@ -74,19 +91,31 @@ status() {
 }
 
 kill_one() {
-  local want="$1" found=0 killed
+  local want="$1" found=0 killed owner pgid kept
   while IFS=$'\t' read -r name port vm kind; do
     [[ "$name" == "$want" ]] || continue
     found=1
     if [[ "$kind" == "none" ]]; then echo "n/a     $name has tunnel=none — nothing to kill"; continue; fi
-    killed=0
+    killed=0; kept=""
     for pid in $(listener_pids "$port"); do
-      kill "$pid" 2>/dev/null && killed=1
+      owner="$(ssh_owner "$pid")"
+      if [[ "$owner" == *manual ]]; then
+        kept="$kept $pid"
+        echo "kept    pid $pid ($owner — yours; stop it with Ctrl-C in its terminal, or kill $pid)"
+        continue
+      fi
+      # Process group, so the gcloud wrapper above the ssh dies with it.
+      pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
+      kill -TERM -- "-${pgid:-$pid}" 2>/dev/null && killed=1
     done
     sleep 1
-    for pid in $(listener_pids "$port"); do kill -9 "$pid" 2>/dev/null || true; done
+    for pid in $(listener_pids "$port"); do
+      [[ " $kept " == *" $pid "* ]] && continue
+      pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
+      kill -KILL -- "-${pgid:-$pid}" 2>/dev/null || true
+    done
     if [[ "$killed" -eq 1 ]]; then echo "killed  $name tunnel on :$port"
-    else echo "closed  $name already had no listener on :$port"; fi
+    elif [[ -z "$kept" ]]; then echo "closed  $name already had no listener on :$port"; fi
   done <<< "$(targets)"
   [[ "$found" -eq 1 ]] || { echo "unknown target: $want (see scripts/redis/.env)" >&2; return 2; }
 }
