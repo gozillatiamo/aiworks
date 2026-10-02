@@ -1317,6 +1317,7 @@ def _selftest() -> int:
     )
     check("a bad spec is reported, not silently dropped", _bad_spec_reported())
     check("prod target is explicit-only (no default)", _no_default_target())
+    _prefix_cases(check)
     offenders = _scan_own_source()
     check(f"no write-command call sites in source ({offenders or 'none'})", not offenders)
     check("no passthrough tool exposed", "execute_command" not in ALLOWED_METHODS)
@@ -1325,8 +1326,8 @@ def _selftest() -> int:
         _proxy_blocks("set") and _proxy_blocks("delete") and _proxy_blocks("xadd"),
     )
     # Synthetic targets: the masking rules must be testable on a machine with no .env at all.
-    prod = Target("t_prod", "127.0.0.1", 6379, 6399, True, "none", "", "")
-    staging = Target("t_stg", "127.0.0.1", 6379, 6398, False, "none", "", "")
+    prod = Target("t_prod", "127.0.0.1", 6379, 6399, "prod", "none", "", "")
+    staging = Target("t_stg", "127.0.0.1", 6379, 6398, "staging", "none", "", "")
     # Assembled rather than written out, so a secret scanner does not flag a test fixture.
     jwt = ".".join(["eyJ" + "hbGciOiJIUzI1NiJ9", "eyJzdWIiOiJ0ZXN0In0", "c2lnbmF0dXJlLXBsYWNlaG9sZGVy"])
     check("prod masks a JWT value", str(_emit(prod, "sso:abc", jwt)).startswith("<redis-secret:"))
@@ -1344,10 +1345,10 @@ def _selftest() -> int:
     check("bulk limit below page cap is meaningless", BULK_CARDINALITY_LIMIT > MAX_PAGE)
     check("idle timeout set", 0 < IDLE_TIMEOUT_S <= 600)
     check("refusals name THIS script's tunnel.sh", gcloud_tunnel.TUNNEL_SH == "scripts/redis/tunnel.sh")
-    _t_iap = _parse_target("x", "host=h;local=6390;vm=v;project=p;iap=true")
+    _t_iap = _parse_target("staging", "X", "host=h;local=6390;vm=v;project=p;iap=true")
     check("target parses project= and iap=", _t_iap.project == "p" and _t_iap.iap is True)
     check("iap defaults off (argv unchanged for existing specs)",
-          _parse_target("x", "host=h;local=6390;vm=v").iap is False)
+          _parse_target("staging", "X", "host=h;local=6390;vm=v").iap is False)
     check("spec carries zone/project/iap into the helper argv",
           "--tunnel-through-iap" in gcloud_tunnel.argv(_spec(_t_iap))
           and "--project=p" in gcloud_tunnel.argv(_spec(_t_iap)))
@@ -1355,7 +1356,7 @@ def _selftest() -> int:
     # Adopted forward is never stopped: every MCP teardown path against a live stand-in process.
     # Hermetic — a `sleep` plays the person's ssh; no gcloud, no Redis.
     import subprocess as _sp
-    _adopt_t = Target("_selftest_adopt", "h", 6379, 65431, False, "gcloud", "v", "", "", False)
+    _adopt_t = Target("_selftest_adopt", "h", 6379, 65431, "staging", "gcloud", "v", "", "", False)
     _sleeper = _sp.Popen(["sleep", "60"])
     _victim = _sp.Popen(["sleep", "60"])  # a self-owned tunnel the reaper MUST kill (contrast)
 
@@ -1377,7 +1378,7 @@ def _selftest() -> int:
               [e["target"] for e in closed["adopted_left_running"]] == [_adopt_t.key])
         check("adopted: disconnect leaves the process running", _sleeper.poll() is None)
 
-        _victim_t = Target("_selftest_victim", "h", 6379, 65430, False, "gcloud", "v", "", "", False)
+        _victim_t = Target("_selftest_victim", "h", 6379, 65430, "staging", "gcloud", "v", "", "", False)
         with _lock:
             _tunnels[_adopt_t.key] = _adopted(0.0)   # idle since the epoch -> reaped on this tick
             _tunnels[_victim_t.key] = gcloud_tunnel.Tunnel(
@@ -1409,7 +1410,7 @@ def _selftest() -> int:
 def _bad_spec_reported() -> bool:
     """A malformed target spec must raise a named error rather than resolve to something odd."""
     try:
-        _parse_target("broken", "port=6379")
+        _parse_target("staging", "BROKEN", "port=6379")
         return False
     except ValueError:
         return True
@@ -1424,20 +1425,83 @@ def _no_default_target() -> bool:
 
 
 def _prod_gated() -> bool:
-    """With the opt-in off, connecting to a `prod=true` target must be refused BEFORE a tunnel is
-    spawned. With it on — or with no prod target declared — there is nothing to assert offline."""
+    """With the opt-in off, connecting to a REDISPROD_ target must be refused BEFORE a tunnel is
+    spawned — asserted on a synthetic target, so it holds on a machine with no env file. With
+    the opt-in on there is nothing to assert offline."""
     if triage_policy.prod_allowed():
         return True
-    prod_targets = [t for t in TARGETS.values() if t.is_prod]
-    if not prod_targets:
-        return True
     try:
-        _connect(prod_targets[0], 0)
+        _connect(Target("_selftest_gate", "127.0.0.1", 6379, 65429, "prod", "gcloud", "v", "z"), 0)
         return False
     except PermissionError:
         return True
     except Exception:
         return False  # anything else means it got past the gate and tried to connect
+
+
+def _prefix_cases(check) -> None:
+    """The REDISPROD_/REDISSTG_ split, on a synthetic environment: the PREFIX decides whether a
+    target is production — never a key inside the value."""
+    spec = "host=h;local={};tunnel=none"
+    env = {
+        "REDISPROD_MAIN": spec.format(6390),
+        "REDISSTG_MAIN": spec.format(6391),
+        "REDISSTG_ONLY": spec.format(6392),
+        "REDISPROD_OLD": spec.format(6393) + ";prod=false",      # old-style line
+        "REDISSTG_LEFTOVER": spec.format(6394) + ";prod=true",   # leftover key
+        "REDISPROD_wrong_case": spec.format(6395),
+        "REDISSTG_MAIN_": spec.format(6396),                     # malformed name
+        "REDISPROD_": spec.format(6397),
+        "UNRELATED": "x",
+    }
+    targets, bad = _load_targets(env)
+    check("REDISPROD_ declares a prod target", targets.get("prod:main") is not None and targets["prod:main"].is_prod)
+    check("REDISSTG_ declares a staging target",
+          targets.get("staging:main") is not None and not targets["staging:main"].is_prod)
+    check("target carries its env and its real variable name",
+          targets["prod:main"].env == "prod" and targets["prod:main"].var == "REDISPROD_MAIN"
+          and targets["staging:only"].var == "REDISSTG_ONLY")
+    check("same NAME under both prefixes is two targets", targets["prod:main"] is not targets["staging:main"])
+    check("qualified form resolves each", _resolve("prod:main", targets).is_prod
+          and not _resolve("staging:main", targets).is_prod)
+    try:
+        _resolve("main", targets)
+        ambiguous = False
+    except ValueError as exc:
+        ambiguous = "prod:main" in str(exc) and "staging:main" in str(exc)
+    check("bare ambiguous name is refused, listing both qualified forms", ambiguous)
+    check("bare unambiguous name resolves", _resolve("only", targets).key == "staging:only")
+    by_var = {b["var"]: b for b in bad}
+    check("no silent drop: every unusable var is reported",
+          set(by_var) == {"REDISPROD_OLD", "REDISSTG_LEFTOVER", "REDISPROD_wrong_case", "REDISSTG_MAIN_", "REDISPROD_"})
+    check("leftover prod= key is refused with the fixed reason",
+          by_var.get("REDISSTG_LEFTOVER", {}).get("reason") == REASON_PROD_KEY
+          and by_var.get("REDISPROD_OLD", {}).get("reason") == REASON_PROD_KEY)
+    check("old-style prod=false never becomes a gated prod target",
+          "prod:old" not in targets and "staging:old" not in targets)
+    check("wrong-case name is reported with a did-you-mean",
+          by_var.get("REDISPROD_wrong_case", {}).get("reason") == REASON_UPPER
+          and by_var["REDISPROD_wrong_case"].get("did_you_mean") == "REDISPROD_WRONG_CASE")
+    check("malformed name is reported with the closest configured var",
+          by_var.get("REDISSTG_MAIN_", {}).get("did_you_mean") == "REDISSTG_MAIN")
+    check("a report never carries a value",
+          all("h;local" not in json.dumps(b) for b in bad))
+    check("masking keys on the prefix: prod on, staging off",
+          _ok(targets["prod:main"], {})["masking"] == "on"
+          and _ok(targets["staging:main"], {})["masking"].startswith("off"))
+    check("staging target is not gated",
+          not _gate_refuses(targets["staging:main"]))
+    check("tunnel label carries the real variable name",
+          _spec(targets["prod:main"]).label == "REDISPROD_MAIN"
+          and _spec(targets["staging:main"]).label == "REDISSTG_MAIN")
+
+
+def _gate_refuses(t: Target) -> bool:
+    try:
+        triage_policy.assert_prod_allowed("x") if t.is_prod else None
+        return False
+    except PermissionError:
+        return True
 
 
 def _proxy_blocks(method: str) -> bool:
