@@ -272,7 +272,7 @@ the same convention.
 - A `prod=` key is refused by name with a fixed reason naming the two prefixes; an old-style
   `REDISPROD_<NAME>=…;prod=false;…` line is reported and skipped, never reinterpreted as a gated
   production target. A wrong-case or malformed `<NAME>` is reported with a did-you-mean, as
-  pg does — `list_targets` lists them under `unrecognized`. A report carries the variable name
+  the Postgres MCP does — `list_targets` lists them under `unrecognized`. A report carries the variable name
   only, never a value.
 - Targets are addressed as `[<env>:]<name>` (`prod:main`, `staging:main`); a bare `<name>`
   resolves only when exactly one environment declares it, and one declared under both is refused

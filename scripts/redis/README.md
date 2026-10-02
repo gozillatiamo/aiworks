@@ -141,7 +141,7 @@ guarantee and strictly better than any of these.)
    long hex, opaque base64) is returned as `<redis-secret:sha8>`. The digest is stable, so
    "same token / different token / missing" is still answerable; inside a JSON payload the
    decision is per FIELD, so the inner-system ids and amounts around it stay readable. A
-   `prod=false` target returns raw values.
+   `REDISSTG_` target returns raw values.
 6. **Provenance.** Prod values are fingerprinted into the vault
    (`scripts/lib/pii_provenance.py`), so the tracker/notify adapters redact exactly those values
    at egress and leave identical-looking staging/local data alone
@@ -162,7 +162,7 @@ from the parsed target spec and no tool argument can reach the command line.
 
 A `REDISPROD_` target is refused — before a tunnel is spawned — unless this machine opts in
 with `triage.prod: true` in the git-ignored `workspace.config.local.yaml`. Being able to reach the
-box (cloud IAM, a VPN, your own forward) is not permission. A `prod=false` target (staging/test) is
+box (cloud IAM, a VPN, your own forward) is not permission. A `REDISSTG_` target (staging/test) is
 ungated, and registration is on by default (`triage.enabled`) — though you register the server
 yourself with `scripts/triage-mcp.sh sync`, not via `aiworks sync` (`docs/adr/0009`). The flag
 is read live by the server, so flipping it needs no re-register and no session restart. See
