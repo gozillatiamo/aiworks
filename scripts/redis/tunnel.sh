@@ -12,21 +12,25 @@
 # Targets come from scripts/redis/.env — the same file the MCP reads. See .env.example.
 #
 #   scripts/redis/tunnel.sh status
-#   scripts/redis/tunnel.sh kill [<target>…]
+#   scripts/redis/tunnel.sh kill [<target>…]      # prod:<name> | staging:<name> | <name>
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${REDIS_TRIAGE_ENV:-$DIR/.env}"
 
-# Target table parsed out of the .env: NAME<TAB>LOCAL_PORT<TAB>VM<TAB>TUNNEL_KIND per line.
-# Only the fields this script needs are read, and none of them are printed beyond the report.
+# Target table parsed out of the .env: ENV:NAME<TAB>LOCAL_PORT<TAB>VM<TAB>TUNNEL_KIND per line,
+# where ENV is `prod` for a REDISPROD_ line and `staging` for a REDISSTG_ line — the prefix
+# decides, as in the MCP. Only the fields this script needs are read, and none of them are
+# printed beyond the report.
 targets() {
   [[ -f "$ENV_FILE" ]] || return 0
   awk '
     /^[ \t]*#/ { next }
-    !/^[ \t]*REDISPROD_[A-Za-z0-9_]+=/ { next }
+    !/^[ \t]*REDIS(PROD|STG)_[A-Za-z0-9_]+=/ { next }
     {
-      name = $0; sub(/^[ \t]*REDISPROD_/, "", name); sub(/=.*/, "", name)
+      env = ($0 ~ /^[ \t]*REDISPROD_/) ? "prod" : "staging"
+      name = $0; sub(/^[ \t]*REDIS(PROD|STG)_/, "", name); sub(/=.*/, "", name)
+      name = env ":" tolower(name)
       spec = substr($0, index($0, "=") + 1)
       local = ""; vm = ""; kind = "gcloud"
       n = split(spec, parts, ";")
@@ -38,7 +42,7 @@ targets() {
         else if (k == "vm") vm = v
         else if (k == "tunnel") kind = tolower(v)
       }
-      if (local != "") printf "%s\t%s\t%s\t%s\n", tolower(name), local, (vm == "" ? "-" : vm), kind
+      if (local != "") printf "%s\t%s\t%s\t%s\n", name, local, (vm == "" ? "-" : vm), kind
     }
   ' "$ENV_FILE"
 }
@@ -96,8 +100,10 @@ status() {
 
 kill_one() {
   local want="$1" found=0 killed owner kept
+  # `<env>:<name>` matches one target; a bare `<name>` matches it under every env that
+  # declares it (closing a forward is safe in both, so no ambiguity check is needed here).
   while IFS=$'\t' read -r name port vm kind; do
-    [[ "$name" == "$want" ]] || continue
+    [[ "$name" == "$want" || "${name#*:}" == "$want" ]] || continue
     found=1
     if [[ "$kind" == "none" ]]; then echo "n/a     $name has tunnel=none — nothing to kill"; continue; fi
     killed=0; kept=""
