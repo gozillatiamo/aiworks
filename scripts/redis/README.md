@@ -165,9 +165,28 @@ REDIS_TRIAGE_FORCE_MASK=1 uv run scripts/redis/redis_triage_mcp.py --verify <sta
 `tunnel.sh` is the human's view of the tunnels — deliberately **not** granted to agents:
 
 ```bash
-scripts/redis/tunnel.sh status          # what is open, or "nothing open"
-scripts/redis/tunnel.sh kill [<target>…]
+scripts/redis/tunnel.sh status          # what is open, each listener labelled by owner
+scripts/redis/tunnel.sh kill [<target>…]  # clears MCP-owned / MCP orphan; a manual forward is kept
 ```
+
+### Port-in-use behaviour
+
+The tunnel layer is `scripts/lib/gcloud_tunnel.py`, shared with pg-triage (ADR 0017, ssh-forward
+adoption addendum). Every forward the MCP spawns is signed by its own argv —
+`-E …/triage-tunnel-<mcp-pid>-<label>-….log` — and that signature is what every party reads:
+
+- A `local` port already listening is **adopted** when the process table proves it is an ssh
+  forward that is yours (unsigned) or another live MCP session's (signed, owner alive). Adopted
+  means used for connecting only: the MCP never stops it, `tunnel_status` reports
+  `owner: adopted` with the real pid and a `teardown` sentence, and `disconnect` lists it under
+  `adopted_left_running`.
+- A signed forward whose owner pid is **dead** is an orphan: refused, naming
+  `scripts/redis/tunnel.sh status|kill`. Ending the session also clears it — the
+  `.claude/hooks/triage-tunnel-reap.sh` SessionEnd hook kills exactly such orphans (by process
+  group, so the gcloud wrapper dies too) and nothing else.
+- Anything that is not an ssh forward is refused, naming the failed condition.
+
+`tunnel.sh status` labels each listener `MCP-owned | MCP orphan | manual | detached manual`.
 
 ## Local repro — `replay_shape.py`
 

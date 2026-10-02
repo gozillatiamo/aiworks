@@ -126,7 +126,19 @@ Typical shapes, and where each tends to hide a bug:
    that is wrong.
 6. **Teardown** — call `disconnect`. The watchdog also kills any tunnel idle past 120s, so a
    forgotten session self-closes; calling it is still how you leave zero connections
-   deliberately rather than eventually.
+   deliberately rather than eventually. It returns `closed` / `open` plus
+   `adopted_left_running: [{target, pid}]` — a forward a person opened themselves (or another
+   live session's) that the MCP used for connecting and, on purpose, did not stop.
+   `tunnel_status` shows the same mid-session as `owner: self | adopted` with the pid and a
+   `teardown` sentence.
+
+**Port-in-use failure.** If `127.0.0.1:<local>` is already listening and the MCP cannot
+identify it as an ssh forward, the call fails naming the condition and
+`scripts/redis/tunnel.sh status|kill` as the remedy. An ssh forward that is yours, or another
+live MCP session's, is adopted instead — never killed. A forward signed by a **dead** MCP
+session is an orphan: refused, and cleared by the `SessionEnd` hook or by a person running
+`tunnel.sh kill` (which spares a manual forward). That script is not granted to agents; see
+`docs/adr/0017`.
 
 ## Reproducing locally
 

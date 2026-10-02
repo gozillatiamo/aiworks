@@ -210,8 +210,15 @@ brew install gost        # tunnel=gost
 
 ### Port-in-use behaviour
 
-A `gcloud` port already listening is **refused** — the MCP never adopts or kills a gcloud tunnel
-it did not open. A `gost` port already listening is **adopted** only when the process table
+A `gcloud` port already listening is **adopted** when the process table proves it is an ssh
+forward that is either yours (unsigned) or another live MCP session's (signed
+`-E …/triage-tunnel-<pid>-…log`, owner alive). Adopted means used for connecting only: the MCP
+never stops it, `tunnel_status` shows `owner: adopted`, and `disconnect` lists it under
+`adopted_left_running`. A signed forward whose owner pid is **dead** is an orphan and is
+refused, naming `scripts/db/tunnel.sh status|kill` — or simply end the session: the
+`.claude/hooks/triage-tunnel-reap.sh` SessionEnd hook kills exactly such orphans and nothing
+else. `tunnel.sh status` labels every listener `MCP-owned | MCP orphan | manual | detached
+manual`; `kill` spares the manual ones. A `gost` port already listening is **adopted** only when the process table
 proves it is this `gost.yaml`'s gost; the call is refused, naming the failed condition, when:
 
 - the listener is not a `gost` process, or is not yours;

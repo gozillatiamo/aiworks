@@ -69,7 +69,8 @@ Migrating `redis_triage_mcp.py` onto the helper was deliberately excluded from t
 the migration is a pure refactor with no user-visible change, it was not part of the ticket, and
 it carries its own risk surface (the Redis readiness probe is a PING, not a TCP connect). The
 `gcloud_tunnel.open_tunnel` `ready=` parameter exists so that migration is a later deletion, not
-a rewrite.
+a rewrite. *(Executed since — see the ssh-forward adoption addendum: `redis_triage_mcp.py` now
+imports the helper and passes its PING as `ready=`.)*
 
 A `ponytail:` comment in `scripts/db/tunnel.sh` records the deliberate duplication with
 `scripts/redis/tunnel.sh` and the condition that collapses it, so `/ponytail-debt` can harvest it.
@@ -96,8 +97,9 @@ limitation `pg_staging.RESERVED` already documents for the name `dsn`.
 The framework refuses to adopt a tunnel it did not open (ADR 0005 principle: credentials being
 present is not permission — this extends to reachability). If `127.0.0.1:<local_port>` is
 already listening, `gcloud_tunnel.open_tunnel` raises immediately, naming
-`scripts/db/tunnel.sh status|kill` as the human remedy. (Narrowed for `tunnel=gost` by the
-adoption addendum below: an identified gost is adopted for connecting, never for killing.)
+`scripts/db/tunnel.sh status|kill` as the human remedy. (Narrowed by the two adoption addenda
+below: an identified gost, and an identified ssh forward, are adopted for connecting, never for
+killing.)
 
 The `--selftest` guards two additional invariants: local ports must be unique across all
 configured specs (two specs sharing a port would race), and no spec may use port 5432 (the
@@ -109,9 +111,9 @@ data-integrity hazard).
 - A new `tunnel_status` MCP tool is granted to `oncall` alongside the other `pg_triage` tools.
 - `scripts/db/tunnel.sh` is the human-side complement — NOT granted to any agent (a different
   `--` operand to `gcloud compute ssh` is a shell on the production VM).
-- A hard-killed session can orphan a pg tunnel. `atexit`/SIGTERM handle a clean exit; a
-  `.claude/hooks/` SessionEnd generalisation is deferred (see plan §6). Manual remedy:
-  `scripts/db/tunnel.sh kill`.
+- A hard-killed session can orphan a pg tunnel. `atexit`/SIGTERM handle a clean exit; the
+  `.claude/hooks/triage-tunnel-reap.sh` SessionEnd hook reaps a signed orphan (ssh-forward
+  adoption addendum). Manual remedy: `scripts/db/tunnel.sh kill`.
 - No new key in `workspace.config*.yaml`; no new Python dependency in either MCP.
 
 ## Addendum — `tunnel=gost` (SOCKS proxy, one shared process)
@@ -220,3 +222,38 @@ still wins.
 
 **Migration.** A var that ended in `_SHARD_<hex>` or `_SHARD` used to be an ordinary named
 target and is now a declaration; `--selftest`'s file report names every key it reinterprets.
+
+## Addendum — an identified ssh forward is adopted for connecting, never for killing
+
+**Context.** "Port safety" refused ANY `gcloud` port already listening. In practice the listener
+was almost always one of two things: a forward a person had opened for themselves (and now had
+to kill to let the agent work), or an orphan of a hard-killed MCP session that nothing cleaned up
+because the old SessionEnd hook knew only redis ports read out of a `.env`.
+
+**Decision.** Every forward the helper spawns is **signed by its own argv**: `gcloud_tunnel.argv`
+appends `-E <log>` where the log file is named `triage-tunnel-<mcp-pid>-<label>-….log`, and
+`gcloud_tunnel.owner_of` reads that pid back out of any process's args. That one fact is now
+read by three parties, so they agree:
+
+- **The MCPs** (`pg_triage_mcp.py`, `redis_triage_mcp.py` — both on the shared helper now). A
+  `gcloud` port already listening is **adopted** when the process table proves it is an ssh
+  forward: an unsigned one is a person's own, a signed one whose owner is alive belongs to another
+  MCP session. Adopted means used for connecting only — `Tunnel.proc=None`, `adopted_pid` set,
+  `close_tunnel` returns without touching it, `disconnect` lists it under
+  `adopted_left_running`. A signed forward whose owner is **dead** is an orphan: refused with the
+  remedy named, never adopted (a dead session's forward is not proof the far side is still right).
+- **`.claude/hooks/triage-tunnel-reap.sh`** (SessionEnd, replaces `redis-triage-tunnel-reap.sh`).
+  Reads no `.env`, knows no ports: walks every listening ssh and kills — by process group, so
+  the gcloud wrapper dies too — only a signed forward whose owner pid is dead. Unsigned and
+  live-owner forwards are never touched. `--selftest` proves all three cases hermetically.
+- **`scripts/db/tunnel.sh` / `scripts/redis/tunnel.sh`** label each listener
+  `MCP-owned | MCP orphan | manual | detached manual` from the same signature; `kill` spares
+  `*manual` and reports it as yours.
+
+**Teardown is by process group.** A self-spawned forward is started in its own session and
+terminated with `kill -TERM -- -<pgid>` (then `-KILL`), so `gcloud compute ssh` and the ssh it
+execs die together — a lone `kill <pid>` used to leave the parent holding the port.
+
+**Supersedes.** "Port safety" for an identified ssh forward, and the "SessionEnd generalisation
+is deferred" bullet. The gost adoption addendum stands unchanged; this applies the same rule to
+`tunnel=gcloud`.
