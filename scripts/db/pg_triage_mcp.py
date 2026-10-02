@@ -1171,7 +1171,14 @@ def _selftest() -> int:
     # --- discovery: synthetic prod + staging vars, set and restored in-process --------------
     print("discovery:")
     _syn = {"PGPROD_ZZQ": _dsn_ok, "PGPROD_zzbad": _dsn_ok, "PGSTG_ZZQ": _dsn_ok, "PGSTG_DB_ZZW": "zzw_db"}
-    saved_syn = {k: os.environ.pop(k, None) for k in _syn}
+    # Regression guard: a machine whose real .env already declares a shard-0 DSN must not break
+    # the synthetic shard-0 checks below — stand in for one, and expect it back untouched after.
+    _real_claimant = "PGPROD_REALHOST_SHARD_0"
+    os.environ[_real_claimant] = _dsn_ok
+    # Hermetic: snapshot + remove EVERY real prod/staging var (load_dotenv put the machine's .env
+    # here at import), so the synthetic names below are the only claimants; restored in `finally`.
+    saved_syn = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith((ENV_PREFIX, STAGING_PREFIX))}
+    saved_syn.update({k: saved_syn.get(k) for k in _syn})
     os.environ.update(_syn)
     try:
         check("zzq discovered on prod", "zzq" in _configured_targets(ENV_PROD) and _configured(ENV_PROD, "zzq"))
@@ -1208,6 +1215,8 @@ def _selftest() -> int:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+    check("discovery is hermetic: a real shard-0 claimant survives, restored",
+          os.environ.pop(_real_claimant, None) == _dsn_ok)
 
     # --- file report: a synthetic dotenv file; only key names + fixed reasons may print ---
     print("file report:")
