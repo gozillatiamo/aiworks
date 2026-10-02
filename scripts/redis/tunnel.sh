@@ -61,6 +61,10 @@ ssh_owner() {
   [[ "$ppid" == "1" ]] && echo "detached manual" || echo "manual"
 }
 
+# What `kill` is aimed at: the forward's process group (start_new_session), so the gcloud
+# wrapper above the ssh dies with it.
+kill_target() { local pgid; pgid="$(ps -o pgid= -p "$1" 2>/dev/null | tr -d ' ')"; echo "-${pgid:-$1}"; }
+
 status() {
   local any=0 rows pids
   rows="$(targets)"
@@ -91,7 +95,7 @@ status() {
 }
 
 kill_one() {
-  local want="$1" found=0 killed owner pgid kept
+  local want="$1" found=0 killed owner kept
   while IFS=$'\t' read -r name port vm kind; do
     [[ "$name" == "$want" ]] || continue
     found=1
@@ -104,15 +108,12 @@ kill_one() {
         echo "kept    pid $pid ($owner — yours; stop it with Ctrl-C in its terminal, or kill $pid)"
         continue
       fi
-      # Process group, so the gcloud wrapper above the ssh dies with it.
-      pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
-      kill -TERM -- "-${pgid:-$pid}" 2>/dev/null && killed=1
+      kill -TERM -- "$(kill_target "$pid")" 2>/dev/null && killed=1
     done
     sleep 1
     for pid in $(listener_pids "$port"); do
       [[ " $kept " == *" $pid "* ]] && continue
-      pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
-      kill -KILL -- "-${pgid:-$pid}" 2>/dev/null || true
+      kill -KILL -- "$(kill_target "$pid")" 2>/dev/null || true
     done
     if [[ "$killed" -eq 1 ]]; then echo "killed  $name tunnel on :$port"
     elif [[ -z "$kept" ]]; then echo "closed  $name already had no listener on :$port"; fi
