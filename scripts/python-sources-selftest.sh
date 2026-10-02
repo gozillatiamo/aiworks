@@ -52,7 +52,8 @@ grep -q "missing_name" <<<"$u" || { echo "guard is blind: pyflakes pass missed a
 
 # ── scan ────────────────────────────────────────────────────────────────────────
 if [[ $# -gt 0 ]]; then files=("$@"); else
-  mapfile -t files < <(git -C "$ROOT" ls-files '*.py' | sed "s|^|$ROOT/|")
+  files=()  # no mapfile: macOS /bin/bash is 3.2
+  while IFS= read -r f; do files+=("$f"); done < <(git -C "$ROOT" ls-files '*.py' | sed "s|^|$ROOT/|")
 fi
 [[ ${#files[@]} -gt 0 ]] || { echo "0 files · 0 failures"; exit 0; }
 
