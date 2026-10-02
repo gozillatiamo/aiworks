@@ -21,7 +21,7 @@ Telemetry is the **ground truth** of what the running system actually did — lo
 
 ## Rules of engagement
 
-- **Only through the adapter.** `scripts/observability/get-logs.sh` and `get-trace.sh`. Never curl the SigNoz API directly, never read `scripts/observability/.env` (the adapter loads it; reading it is a hard-blocked secret leak).
+- **Only through the adapter.** `scripts/observability/get-logs.sh`, `get-trace.sh`, `find-traces.sh`, `get-metric.sh` and `get-dashboard.sh`. Never curl the SigNoz API directly, never read `scripts/observability/.env` (the adapter loads it; reading it is a hard-blocked secret leak).
 - **Filters are structured flags, and they matter.** Free-text query is gone on purpose — this SigNoz instance silently ignored it and returned unfiltered logs. Use `--service` / `--severity` / `--env` / `--body-contains` / `--trace-id`. If a result looks wrong (a service you didn't ask for, a severity you didn't ask for), suspect a typo'd flag value, not a broken filter.
 - **Read-only until Phase 5.** Phases 1–4 change nothing. Only the developer branch (Phase 5) edits code.
 
@@ -61,6 +61,27 @@ scripts/observability/get-logs.sh --env staging --trace-id <trace_id>
 The **`trace_id` ↔ logs** link is the spine of a distributed investigation: a trace gives you the span waterfall (who called whom, where the time or the error is); `--trace-id` on logs gives you every service's log lines for that one request. Pivot between them.
 
 > Not every `trace_id` seen in a log line has a stored span waterfall — sampling and logs-only emitters mean `get-trace.sh` can come back empty for a real id. That's expected, not a broken tool: when a trace is empty, reconstruct the timeline from the correlated logs (`--trace-id`) instead.
+
+### Metrics and dashboards
+
+A symptom that is a **rate, a lag or a saturation** — "the consumer is falling behind", "p99 climbed", "the queue never drains" — is a metric question before it is a log question. Our services emit metrics over OTel into the same backend; read them with `get-metric.sh`, and read the dashboards the team already built with `get-dashboard.sh`:
+
+```bash
+# Which consumer lags, per stream and group, over the last 6 hours — summary only (context-lean)
+scripts/observability/get-metric.sh \
+  --promql 'max by (consumer_name, stream_name, consumer_group, "deployment.environment") ({__name__=~".*\\.consumer\\.lag_seconds"})' \
+  --from -6h --summary
+
+# What the team already charts: list dashboards, read one, run a widget as it is defined
+scripts/observability/get-dashboard.sh list --search '<substr>'
+scripts/observability/get-dashboard.sh get <dashboard-id>
+scripts/observability/get-dashboard.sh widget <dashboard-id> <widget-id> --run --from -6h --var <name>=<value> --summary
+```
+
+- **The `--env` exception.** `get-metric.sh` has no `--env` flag: PromQL carries the environment itself, as a label matcher (`{deployment_environment="staging"}`) or a `by (...)` label as above. The rule "always pass `--env`" becomes "always put the environment in the query" — a series with no environment label in its output is as meaningless as a log line without one. The adapter never rewrites PromQL; a backend parse error is printed verbatim.
+- **Read `summary` first, `points` only when the shape matters.** `--summary` gives `current`, `peak` (with its time), `min` and a `trend` per series, sorted worst-first; `--limit-series` keeps the context small on high-cardinality queries.
+- **A dashboard widget's query is a reviewed query.** Prefer running it (`widget … --run`) over re-deriving the same PromQL by hand; a variable it references with no `--var` and no dashboard default is refused, naming it, rather than silently run unscoped.
+- **Boundary with `/monitoring-triage`.** This is what **our own services emit** (OTel metrics, in the same backend as the logs and traces). The managed resource *underneath* them — the database tier's CPU, the cache's memory, a node under pressure, the load balancer's edge latency — is Cloud Monitoring, and that is `/monitoring-triage`. If the metric says our consumer is slow, stay here and pivot to its traces; if our spans say the time was never in our process, cross over.
 
 ## Phase 3 — Build the timeline, locate the failure
 

@@ -32,6 +32,17 @@ scripts/observability/get-logs.sh \
   [--service <name>] [--severity <level>] [--env local|dev|staging|prod] \
   [--body-contains <substr>] [--trace-id <hex>] \
   [--from -1h] [--to now] [--limit 100] [--raw]
+
+# Metrics — a PromQL range query (no --env: the query carries its own label matcher)
+scripts/observability/get-metric.sh --promql '<query>' \
+  [--from -1h] [--to now] [--step 2m] [--summary] [--limit-series 50] [--raw] [--dry-run]
+
+# Dashboards — list, read one, inspect or run a widget's query
+scripts/observability/get-dashboard.sh list [--search <substr>]
+scripts/observability/get-dashboard.sh get <dashboard-id>
+scripts/observability/get-dashboard.sh widget <dashboard-id> <widget-id>
+scripts/observability/get-dashboard.sh widget <dashboard-id> <widget-id> --run \
+  [--from -6h] [--to now] [--step 2m] [--var <name>=<value>]... [--summary] [--dry-run]
 ```
 
 > **Filters use the backend's STRUCTURED filter form, not a free-text expression.** This SigNoz
@@ -70,6 +81,36 @@ drives this.
 > `apisix.route_name`, not SigNoz's normalized `httpUrl` / `httpHost`, so a `--by` on the wrong key
 > returns one `(unset)` bucket. The tool says so rather than reporting a total of zero.
 
+### Metrics and dashboards
+
+`get-metric.sh` prints `{query, window:{from,to,step_s}, series:[{labels, summary, points}]}`,
+series sorted by `summary.peak` descending. `points` are `[<epoch_ms>, <number|null>]` pairs — a
+`NaN` / `+Inf` / `-Inf` value becomes `null` and the summary skips it. `summary` is
+`{current, current_time, peak, peak_time, min, points, trend}` (ISO-8601 UTC times); `trend`
+compares the mean of the first 10 % of points with the mean of the last 10 %, as a ratio of
+`|peak|`: `|r| < 0.05` flat, `r > 0` rising, else falling.
+
+- **No `--env` flag.** PromQL carries the environment itself — a label matcher
+  (`{deployment_environment="staging"}`) or a `by (...)` label. The adapter never rewrites the
+  query; the text reaches the backend byte-exact (built with `jq --arg`), so pass it single-quoted
+  with PromQL's own escaping, and a backend parse error is printed verbatim with exit 1.
+- `--step` defaults to `max(1m, range/300)` rounded up to a minute (6 h gives 2 m); more than
+  11000 points is refused with a suggested step.
+- `--summary` drops `points`; `--limit-series N` keeps the N highest peaks and counts the rest on
+  stderr; `--raw` prints the backend response unparsed; `--dry-run` prints method, URL, the auth
+  header with the key masked, and the body, and sends nothing.
+
+`get-dashboard.sh get` lists each widget's `query_type` (`promql | builder | clickhouse_sql`,
+inferred when an older dashboard schema has no `query.queryType`); `widget` prints the stored
+query object; `widget --run` rebuilds it as the backend's composite query and prints one
+`get-metric.sh`-shaped block per query name. A dashboard variable the query references
+(`$name` or `{{.name}}`) resolves from `--var`, then the dashboard default — an unresolved one is
+refused before any request. PromQL widgets are the guaranteed path; builder / ClickHouse widgets
+run best-effort and fall back to raw JSON plus a stderr `note:` when the result is not series.
+
+Metric series are aggregates, not personal data: unlike `get-logs.sh` / `get-trace.sh`, these
+two scripts do not feed the PII provenance vault.
+
 ## Provider interface (`lib.sh`)
 
 - `obs_require_config` — validate the provider's env, die if missing
@@ -78,6 +119,17 @@ drives this.
   first. `FILTERS_JSON` is a provider-agnostic semantic object (any subset of `service`,
   `severity`, `env`, `body_contains`, `trace_id`); the provider impl translates it into the
   backend's native filter. `RAW=1` prints the raw JSON response.
+- `obs_query_promql QUERY FROM_MS TO_MS STEP_S` — run a PromQL range query; print
+  `{series:[{query, labels, points:[[ms, number|null]]}]}` (non-numeric values become `null`).
+  `OBS_RAW=1` prints the response unparsed; `OBS_DRY_RUN=1` prints the request and sends nothing.
+- `obs_query_composite COMPOSITE_JSON VARIABLES_JSON FROM_MS TO_MS STEP_S` — same, for a widget's
+  own composite query with its `{name: value}` variables.
+- `obs_list_dashboards` — print `[{id, title, tags, widgets:<count>}]`.
+- `obs_get_dashboard ID` — print `{id, title, variables:[{name, default}], widgets:[<raw widget>]}`.
+
+`lib.sh` also holds the shared, provider-agnostic pieces: `obs_step_s` (the default step and the
+point cap) and `obs_series_report` (the summary / sort / `--summary` / `--limit-series` shaping).
+Entry scripts never call `curl`; all HTTP sits in the provider's `impl.sh`.
 
 ## Notes
 
@@ -88,4 +140,6 @@ drives this.
   response shape doesn't match what's expected, so a version mismatch fails loud rather
   than silently mis-parsing.
 - To add another provider: create `scripts/observability/<name>/impl.sh` implementing
-  the three functions above, then set `OBSERVABILITY_PROVIDER=<name>`.
+  the functions above, then set `OBSERVABILITY_PROVIDER=<name>`.
+- `selftest.sh` is the hermetic regression for the metrics + dashboard scripts: no network, no
+  credentials, no `.env` — a fake `curl` records the request and serves inline fixtures.
