@@ -66,13 +66,10 @@ import json
 import os
 import re
 import signal
-import socket
-import subprocess
 import sys
-import tempfile
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import redis
@@ -85,6 +82,9 @@ from mcp.server.fastmcp import FastMCP
 # identical-looking staging/local data alone.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import triage_policy  # noqa: E402  — the production gate; load-bearing, so never optional
+import gcloud_tunnel  # noqa: E402  — stdlib-only tunnel helper, shared with pg_triage
+
+gcloud_tunnel.TUNNEL_SH = "scripts/redis/tunnel.sh"   # the status|kill remedy named in refusals
 
 try:
     import pii_provenance
@@ -107,6 +107,8 @@ class Target:
     tunnel: str  # "gcloud" | "none"
     vm: str
     zone: str
+    project: str = ""
+    iap: bool = False
 
 
 # REDIS_TRIAGE_ENV overrides the file (a test fixture, or a shared location) — the variables it
@@ -146,6 +148,8 @@ def _parse_target(name: str, spec: str) -> Target:
         tunnel=tunnel,
         vm=kv.get("vm") or "",
         zone=kv.get("zone") or "",
+        project=kv.get("project") or "",
+        iap=(kv.get("iap") or "false").lower() in ("true", "yes", "1"),
     )
 
 
@@ -168,7 +172,6 @@ TARGETS: dict[str, Target] = _load_targets()
 
 IDLE_TIMEOUT_S = 120  # no tool call for this long -> the tunnel is killed
 WATCHDOG_TICK_S = 10
-TUNNEL_READY_TIMEOUT_S = 45
 SOCKET_TIMEOUT_S = 15
 MAX_PAGE = 200
 BULK_CARDINALITY_LIMIT = 1000  # above this, a bulk read is refused in favour of a cursor
@@ -295,27 +298,18 @@ class _ReadOnly:
 
 
 # --- tunnel + connection ------------------------------------------------------------------
+# The forward itself (spawn, adopt-or-refuse, process-group teardown, ownership signature) is
+# scripts/lib/gcloud_tunnel.py, shared with pg_triage. This file keeps only what is Redis:
+# the PING readiness probe, the per-db clients, and the idle watchdog.
 
-
-@dataclass
-class Tunnel:
-    target: Target
-    proc: subprocess.Popen | None   # None for tunnel=none — nothing was spawned
-    log_path: Path | None
-    opened_at: float
-    last_used: float
-    clients: dict[int, _ReadOnly] = field(default_factory=dict)
-
-
-_tunnels: dict[str, Tunnel] = {}
+_tunnels: dict[str, gcloud_tunnel.Tunnel] = {}      # target key -> forward
+_clients: dict[str, dict[int, _ReadOnly]] = {}       # target key -> db -> client
 _lock = threading.RLock()
 _watchdog: threading.Thread | None = None
 
 
 def _port_in_use(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+    return gcloud_tunnel._port_in_use(port)
 
 
 def _client_name() -> str:
@@ -323,92 +317,36 @@ def _client_name() -> str:
     return f"claude-redis-triage-{who}"
 
 
-def _spawn_tunnel(t: Target) -> Tunnel:
-    """Start the gcloud SSH port-forward for a target and wait until Redis answers PING.
-
-    argv is a list built from the frozen TARGETS entry — never a shell string — so no part of
-    a tool argument can reach the command line. `ExitOnForwardFailure` makes a refused
-    forward an immediate, reportable exit instead of a process that sits there doing nothing.
-    """
-    if t.tunnel == "none":
-        # Already reachable (a bastion you run, a VPN, your own forward). Nothing to spawn and
-        # nothing to reap — but the same lazy-connect and disconnect contract still applies.
-        return Tunnel(target=t, proc=None, log_path=None, opened_at=time.time(), last_used=time.time())
-    if _port_in_use(t.local_port):
-        raise RuntimeError(
-            f"127.0.0.1:{t.local_port} is already in use — refusing to adopt a tunnel this "
-            f"process did not open (it may point somewhere else entirely). Inspect it with "
-            f"`scripts/redis/tunnel.sh status` and clear it with `scripts/redis/tunnel.sh kill`."
-        )
-    log = Path(tempfile.mkstemp(prefix=f"redis-tunnel-{t.key}-", suffix=".log")[1])
-    argv = [
-        "gcloud",
-        "compute",
-        "ssh",
-        t.vm,
-        f"--zone={t.zone}",
-        "--quiet",
-        "--",
-        "-N",
-        "-T",
-        "-o",
-        "ExitOnForwardFailure=yes",
-        "-o",
-        "ServerAliveInterval=30",
-        "-L",
-        f"{t.local_port}:{t.remote_host}:{t.remote_port}",
-    ]
-    with log.open("wb") as fh:
-        proc = subprocess.Popen(argv, stdout=fh, stderr=fh, stdin=subprocess.DEVNULL)
-    tun = Tunnel(target=t, proc=proc, log_path=log, opened_at=time.time(), last_used=time.time())
-    deadline = time.time() + TUNNEL_READY_TIMEOUT_S
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            tail = log.read_text(errors="replace").strip().splitlines()[-6:]
-            raise RuntimeError(
-                f"gcloud tunnel to {t.vm} exited (code {proc.returncode}). Last output:\n"
-                + "\n".join(tail)
-                + "\nCheck `gcloud auth list` and IAM/OS-Login access to the VM."
-            )
-        try:
-            probe = redis.Redis(
-                host="127.0.0.1",
-                port=t.local_port,
-                socket_timeout=2,
-                socket_connect_timeout=2,
-            )
-            probe.ping()
-            probe.close()
-            return tun
-        except Exception:
-            time.sleep(0.5)
-    _kill_tunnel(tun)
-    raise RuntimeError(
-        f"tunnel to {t.vm} did not become ready within {TUNNEL_READY_TIMEOUT_S}s "
-        f"(port {t.local_port}); see {tun.log_path}"
+def _spec(t: Target) -> gcloud_tunnel.TunnelSpec:
+    return gcloud_tunnel.TunnelSpec(
+        label=f"{TARGET_PREFIX}{t.key.upper()}", kind=t.tunnel, host=t.remote_host, port=t.remote_port,
+        local_port=t.local_port, vm=t.vm, zone=t.zone, project=t.project, iap=t.iap,
     )
 
 
-def _kill_tunnel(tun: Tunnel) -> None:
-    for c in tun.clients.values():
+def _ping_probe(t: Target):
+    """Readiness = Redis answers PING through the forward, not merely a listening port — the
+    same end-to-end probe a forward must pass to be ADOPTED (a stale forward is refused)."""
+    def ready() -> bool:
+        probe = redis.Redis(host="127.0.0.1", port=t.local_port, socket_timeout=2, socket_connect_timeout=2)
+        try:
+            return bool(probe.ping())
+        finally:
+            probe.close()
+    return ready
+
+
+def _drop(key: str) -> gcloud_tunnel.Tunnel | None:
+    """Close the clients, then the forward (an adopted one is left running). Caller holds _lock."""
+    for c in _clients.pop(key, {}).values():
         try:
             c.close()
         except Exception:
             pass
-    tun.clients.clear()
-    if tun.proc is None:
-        return
-    if tun.proc.poll() is None:
-        tun.proc.terminate()
-        try:
-            tun.proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            tun.proc.kill()
-    try:
-        if tun.log_path is not None:
-            tun.log_path.unlink(missing_ok=True)
-    except Exception:
-        pass
+    tun = _tunnels.pop(key, None)
+    if tun is not None:
+        gcloud_tunnel.close_tunnel(tun)
+    return tun
 
 
 def _reap_idle() -> None:
@@ -416,20 +354,22 @@ def _reap_idle() -> None:
     model, the skill, or a clean session exit."""
     while True:
         time.sleep(WATCHDOG_TICK_S)
-        now = time.time()
-        with _lock:
-            for key, tun in list(_tunnels.items()):
-                dead = tun.proc is not None and tun.proc.poll() is not None
-                if now - tun.last_used > IDLE_TIMEOUT_S or dead:
-                    _kill_tunnel(tun)
-                    _tunnels.pop(key, None)
+        _reap_once(time.time())
+
+
+def _reap_once(now: float) -> None:
+    with _lock:
+        for key, tun in list(_tunnels.items()):
+            if now - tun.last_used > IDLE_TIMEOUT_S or not gcloud_tunnel.is_alive(tun):
+                _drop(key)
 
 
 def _connect(t: Target, db: int) -> _ReadOnly:
     global _watchdog
     # Being able to reach the box (cloud IAM, a VPN, your own forward) is not permission:
     # a target declared `prod=true` requires the per-machine opt-in, checked before a tunnel
-    # is spawned. A `prod=false` target (staging/test) is ungated. See docs/adr/0005.
+    # is spawned or an existing forward is even inspected. A `prod=false` target (staging/test)
+    # is ungated. See docs/adr/0005.
     if t.is_prod:
         triage_policy.assert_prod_allowed("PRODUCTION Redis triage")
     with _lock:
@@ -437,16 +377,16 @@ def _connect(t: Target, db: int) -> _ReadOnly:
             _watchdog = threading.Thread(target=_reap_idle, name="redis-tunnel-watchdog", daemon=True)
             _watchdog.start()
         tun = _tunnels.get(t.key)
-        if tun is not None and tun.proc is not None and tun.proc.poll() is not None:  # died under us
-            _kill_tunnel(tun)
-            _tunnels.pop(t.key, None)
+        if tun is not None and not gcloud_tunnel.is_alive(tun):  # died under us
+            _drop(t.key)
             tun = None
         if tun is None:
-            tun = _spawn_tunnel(t)
+            tun = gcloud_tunnel.open_tunnel(_spec(t), ready=_ping_probe(t))  # spawn, or adopt a proven forward
             _tunnels[t.key] = tun
         tun.last_used = time.time()
-        if db not in tun.clients:
-            tun.clients[db] = _ReadOnly(
+        clients = _clients.setdefault(t.key, {})
+        if db not in clients:
+            clients[db] = _ReadOnly(
                 redis.Redis(
                     host="127.0.0.1",
                     port=t.local_port,
@@ -457,16 +397,14 @@ def _connect(t: Target, db: int) -> _ReadOnly:
                     decode_responses=False,
                 )
             )
-        return tun.clients[db]
+        return clients[db]
 
 
 def _close_all() -> list[str]:
     with _lock:
-        closed = []
-        for key, tun in list(_tunnels.items()):
-            _kill_tunnel(tun)
-            _tunnels.pop(key, None)
-            closed.append(key)
+        closed = list(_tunnels)
+        for key in closed:
+            _drop(key)
         return closed
 
 
@@ -662,7 +600,7 @@ def list_targets() -> dict:
                 "forward": f"127.0.0.1:{t.local_port} -> {t.remote_host}:{t.remote_port}",
                 "tunnel": t.tunnel,
                 "is_prod": t.is_prod,
-                "tunnel_open": tun is not None and (t.tunnel == "none" or (tun.proc is not None and tun.proc.poll() is None)),
+                "tunnel_open": tun is not None and gcloud_tunnel.is_alive(tun),
                 "idle_seconds": round(time.time() - tun.last_used, 1) if tun else None,
             }
         )
@@ -671,29 +609,45 @@ def list_targets() -> dict:
 
 @mcp.tool()
 def tunnel_status() -> dict:
-    """Report the live tunnel state: which targets are open, how long they have been idle, and
-    how long until the watchdog reaps them."""
+    """Report the live tunnel state: which targets are open, who owns each forward (self |
+    adopted), how long they have been idle, and how long until the watchdog reaps them. An
+    adopted forward (a person's own, identified and proven) is never stopped by the MCP."""
+    now = time.time()
     with _lock:
-        return {
-            "open": [
-                {
-                    "target": k,
-                    "pid": tun.proc.pid if tun.proc else None,
-                    "up_seconds": round(time.time() - tun.opened_at, 1),
-                    "idle_seconds": round(time.time() - tun.last_used, 1),
-                    "reaped_in_seconds": round(IDLE_TIMEOUT_S - (time.time() - tun.last_used), 1),
-                }
-                for k, tun in _tunnels.items()
-            ],
-            "idle_timeout_seconds": IDLE_TIMEOUT_S,
-        }
+        entries = []
+        for k, tun in _tunnels.items():
+            adopted = tun.adopted_pid is not None
+            idle_s = now - tun.last_used
+            entries.append({
+                "target": k,
+                "owner": "adopted" if adopted else "self",
+                "owner_detail": tun.owner_detail or None,
+                "teardown": (
+                    "never stopped by the MCP — started outside it; disconnect or idle only drops "
+                    "the MCP's connection. Stop it yourself (Ctrl-C in its terminal)."
+                    if adopted else
+                    f"released on disconnect or after {IDLE_TIMEOUT_S} s idle"
+                ),
+                "tunnel_open": gcloud_tunnel.is_alive(tun),
+                "pid": tun.proc.pid if tun.proc is not None else tun.adopted_pid,
+                "up_seconds": round(now - tun.opened_at, 1),
+                "idle_seconds": round(idle_s, 1),
+                "reaped_in_seconds": max(0.0, round(IDLE_TIMEOUT_S - idle_s, 1)),
+            })
+    return {"open": entries, "idle_timeout_seconds": IDLE_TIMEOUT_S}
 
 
 @mcp.tool()
 def disconnect() -> dict:
     """Close every open tunnel and connection — the teardown for a triage job. Call it when the
-    investigation is done; the watchdog also reaps anything idle past the timeout."""
-    return {"closed": _close_all(), "open": list(_tunnels)}
+    investigation is done; the watchdog also reaps anything idle past the timeout. An adopted
+    forward (started outside the MCP) is left running and reported under
+    `adopted_left_running` — only the MCP's hold on it is released."""
+    with _lock:
+        adopted = [{"target": k, "pid": tun.adopted_pid}
+                   for k, tun in _tunnels.items() if tun.adopted_pid is not None]
+        closed = _close_all()
+    return {"closed": closed, "open": list(_tunnels), "adopted_left_running": adopted}
 
 
 # --- tools: server + keyspace -------------------------------------------------------------
@@ -1389,6 +1343,65 @@ def _selftest() -> int:
     check("digest is stable across calls", _digest("abc") == _digest("abc"))
     check("bulk limit below page cap is meaningless", BULK_CARDINALITY_LIMIT > MAX_PAGE)
     check("idle timeout set", 0 < IDLE_TIMEOUT_S <= 600)
+    check("refusals name THIS script's tunnel.sh", gcloud_tunnel.TUNNEL_SH == "scripts/redis/tunnel.sh")
+    _t_iap = _parse_target("x", "host=h;local=6390;vm=v;project=p;iap=true")
+    check("target parses project= and iap=", _t_iap.project == "p" and _t_iap.iap is True)
+    check("iap defaults off (argv unchanged for existing specs)",
+          _parse_target("x", "host=h;local=6390;vm=v").iap is False)
+    check("spec carries zone/project/iap into the helper argv",
+          "--tunnel-through-iap" in gcloud_tunnel.argv(_spec(_t_iap))
+          and "--project=p" in gcloud_tunnel.argv(_spec(_t_iap)))
+
+    # Adopted forward is never stopped: every MCP teardown path against a live stand-in process.
+    # Hermetic — a `sleep` plays the person's ssh; no gcloud, no Redis.
+    import subprocess as _sp
+    _adopt_t = Target("_selftest_adopt", "h", 6379, 65431, False, "gcloud", "v", "", "", False)
+    _sleeper = _sp.Popen(["sleep", "60"])
+    _victim = _sp.Popen(["sleep", "60"])  # a self-owned tunnel the reaper MUST kill (contrast)
+
+    def _adopted(last_used: float) -> gcloud_tunnel.Tunnel:
+        return gcloud_tunnel.Tunnel(spec=_spec(_adopt_t), proc=None, log_path=None, opened_at=time.time(),
+                                    last_used=last_used, adopted_pid=_sleeper.pid, owner_detail="stand-in")
+    try:
+        with _lock:
+            _tunnels[_adopt_t.key] = _adopted(time.time())
+        entry = next(e for e in tunnel_status()["open"] if e["target"] == _adopt_t.key)
+        check("adopted: tunnel_status owner=adopted", entry["owner"] == "adopted")
+        check("adopted: tunnel_status pid is the real pid", entry["pid"] == _sleeper.pid)
+        check("adopted: tunnel_status carries owner_detail", entry["owner_detail"] == "stand-in")
+        check("adopted: tunnel_status teardown says never stopped", "never stopped" in entry["teardown"])
+
+        closed = disconnect()
+        check("adopted: disconnect releases the hold", _adopt_t.key in closed["closed"])
+        check("adopted: disconnect reports adopted_left_running",
+              [e["target"] for e in closed["adopted_left_running"]] == [_adopt_t.key])
+        check("adopted: disconnect leaves the process running", _sleeper.poll() is None)
+
+        _victim_t = Target("_selftest_victim", "h", 6379, 65430, False, "gcloud", "v", "", "", False)
+        with _lock:
+            _tunnels[_adopt_t.key] = _adopted(0.0)   # idle since the epoch -> reaped on this tick
+            _tunnels[_victim_t.key] = gcloud_tunnel.Tunnel(
+                spec=_spec(_victim_t), proc=_victim, log_path=None, opened_at=0.0, last_used=0.0)
+        _reap_once(time.time())
+        with _lock:
+            check("adopted: reaper drops the entry", _adopt_t.key not in _tunnels)
+            check("contrast: reaper drops the self-owned entry", _victim_t.key not in _tunnels)
+        check("adopted: reaper leaves the process running", _sleeper.poll() is None)
+        check("contrast: reaper DOES stop a self-owned tunnel", _victim.poll() is not None)
+
+        with _lock:
+            _tunnels[_adopt_t.key] = _adopted(time.time())
+        _close_all()
+        with _lock:
+            check("adopted: _close_all clears the entry", not _tunnels)
+        check("adopted: _close_all leaves the process running", _sleeper.poll() is None)
+    finally:
+        with _lock:
+            _tunnels.pop(_adopt_t.key, None)
+        for _p in (_sleeper, _victim):
+            if _p.poll() is None:
+                _p.kill()
+            _p.wait()
     print("selftest ok" if not failures else f"selftest FAILED ({len(failures)} check(s))")
     return 1 if failures else 0
 
