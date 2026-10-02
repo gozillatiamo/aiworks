@@ -46,6 +46,7 @@
       "Bash(*scripts/vcs/*)",
       "Bash(*scripts/tracker/*)",
       "Bash(*scripts/notify/*)",
+      "Bash(*scripts/observability/*)",
       "Bash(sonar *)",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py:*)",
       "Bash(python3 .claude/skills/summarize-workflow-performance/scripts/parse_workflow_usage.py:*)",
