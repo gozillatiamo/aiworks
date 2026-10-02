@@ -17,10 +17,13 @@ production target is only ever reached by naming it.
 
 Targets are declared in `scripts/redis/.env`, one variable per target (see `.env.example`):
 
-  REDISPROD_<NAME>=host=<addr>;port=6379;local=<port>;prod=<bool>;tunnel=gcloud;vm=<vm>;zone=<zone>
+  REDISPROD_<NAME>=host=<addr>;port=6379;local=<port>;tunnel=gcloud;vm=<vm>;zone=<zone>
+  REDISSTG_<NAME>=host=<addr>;port=6379;local=<port>;tunnel=gcloud;vm=<vm>;zone=<zone>
 
-addressed as `target="<name>"`. `prod=true` turns on credential masking + PII provenance for
-that target; `prod=false` (a staging box) returns values as-is.
+addressed as `target="prod:<name>"` / `target="staging:<name>"` (a bare `<name>` only when one
+environment declares it). The PREFIX decides, same as PGPROD_/PGSTG_ for pg_triage: REDISPROD_
+turns on credential masking + PII provenance and the per-machine prod gate; REDISSTG_ (a
+staging box) returns values as-is, ungated. A `prod=` key inside a value is refused by name.
 
 A managed Redis is usually not reachable from a laptop, so with `tunnel=gcloud` this server
 OWNS the SSH port-forward: it spawns `gcloud compute ssh <vm> --zone=<zone> -- -N -L
@@ -61,6 +64,7 @@ That means the layers are the guarantee, not a convenience:
 from __future__ import annotations
 
 import atexit
+import difflib
 import hashlib
 import json
 import os
@@ -69,6 +73,7 @@ import signal
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,18 +102,38 @@ except Exception:  # provenance is a safety net; a missing module must not break
 # no .env has no targets, which is the per-machine opt-in.
 
 
+ENV_PROD = "prod"
+ENV_STAGING = "staging"
+# The PREFIX decides whether a target is production — same convention as pg_triage_mcp.py
+# (PGPROD_/PGSTG_). Only a variable literally named REDISSTG_* can ever be ungated, so a typo
+# or a copied line can never silently downgrade a production box.
+PREFIXES = {ENV_PROD: "REDISPROD_", ENV_STAGING: "REDISSTG_"}
+
+
 @dataclass(frozen=True)
 class Target:
-    key: str
+    name: str
     remote_host: str
     remote_port: int
     local_port: int
-    is_prod: bool
+    env: str  # ENV_PROD | ENV_STAGING — from the prefix, never from the value
     tunnel: str  # "gcloud" | "none"
     vm: str
     zone: str
     project: str = ""
     iap: bool = False
+
+    @property
+    def is_prod(self) -> bool:
+        return self.env == ENV_PROD
+
+    @property
+    def key(self) -> str:
+        return f"{self.env}:{self.name}"
+
+    @property
+    def var(self) -> str:
+        return PREFIXES[self.env] + self.name.upper()
 
 
 # REDIS_TRIAGE_ENV overrides the file (a test fixture, or a shared location) — the variables it
@@ -116,11 +141,44 @@ class Target:
 ENV_PATH = Path(os.environ.get("REDIS_TRIAGE_ENV") or Path(__file__).parent / ".env")
 load_dotenv(ENV_PATH)  # no-op when absent; targets then simply report as unconfigured
 
-TARGET_PREFIX = "REDISPROD_"
+_NAME_RE = re.compile(r"^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$")  # UPPER_SNAKE; single underscores only
+# Fixed reasons only — a report names the VARIABLE, never its value.
+REASON_UPPER = "names are UPPER_SNAKE"
+REASON_PROD_KEY = (
+    "prod= is not a key: the PREFIX decides — move the line to REDISPROD_<NAME> for a "
+    "production box or REDISSTG_<NAME> for staging, and delete prod="
+)
 
 
-def _parse_target(name: str, spec: str) -> Target:
-    """Parse one `REDISPROD_<NAME>` spec: `key=value` pairs separated by `;`."""
+def _classify(var: str, env: Mapping[str, str]) -> tuple[str | None, str | None, str | None, str | None]:
+    """Classify one env var name -> (env, name, reason, did_you_mean). Mirrors pg_triage's
+    `_classify`: a var that is not ours is (None, None, None, None); a usable one carries its
+    env + lower-cased name; an unusable one a FIXED reason and, where a rule can suggest one,
+    the spelling to use instead."""
+    hit = next(((e, p) for e, p in PREFIXES.items() if var.upper().startswith(p)), None)
+    if hit is None:
+        return None, None, None, None
+    env_name, prefix = hit
+    suffix = var[len(prefix):]
+    fixed = prefix + suffix.upper()
+    if fixed != var:  # wrong case somewhere: diagnose the upper-cased form, never accept it
+        _, name, _, dym = _classify(fixed, env)
+        return None, None, REASON_UPPER, dym or (fixed if name else None)
+    if not _NAME_RE.match(suffix):
+        return None, None, REASON_UPPER, _closest(prefix, var, env)
+    return env_name, suffix.lower(), None, None
+
+
+def _closest(prefix: str, var: str, env: Mapping[str, str]) -> str | None:
+    """difflib fallback for an unrecognized name: the nearest usable var under the same prefix."""
+    candidates = [v for v in env if v.startswith(prefix) and v != var and _NAME_RE.match(v[len(prefix):])]
+    hits = difflib.get_close_matches(var, candidates, n=1)
+    return hits[0] if hits else None
+
+
+def _parse_target(env: str, name: str, spec: str) -> Target:
+    """Parse one `REDISPROD_<NAME>` / `REDISSTG_<NAME>` spec: `key=value` pairs separated by `;`."""
+    var = PREFIXES[env] + name.upper()
     kv: dict[str, str] = {}
     for part in spec.split(";"):
         part = part.strip()
@@ -128,23 +186,25 @@ def _parse_target(name: str, spec: str) -> Target:
             continue
         k, _, v = part.partition("=")
         kv[k.strip().lower()] = v.strip()
+    if "prod" in kv:
+        raise ValueError(REASON_PROD_KEY)
     host = kv.get("host") or kv.get("remote") or ""
     if not host:
-        raise ValueError(f"{TARGET_PREFIX}{name.upper()} has no host=")
+        raise ValueError(f"{var} has no host=")
     local = int(kv.get("local") or kv.get("local_port") or 0)
     if not local:
-        raise ValueError(f"{TARGET_PREFIX}{name.upper()} has no local=<port> to forward to")
+        raise ValueError(f"{var} has no local=<port> to forward to")
     tunnel = (kv.get("tunnel") or "gcloud").lower()
     if tunnel not in ("gcloud", "none"):
-        raise ValueError(f"{TARGET_PREFIX}{name.upper()} tunnel={tunnel!r}; use gcloud|none")
+        raise ValueError(f"{var} tunnel={tunnel!r}; use gcloud|none")
     if tunnel == "gcloud" and not kv.get("vm"):
-        raise ValueError(f"{TARGET_PREFIX}{name.upper()} needs vm=<instance> for tunnel=gcloud")
+        raise ValueError(f"{var} needs vm=<instance> for tunnel=gcloud")
     return Target(
-        key=name.lower(),
+        name=name.lower(),
         remote_host=host,
         remote_port=int(kv.get("port") or 6379),
         local_port=local,
-        is_prod=(kv.get("prod") or "true").lower() in ("true", "yes", "1"),
+        env=env,
         tunnel=tunnel,
         vm=kv.get("vm") or "",
         zone=kv.get("zone") or "",
@@ -153,22 +213,30 @@ def _parse_target(name: str, spec: str) -> Target:
     )
 
 
-def _load_targets() -> dict[str, Target]:
+def _load_targets(env: Mapping[str, str] | None = None) -> tuple[dict[str, Target], list[dict]]:
+    """-> (targets keyed `env:name`, unrecognized [{var, reason, did_you_mean}]). An unusable
+    variable is REPORTED, never silently dropped — and the report carries only its name."""
+    if env is None:
+        env = os.environ
     out: dict[str, Target] = {}
-    for var, spec in os.environ.items():
-        if not var.startswith(TARGET_PREFIX) or not spec.strip():
+    bad: list[dict] = []
+    for var, spec in env.items():
+        env_name, name, reason, dym = _classify(var, env)
+        if env_name is None and reason is None:
             continue
-        name = var[len(TARGET_PREFIX):]
-        try:
-            t = _parse_target(name, spec)
-        except ValueError as exc:  # a broken line must name itself, not disappear
-            print(f"redis-triage: ignoring {var} — {exc}", file=sys.stderr)
-            continue
-        out[t.key] = t
-    return out
+        if env_name is not None:
+            try:
+                out[f"{env_name}:{name}"] = _parse_target(env_name, name, spec)
+                continue
+            except ValueError as exc:
+                reason = str(exc)
+        bad.append({"var": var, "reason": reason, "did_you_mean": dym})
+        print(f"redis-triage: unrecognized {var} — {reason}" + (f"; did you mean {dym}?" if dym else ""),
+              file=sys.stderr)
+    return out, bad
 
 
-TARGETS: dict[str, Target] = _load_targets()
+TARGETS, UNRECOGNIZED = _load_targets()
 
 IDLE_TIMEOUT_S = 120  # no tool call for this long -> the tunnel is killed
 WATCHDOG_TICK_S = 10
@@ -181,16 +249,25 @@ SCAN_DEFAULT_COUNT = 500
 mcp = FastMCP("redis-triage")
 
 
-def _resolve(target: str | None) -> Target:
-    """Resolve a target name. There is NO default: an unnamed target is an error, never a
-    guess, so prod is only ever reached by asking for it explicitly."""
-    names = " | ".join(sorted(TARGETS)) or "(none configured — see scripts/redis/.env.example)"
+def _resolve(target: str | None, targets: dict[str, Target] | None = None) -> Target:
+    """Resolve `[<env>:]<name>` (`prod:main`, `staging:main`). There is NO default: an unnamed
+    target is an error, never a guess, and a bare name resolves only when exactly one
+    environment declares it — one declared under both prefixes is refused, never defaulted to
+    prod, so prod is only ever reached by asking for it explicitly."""
+    if targets is None:
+        targets = TARGETS
+    names = " | ".join(sorted(targets)) or "(none configured — see scripts/redis/.env.example)"
     if not target:
         raise ValueError(f"provide `target` ({names}) — there is no default, so a production target is never implied")
     t = target.strip().lower()
-    if t not in TARGETS:
-        raise ValueError(f"unknown target {target!r}; configured: {names}")
-    return TARGETS[t]
+    if t in targets:
+        return targets[t]
+    hits = [k for k in sorted(targets) if k.split(":", 1)[1] == t]
+    if len(hits) == 1:
+        return targets[hits[0]]
+    if hits:
+        raise ValueError(f"target {target!r} exists in more than one environment — name one: {' | '.join(hits)}")
+    raise ValueError(f"unknown target {target!r}; configured: {names}")
 
 
 # --- read-only client proxy ---------------------------------------------------------------
@@ -319,7 +396,7 @@ def _client_name() -> str:
 
 def _spec(t: Target) -> gcloud_tunnel.TunnelSpec:
     return gcloud_tunnel.TunnelSpec(
-        label=f"{TARGET_PREFIX}{t.key.upper()}", kind=t.tunnel, host=t.remote_host, port=t.remote_port,
+        label=t.var, kind=t.tunnel, host=t.remote_host, port=t.remote_port,
         local_port=t.local_port, vm=t.vm, zone=t.zone, project=t.project, iap=t.iap,
     )
 
@@ -367,9 +444,8 @@ def _reap_once(now: float) -> None:
 def _connect(t: Target, db: int) -> _ReadOnly:
     global _watchdog
     # Being able to reach the box (cloud IAM, a VPN, your own forward) is not permission:
-    # a target declared `prod=true` requires the per-machine opt-in, checked before a tunnel
-    # is spawned or an existing forward is even inspected. A `prod=false` target (staging/test)
-    # is ungated. See docs/adr/0005.
+    # a REDISPROD_ target requires the per-machine opt-in, checked before a tunnel is spawned
+    # or an existing forward is even inspected. A REDISSTG_ target is ungated. See docs/adr/0005.
     if t.is_prod:
         triage_policy.assert_prod_allowed("PRODUCTION Redis triage")
     with _lock:
@@ -570,6 +646,7 @@ def _touch(t: Target) -> None:
 def _ok(t: Target, payload: dict) -> dict:
     _touch(t)
     payload["target"] = t.key
+    payload["env"] = t.env
     payload["masking"] = "on" if (t.is_prod or _force_mask()) else "off (staging)"
     return json.loads(json.dumps(payload, default=str))
 
@@ -587,14 +664,19 @@ def list_targets() -> dict:
     if not TARGETS:
         return {
             "targets": [],
+            "unrecognized": UNRECOGNIZED,
+            "prod_allowed": triage_policy.prod_allowed(),
             "hint": "no targets configured — copy scripts/redis/.env.example to scripts/redis/.env "
-                    "and declare a REDISPROD_<NAME> spec (see scripts/redis/README.md)",
+                    "and declare a REDISPROD_<NAME> (production) or REDISSTG_<NAME> (staging) "
+                    "spec (see scripts/redis/README.md)",
         }
     for key, t in TARGETS.items():
         tun = _tunnels.get(key)
         out.append(
             {
                 "target": key,
+                "env": t.env,
+                "env_var": t.var,
                 "vm": t.vm or None,
                 "zone": t.zone or None,
                 "forward": f"127.0.0.1:{t.local_port} -> {t.remote_host}:{t.remote_port}",
@@ -604,7 +686,12 @@ def list_targets() -> dict:
                 "idle_seconds": round(time.time() - tun.last_used, 1) if tun else None,
             }
         )
-    return {"targets": out, "idle_timeout_seconds": IDLE_TIMEOUT_S}
+    return {
+        "targets": out,
+        "unrecognized": UNRECOGNIZED,
+        "prod_allowed": triage_policy.prod_allowed(),
+        "idle_timeout_seconds": IDLE_TIMEOUT_S,
+    }
 
 
 @mcp.tool()
@@ -620,6 +707,8 @@ def tunnel_status() -> dict:
             idle_s = now - tun.last_used
             entries.append({
                 "target": k,
+                "env": k.split(":", 1)[0],
+                "env_var": tun.spec.label,
                 "owner": "adopted" if adopted else "self",
                 "owner_detail": tun.owner_detail or None,
                 "teardown": (
