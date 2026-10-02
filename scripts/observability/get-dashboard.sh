@@ -91,7 +91,38 @@ case "$sub" in
       jq "$JQ_DEFS"' wsummary + {queries: .query}' <<<"$w"
       exit 0
     fi
-    # --run (M4)
-    echo "error: --run is not implemented yet" >&2; exit 1
+    # --run: the widget's own composite query, disabled entries dropped, keyed the way the
+    # query_range API expects (promQueries / builderQueries incl. formulas / chQueries).
+    cq="$(jq -c "$JQ_DEFS"' (qtype) as $t | .query as $q
+      | {queryType: $t, panelType: (.panelTypes // .panelType // "graph")}
+      + (if $t == "promql" then {promQueries: ([$q.promql[] | select(.disabled | not) | {(.name): .}] | add // {})}
+         elif $t == "builder" then {builderQueries: ([($q.builder.queryData[]?, $q.builder.queryFormulas[]?) | select(.disabled | not) | {(.queryName): .}] | add // {})}
+         elif $t == "clickhouse_sql" then {chQueries: ([$q.clickhouse_sql[] | select(.disabled | not) | {(.name): .}] | add // {})}
+         else {} end)' <<<"$w")"
+    # Variables the query references ($name or {{.name}}; `__*` are the backend's own) resolve
+    # from --var, then the dashboard default; anything left is refused before any request.
+    refs="$(jq -r '[.. | strings] | join("\n")' <<<"$cq" \
+      | grep -oE '\$[A-Za-z_][A-Za-z0-9_.]*|\{\{[[:space:]]*\.?[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*\}\}' \
+      | sed -E 's/^\$//; s/^\{\{[[:space:]]*\.?//; s/[[:space:]]*\}\}$//' | grep -v '^__' | sort -u || true)"
+    unresolved=()
+    for name in $refs; do
+      if jq -e --arg n "$name" 'has($n)' <<<"$vars" >/dev/null; then continue; fi
+      def="$(jq -r --arg n "$name" '[.variables[] | select(.name == $n) | .default] | first // null' <<<"$d")"
+      if [[ "$def" == null ]]; then unresolved+=("$name"); else vars="$(jq -c --arg k "$name" --arg v "$def" '. + {($k): $v}' <<<"$vars")"; fi
+    done
+    if [[ ${#unresolved[@]} -gt 0 ]]; then
+      echo "error: unresolved dashboard variable(s): ${unresolved[*]} — pass --var <name>=<value> (no dashboard default)" >&2
+      exit 1
+    fi
+    from_ms="$(obs_epoch_ms "$from")"; to_ms="$(obs_epoch_ms "$to")"
+    [[ "$from_ms" -lt "$to_ms" ]] || { echo "error: --from ($from) is not before --to ($to)" >&2; exit 2; }
+    step_s="$(obs_step_s "$from_ms" "$to_ms" "$step")"
+    if [[ $dry_run -eq 1 ]]; then OBS_DRY_RUN=1 obs_query_composite "$cq" "$vars" "$from_ms" "$to_ms" "$step_s"; exit 0; fi
+    resp="$(obs_query_composite "$cq" "$vars" "$from_ms" "$to_ms" "$step_s")"
+    if ! printf '%s' "$resp" | jq -e 'has("series")' >/dev/null 2>&1; then printf '%s\n' "$resp"; exit 0; fi
+    for name in $(jq -r '(.promQueries // .builderQueries // .chQueries // {}) | keys[]' <<<"$cq"); do
+      printf '%s' "$resp" | jq -c --arg n "$name" '{series: [.series[] | select(.query == $n)]}' \
+        | obs_series_report "$name" "$from_ms" "$to_ms" "$step_s" "$summary" 50
+    done
     ;;
 esac

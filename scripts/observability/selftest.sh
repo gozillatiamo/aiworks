@@ -210,5 +210,59 @@ case "$out" in *'signoz HTTP 404'*) ok "unknown dashboard names HTTP 404" ;; *) 
 "$GD" 2>/dev/null; ck "no subcommand exits 2" 2 $?
 "$GD" widget "$D1" 2>/dev/null; ck "widget without id exits 2" 2 $?
 
+# --- M4: widget --run ----------------------------------------------------------------------------
+RUN='{"status":"success","data":{"result":[{"queryName":"A","series":[
+ {"labels":{"service_name":"api"},"values":[{"timestamp":1700000000000,"value":"1"},{"timestamp":1700000120000,"value":"3"}]}]},
+ {"queryName":"F1","series":[{"labels":{},"values":[{"timestamp":1700000000000,"value":"2"},{"timestamp":1700000120000,"value":"6"}]}]}]}}'
+reset_fx
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+fixture /api/v4/query_range <<<"$RUN"
+
+out="$("$GD" widget "$D1" w-promql --run --from -6h --summary 2>&1)"; ck "unresolved variable refused (exit 1)" 1 $?
+case "$out" in *'deployment_environment'*) ok "refusal names the variable" ;; *) bad "refusal names the variable" "$out" ;; esac
+ck "refusal sends nothing" 1 "$(grep -c 'api/v1/dashboards' "$FAKE_DIR/argv.log")"
+ck "refusal never reaches query_range" 0 "$(grep -c 'query_range' "$FAKE_DIR/argv.log")"
+
+reset_fx
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+fixture /api/v4/query_range <<<"$RUN"
+out="$("$GD" widget "$D1" w-promql --run --from -6h --var deployment_environment=staging --summary 2>"$T/err")"; ck "promql widget --run exits 0" 0 $?
+body="$(cat "$FAKE_DIR/body.json")"
+ck "run: composite is promql" promql "$(jq -r '.compositeQuery.queryType' <<<"$body")"
+ck "run: promQueries keyed by name, text exact" "$PQ" "$(jq -r '.compositeQuery.promQueries.A.query' <<<"$body")"
+ck "run: panelType from the widget" graph "$(jq -r '.compositeQuery.panelType' <<<"$body")"
+ck "run: --var lands in variables" staging "$(jq -r '.variables.deployment_environment' <<<"$body")"
+ck "run: window is 6h at 120s" '21600000 120' "$(jq -r '"\(.end - .start) \(.step)"' <<<"$body")"
+ck "run: one AC7 block per query name" 'A' "$(jq -rs '[.[].query] | join(" ")' <<<"$out")"
+ck "run: block has the AC7 shape" 'true true 3 rising' "$(jq -rs '.[0] | "\(has("window")) \(.series[0] | has("summary")) \(.series[0].summary.peak) \(.series[0].summary.trend)"' <<<"$out")"
+ck "run: --summary drops points" false "$(jq -rs '.[0].series[0] | has("points")' <<<"$out")"
+no_secret "widget run" "$out"
+
+reset_fx
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+fixture /api/v4/query_range <<<"$RUN"
+out="$("$GD" widget "$D1" w-builder --run --from -6h 2>"$T/err")"; ck "builder widget --run exits 0" 0 $?
+body="$(cat "$FAKE_DIR/body.json")"
+ck "run: composite is builder" builder "$(jq -r '.compositeQuery.queryType' <<<"$body")"
+ck "run: builderQueries keyed by queryName incl. formulas" 'A F1' "$(jq -r '.compositeQuery.builderQueries | keys | join(" ")' <<<"$body")"
+ck "run: dashboard default fills {{.service}}" api "$(jq -r '.variables.service' <<<"$body")"
+ck "run: a block per query name" 'A F1' "$(jq -rs '[.[].query] | join(" ")' <<<"$out")"
+ck "run: series routed to their query" '6' "$(jq -rs '.[1].series[0].summary.peak' <<<"$out")"
+
+reset_fx
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+out="$("$GD" widget "$D1" w-ch --run --from -1h --dry-run 2>&1)"; ck "widget --run --dry-run exits 0" 0 $?
+ck "run dry-run never reaches query_range" 0 "$(grep -c 'query_range' "$FAKE_DIR/argv.log")"
+case "$out" in *'POST http://signoz.test/api/v4/query_range'*) ok "run dry-run prints method + URL" ;; *) bad "run dry-run prints method + URL" "$out" ;; esac
+ck "run: chQueries keyed by name" 'SELECT count() FROM signoz_logs.logs' "$(sed -n '/^{/,$p' <<<"$out" | jq -r '.compositeQuery.chQueries.A.query')"
+no_secret "widget dry-run" "$out"
+
+reset_fx
+jq -n --argjson a "$DASH1" '{status: "success", data: $a}' | fixture "/api/v1/dashboards/$D1"
+fixture /api/v4/query_range <<<'{"status":"success","data":{"result":"something else"}}'
+out="$("$GD" widget "$D1" w-ch --run --from -1h 2>"$T/err")"; ck "unrecognized result shape exits 0" 0 $?
+case "$(cat "$T/err")" in *note:*) ok "unrecognized shape notes on stderr" ;; *) bad "unrecognized shape notes on stderr" "$(cat "$T/err")" ;; esac
+ck "unrecognized shape prints raw" 'something else' "$(jq -r '.data.result' <<<"$out")"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]
