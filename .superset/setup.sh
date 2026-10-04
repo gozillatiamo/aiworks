@@ -203,6 +203,8 @@ ensure_headroom || true
 # every clone that declares one, so a repo-only session is served by its own project too.
 # Declaring is not installing — measured: a repo whose settings.json
 # carried enabledPlugins still answered NOT-FOUND for caveman:caveman until the install ran.
+# A linked worktree is served by its MAIN checkout's install (Claude Code keys the project by
+# that path — docs/adr/0042), so here it is a registry read, never a per-worktree install.
 # After ensure_jq, since it reads the settings with jq.
 ensure_harness_plugins || true
 ensure_harness_statuslines || true

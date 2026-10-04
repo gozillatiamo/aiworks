@@ -172,6 +172,33 @@ out="$(cd "$fx" && bash -c 'set -e; source "$1"; run_product_setup_hooks; echo s
 ck "S6 a failing hook never aborts setup" "survived" "$out"
 ck "S6 a failing hook warns" "broken: setup_product failed" "$out"
 
+# S7 — a linked worktree is served by its MAIN checkout's plugin install (docs/adr/0042): Claude
+# Code keys a worktree's project by the main checkout path, so a per-worktree `plugin install`
+# only adds a stale registry row and rewrites the tracked settings.json. An independent clone
+# inside the worktree is a project of its own and still installs. Physical paths throughout:
+# $T sits under /var → /private/var on macOS.
+fx="$T/s7"; mkdir -p "$fx/h/.claude/plugins" "$fx/bin"
+settings='{"enabledPlugins":{"p@m":true}}'
+clone_repo "$fx/main"; mkdir -p "$fx/main/.claude"; printf '%s\n' "$settings" > "$fx/main/.claude/settings.json"
+git -C "$fx/main" -c user.email=t@t -c user.name=t add -A >/dev/null && git -C "$fx/main" -c user.email=t@t -c user.name=t commit -qm s
+git -C "$fx/main" worktree add -q "$fx/wt" 2>/dev/null
+clone_repo "$fx/wt/clone"; mkdir -p "$fx/wt/clone/.claude"; printf '%s\n' "$settings" > "$fx/wt/clone/.claude/settings.json"
+mainp="$(cd "$fx/main" && pwd -P)"; wtp="$(cd "$fx/wt" && pwd -P)"
+printf '{"version":1,"plugins":{"p@m":[{"scope":"project","projectPath":"%s","version":"1"}]}}\n' "$mainp" \
+  > "$fx/h/.claude/plugins/installed_plugins.json"
+printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "$(pwd -P)" "$*" >> "%s/claude.log"\n[[ "$1 $2 $3" == "plugin marketplace list" ]] && echo m\nexit 0\n' "$fx" > "$fx/bin/claude"
+chmod +x "$fx/bin/claude"
+plugins() { ( cd "$fx/wt" && PATH="$fx/bin:$PATH" HOME="$fx/h" bash -c 'source "$1"; ensure_claude_plugins' _ "$LIB" >/dev/null 2>&1 ); }
+: > "$fx/claude.log"; plugins; out="$(cat "$fx/claude.log")"
+ck "S7 worktree root: no install"              "ABSENT:$wtp plugin install"               "$out"
+ck "S7 independent clone still installs"       "$wtp/clone plugin install p@m -s project" "$out"
+st="$(git -C "$fx/wt" status --short .claude/settings.json)"
+[[ -z "$st" ]] && ok "S7 worktree's tracked settings untouched" || bad "S7 worktree's tracked settings untouched" "$st"
+printf '{"enabledPlugins":{"p@m":true,"q@m":true}}\n' > "$fx/wt/.claude/settings.json"
+: > "$fx/claude.log"; plugins; out="$(cat "$fx/claude.log")"
+ck "S7 branch-only plugin installs in the MAIN checkout" "$mainp plugin install q@m -s project" "$out"
+ck "S7 branch-only plugin: still no worktree install"    "ABSENT:$wtp plugin install"           "$out"
+
 echo
 echo "superset selftest: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]

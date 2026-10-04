@@ -676,28 +676,56 @@ ensure_agent_harnesses() {
 #
 # This matters most for caveman: it is the workspace's output-compression baseline, preloaded
 # by all 16 agent definitions. Without the install those 16 preloads resolve to nothing.
+#
+# A LINKED WORKTREE is not its own project (docs/adr/0042). Claude Code keys a worktree's project
+# by its MAIN checkout path (measured 2026-10-04: a worktree with no registry row of its own
+# loaded every plugin registered for the main checkout; a plain clone did not). A per-worktree
+# install therefore only added a registry row nothing ever removed and re-serialised the tracked
+# .claude/settings.json, dirtying every fresh worktree. So a worktree is reconciled AGAINST its
+# main checkout's entry, installing there only what the worktree's branch declares and the main
+# checkout lacks. An independent clone inside the worktree still installs for itself.
 ensure_claude_plugins() {
   command -v claude >/dev/null 2>&1 || { log "claude CLI not found — skipping plugin install."; return 0; }
   command -v jq >/dev/null 2>&1     || { warn "jq unavailable — cannot read enabledPlugins; install workspace plugins by hand (claude plugin install <plugin>@<marketplace> -s project)."; return 0; }
   # setup.sh cd's to the workspace root before anything runs (`cd "$(dirname "$0")/.."`), and
   # the rest of lib.sh anchors on $PWD for the same reason. Not SUPERSET_ROOT_PATH — that is a
   # DIFFERENT thing (the source worktree a fresh one copies its local state from).
-  local root="$PWD" dir
+  local root="$PWD" dir main
   for dir in "$root" "$root"/*/; do
     dir="${dir%/}"
     # The root always counts; a sibling directory only when it is a clone (node_modules/, docs/
     # and the generated mirrors carry no .git and declare no plugins of their own).
     [[ "$dir" == "$root" || -e "$dir/.git" ]] || continue
     [[ -f "$dir/.claude/settings.json" ]] || continue
-    ensure_claude_plugins_in "$dir"
+    main="$(git_main_checkout "$dir")"
+    if [[ "$main" != "$(cd "$dir" 2>/dev/null && pwd -P)" ]]; then
+      log "$dir is a linked worktree — plugins are the main checkout's ($main)."
+      ensure_claude_plugins_in "$main" "$dir/.claude/settings.json"
+    else
+      ensure_claude_plugins_in "$dir"
+    fi
   done
   return 0
 }
 
+# Physical path of the main checkout that owns <dir>'s git repo — Claude Code keys a linked
+# worktree's project by it (docs/adr/0042). Prints <dir> itself (physical) for a main checkout, a
+# non-repo, a bare main repo, or anything unresolvable, so callers can compare and fall back.
+git_main_checkout() {  # <dir>
+  local d c m
+  d="$(cd "$1" 2>/dev/null && pwd -P)" || { printf '%s\n' "$1"; return 0; }
+  c="$(git -C "$d" rev-parse --git-common-dir 2>/dev/null)" || { printf '%s\n' "$d"; return 0; }
+  case "$c" in /*) ;; *) c="$d/$c" ;; esac
+  m="$(cd "$(dirname "$c")" 2>/dev/null && pwd -P)" || m=""
+  if [[ -n "$m" && -d "$m/.git" ]]; then printf '%s\n' "$m"; else printf '%s\n' "$d"; fi
+}
+
 # The per-project half of ensure_claude_plugins. Separate so `aiworks update` can reuse the same
-# path resolution, and so a single project can be reconciled on its own.
-ensure_claude_plugins_in() {  # <project-dir>
-  local dir="$1" settings="$1/.claude/settings.json"
+# path resolution, and so a single project can be reconciled on its own. The optional second arg
+# is the settings file to read declarations from when it is not <project-dir>'s own — a linked
+# worktree's branch, reconciled against its main checkout's install.
+ensure_claude_plugins_in() {  # <project-dir> [settings-file]
+  local dir="$1" settings="${2:-$1/.claude/settings.json}"
   local reg="$HOME/.claude/plugins/installed_plugins.json" key mp src phys
   phys="$(cd "$dir" 2>/dev/null && pwd -P)" || phys="$dir"
   while IFS= read -r key; do
