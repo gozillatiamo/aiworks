@@ -1168,6 +1168,66 @@ default_product() {
   return 1
 }
 
+# Terraform local init from the root workspace, same switch as .env (symlink|copy).
+# cwd is the worktree. Shares .terraform (backend pointer + provider cache) plus a
+# gitignored .terraform.lock.hcl and terraform.tfvars. A committed lock is left alone.
+# `.terraform/` in gitignore does not match a symlink, so info/exclude lists `.terraform`.
+# rm -rf never follows a symlink — that would delete the root's init.
+provision_tf_local() {  # <root_ws> <symlink|copy>
+  local root_ws="$1" mode="$2" rel repo inside base src exclude tf_count=0 tf_verb
+  if [[ "$mode" == symlink ]]; then log "Symlinking Terraform local init from the root workspace ($root_ws)…"
+  else                              log "Copying Terraform local init from the root workspace ($root_ws)…"; fi
+  while IFS= read -r -d '' rel; do
+    rel="${rel#./}"
+    [[ "$rel" == */* ]] || continue
+    repo="${rel%%/*}"
+    inside="${rel#"$repo"/}"
+    if [[ ! -e "$repo/.git" ]]; then
+      warn "$repo not cloned here — skipping $rel."
+      continue
+    fi
+    base="$(basename "$rel")"
+    if [[ "$base" != .terraform ]] && ! git -C "$repo" check-ignore -q -- "$inside"; then
+      continue
+    fi
+    src="$root_ws/$rel"
+    mkdir -p "$(dirname "$rel")"
+    if [[ "$mode" == symlink ]]; then
+      if [[ -L "$rel" && "$(readlink "$rel")" == "$src" ]]; then
+        tf_count=$((tf_count + 1))
+      else
+        if [[ -L "$rel" ]]; then rm -f "$rel"
+        elif [[ -d "$rel" ]]; then rm -rf "$rel"
+        elif [[ -e "$rel" ]]; then rm -f "$rel"
+        fi
+        if ln -s "$src" "$rel" 2>/dev/null; then echo "    linked $rel"; tf_count=$((tf_count + 1))
+        else warn "could not symlink $rel"; fi
+      fi
+    else
+      if [[ -L "$rel" ]]; then rm -f "$rel"
+      elif [[ -d "$rel" ]]; then rm -rf "$rel"
+      elif [[ -e "$rel" ]]; then rm -f "$rel"
+      fi
+      if cp -a "$src" "$rel" 2>/dev/null; then echo "    copied $rel"; tf_count=$((tf_count + 1))
+      else warn "could not copy $rel"; fi
+    fi
+    if [[ "$base" == .terraform ]]; then
+      exclude="$(git -C "$repo" rev-parse --git-path info/exclude 2>/dev/null || true)"
+      if [[ -n "$exclude" ]]; then
+        [[ "$exclude" == /* ]] || exclude="$repo/$exclude"
+        mkdir -p "$(dirname "$exclude")"
+        touch "$exclude"
+        grep -qxF '.terraform' "$exclude" 2>/dev/null || echo '.terraform' >> "$exclude"
+      fi
+    fi
+  done < <(cd "$root_ws" && find . \
+      \( -path ./scripts -o -name node_modules -o -name .git -o -name .next -o -name dist -o -name build -o -name target -o -name .venv -o -name db-data \) -prune \
+      -o -type d -name '.terraform' -print0 -prune \
+      -o -type f \( -name '.terraform.lock.hcl' -o -name 'terraform.tfvars' \) -print0)
+  tf_verb="linked"; [[ "$mode" == copy ]] && tf_verb="copied"
+  log "$tf_verb $tf_count Terraform local path(s) from the root workspace."
+}
+
 # Source the product definition file; lists available products on a miss.
 load_product() {  # <product>
   local product="$1" file=".superset/products/$1.sh"

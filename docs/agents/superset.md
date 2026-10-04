@@ -16,7 +16,7 @@ main checkout; all three are idempotent. Why this is shaped so: `docs/adr/0041`.
 | 2 | Provision the adapter credentials (`scripts/{tracker,notify,vcs}/.env`) from the root workspace — before tooling and sync, so any adapter call during onboarding has them | `SUPERSET_ENV=symlink\|copy\|skip` |
 | 3 | Ensure host tooling: `jq`, `ngrok`, `glab`, `pnpm`, `dap` (best-effort); reconcile the declared Claude plugins at project scope — main checkout and independent clones; a linked worktree uses its main checkout's install | — |
 | 4 | `aiworks sync -y` — clone and fully onboard every repo under `products[]` | — |
-| 5 | Copy the real local state from the root workspace: every `.env*`, seeded `db-data`, signing secrets, the product files `.superset/products/*.sh` | `SUPERSET_ENV`, `SUPERSET_DB_DATA`, `SUPERSET_SIGNING`, `SUPERSET_PRODUCTS` (each `symlink\|copy\|skip`) |
+| 5 | Copy the real local state from the root workspace: every `.env*`, Terraform local init (`.terraform`, gitignored lock + `terraform.tfvars`), seeded `db-data`, signing secrets, the product files `.superset/products/*.sh` | `SUPERSET_ENV` (env and Terraform), `SUPERSET_DB_DATA`, `SUPERSET_SIGNING`, `SUPERSET_PRODUCTS` (each `symlink\|copy\|skip`) |
 | 6 | Install Node dependencies, check each repo's `.env` | — |
 | 6b | Run each product's optional `setup_product` hook | — |
 | 7 | Start the shared MCP services; list the `.env` files still needing values | — |

@@ -41,9 +41,10 @@
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
 # 5. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
-#    .superset/.env) recursively, every repo's seeded db-data Postgres cluster, AND any
-#    Android release-signing secrets (key.properties + the keystore). Runs before the
-#    MCP services so they come up on real config + a seeded DB.
+#    .superset/.env) recursively, Terraform local init (.terraform, the lock file,
+#    terraform.tfvars — same SUPERSET_ENV switch), every repo's seeded db-data Postgres
+#    cluster, AND any Android release-signing secrets (key.properties + the keystore).
+#    Runs before the MCP services so they come up on real config + a seeded DB.
 # 6. Installs Node dependencies in every repo that has a package.json
 #    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this), checks each
 #    repo's .env, then runs each product's optional `setup_product` hook
@@ -226,6 +227,11 @@ scripts/aiworks sync "${sync_args[@]}"
 #     adapters' own scripts/*/.env were already provisioned in step 2 and are pruned here.
 #     SUPERSET_ENV (default symlink) → symlink each at the root's (edit once, every worktree
 #     sees it), =copy for an independent per-worktree snapshot, or =skip to manage them yourself.
+#   • Terraform local init, same SUPERSET_ENV switch: a `.terraform` directory (backend
+#     pointer + provider cache), plus a gitignored `.terraform.lock.hcl` and `terraform.tfvars`
+#     beside it. Remote state stays in the backend; this only shares the local init so
+#     `terraform plan` works in a fresh worktree. A `.terraform/` gitignore does not match a
+#     symlink, so the repo's `.git/info/exclude` also lists `.terraform`.
 #   • <repo>/db-data — a seeded local Postgres cluster a DB repo's containers bind-mount;
 #     without it the local DB comes up empty. Every <repo>/db-data dir found in the root
 #     workspace is provisioned. SUPERSET_DB_DATA (default symlink — instant, no big copy,
@@ -276,6 +282,13 @@ if [[ "$has_root" == 1 ]]; then
         -o -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -print0)
     env_verb="linked"; [[ "$env_mode" == copy ]] && env_verb="copied"
     log "$env_verb $env_count env file(s) from the root workspace."
+  fi
+
+  # Terraform local init — same SUPERSET_ENV switch as .env. See the step-5 header.
+  if [[ "$env_mode" == skip ]]; then
+    log "terraform: SUPERSET_ENV=skip — leaving tf local state as-is."
+  else
+    provision_tf_local "$root_ws" "$env_mode"
   fi
 
   # .superset/products/*.sh — the real product definition(s) (git-ignored; only example.sh

@@ -199,6 +199,42 @@ printf '{"enabledPlugins":{"p@m":true,"q@m":true}}\n' > "$fx/wt/.claude/settings
 ck "S7 branch-only plugin installs in the MAIN checkout" "$mainp plugin install q@m -s project" "$out"
 ck "S7 branch-only plugin: still no worktree install"    "ABSENT:$wtp plugin install"           "$out"
 
+echo "provision_tf_local"
+fx="$T/tf"
+rootp="$fx/root"; wtp="$fx/wt"; w2="$fx/wt-copy"
+mkdir -p "$rootp/app-a/infra/terraform/.terraform" "$rootp/app-b/infra/terraform" \
+         "$wtp/app-a/infra/terraform" "$wtp/app-b/infra/terraform" \
+         "$w2/app-a/infra/terraform"
+printf 'root-state\n' > "$rootp/app-a/infra/terraform/.terraform/terraform.tfstate"
+printf 'project_id = "p"\n' > "$rootp/app-a/infra/terraform/terraform.tfvars"
+printf 'lock-root\n' > "$rootp/app-a/infra/terraform/.terraform.lock.hcl"
+printf 'lock-root\n' > "$rootp/app-b/infra/terraform/.terraform.lock.hcl"
+printf '.terraform/\nterraform.tfvars\n.terraform.lock.hcl\n' > "$wtp/app-a/.gitignore"
+printf 'lock-wt\n' > "$wtp/app-b/infra/terraform/.terraform.lock.hcl"
+git init -q "$wtp/app-a"
+git -C "$wtp/app-a" -c user.email=t@t -c user.name=t add .gitignore
+git -C "$wtp/app-a" -c user.email=t@t -c user.name=t commit -qm gi
+git init -q "$wtp/app-b"
+git -C "$wtp/app-b" -c user.email=t@t -c user.name=t add -A
+git -C "$wtp/app-b" -c user.email=t@t -c user.name=t commit -qm lock
+cp -a "$wtp/app-a/.git" "$w2/app-a/.git"
+cp "$wtp/app-a/.gitignore" "$w2/app-a/.gitignore"
+( cd "$wtp" && bash -c 'source "$1"; provision_tf_local "$2" symlink' _ "$LIB" "$rootp" >/dev/null )
+( cd "$wtp" && bash -c 'source "$1"; provision_tf_local "$2" symlink' _ "$LIB" "$rootp" >/dev/null )
+[[ -L "$wtp/app-a/infra/terraform/.terraform" && "$(readlink "$wtp/app-a/infra/terraform/.terraform")" == "$rootp/app-a/infra/terraform/.terraform" ]] \
+  && ok "TF symlink .terraform → root" || bad "TF symlink .terraform → root" "$(readlink "$wtp/app-a/infra/terraform/.terraform" 2>/dev/null)"
+[[ "$(cat "$wtp/app-a/infra/terraform/.terraform/terraform.tfstate")" == "root-state" ]] \
+  && ok "TF state readable through the link" || bad "TF state readable through the link"
+[[ -L "$wtp/app-a/infra/terraform/terraform.tfvars" && -L "$wtp/app-a/infra/terraform/.terraform.lock.hcl" ]] \
+  && ok "TF tfvars and lock linked" || bad "TF tfvars and lock linked"
+[[ "$(grep -cxF '.terraform' "$wtp/app-a/.git/info/exclude")" == 1 ]] \
+  && ok "TF exclude lists .terraform once" || bad "TF exclude lists .terraform once" "$(grep -c terraform "$wtp/app-a/.git/info/exclude")"
+[[ ! -L "$wtp/app-b/infra/terraform/.terraform.lock.hcl" && "$(cat "$wtp/app-b/infra/terraform/.terraform.lock.hcl")" == "lock-wt" ]] \
+  && ok "TF committed lock left in place" || bad "TF committed lock left in place"
+( cd "$w2" && bash -c 'source "$1"; provision_tf_local "$2" copy' _ "$LIB" "$rootp" >/dev/null )
+[[ ! -L "$w2/app-a/infra/terraform/.terraform" && "$(cat "$w2/app-a/infra/terraform/.terraform/terraform.tfstate")" == "root-state" ]] \
+  && ok "TF copy is a real directory" || bad "TF copy is a real directory"
+
 echo
 echo "superset selftest: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]
