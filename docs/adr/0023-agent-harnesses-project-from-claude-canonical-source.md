@@ -1,6 +1,9 @@
 # Agent harnesses project from the Claude canonical source
 
-**Status:** Accepted
+**Status:** Accepted. Amended by
+[ADR 0040](0040-cursor-agents-run-on-auto-and-fall-back-on-a-usage-limit.md): Cursor workflow
+agents run on `auto` and retry once by tier on a usage-limit block; interactive Cursor subagents
+are generated with `model: inherit`.
 
 The authored agent configuration remains under `.claude/`, with the shared MCP registry in
 `.mcp.json`. An organization declares its supported Harness set in `workspace.config.yaml`;

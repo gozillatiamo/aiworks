@@ -351,6 +351,12 @@ The non-empty, git-ignored subset of the supported Harness set used for one mach
 plugin, status-line, and local MCP lifecycle.
 _Avoid_: shared projection selection
 
+**Usage-limit fallback**:
+The one model a Cursor workflow call retries on, once, after `auto` is blocked by the account's
+usage limit — chosen by the role's tier (`grok-4.7-high`; `composer-2.5` for `haiku`). Not a retry
+for any other failure. → `docs/adr/0040`
+_Avoid_: model fallback, quota retry
+
 **Harness projection**:
 A derived, harness-specific face of the canonical agent configuration. It uses symlinks where the
 harness accepts the canonical format and generated adapters where it does not.

@@ -49,7 +49,7 @@ Every other Harness is a projection:
 |---|---|---|---|
 | Project guidance | `CLAUDE.md` | `AGENTS.md` symlink | same `AGENTS.md` symlink |
 | Skills | `.claude/skills/` | `.cursor/skills` symlink | `.agents/skills` symlink |
-| Agents | `.claude/agents/*.md` | `.cursor/agents` symlink | generated `.codex/agents/*.toml` |
+| Agents | `.claude/agents/*.md` | generated `.cursor/agents/*.md` (`model` → `inherit`) | generated `.codex/agents/*.toml` |
 | Instruction rules | `.claude/rules/*.md` | `.cursor/rules/*.mdc` links/slices | generated scope index + direct-read hook |
 | Hooks | `.claude/settings.json` + `.claude/hooks/` | generated wiring + shim | generated wiring + shim |
 | MCP | `.mcp.json` | generated `.cursor/mcp.json` (root: `.mcp.json` + registered triage) | generated `.codex/config.toml` tables (root adds registered triage) |
@@ -154,7 +154,8 @@ export async function run({ root, role, definition, prompt, schema, options }) {
 The adapter must:
 
 - execute the role through its Harness rather than impersonating it in the outer session;
-- preserve or intentionally map model/effort policy;
+- preserve or intentionally map model/effort policy — Cursor: `auto` plus a one-shot usage-limit
+  tier fallback (`docs/adr/0040`);
 - enforce the least filesystem/tool permissions the canonical role allows;
 - return a value conforming to the existing workflow JSON Schema;
 - retry malformed output only within a documented bound, then fail closed;

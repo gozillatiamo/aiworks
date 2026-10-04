@@ -1,6 +1,8 @@
 # Cursor gets a generated mirror of the Claude config, built from symlinks
 
-**Status:** Accepted
+**Status:** Accepted. Amended by
+[ADR 0040](0040-cursor-agents-run-on-auto-and-fall-back-on-a-usage-limit.md): `.cursor/agents/*.md`
+are generated, not linked.
 
 The workspace is authored for Claude Code. Cursor reads a different set of paths for the same
 concepts: `AGENTS.md` instead of `CLAUDE.md`, `.cursor/rules/*.mdc` instead of `.claude/rules/*.md`,
@@ -42,6 +44,11 @@ Exactly three files are generated rather than linked, because their formats have
 A fourth joined them under `docs/adr/0038`: the root's `.cursor/mcp.json` was a symlink to
 `../.mcp.json` and is now generated too, since it carries `.mcp.json`'s servers plus this root's own
 triage registrations (project scope, git-ignored) — a shape no symlink can hold.
+
+A fifth under [ADR 0040](0040-cursor-agents-run-on-auto-and-fall-back-on-a-usage-limit.md):
+`.cursor/agents/*.md`. Subagents turned out not to be the "lucky pair" after all — `model:` carries
+Claude's tier vocabulary, which Cursor resolves to quota-gated Claude models rather than ignoring,
+so each agent is now a generated copy with that one key rewritten to `inherit`.
 
 ## The hook shim is the one deliberate copy
 

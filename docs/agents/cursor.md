@@ -25,7 +25,7 @@ are linked on every root run.)
 | Rules | `.claude/rules/*.md` | `.cursor/rules/*.mdc` → symlink per file |
 | Skills | `.claude/skills/` | `.cursor/skills` → symlink (dir) |
 | Plugin skills (`caveman`, …) | `~/.claude/plugins/…` | `.claude/skills/<name>` → symlink — **generated, git-ignored** |
-| Subagents | `.claude/agents/` | `.cursor/agents` → symlink (dir) |
+| Subagents | `.claude/agents/*.md` | `.cursor/agents/*.md` — **generated** (`model:` → `inherit`, [ADR 0040](../adr/0040-cursor-agents-run-on-auto-and-fall-back-on-a-usage-limit.md)) |
 | MCP | `.mcp.json` (root) | `.cursor/mcp.json` → generated (root only, `docs/adr/0038`) |
 | Hooks | `hooks` in `.claude/settings.json` | `.cursor/hooks.json` — **generated** |
 | Permissions | `permissions` in `.claude/settings.json` | `.cursor/cli.json` — **generated** |
@@ -33,7 +33,7 @@ are linked on every root run.)
 | Each repo's instruction + rules, for a **root** session | `<repo>/CLAUDE.md`, `<repo>/.claude/rules/` | `.cursor/rules/repos/<repo>/*.mdc` — **generated** |
 | Workflows | `.claude/workflows/src/{brd,prd,dev-cycle}.js` | `aiworks workflow --harness cursor` — shared runtime |
 
-Only those last four are not symlinks; the rest is one file read by both tools. Rule frontmatter
+Only those last five are not symlinks; the rest is one file read by both tools. Rule frontmatter
 therefore carries `paths:` (Claude) **and** `globs:` (Cursor) — `aiworks cursor` keeps them in step,
 so never hand-add one without the other. Why it is built this way:
 [ADR 0004](../adr/0004-cursor-as-a-generated-mirror.md).
@@ -135,18 +135,29 @@ different mechanism, and the hook still earns its place on the Claude Code side.
 
 ## Set your model to `auto`
 
-Subagent files carry `model: opus` / `sonnet` / `haiku` — Claude Code's vocabulary, which Cursor
-does not share (its ids look like `claude-opus-5-high`, `composer-2.5`, `auto`). Cursor ignores a
-model value it cannot resolve rather than failing, so the files are left alone and Cursor falls back
-to your session model. Set that to **`auto`** — `cursor-agent --model auto`, or the model picker in
-the IDE. Note that every Claude model Cursor offers is a 1M-context variant, which is not what this
+The canonical subagents carry `model: opus` / `sonnet` / `haiku` / `fable` — Claude Code's
+vocabulary. Cursor does **not** ignore those: measured on `cursor-agent 2026.09.26`, `opus` and
+`sonnet` are aliases for quota-gated Claude models and fail with `ActionRequiredError: You've hit
+your usage limit`, while `haiku` and `fable` are refused as unknown ids. So `aiworks cursor`
+generates `.cursor/agents/*.md` with that one key rewritten to `model: inherit`: every subagent
+follows your session model. Keep that on **`auto`** — `cursor-agent --model auto`, or the model
+picker in the IDE. Every Claude model Cursor offers is a 1M-context variant, which is not what this
 workspace wants pinned; `auto` sidesteps that too.
+
+If your session model is itself blocked by a usage limit, switch it in the picker (Grok or
+Composer are the measured-unblocked choices). Interactive Cursor cannot fall back automatically —
+there is no model-switch hook and `subagentStart` never fires. Only workflow runs retry (below).
+Details and the measurements:
+[ADR 0040](../adr/0040-cursor-agents-run-on-auto-and-fall-back-on-a-usage-limit.md).
 
 ## Workflow support and remaining differences
 
 **Workflows now cross without copies.** Invoke `/dev-cycle FM-123`, `/prd phase-2`, or `/brd …` in
 Cursor. The canonical skill launches `aiworks workflow <name> --harness cursor`; each `agent()` call
-runs through `cursor-agent -p --model auto`, its final JSON is validated against the Workflow's
+runs through `cursor-agent -p --model auto` — retried once on the usage-limit block with the role's
+tier fallback (`fable`/`opus`/`sonnet` → `grok-4.7-high`, `haiku` → `composer-2.5`; a stderr line
+`aiworks workflow: Cursor usage limit on auto — retrying <tier> role on <model>` names it; any other
+failure is not retried) — its final JSON is validated against the Workflow's
 existing schema, and a malformed response is resumed with the exact errors at most twice before
 the phase fails. The runtime preserves deterministic phase order and bounded parallelism. Cursor
 does not expose the same token ledger through every CLI release, so the runtime labels a
@@ -228,7 +239,8 @@ Change a hook by editing it under `.claude/hooks/`. Change the *translation* by 
    `aiworks harnesses configure --reconfigure`.
 2. `aiworks sync` — clones the repos and projects the Cursor layer as part of the run. That
    includes the plugin skills, so nothing extra is needed to get `caveman` in Cursor.
-3. Keep the Cursor model on `auto`; the workflow adapter also pins `auto` deliberately.
+3. Keep the Cursor model on `auto`; the workflow adapter also pins `auto` deliberately and falls
+   back by tier once if a usage limit blocks it (§"Set your model to `auto`").
 4. Open `<workspace>.code-workspace`, or open one repo at a time. Not the meta-repo folder.
 
 MCP servers need a one-time per-server approval in Cursor (`cursor-agent mcp list` shows them as
