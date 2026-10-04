@@ -9,10 +9,13 @@
 # .cursor/skills/, .cursor/agents/, .cursor/hooks.json, .cursor/cli.json,
 # .cursor/mcp.json. This script builds that second face WITHOUT duplicating any
 # content: everything whose format is already compatible becomes a SYMLINK back to
-# the Claude-side file, so there is exactly one copy of every rule, skill, and
-# agent on disk and no drift is possible.
+# the Claude-side file, so there is exactly one copy of every rule and skill on
+# disk and no drift is possible.
 #
 # What IS generated, because its format has no common shape to link:
+#   .cursor/agents/*.md       each canonical agent with `model:` -> `inherit` — Cursor
+#                             resolves Claude's tier names to quota-gated models
+#                             (docs/adr/0040); line 2 is an ownership marker
 #   .cursor/hooks.json        Claude's hook block, re-expressed in Cursor's schema
 #   .cursor/cli.json          Claude's permissions, re-expressed in Cursor's schema
 #   .cursor/hooks/hook-shim.sh  a copy of scripts/cursor/hook-shim.template.sh
@@ -103,6 +106,9 @@ TEMPLATE="$ROOT/scripts/cursor/hook-shim.template.sh"
 [[ -f "$TEMPLATE" ]] || die "missing $TEMPLATE — the shim template is the source for every repo's copy"
 AWKRULE="$ROOT/scripts/cursor/root-rule.awk"
 [[ -f "$AWKRULE" ]] || die "missing $AWKRULE — needed to re-scope a repo's rules for a root session"
+AWKAGENT="$ROOT/scripts/cursor/agent.awk"
+[[ -f "$AWKAGENT" ]] || die "missing $AWKAGENT — needed to project .claude/agents onto Cursor"
+AGENT_MARK='# aiworks-cursor: generated from'   # line 2 of every agent file this script owns
 command -v jq >/dev/null 2>&1 || die "jq is required (brew install jq)"
 
 # Parse products[].repos[] → repo dir names. Same indentation contract as
@@ -222,6 +228,47 @@ sync_rules() {
       rm -f "$lnk"; CHANGED=$((CHANGED+1)); ok "removed dangling ${lnk#"$base"/}"
     fi
   done < <(find "$dst" -name '*.mdc' 2>/dev/null)
+}
+
+# ── .cursor/agents — one generated file per .claude/agents/*.md ───────────────
+# Not a link: `model:` carries Claude's tier vocabulary, which Cursor resolves to
+# quota-gated Claude models (opus/sonnet) or rejects (haiku/fable). agent.awk
+# rewrites that one key to `inherit` and stamps line 2 with AGENT_MARK; only files
+# carrying the marker are ever overwritten or deleted (docs/adr/0040).
+sync_agents() {
+  local base="$1" src="$1/.claude/agents" dst="$1/.cursor/agents" label="agents"
+  [[ -d "$src" ]] || { dim "no .claude/agents"; return 0; }
+  # An earlier version linked the whole directory. Migrate it, as mcp.json was.
+  if [[ -L "$dst" ]]; then
+    if [[ "$(readlink "$dst")" != "../.claude/agents" ]]; then
+      note "$label/: $dst is a symlink to $(readlink "$dst"), not generator-owned — leaving it alone"; return 0
+    fi
+    if [[ "$CHECK" -eq 1 ]]; then drift "$label/ is still the legacy link to ../.claude/agents"; return 0; fi
+    rm -f "$dst"
+  elif [[ -e "$dst" && ! -d "$dst" ]]; then
+    note "$label/: $dst is a real file, not a directory — resolve it by hand, leaving it alone"; return 0
+  fi
+  local f n gen
+  while IFS= read -r f; do
+    n="$(basename "$f")"
+    if [[ -f "$dst/$n" ]] && ! grep -qF "$AGENT_MARK" "$dst/$n"; then
+      note "$label/$n is a hand-written Cursor agent, not generated — rename it or delete it so .claude/agents/$n can be projected"
+      continue
+    fi
+    gen="$(mktemp)"   # temp file, not a pipe: emit's counters must survive
+    awk -v src=".claude/agents/$n" -f "$AWKAGENT" "$f" > "$gen"
+    emit "$dst/$n" "$label/$n" < "$gen"
+    rm -f "$gen"
+  done < <(find "$src" -maxdepth 1 -name '*.md' | sort)
+  # Prune generated files whose canonical source is gone.
+  [[ -d "$dst" ]] || return 0
+  while IFS= read -r f; do
+    n="$(basename "$f")"
+    [[ -f "$src/$n" ]] && continue
+    grep -qF "$AGENT_MARK" "$f" || continue
+    if [[ "$CHECK" -eq 1 ]]; then drift "orphaned generated $label/$n — its .claude/agents source is gone"
+    else rm -f "$f"; CHANGED=$((CHANGED+1)); ok "removed orphaned $label/$n"; fi
+  done < <(find "$dst" -maxdepth 1 -type f -name '*.md' | sort)
 }
 
 # ── .cursor/hooks.json — Claude's hook block in Cursor's schema ───────────────
@@ -519,9 +566,10 @@ do_target() {
     dim "no CLAUDE.md — nothing to expose as AGENTS.md"
   fi
 
-  # 2. Skills and agents: identical on-disk format, so a directory symlink is enough.
+  # 2. Skills: identical on-disk format, so a directory symlink is enough. Agents are
+  #    generated per file — their `model:` vocabulary is not shared (docs/adr/0040).
   link "$base/.cursor/skills" "../.claude/skills" "skills/"
-  link "$base/.cursor/agents" "../.claude/agents" "agents/"
+  sync_agents "$base"
 
   # 2b. The plugin skills this target depends on, vendored as committed copies — a symlink
   #     would dangle for anyone who clones without the plugin. Reaches Cursor through the
@@ -826,6 +874,16 @@ remove_cursor_target() { # <base> <label> <is-root>
     elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned ${p#"$base"/} remains"
     else rm -f "$p"; CHANGED=$((CHANGED+1)); ok "removed ${p#"$base"/}"; fi
   done
+
+  # Generated agents carry the ownership marker on line 2; a hand-written one does not.
+  if [[ -d "$base/.cursor/agents" && ! -L "$base/.cursor/agents" ]]; then
+    while IFS= read -r p; do
+      grep -qF "$AGENT_MARK" "$p" || continue
+      if [[ "$DRY" -eq 1 ]]; then warn "would remove ${p#"$base"/}"
+      elif [[ "$CHECK" -eq 1 ]]; then drift "generator-owned ${p#"$base"/} remains"
+      else rm -f "$p"; CHANGED=$((CHANGED+1)); ok "removed ${p#"$base"/}"; fi
+    done < <(find "$base/.cursor/agents" -maxdepth 1 -type f -name '*.md' 2>/dev/null)
+  fi
 
   # The root's generated (not linked) project-scope mcp.json (docs/adr/0038) — only
   # when its content still matches what this projector would render, so a repo's own
