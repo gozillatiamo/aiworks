@@ -501,6 +501,24 @@ ck "a user-scope copy does not clear it"            "ABSENT:declared plugin(s) i
 JOUT="$(HOME="$FH" CLAUDE_CONFIG_DIR="$FH/.claude" "$W/scripts/aiworks-doctor.sh" --only agent-cfg --json 2>&1)"
 ck "the fix runs the one script that owns the install" "ensure_claude_plugins" "$JOUT"
 
+# A LINKED WORKTREE has no project entry of its own and never will: Claude Code keys its project
+# by the MAIN checkout path, and setup installs there (docs/adr/0042). So the check must read the
+# main checkout's entry, or every Superset worktree reports a finding its owner command cannot
+# clear. The worktree is created first — make_ws's `mkdir .git/info` then fails on the gitlink
+# file (harmless, silenced) and `git init` re-initialises the linked worktree in place.
+M="$T/pluginmain"; git init -q "$M"
+git -C "$M" -c user.email=s@t -c user.name=s commit -qm init --allow-empty
+W="$T/pluginwt"; git -C "$M" worktree add -q "$W" 2>/dev/null
+make_ws "$W" 2>/dev/null; stage "$W"
+printf '{"hooks":{},"enabledPlugins":{"caveman@caveman":true}}\n' > "$W/.claude/settings.json"
+cat > "$FH/.claude/plugins/installed_plugins.json" <<JSON
+{"version":1,"plugins":{"caveman@caveman":[
+ {"scope":"project","projectPath":"$M","version":"SAME777","lastUpdated":"2026-07-20T11:15:27.000Z"}]}}
+JSON
+OUT="$(run_ps)"
+ck "a linked worktree is served by its main checkout's copy" "ABSENT:not installed in this project" "$OUT"
+ck "… and is reported installed"                             "installed at project scope"           "$OUT"
+
 # ── 20 · triage: sync reports it, doctor scores it, a human bootstraps it ─────────
 # `aiworks sync` no longer registers the triage MCPs and no longer probes GKE (docs/adr/0009),
 # which makes this group the only thing that scores either. So it has to stay quiet on a machine

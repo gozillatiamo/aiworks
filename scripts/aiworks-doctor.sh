@@ -989,7 +989,9 @@ EOF
     # with — on macOS a /var/… symlink of /private/var/… is the same directory spelled two ways,
     # and a string compare silently matches nothing. Caught by the selftest, not by inspection.
     local pkey diverged="" missing="" installed=0 uv pv ep ev el rootp
-    rootp="$(cd "$ROOT" 2>/dev/null && pwd -P)" || rootp="$ROOT"
+    # In a linked worktree the project entry is the MAIN checkout's: Claude Code keys the
+    # worktree's project by that path and setup installs there (docs/adr/0042).
+    rootp="$(cd "${MAIN_CLONE:-$ROOT}" 2>/dev/null && pwd -P)" || rootp="$ROOT"
     while IFS= read -r pkey; do
       [[ -z "$pkey" ]] && continue
       uv="$(jq -r --arg k "$pkey" '(((.plugins // .)[$k]) // [])[] | select(.scope == "user") | .version' "$reg" 2>/dev/null | head -1)"
