@@ -12,15 +12,26 @@ function usage(events, prompt, result) {
   return { tokens: Math.ceil(observed / 3.2), accounting: "conservative-estimate" };
 }
 
-async function call(root, prompt, plan, resume = "") {
+// Every call starts on `auto` (docs/adr/0023). Measured on cursor-agent 2026.09.26: `auto` ran
+// while `--model opus`/`sonnet` were refused with an ActionRequiredError on the account's usage
+// limit, and `haiku`/`fable` are not Cursor ids at all. When `auto` itself is blocked the same
+// way, one retry on the role tier's fallback is the only move the adapter makes; every other
+// failure is rethrown untouched (docs/adr/0040). Ids verified against this account's
+// `cursor-agent --list-models`; a stale one fails closed with `Cannot use this model`.
+const FALLBACK = { fable: "grok-4.7-high", opus: "grok-4.7-high", sonnet: "grok-4.7-high", haiku: "composer-2.5" };
+export const fallbackModel = (tier) => FALLBACK[tier] || FALLBACK.opus;
+export const isUsageLimit = (error) => /ActionRequiredError|hit your usage limit/i.test(String(error?.message || ""));
+
+async function call(root, prompt, plan, model, resume = "") {
   const cli = process.env.AIWORKS_CURSOR_CLI || "cursor-agent";
-  const args = ["-p", "--trust", "--output-format", "stream-json", "--stream-partial-output", "--model", "auto"];
+  const args = ["-p", "--trust", "--output-format", "stream-json", "--stream-partial-output", "--model", model];
   if (resume) args.push("--resume", resume);
   if (plan) args.push("--mode", "plan"); else args.push("--force");
   const result = await runProcess(cli, args, prompt, { root });
   const events = parseJsonLines(result.stdout);
   const terminal = [...events].reverse().find((event) => event.type === "result");
-  if (!terminal || terminal.is_error) throw new Error("Cursor stream ended without a successful result event");
+  // The result text rides on the error so a limit reported in-stream is recognisable too.
+  if (!terminal || terminal.is_error) throw new Error(`Cursor stream ended without a successful result event: ${terminal?.result || ""}`);
   return {
     text: String(terminal.result || ""),
     session: String(terminal.session_id || ""),
@@ -37,9 +48,22 @@ async function call(root, prompt, plan, resume = "") {
 // bound in the message so a reader of the failure knows how many attempts they are looking at.
 const CORRECTION_ATTEMPTS = 3;
 
-export async function run({ root, definition, prompt, schema }) {
+export async function run({ root, definition, prompt, schema, options = {} }) {
   const plan = definition.data.permissionMode === "plan";
-  let response = await call(root, prompt, plan);
+  const tier = options.model || definition.data.model;
+  let model = "auto";
+  // Falls back at most once per run(): after it, `model` is no longer "auto" and a second block
+  // is rethrown. Corrections resume on whatever model the session is on (AC5).
+  async function invoke(text, resume) {
+    try { return await call(root, text, plan, model, resume); }
+    catch (error) {
+      if (model !== "auto" || !isUsageLimit(error)) throw error;
+      model = fallbackModel(tier);
+      process.stderr.write(`aiworks workflow: Cursor usage limit on auto — retrying ${tier || "untiered"} role on ${model}\n`);
+      return call(root, text, plan, model, resume);
+    }
+  }
+  let response = await invoke(prompt);
   let spent = response.usage.tokens;
   let accounting = response.usage.accounting;
   try {
@@ -56,7 +80,7 @@ export async function run({ root, definition, prompt, schema }) {
         if (last) throw error;
         correction = `Your prior response was not valid JSON: ${error.message}\nReturn only a corrected JSON object.`;
       }
-      response = await call(root, correction, plan, response.session);
+      response = await invoke(correction, response.session);
       spent += response.usage.tokens;
       if (response.usage.accounting !== "reported") accounting = response.usage.accounting;
     }

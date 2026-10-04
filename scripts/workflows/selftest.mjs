@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { run as runCodex, strictOutputSchema } from "./adapters/codex.mjs";
 import { runProcess } from "./adapters/common.mjs";
-import { run as runCursor } from "./adapters/cursor.mjs";
+import { fallbackModel, isUsageLimit, run as runCursor } from "./adapters/cursor.mjs";
 import { bannedCheck, BUDGET, CAP, strip, verify } from "./build.mjs";
 
 const exec = promisify(execFile);
@@ -122,6 +122,78 @@ await assert.rejects(
   runCursor({ root, definition, prompt: "return JSON", schema }),
   (error) => error.spent === 15 && error.accounting === "reported",
 );
+
+// ── Cursor usage-limit fallback (docs/adr/0040) ───────────────────────────────────────
+// Measured on cursor-agent 2026.09.26: `auto` runs while `opus`/`sonnet` are blocked with an
+// ActionRequiredError on the account's usage limit. The adapter starts every call on `auto` and,
+// ONLY on that block, retries once on the tier's fallback. Anything else fails as before.
+for (const tier of ["fable", "opus", "sonnet"]) assert.equal(fallbackModel(tier), "grok-4.7-high", tier);
+assert.equal(fallbackModel("haiku"), "composer-2.5");
+assert.equal(fallbackModel(undefined), "grok-4.7-high", "an untiered role falls back like opus");
+for (const [text, want] of [
+  ["cursor-agent exited 1: ActionRequiredError: You've hit your usage limit for Opus. Switch to a different model", true],
+  ["cursor-agent exited 1: You've hit your usage limit You've saved $265 this month", true],
+  ["cursor-agent exited 1: Cannot use this model: haiku. Available models: auto", false],
+  ["Cursor schema correction exhausted after 3 attempts", false],
+  ["cursor-agent exited 1: boom", false],
+]) assert.equal(isUsageLimit(new Error(text)), want, text);
+
+// One fake CLI, four behaviours selected by FIXTURE_MODE; every invocation appends
+// "<model> <resume-or-fresh>" to a log so the test counts calls instead of trusting the source.
+const quotaLog = path.join(fixture, "quota-log");
+const quotaCli = path.join(fixture, "quota-cursor");
+const LIMIT = "ActionRequiredError: You've hit your usage limit for Opus. Switch to a different model or set a Spend Limit to continue with Opus.";
+await writeFile(quotaCli, `#!/usr/bin/env bash
+model=''; resume=fresh
+while [ "$#" -gt 0 ]; do
+  case "$1" in --model) model="$2"; shift 2 ;; --resume) resume="$2"; shift 2 ;; *) shift ;; esac
+done
+printf '%s %s\\n' "$model" "$resume" >> "${quotaLog}"
+blocked() { printf '%s\\n' '{"type":"system","subtype":"init","model":"Claude Opus 4.5"}'; printf '%s\\n' "${LIMIT}" >&2; exit 1; }
+ok() { printf '%s\\n' '{"type":"usage","usage":{"output_tokens":3}}'; printf '%s\\n' '{"type":"result","is_error":false,"result":"{\\"ok\\":true}","session_id":"fixture"}'; }
+case "$FIXTURE_MODE" in
+  quota)      [ "$model" = auto ] && blocked; ok ;;
+  auto-ok)    ok ;;
+  non-quota)  printf 'boom\\n' >&2; exit 1 ;;
+  correction) [ "$model" = auto ] && blocked
+              if [ "$resume" = fresh ]; then printf '%s\\n' '{"type":"usage","usage":{"output_tokens":5}}'; printf '%s\\n' '{"type":"result","is_error":false,"result":"not-json","session_id":"fixture"}'; else ok; fi ;;
+  blocked)    blocked ;;
+esac
+`);
+await chmod(quotaCli, 0o755);
+process.env.AIWORKS_CURSOR_CLI = quotaCli;
+const calls = async () => (await readFile(quotaLog, "utf8").catch(() => "")).split("\n").filter(Boolean);
+const quotaRun = async (mode, args = {}) => {
+  await writeFile(quotaLog, "");
+  process.env.FIXTURE_MODE = mode;
+  return runCursor({ root, definition, prompt: "return JSON", schema, ...args });
+};
+
+// AC3: blocked on auto → exactly one retry on the tier's fallback; options.model wins over the definition.
+for (const [tier, expected] of [["fable", "grok-4.7-high"], ["opus", "grok-4.7-high"], ["sonnet", "grok-4.7-high"], ["haiku", "composer-2.5"], [undefined, "grok-4.7-high"]]) {
+  const viaDefinition = await quotaRun("quota", { definition: { data: { model: tier }, body: "Fixture" } });
+  assert.deepEqual(viaDefinition.value, { ok: true });
+  assert.deepEqual(await calls(), ["auto fresh", `${expected} fresh`], `definition tier ${tier}`);
+  if (!tier) continue;
+  const viaOptions = await quotaRun("quota", { definition: { data: { model: "haiku" }, body: "Fixture" }, options: { model: tier } });
+  assert.deepEqual(viaOptions.value, { ok: true });
+  assert.deepEqual(await calls(), ["auto fresh", `${expected} fresh`], `options tier ${tier}`);
+}
+// AC2: not blocked → one call on auto, no fallback.
+await quotaRun("auto-ok");
+assert.deepEqual(await calls(), ["auto fresh"]);
+// AC4: any other failure is not retried.
+await assert.rejects(quotaRun("non-quota"), /boom/);
+assert.deepEqual(await calls(), ["auto fresh"]);
+// AC5: a correction after the fallback resumes on the fallback model, and every attempt is billed.
+const corrected = await quotaRun("correction", { definition: { data: { model: "opus" }, body: "Fixture" } });
+assert.deepEqual(corrected.value, { ok: true });
+assert.equal(corrected.spent, 8);
+assert.deepEqual(await calls(), ["auto fresh", "grok-4.7-high fresh", "grok-4.7-high fixture"]);
+// The fallback pool can be exhausted too: two calls, then fail closed — never a loop.
+await assert.rejects(quotaRun("blocked"), /hit your usage limit/);
+assert.deepEqual(await calls(), ["auto fresh", "grok-4.7-high fresh"]);
+delete process.env.FIXTURE_MODE;
 
 const codex = path.join(fixture, "codex");
 await writeFile(codex, `#!/usr/bin/env bash
