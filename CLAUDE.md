@@ -15,7 +15,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 - `workspace.config.yaml` — the source of truth, `@`-imported below so already in context. Keys documented in
   `workspace.config.example.yaml`, overrides in `.local.yaml`, ⚠️ comments in neither · `CONTEXT.md` — the glossary ·
-  `docs/adr/` — why the workspace is shaped this way (`0001`–`0040`).
+  `docs/adr/` — why the workspace is shaped this way (`0001`–`0041`).
 - `docs/agents/harnesses.md` — Harness registry/projection/runtime contract and the checklist for adding another one
   (Hermes is next). ⚠️ The Workflow tool weighs the script **FILE** before parsing it — 524,288 bytes, no delivery
   parameter exempt — so under Claude Code a workflow is ALWAYS delivered comment-stripped: `node
@@ -53,6 +53,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   masks personal data only when a sanctioned PRODUCTION read returned it (keyed hash, never shape).
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace root ·
   `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
+  `superset.md` — worktree setup steps, the setup lock, the readiness check (`--status`/`--wait`), the `setup_product` hook ·
   `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit a
   persisted run script. It also keeps **the base it started with**: recorded per repo, authoritative on resume, moved
   only by `--accept-base-change`, and the forge's own `target_branch` is asserted against it (`docs/adr/0025`) — a base

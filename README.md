@@ -109,12 +109,18 @@ shared MCP services. Idempotent, safe to re-run:
 ./aiworks setup
 ```
 
+A Superset worktree runs the same `setup.sh` automatically (`.superset/config.json`). Cloning
+takes minutes while the agent session starts at once, so a `SessionStart` hook reports which
+repos are ready and whether setup is still running until it finishes
+(`.claude/hooks/repo-health-check.sh --status`; see `docs/agents/superset.md`).
+
 **5. Fill the repo env files.** Setup ends with an **ACTION REQUIRED** list of the
 `.env` files still needing real values — fill each one (ask a teammate for working values).
 
 **6. Define + run your local stack** (optional). Copy
 `.superset/products/example.sh` to `.superset/products/<product-id>.sh`, declare your
-repos per tier (databases / backends / frontends), then:
+repos per tier (databases / backends / frontends) and, if you need organisation-only setup
+such as local host aliases, an optional `setup_product` hook that setup runs for you, then:
 
 ```sh
 ./aiworks run                    # the default frontend profile
