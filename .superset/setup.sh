@@ -45,7 +45,9 @@
 #    Android release-signing secrets (key.properties + the keystore). Runs before the
 #    MCP services so they come up on real config + a seeded DB.
 # 6. Installs Node dependencies in every repo that has a package.json
-#    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this).
+#    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this), checks each
+#    repo's .env, then runs each product's optional `setup_product` hook
+#    (.superset/products/<product>.sh) — the home for org-specific setup.
 # 7. Starts the shared MCP service containers, then reports which repos still
 #    need their .env reviewed.
 #
@@ -453,6 +455,11 @@ for repo in */; do
     ENV_TODO+=("$repo/.env.local")
   fi
 done
+
+# ── 6b. Product setup hooks — each .superset/products/<product>.sh may define an optional
+# `setup_product` (local host aliases, …): org-specific setup lives THERE, never in this file.
+# Runs after the .env check so every repo's .env exists on disk for the product's own logic.
+run_product_setup_hooks
 
 # NOTE: Cursor (.cursorindexingignore) and VS Code (.vscode/settings.json) search
 # re-inclusion, plus the per-repo adapter symlinks, are handled by `aiworks sync` above

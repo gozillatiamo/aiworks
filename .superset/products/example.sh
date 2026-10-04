@@ -11,6 +11,7 @@
 #                                                       (skipped if a product omits them)
 #   down_thirdparty_setup                             — called by teardown.sh, optional
 #   down_frontends / down_backends / down_databases   — called by teardown.sh, in order
+#   setup_product                                     — called by setup.sh, optional
 #
 # To define YOUR product: copy this file to .superset/products/<product-id>.sh
 # (matching a products[].id in workspace.config.yaml), replace the placeholder
@@ -98,6 +99,14 @@ wait_backends_ready() {
 #   # Prime any catalogue/seed data via a server-to-server endpoint.
 #   run_glance "your-api: priming seed data" \
 #     curl -fS --max-time 300 -o "$LOG_DIR/seed.json" "http://localhost:3000/seed"
+# }
+
+# ── setup hook (optional) ─────────────────────────────────────────────────────
+# Optional — runs once per `aiworks setup` (setup.sh step 6b), after repo .env files exist.
+# Local stack only: never provision deployed-environment access here (docs/adr/0009). Must be
+# idempotent (setup re-runs). A failure warns and setup continues.
+# setup_product() {
+#   ensure_hosts_entries 127.0.0.1 "app.example.test" "admin.example.test"
 # }
 
 # ── teardown (reverse order) ──────────────────────────────────────────────────
