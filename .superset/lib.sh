@@ -835,6 +835,28 @@ install_dap_script() {
   return 0
 }
 
+# Setup progress lock (per-worktree; git-ignored under .superset/run/). Written the moment real
+# work begins and removed on exit via trap. A fresh Superset worktree starts an agent session
+# BEFORE the long clone+onboard finishes, so the SessionStart readiness check
+# (.claude/hooks/repo-health-check.sh) reads this lock to steer the agent to WAIT rather than
+# treat an un-cloned repo as missing — and, crucially, to tell "setup is still running" apart
+# from "setup never ran / crashed": a graceful failure trips the EXIT trap and removes the lock
+# (the user already saw the error), while a hard kill (kill -9 / crash / power loss) skips the
+# trap and leaves a STALE lock the readiness check detects by testing the recorded pid's
+# liveness. Best-effort: a failed write never breaks setup. Call it at TOP LEVEL of the setup
+# shell (never inside a subshell) so `$$` is the pid the readiness check probes, and AFTER the
+# --help / prerequisite exits so neither leaves a lock behind.
+#
+#   setup_lock_acquire <path>
+setup_lock_acquire() {
+  local lock="$1"
+  mkdir -p "$(dirname "$lock")" 2>/dev/null || true
+  printf 'pid=%s\nstarted_epoch=%s\nstarted=%s\n' "$$" "$(date +%s)" "$(date +%Y-%m-%dT%H:%M:%S)" > "$lock" 2>/dev/null || true
+  # shellcheck disable=SC2064  # expand $lock now: the trap must name this path, not a later value
+  trap "rm -f '$lock' 2>/dev/null || true" EXIT INT TERM
+  return 0
+}
+
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>

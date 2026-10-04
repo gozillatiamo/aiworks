@@ -74,6 +74,10 @@ if ! command -v mani >/dev/null 2>&1; then
   exit 1
 fi
 
+# ── Setup progress lock — read by the SessionStart readiness check to tell "running" from
+# "crashed" from "never ran" (see setup_lock_acquire in lib.sh). Top level, not a subshell.
+setup_lock_acquire .superset/run/setup.lock
+
 # ── Resolve the root workspace — the source of the git-ignored local state a fresh worktree
 # carries NONE of. Superset sets SUPERSET_ROOT_PATH; for a MANUAL `git worktree` (no Superset)
 # it's unset, so fall back to git's MAIN worktree — the root checkout holding the real
