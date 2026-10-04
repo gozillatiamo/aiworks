@@ -14,7 +14,7 @@ main checkout; all three are idempotent. Why this is shaped so: `docs/adr/0041`.
 | 0 | Select the shared Agent harnesses (main workspace only; a worktree reuses the selection) | `--harnesses`, `--reconfigure-harnesses` |
 | 1 | Symlink the personal git-ignored config from the root workspace (`workspace.config.local.yaml`, `.claude/settings.local.json`) | `SUPERSET_LOCAL=symlink\|skip` |
 | 2 | Provision the adapter credentials (`scripts/{tracker,notify,vcs}/.env`) from the root workspace — before tooling and sync, so any adapter call during onboarding has them | `SUPERSET_ENV=symlink\|copy\|skip` |
-| 3 | Ensure host tooling: `jq`, `ngrok`, `glab`, `pnpm`, `dap` (best-effort) | — |
+| 3 | Ensure host tooling: `jq`, `ngrok`, `glab`, `pnpm`, `dap` (best-effort); reconcile the declared Claude plugins at project scope — main checkout and independent clones; a linked worktree uses its main checkout's install | — |
 | 4 | `aiworks sync -y` — clone and fully onboard every repo under `products[]` | — |
 | 5 | Copy the real local state from the root workspace: every `.env*`, seeded `db-data`, signing secrets, the product files `.superset/products/*.sh` | `SUPERSET_ENV`, `SUPERSET_DB_DATA`, `SUPERSET_SIGNING`, `SUPERSET_PRODUCTS` (each `symlink\|copy\|skip`) |
 | 6 | Install Node dependencies, check each repo's `.env` | — |
@@ -22,6 +22,15 @@ main checkout; all three are idempotent. Why this is shaped so: `docs/adr/0041`.
 | 7 | Start the shared MCP services; list the `.env` files still needing values | — |
 
 Each `SUPERSET_*` switch defaults to doing the work; `=skip` leaves that item to you.
+
+## Plugins in a worktree
+
+Claude Code keys a linked worktree's project by its **main checkout** path, so the plugins
+registered for the main checkout already serve every worktree of it. Step 3 therefore installs
+nothing per worktree: it reconciles the worktree's declarations against the main checkout's
+registry entry (installing there only a plugin the branch declares and the main checkout lacks),
+and the tracked `.claude/settings.json` stays clean. Product repos cloned inside the worktree are
+independent projects and still install for themselves. Why: `docs/adr/0042`.
 
 ## The setup lock
 
@@ -71,4 +80,4 @@ bash scripts/aiworks-superset-selftest.sh     # also passes under /bin/bash 3.2
 
 Hermetic: a temp workspace, a fake `mani.d` + `workspace.config.yaml`, fake clones, a lock with a
 live and a dead pid, a temp `HOSTS_FILE`. It covers the union, the three states, `--status`,
-`--wait`, the hook runner and the hosts helper.
+`--wait`, the hook runner, the hosts helper, and the plugin walk in a linked worktree (S7).

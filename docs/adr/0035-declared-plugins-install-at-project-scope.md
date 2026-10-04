@@ -1,5 +1,9 @@
 # Declared plugins install at project scope, and every copy is kept current
 
+**Status:** Accepted. Amended by
+[ADR 0042](0042-a-linked-worktree-inherits-the-main-checkouts-plugins.md): the unit is the Claude
+Code project key — a linked worktree is served by its main checkout's install, not its own.
+
 ## Context
 
 The workspace declares the plugins it needs in a committed `.claude/settings.json`
