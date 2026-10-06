@@ -48,16 +48,18 @@ fi
 grep -q fixture-token "$FIXTURE/out" && fail "T4a token leaked"
 
 # T4b — open port: execs mcp-remote with the URL and the header built in-process.
-mkdir -p "$FIXTURE/bin"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/argv"\n' "$FIXTURE" > "$FIXTURE/bin/npx"
-chmod +x "$FIXTURE/bin/npx"
+# The wrapper prepends $HOME/.local/bin to PATH, so the fake npx lives there.
+mkdir -p "$FIXTURE/.local/bin"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s/argv"\n' "$FIXTURE" > "$FIXTURE/.local/bin/npx"
+chmod +x "$FIXTURE/.local/bin/npx"
 python3 -c 'import socket,sys,time;s=socket.socket();s.bind(("127.0.0.1",0));s.listen();print(s.getsockname()[1],flush=True);time.sleep(10)' > "$FIXTURE/port" &
 lpid=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$FIXTURE/port" ]] && break; sleep 0.2; done
 port="$(cat "$FIXTURE/port")"
-env -u SONARQUBE_TOKEN PATH="$FIXTURE/bin:$PATH" HOME="$FIXTURE" MCP_SONARQUBE_PORT="$port" MCP_PORT_WAIT_SECS=2 \
+env -u SONARQUBE_TOKEN HOME="$FIXTURE" MCP_SONARQUBE_PORT="$port" MCP_PORT_WAIT_SECS=2 \
   bash "$WT/scripts/mcp/sonarqube.sh" >"$FIXTURE/out" 2>&1 || fail "T4b wrapper failed: $(cat "$FIXTURE/out")"
 kill "$lpid" 2>/dev/null || true
+wait "$lpid" 2>/dev/null || true
 grep -qx 'mcp-remote' "$FIXTURE/argv" || fail "T4b mcp-remote not exec'd"
 grep -qx "http://localhost:$port/mcp" "$FIXTURE/argv" || fail "T4b URL missing"
 grep -qx 'Authorization: Bearer fixture-token' "$FIXTURE/argv" || fail "T4b header missing"

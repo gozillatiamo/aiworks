@@ -9,11 +9,12 @@
       ]
     },
     "sonarqube": {
-      "type": "http",
-      "url": "http://localhost:25434/mcp",
-      "headers": {
-        "Authorization": "Bearer ${SONARQUBE_TOKEN}"
-      }
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/sonarqube.sh\""
+      ]
     },
     "postgres_main": {
       "type": "sse",

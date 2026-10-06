@@ -37,7 +37,8 @@
 # server (which spawned a fresh `mcp/sonarqube` container per agent and orphaned
 # them on crash — same failure the postgres services were migrated away from).
 # It runs the SonarQube MCP server in HTTP transport; the client's own SonarCloud
-# token rides in per-request as `Authorization: Bearer` (see .mcp.json), so the
+# token rides in per-request as `Authorization: Bearer`, added by the stdio
+# wrapper scripts/mcp/sonarqube.sh from the workspace .env, so the
 # container itself holds NO secret — only the (non-secret) org slug.
 # ─────────────────────────────────────────────────────────────────────────────
 name: aiworks-mcp                       # fixed project name → ONE shared stack regardless of cwd
