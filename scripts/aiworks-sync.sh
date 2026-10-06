@@ -19,9 +19,9 @@
 # NOTIFY_PROVIDER/NOTIFY_CHANNEL). An existing .env is left
 # untouched — you still fill in the secrets by hand (e.g. the Slack token in notify/.env).
 #
-# It also PREPARES the image-generation config: ensures the git-ignored
-# .claude/settings.local.json enables the `mcp-image` MCP server, and checks that
-# GEMINI_API_KEY is present in the workspace-root `.env` (direnv — MCP secret SoT).
+# It also APPROVES the gated MCP servers (mcp-image, sonarqube) in the git-ignored
+# .claude/settings.local.json when their config flag is on AND their key is present in the
+# workspace-root `.env` (MCP secret SoT); otherwise it disables them (docs/adr/0043).
 # Put the key there (https://aistudio.google.com/apikey); until then /prd-design
 # preflight detects the gap and fails loud instead of shipping placeholder art.
 #
@@ -382,70 +382,53 @@ prepare_adapter_env() {
   esac
 }
 
-# ── image-generation config (mcp-image + GEMINI_API_KEY) ─────────────────────────
-# The graphic-designer (Fiona) generates assets through the `mcp-image` MCP server
-# (`mcp__mcp-image__generate_image`, Gemini) + the /image-generation skill. That server
-# is launched via scripts/mcp/mcp-image.sh, which loads GEMINI_API_KEY from the
-# workspace-root `.env` (direnv) — the single source of truth for MCP secrets. Do NOT
-# put the key in `.claude/settings.local.json`. Here we only enable "mcp-image" in that
-# file and check that `.env` already has a non-empty GEMINI_API_KEY (presence only).
-seed_image_gen_settings() {
+# ── MCP gate (mcp-image, sonarqube) ──────────────────────────────────────────────
+# Shared .mcp.json servers that need a secret connect only when CONFIGURED: the config flag
+# is on AND the key is present in the workspace .env (docs/adr/0043). The verdict comes from
+# `triage_mcp.py --gate` (names + booleans only) and is written per person into the
+# git-ignored .claude/settings.local.json: configured → enabledMcpjsonServers, otherwise
+# disabledMcpjsonServers — so an unconfigured server is never a red "failed" entry. Secrets
+# stay in the workspace .env; a stale GEMINI_API_KEY in settings.local.json is dropped.
+seed_mcp_gate() {
   local sl="$ROOT/.claude/settings.local.json" rel=".claude/settings.local.json"
-  step "Prepare image-gen config (mcp-image; GEMINI_API_KEY from .env) in $rel"
-
-  # image_generation policy from workspace.config.yaml (default OFF). When disabled we do NOT
-  # wire up mcp-image — the graphic-designer's availability gate then returns assets as
-  # 'unavailable'. quality/max are behavioral (the graphic-designer passes quality= per call
-  # and honors the budget cap), surfaced here for visibility. See docs/agents/image-generation.md.
-  local ig_enabled='' ig_quality='balanced' ig_max='2'
-  if [[ -f "$WC" ]]; then
-    while IFS=$'\t' read -r k v; do
-      case "$k" in
-        IG_ENABLED) ig_enabled="$v" ;;
-        IG_QUALITY) ig_quality="$v" ;;
-        IG_MAX)     ig_max="$v" ;;
-      esac
-    done < <(
-      awk '
-        function val(s){ sub(/^[^:]*:[ \t]*/,"",s); sub(/[ \t]+#.*$/,"",s);
-                         gsub(/^[ \t]+|[ \t]+$/,"",s); gsub(/^["'\'']|["'\'']$/,"",s); return s }
-        /^[A-Za-z_][A-Za-z0-9_]*:/ { sec=$0; sub(/:.*/,"",sec) }
-        sec=="image_generation" && /^  enabled:/         { print "IG_ENABLED\t" val($0); next }
-        sec=="image_generation" && /^  quality:/         { print "IG_QUALITY\t" val($0); next }
-        sec=="image_generation" && /^  max_per_request:/ { print "IG_MAX\t"     val($0); next }
-      ' "$WC"
-    )
+  step "Approve configured MCP servers (flag AND .env key) in $rel"
+  local gate
+  if ! gate="$(python3 "$ROOT/scripts/harnesses/triage_mcp.py" --root "$ROOT" --gate)"; then
+    warn "could not compute the MCP gate — $rel left untouched"
+    return 0
   fi
-  case "$(printf '%s' "$ig_enabled" | tr '[:upper:]' '[:lower:]')" in
-    true|yes|1) : ;;   # enabled — wire up mcp-image below
-    *) ok "Image generation DISABLED (image_generation.enabled is off — the default). mcp-image not wired up; the graphic-designer returns assets 'unavailable'. Set image_generation.enabled: true to generate."
-       return 0 ;;
-  esac
-
   if [[ "$DRY" -eq 1 ]]; then
-    printf '    %swould ensure %s enables "mcp-image" and check .env for GEMINI_API_KEY (quality=%s, max_per_request=%s)%s\n' "$c_dim" "$rel" "$ig_quality" "$ig_max" "$c_off"
+    printf '    %swould write the MCP gate %s into %s%s\n' "$c_dim" "$gate" "$rel" "$c_off"
     return 0
   fi
   if ! command -v node >/dev/null 2>&1; then
-    warn "node not found — can't auto-prepare $rel; add \"mcp-image\" to enabledMcpjsonServers by hand (see docs/agents/image-generation.md)"
+    warn "node not found — can't update $rel; gate is $gate (see docs/agents/image-generation.md)"
     return 0
   fi
   local out
-  out="$(NODE_SL="$sl" node <<'NODE'
+  out="$(NODE_SL="$sl" NODE_GATE="$gate" node <<'NODE'
 const fs = require('fs');
 const f = process.env.NODE_SL;
+const gate = JSON.parse(process.env.NODE_GATE);
 let raw = '';
 try { raw = fs.readFileSync(f, 'utf8'); } catch (e) { raw = ''; }
 let j;
 if (raw.trim() === '') { j = {}; }
 else { try { j = JSON.parse(raw); } catch (e) { console.log('PARSE_ERROR'); process.exit(0); } }
-j.enabledMcpjsonServers = Array.isArray(j.enabledMcpjsonServers) ? j.enabledMcpjsonServers : [];
-let changed = false;
-if (!j.enabledMcpjsonServers.includes('mcp-image')) { j.enabledMcpjsonServers.unshift('mcp-image'); changed = true; }
-// Secrets live in workspace .env — drop stale GEMINI_API_KEY from settings.local if present.
-j.env = (j.env && typeof j.env === 'object' && !Array.isArray(j.env)) ? j.env : {};
-if ('GEMINI_API_KEY' in j.env) { delete j.env.GEMINI_API_KEY; changed = true; }
-if (Object.keys(j.env).length === 0) { delete j.env; changed = true; }
+const list = (k) => (Array.isArray(j[k]) ? j[k] : []);
+let en = list('enabledMcpjsonServers'), dis = list('disabledMcpjsonServers');
+const before = JSON.stringify([en, dis, j.env]);
+for (const [name, ok] of Object.entries(gate)) {
+  en = en.filter((s) => s !== name); dis = dis.filter((s) => s !== name);
+  (ok ? en : dis).push(name);
+}
+j.enabledMcpjsonServers = en;
+if (dis.length) j.disabledMcpjsonServers = dis; else delete j.disabledMcpjsonServers;
+if (j.env && typeof j.env === 'object' && !Array.isArray(j.env)) {
+  delete j.env.GEMINI_API_KEY;
+  if (Object.keys(j.env).length === 0) delete j.env;
+}
+const changed = JSON.stringify([j.enabledMcpjsonServers, j.disabledMcpjsonServers || [], j.env]) !== before;
 if (changed) {
   try { if (fs.existsSync(f)) fs.copyFileSync(f, f + '.bak'); } catch (e) {}
   fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
@@ -453,20 +436,18 @@ if (changed) {
 console.log(changed ? 'CHANGED' : 'OK');
 NODE
 )"
-  local has_key=0
-  # Presence only — never print the value (CLAUDE.md .env rule).
-  if [[ -f "$ROOT/.env" ]] && grep -q '^GEMINI_API_KEY=.\+' "$ROOT/.env"; then
-    has_key=1
-  fi
   case "$out" in
-    PARSE_ERROR) warn "$rel is not valid JSON — left untouched; add \"mcp-image\" to enabledMcpjsonServers by hand" ;;
+    PARSE_ERROR) warn "$rel is not valid JSON — left untouched; MCP gate is $gate" ;;
     CHANGED|OK)
-      if [[ "$has_key" -eq 1 ]]; then
-        ok "$rel ready — mcp-image enabled; GEMINI_API_KEY present in .env (quality=${ig_quality}, max_per_request=${ig_max})"
-      else
-        ok "$rel prepared — mcp-image enabled; now set GEMINI_API_KEY in the workspace .env (key: https://aistudio.google.com/apikey; quality=${ig_quality}, max_per_request=${ig_max}; see docs/agents/image-generation.md)"
-      fi ;;
-    *) warn "could not determine image-gen state for $rel" ;;
+      local name
+      for name in mcp-image sonarqube; do
+        if printf '%s' "$gate" | grep -q "\"$name\": true"; then
+          ok "$name approved — flag on and its key is present in .env"
+        else
+          ok "$name not approved — flag off or its key missing from .env (no failed /mcp entry)"
+        fi
+      done ;;
+    *) warn "could not determine the MCP gate state for $rel" ;;
   esac
 }
 
@@ -645,10 +626,9 @@ sync_doc_graph
 # per-repo work, so the adapters the onboarded repos link to are already configured.
 prepare_adapter_env
 
-# Prepare the image-generation config (enable mcp-image + seed a GEMINI_API_KEY placeholder
-# in the git-ignored settings.local.json) so the graphic-designer's asset pipeline can work
-# once the user supplies a key — and fails loud (via the /prd-design preflight) when it can't.
-seed_image_gen_settings
+# Approve the gated shared MCP servers (mcp-image, sonarqube) per person, from config flag
+# AND .env key presence (docs/adr/0043).
+seed_mcp_gate
 
 # Obsidian vault share-contract: seed shared .obsidian settings + ignore personal UI layout.
 # Idempotent; never clobbers existing vault prefs. See docs/agents/obsidian.md.

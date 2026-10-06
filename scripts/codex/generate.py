@@ -522,6 +522,10 @@ def config_toml(base: Path, is_root: bool, triage_mode: str, projection: Project
         for note in notes:
             projection.note(note)
         servers = {**servers, **triage}
+        # A gated shared server that is not configured stays declared but masked (docs/adr/0043).
+        for name, ok in triage_mcp.configured(base).items():
+            if not ok and name in servers:
+                servers[name] = {**servers[name], "enabled": False}
     lines.extend(mcp_toml(servers))
     return "\n".join(lines).rstrip() + "\n"
 

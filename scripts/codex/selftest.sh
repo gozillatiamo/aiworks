@@ -107,6 +107,20 @@ REPO="$FIXTURE/demo-repo"; mkdir -p "$REPO"
 python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" --triage on "$REPO" >/dev/null
 ! grep -q mcp_servers.pg_triage "$REPO/.codex/config.toml" 2>/dev/null
 
+# Gated shared servers (docs/adr/0043): unconfigured → masked `enabled = false` at the root only;
+# configured (flag on AND key in .env) → plain table.
+GATED_MCP='{"mcpServers":{"sonarqube":{"command":"bash","args":["s"]},"mcp-image":{"command":"bash","args":["i"]}}}'
+printf '%s\n' "$GATED_MCP" > "$FIXTURE/.mcp.json"
+printf '%s\n' "$GATED_MCP" > "$REPO/.mcp.json"
+printf 'harnesses:\n  - codex\nimage_generation:\n  enabled: true\nproducts: []\n' > "$FIXTURE/workspace.config.yaml"
+printf 'GEMINI_API_KEY=fixture\n' > "$FIXTURE/.env"
+python3 "$ROOT/scripts/codex/generate.py" --root "$FIXTURE" . "$REPO" >/dev/null
+grep -A4 '^\[mcp_servers.sonarqube\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
+! grep -A4 '^\[mcp_servers.mcp-image\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
+! grep -q 'enabled = false' "$REPO/.codex/config.toml"
+! grep -rq fixture "$FIXTURE/.codex" "$REPO/.codex"
+rm "$FIXTURE/.env" "$REPO/.mcp.json"
+
 allowed='{"cwd":"FIXTURE","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rg marker src"}}'
 allowed="${allowed/FIXTURE/$FIXTURE}"
 test -z "$(printf '%s' "$allowed" | PYTHONPATH="$ROOT/scripts/codex" python3 "$ROOT/scripts/codex/tool_guard.py" reviewer)"

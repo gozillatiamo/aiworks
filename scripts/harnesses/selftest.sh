@@ -304,4 +304,27 @@ grep -q 'mcp remove pg_triage' "$FIXTURE/codex-calls"
 trg --action sync --want 0 >/dev/null
 grep -A3 '^\[mcp_servers.pg_triage\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
 
+# Gated shared servers (docs/adr/0043) — a plain, non-git root so no worktree fallback applies.
+G="$FIXTURE/gate-root"; mkdir -p "$G"
+printf '{"mcpServers":{"mcp-image":{"command":"i"},"sonarqube":{"command":"s"},"other":{"command":"o"}}}\n' > "$G/.mcp.json"
+gate() { python3 "$FIXTURE/scripts/harnesses/triage_mcp.py" --root "$G" --gate; }
+grndr() { python3 "$FIXTURE/scripts/harnesses/triage_mcp.py" --root "$G" --render cursor; }
+
+# T5. flag on + key → true; flag on, no key → false; flag off + key → false. Never a value.
+printf 'image_generation:\n  enabled: true\nquality_gate:\n  provider: sonarqube\n' > "$G/workspace.config.yaml"
+printf 'GEMINI_API_KEY=gate-secret\nSONARQUBE_TOKEN=\n' > "$G/.env"
+out="$(gate)"
+test "$(jq -r '."mcp-image"' <<<"$out")" = true
+test "$(jq -r '.sonarqube' <<<"$out")" = false
+! grep -q gate-secret <<<"$out"
+printf 'image_generation:\n  enabled: false\nquality_gate:\n  provider: none\n' > "$G/workspace.config.yaml"
+printf 'GEMINI_API_KEY=gate-secret\nSONARQUBE_TOKEN=gate-secret\n' > "$G/.env"
+test "$(gate | jq -c '[."mcp-image", .sonarqube]')" = '[false,false]'
+
+# T6. Cursor render drops unconfigured gated servers, keeps configured ones and ungated ones.
+test "$(grndr | jq -c '.mcpServers | keys')" = '["other"]'
+printf 'image_generation:\n  enabled: true\nquality_gate:\n  provider: sonarqube\n' > "$G/workspace.config.yaml"
+test "$(grndr | jq -c '.mcpServers | keys')" = '["mcp-image","other","sonarqube"]'
+! grndr | grep -q gate-secret
+
 printf 'Harness registry selftest: ok\n'

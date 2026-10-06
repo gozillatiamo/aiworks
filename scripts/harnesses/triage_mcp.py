@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,6 +28,61 @@ SERVERS = {
     "k8s_triage": "scripts/k8s/k8s_triage_mcp.py",
     "monitoring_triage": "scripts/monitoring/monitoring_triage_mcp.py",
 }
+
+
+# Shared .mcp.json servers that need a secret: approved/rendered only when CONFIGURED, i.e. the
+# config flag is on AND every key is present in the workspace .env (docs/adr/0043).
+# name -> (section, key, wanted value, required .env keys)
+GATED = {
+    "mcp-image": ("image_generation", "enabled", "true", ("GEMINI_API_KEY",)),
+    "sonarqube": ("quality_gate", "provider", "sonarqube", ("SONARQUBE_TOKEN",)),
+}
+
+
+def env_file(root: Path) -> Path:
+    """The workspace .env, or the main checkout's while a fresh linked worktree has none yet
+    (the twin of scripts/mcp/load-workspace-env.sh)."""
+    own = root / ".env"
+    if own.is_file():
+        return own
+    try:
+        out = subprocess.run(["git", "-C", str(root), "worktree", "list", "--porcelain"],
+                             capture_output=True, text=True).stdout
+    except OSError:
+        return own
+    first = out.splitlines()[0] if out else ""
+    return Path(first[len("worktree "):]) / ".env" if first.startswith("worktree ") else own
+
+
+def has_keys(root: Path, keys) -> bool:
+    """Presence only (the twin of `grep -q '^KEY=.\\+'`); values are never kept or returned."""
+    path = env_file(root)
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return all(re.search(rf"^{re.escape(k)}=.+", text, re.M) for k in keys)
+
+
+def config_value(root: Path, section: str, key: str) -> str:
+    """`section.key` from the shared workspace.config.yaml (the file sync reads), or ''."""
+    path = root / "workspace.config.yaml"
+    if not path.is_file():
+        return ""
+    current = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        top = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):", line)
+        if top:
+            current = top.group(1)
+            continue
+        hit = re.match(rf"^\s{{2}}{re.escape(key)}:\s*(.*)$", line)
+        if current == section and hit:
+            return re.sub(r"\s+#.*$", "", hit.group(1)).strip().strip("\"'").lower()
+    return ""
+
+
+def configured(root: Path) -> dict[str, bool]:
+    return {name: config_value(root, sec, key) == want and has_keys(root, keys)
+            for name, (sec, key, want, keys) in GATED.items()}
 
 
 def selected(root: Path) -> set[str]:
@@ -153,7 +209,8 @@ def render_cursor(root: Path, mode: str) -> str:
             existing = json.loads(path.read_text(encoding="utf-8")).get("mcpServers") or {}
         except json.JSONDecodeError:
             existing = {}
-    servers = dict(shared_servers(root))
+    gate = configured(root)
+    servers = {k: v for k, v in shared_servers(root).items() if gate.get(k, True)}
     servers.update(triage_entries(root, mode, existing))
     return json.dumps({"mcpServers": servers}, indent=2, sort_keys=True) + "\n"
 
@@ -415,8 +472,14 @@ def main() -> int:
     parser.add_argument("--action", choices=("sync", "on", "off", "status"))
     parser.add_argument("--want", choices=("0", "1"))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--gate", action="store_true",
+                        help="print {server: configured} for the gated shared servers")
     args = parser.parse_args()
     root = args.root.resolve()
+
+    if args.gate:
+        print(json.dumps(configured(root), sort_keys=True))
+        return 0
 
     if args.render:
         if args.action or args.want is not None:
