@@ -59,8 +59,10 @@ prefs. Cursor does not inject `settings.local` `env` into MCP children; the
 stdio wrappers under `scripts/mcp/` read `.env` themselves.
 
 1. Set `image_generation.enabled: true` in `workspace.config.yaml`, then `aiworks sync`
-   enables `mcp-image` in `.claude/settings.local.json` and checks that `.env`
-   already has `GEMINI_API_KEY` (presence only; never prints the value).
+   approves `mcp-image` in `.claude/settings.local.json` (and the Cursor/Codex projections)
+   only when `.env` also has `GEMINI_API_KEY` — flag AND key, presence only, never the value
+   ([ADR 0043](../adr/0043-configured-mcps-connect-and-n8n-is-on-demand.md)). A fresh linked
+   worktree with no `.env` of its own uses the main checkout's.
 2. Add the key to `.env` if missing:
    ```bash
    printf 'GEMINI_API_KEY=\n' >> .env   # then paste the value; direnv allow if needed
