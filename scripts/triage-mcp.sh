@@ -7,6 +7,7 @@
 #   redis_triage       scripts/redis/redis_triage_mcp.py           read-only staging + prod Redis + Streams
 #   k8s_triage         scripts/k8s/k8s_triage_mcp.py               read-only staging + prod Kubernetes
 #   monitoring_triage  scripts/monitoring/monitoring_triage_mcp.py read-only staging + prod Cloud Monitoring
+#   n8n                scripts/n8n/n8n_mcp.py                      on-demand n8n MCP; wanted iff its env keys are set (0043)
 #
 # Claude stays machine-local scope (`~/.claude.json`); Cursor and Codex register in **this root's
 # own project scope** (`<root>/.cursor/mcp.json`, `<root>/.codex/config.toml` — generated and
@@ -66,6 +67,7 @@ SERVERS=(
   "redis_triage|scripts/redis/redis_triage_mcp.py"
   "k8s_triage|scripts/k8s/k8s_triage_mcp.py"
   "monitoring_triage|scripts/monitoring/monitoring_triage_mcp.py"
+  "n8n|scripts/n8n/n8n_mcp.py"
 )
 
 # Pre-0005 names + paths. Registered locally on machines that opted in before the rename; this
@@ -122,6 +124,12 @@ case "$ACTION" in
   on)  WANT=1; ENABLED_SRC="--on (forced)" ;;
   off) WANT=0; ENABLED_SRC="--off (forced)" ;;
 esac
+
+# n8n is wanted iff both its keys are in the workspace .env (or the main checkout's) — presence only.
+N8N_ENV="$ROOT/.env"
+[[ -f "$N8N_ENV" ]] || N8N_ENV="$(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')/.env"
+N8N_WANT=0
+grep -q '^N8N_MCP_URL=.\+' "$N8N_ENV" 2>/dev/null && grep -q '^N8N_MCP_ACCESS_TOKEN=.\+' "$N8N_ENV" 2>/dev/null && N8N_WANT=1
 
 # The removed key. Never honoured — that would let a stale file decide production access — but a
 # machine still carrying it would otherwise silently lose prod, so say so loudly.
@@ -238,8 +246,9 @@ for entry in "${SERVERS[@]}"; do
   abs="$ROOT/$rel"
   have="$(registered_args "$name")"
   want_args="$(expected_args "$rel")"
+  want=$WANT; [[ $name == n8n ]] && want=$N8N_WANT
 
-  if [[ "$WANT" -eq 1 ]]; then
+  if [[ "$want" -eq 1 ]]; then
     if [[ ! -f "$abs" ]]; then warn "$name — $rel is missing; not registering"; continue; fi
     if [[ "$have" == "$want_args" ]]; then ok "$name — already registered (local scope)"; continue; fi
     repoint=0
@@ -272,9 +281,9 @@ for entry in "${SERVERS[@]}"; do
       warn "$name — registered with a command this script does not own; leaving it alone: $have"
       continue
     fi
-    if [[ "$DRY" -eq 1 ]]; then dim "would deregister $name (triage.enabled is off)"; changed=1; continue; fi
+    if [[ "$DRY" -eq 1 ]]; then dim "would deregister $name (not wanted)"; changed=1; continue; fi
     if (cd "$ROOT" && claude mcp remove "$name" --scope local >/dev/null 2>&1); then
-      ok "$name — deregistered (triage.enabled is off)"
+      ok "$name — deregistered (not wanted)"
       changed=1
     else
       warn "$name — 'claude mcp remove' failed; remove by hand: claude mcp remove $name --scope local"

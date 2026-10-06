@@ -87,8 +87,12 @@ cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 > 🔍 **MCP secrets (workspace-root `.env`)**. Put MCP tokens in the git-ignored root `.env`
 > (loaded by the committed `.envrc` → `dotenv` / [direnv](https://direnv.net)). Do **not** put
 > them in `.claude/settings.local.json` — that file only enables servers / prefs. Stdio
-> wrappers under `scripts/mcp/` (e.g. `mcp-image`, `n8n-mcp`) read `.env` themselves so Cursor
-> works without inheriting direnv. Typical keys:
+> wrappers under `scripts/mcp/` (e.g. `mcp-image`, `sonarqube`) read `.env` themselves (falling back
+> to the main checkout's from a fresh worktree) so Cursor works without inheriting direnv. A
+> configured server connects on session start: `mcp-image` / `sonarqube` are approved when their
+> config flag is on AND their key is present; `n8n` is on demand — registered by
+> `scripts/triage-mcp.sh sync` only when both `N8N_MCP_*` keys are set, and it reaches the remote
+> only when a tool is called (`docs/adr/0043`). Typical keys:
 > ```sh
 > brew install direnv                       # + hook your shell:  eval "$(direnv hook zsh)"
 > # GEMINI_API_KEY=…          # mcp-image (https://aistudio.google.com/apikey)

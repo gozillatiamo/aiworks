@@ -27,7 +27,17 @@ SERVERS = {
     "redis_triage": "scripts/redis/redis_triage_mcp.py",
     "k8s_triage": "scripts/k8s/k8s_triage_mcp.py",
     "monitoring_triage": "scripts/monitoring/monitoring_triage_mcp.py",
+    "n8n": "scripts/n8n/n8n_mcp.py",
 }
+
+# Servers whose want is their own .env keys, not triage.enabled (docs/adr/0043).
+KEYED = {"n8n": ("N8N_MCP_URL", "N8N_MCP_ACCESS_TOKEN")}
+
+
+def server_mode(root: Path, name: str, mode: str) -> str:
+    if name in KEYED:
+        return "on" if has_keys(root, KEYED[name]) else "off"
+    return mode
 
 
 # Shared .mcp.json servers that need a secret: approved/rendered only when CONFIGURED, i.e. the
@@ -185,11 +195,12 @@ def shared_servers(root: Path) -> dict:
 
 
 def triage_entries(root: Path, mode: str, existing: dict) -> dict:
-    if mode == "off":
-        return {}
     result: dict[str, dict] = {}
     for name, relative in SERVERS.items():
-        if mode == "on":
+        m = server_mode(root, name, mode)
+        if m == "off":
+            continue
+        if m == "on":
             if (root / relative).is_file():
                 result[name] = expected(root, relative)
         elif mode == "preserve":
@@ -337,28 +348,26 @@ def read_toml_servers(path: Path) -> dict | None:
 
 def codex_triage(root: Path, mode: str, existing_path: Path) -> tuple[dict, str]:
     """The triage servers `generate.py` merges into a ROOT-only `.codex/config.toml`."""
-    if mode == "off":
-        result = {}
-        for name, relative in SERVERS.items():
-            if (root / relative).is_file():
-                entry = dict(expected(root, relative))
-                entry["enabled"] = False
-                result[name] = entry
-        return result, ""
-    if mode == "on":
-        return (
-            {name: expected(root, relative) for name, relative in SERVERS.items()
-             if (root / relative).is_file()},
-            "",
-        )
-    if mode != "preserve":
+    if mode not in ("on", "off", "preserve"):
         raise ValueError(f"unknown mode: {mode}")
+    result: dict[str, dict] = {}
+    preserved = []
+    for name, relative in SERVERS.items():
+        m = server_mode(root, name, mode)
+        if m == "preserve":
+            preserved.append((name, relative))
+        elif (root / relative).is_file():
+            entry = dict(expected(root, relative))
+            if m == "off":
+                entry["enabled"] = False
+            result[name] = entry
+    if not preserved:
+        return result, ""
     existing = read_toml_servers(existing_path)
     if existing is None:
-        return {}, ("codex triage preserve skipped: tomllib unavailable or "
-                     f"{existing_path} does not parse")
-    result = {}
-    for name, relative in SERVERS.items():
+        return result, ("codex triage preserve skipped: tomllib unavailable or "
+                        f"{existing_path} does not parse")
+    for name, relative in preserved:
         entry = existing.get(name)
         if not isinstance(entry, dict):
             continue

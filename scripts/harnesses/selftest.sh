@@ -327,4 +327,32 @@ printf 'image_generation:\n  enabled: true\nquality_gate:\n  provider: sonarqube
 test "$(grndr | jq -c '.mcpServers | keys')" = '["mcp-image","other","sonarqube"]'
 ! grndr | grep -q gate-secret
 
+# n8n (docs/adr/0043) registers like triage, but its want is its own .env keys, not triage.enabled.
+mkdir -p "$FIXTURE/scripts/n8n"; printf '#!/usr/bin/env python3\n' > "$FIXTURE/scripts/n8n/n8n_mcp.py"
+printf '{"mcpServers":{}}\n' > "$GCURSOR"
+
+# T7 + T8. Keys present, triage OFF → n8n registered in Cursor and Codex; triage masked/absent.
+printf 'N8N_MCP_URL=https://n8n.example.com/mcp\nN8N_MCP_ACCESS_TOKEN=n8n-secret\n' > "$FIXTURE/.env"
+trg --action sync --want 0 >/dev/null
+test "$(jq -r '.mcpServers.n8n.args[-1]' "$FIXTURE/.cursor/mcp.json")" = "$R/scripts/n8n/n8n_mcp.py"
+test "$(jq -r '.mcpServers.pg_triage // "absent"' "$FIXTURE/.cursor/mcp.json")" = absent
+! grep -A3 '^\[mcp_servers.n8n\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
+grep -q '^\[mcp_servers.n8n\]' "$FIXTURE/.codex/config.toml"
+grep -A3 '^\[mcp_servers.pg_triage\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
+! grep -rq n8n-secret "$FIXTURE/.cursor" "$FIXTURE/.codex"
+
+# T7. A key missing, triage ON → n8n absent from Cursor, masked in Codex; triage registered.
+printf 'N8N_MCP_URL=https://n8n.example.com/mcp\nN8N_MCP_ACCESS_TOKEN=\n' > "$FIXTURE/.env"
+trg --action sync --want 1 >/dev/null
+test "$(jq -r '.mcpServers.n8n // "absent"' "$FIXTURE/.cursor/mcp.json")" = absent
+jq -e '.mcpServers.pg_triage' "$FIXTURE/.cursor/mcp.json" >/dev/null
+grep -A3 '^\[mcp_servers.n8n\]' "$FIXTURE/.codex/config.toml" | grep -q 'enabled = false'
+rm -f "$FIXTURE/.env"
+
+# T9. The shared .mcp.json must never define n8n — status reports it like a triage server.
+cp "$FIXTURE/.mcp.json" "$FIXTURE/mcp.json.keep"
+printf '{"mcpServers":{"n8n":{"command":"x"}}}\n' > "$FIXTURE/.mcp.json"
+trg --action status --want 1 | grep -q '.mcp.json defines n8n'
+mv "$FIXTURE/mcp.json.keep" "$FIXTURE/.mcp.json"
+
 printf 'Harness registry selftest: ok\n'

@@ -45,14 +45,6 @@
     "graphify_docs": {
       "type": "stdio",
       "command": "graphify-mcp"
-    },
-    "n8n-mcp": {
-      "type": "stdio",
-      "command": "bash",
-      "args": [
-        "-c",
-        "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); exec bash \"$ROOT/scripts/mcp/n8n-mcp.sh\""
-      ]
     }
   }
 }
