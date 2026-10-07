@@ -1124,8 +1124,13 @@ EOF
   # drifted apart, which is the only warning available before a CLI update adds a rule nobody here
   # has heard of. ~30ms even when the string is absent, so it runs on a default pass.
   local cbin=""
-  cbin="$(command -v claude 2>/dev/null || true)"
-  [[ -n "$cbin" ]] && cbin="$(readlink -f "$cbin" 2>/dev/null || printf '%s' "$cbin")"
+  # First `claude` on PATH that is a real binary — a launcher wrapper (Superset's ~/.superset/bin/claude)
+  # is a shell script that never carries the rule sentence.
+  local cand
+  while IFS= read -r cand; do
+    cand="$(readlink -f "$cand" 2>/dev/null || printf '%s' "$cand")"
+    [[ -f "$cand" && "$(head -c2 "$cand" 2>/dev/null)" != '#!' ]] && { cbin="$cand"; break; }
+  done < <(type -ap claude 2>/dev/null)
   if [[ -z "$cbin" || ! -f "$cbin" ]]; then
     skip $g "workflow determinism rule unverified" "claude is not on PATH — nothing to read the live rule from"
   elif command -v node >/dev/null 2>&1 && [[ -f "$DIR/workflows/build.mjs" ]]; then
