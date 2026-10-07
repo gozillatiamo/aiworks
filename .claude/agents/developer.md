@@ -67,6 +67,10 @@ tools:
   # debugging against the platform stores. Whole-server grants.
   - mcp__postgres_main
   - mcp__postgres_secondary
+  # n8n (on-demand MCP, docs/adr/0043): the live instance is the source of truth for what a
+  # workflow really holds (trigger `path`/`webhookId`, node params) — the repo's exported JSON can
+  # omit them. Whole-server grant: just n8n_tools, n8n_call, disconnect (3 schemas).
+  - mcp__n8n
   # Read-only cache/session inspection (no writes/publish) — the same list code-reviewer and
   # qa-runner carry. NOT a whole-server grant: `mcp__redis` alone is ~53 tool schemas re-sent on
   # every turn of the highest-turn role in the pipeline, and it hands a build agent

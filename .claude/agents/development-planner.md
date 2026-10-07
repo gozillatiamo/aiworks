@@ -81,6 +81,10 @@ tools:
   - mcp__redis__json_get
   - mcp__redis__client_list
   - mcp__redis__xrange
+  # n8n (on-demand MCP, docs/adr/0043): read the live workflow (trigger `path`/`webhookId`, node
+  # params) when planning — the repo's exported JSON can omit them. Planning is read-only: use
+  # search_workflows / get_workflow_details, never update/publish/archive.
+  - mcp__n8n
 ---
 
 ## Delegation contract — the edges of this role
