@@ -59,6 +59,7 @@
       "mcp__redis",
       "mcp__pg_triage",
       "mcp__n8n",
+      "mcp__n8n__n8n_call",
       "mcp__redis_triage",
       "mcp__claude_ai_Figma__get_screenshot",
       "mcp__claude_ai_Figma__get_metadata",
