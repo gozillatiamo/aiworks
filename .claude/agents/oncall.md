@@ -150,6 +150,10 @@ tools:
   - mcp__redis__dbsize
   - mcp__redis__info
   - mcp__redis__xrange
+  - mcp__n8n
+  - mcp__n8n__n8n_tools
+  - mcp__n8n__n8n_call
+  - mcp__n8n__disconnect
 ---
 
 ## Output language — resolve BEFORE writing (do this FIRST, before your role)

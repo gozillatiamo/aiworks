@@ -85,6 +85,9 @@ tools:
   # params) when planning — the repo's exported JSON can omit them. Planning is read-only: use
   # search_workflows / get_workflow_details, never update/publish/archive.
   - mcp__n8n
+  - mcp__n8n__n8n_tools
+  - mcp__n8n__n8n_call
+  - mcp__n8n__disconnect
 ---
 
 ## Delegation contract — the edges of this role

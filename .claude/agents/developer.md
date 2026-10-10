@@ -71,6 +71,9 @@ tools:
   # workflow really holds (trigger `path`/`webhookId`, node params) — the repo's exported JSON can
   # omit them. Whole-server grant: just n8n_tools, n8n_call, disconnect (3 schemas).
   - mcp__n8n
+  - mcp__n8n__n8n_tools
+  - mcp__n8n__n8n_call
+  - mcp__n8n__disconnect
   # Read-only cache/session inspection (no writes/publish) — the same list code-reviewer and
   # qa-runner carry. NOT a whole-server grant: `mcp__redis` alone is ~53 tool schemas re-sent on
   # every turn of the highest-turn role in the pipeline, and it hands a build agent
