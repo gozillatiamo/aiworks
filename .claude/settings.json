@@ -533,6 +533,7 @@
     "DANGI_NO_NOTIFY": "1",
     "HEADROOM_UPDATE_CHECK": "off",
     "HF_HUB_OFFLINE": "1",
+    "BUILDX_BAKE_ENTITLEMENTS_FS": "0",
     "PONYTAIL_DEFAULT_MODE": "full",
     "PONYTAIL_SUBAGENT_MATCHER": "^(developer|development-planner|qa-runner|code-reviewer|guardian-engineer|general-purpose|claude|plan)$|cavecrew-builder"
   }
