@@ -288,6 +288,8 @@ For the `Split from` link, the adapter silently substitutes the **closest existi
 
 ## Guardrails
 
+**Inside `/prd` this skill never fires (docs/adr/0044).** A single request produces exactly one ticket — no split, no "too big" flag; the workflow collapses its briefs to one before ticketing. **A description is a short page.** Every piece you write keeps the core first — what is wanted, who is affected, how to see it in 5 steps or fewer, at most 6 acceptance checks, links — and everything else under `## Details`; the adapter caps the description at `tracker.max_description_chars` (default 5000) and moves an over-cap body to ONE `<KEY>-details.md` attachment. Images carried from the original stay embedded IN THE CORE under `## Evidence` with a caption, never only under `## Details`.
+
 - **Points live in fields; estimation is `/estimate-ticket`'s job.** This skill never hand-writes
   Dev/QA points and never touches the derived total — it delegates every re-estimate to
   `/estimate-ticket` so the board stays calibrated.

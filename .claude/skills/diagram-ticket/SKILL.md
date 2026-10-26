@@ -139,6 +139,8 @@ deliverable. Only continue past this point when it's `true`.
    check. An attachment-only diagram is the failure this flow exists to prevent: nobody
    reading the ticket sees it.
 
+**The diagram sits under `## Details`, not in the core (docs/adr/0044).** A description is a short page; the diagram reference line and its live-editor link go in the `## Details` block (the embed token itself does not count toward `tracker.max_description_chars`). User-supplied images are different: those go in the core under `## Evidence` with a one-line caption.
+
 ## Budget
 
 At most `diagrams.max_per_ticket` (workspace default: 2) diagrams per ticket per run.

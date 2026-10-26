@@ -196,6 +196,20 @@ to a workflow **transition** (Jira moves by transition, not by writing the field
 canonical workflow-phase → real-status mapping for this org lives in
 `docs/agents/issue-tracker.md`.
 
+## Description size cap
+
+`upsert-ticket-details.sh` caps the description at `tracker.max_description_chars`
+(`workspace.config.yaml`, default 5000; env `TRACKER_MAX_DESCRIPTION_CHARS` and a local
+override win; under 500 or non-integer falls back to 5000 with a warning). The count is UTF-16
+code units of the Markdown source after PII redaction, with `![…](attachment:…)` image tokens
+excluded. A `--body` over the cap is split: the text before `## Details` (else before the last
+heading outside a code fence that fits) stays as the description plus one pointer line, and the
+full body is written to ONE `<KEY>-details.md` — on Jira an attachment (new copy added first,
+older same-name copies removed by id, so a failed upload keeps the old file); on Notion and
+Linear the `[details · <KEY>]` durable record. When no heading boundary fits the run fails
+with exit 1 and no write. A `--description` over the cap is refused. `--dry-run` sends nothing
+and prints the plan. Offline proof: `scripts/tracker/description-cap-selftest.sh`.
+
 ## Notes / limitations
 
 - **Notion**: only *open* comments are exposed by the API; resolved threads aren't.

@@ -15,6 +15,8 @@ This skill takes the current conversation context and codebase understanding and
 
 The issue tracker and triage label vocabulary should have been provided to you — run `/setup-matt-pocock-skills` if not.
 
+**A description is a short page (docs/adr/0044).** The published ticket keeps the core first — Problem Statement, Solution in plain sentences, who is affected, at most 6 acceptance checks, links — and the rest of the PRD (User Stories, Implementation Decisions, Testing Decisions, Out of Scope, Further Notes) under `## Details`. The adapter caps the description at `tracker.max_description_chars` (default 5000) and moves an over-cap body to ONE `<KEY>-details.md` attachment, keeping the core. Images the user supplied are attached (`add-ticket-attachment.sh <KEY> <file> --embed-id`) and embedded IN THE CORE under a short `## Evidence` line with a one-line caption — never only under `## Details`; they do not count toward the cap; keep them few and captioned.
+
 ## Process
 
 1. Explore the repo to understand the current state of the codebase, if you haven't already — **codegraph FIRST** (`codegraph explore` for "how does <area> work today / where does <module> live", `codegraph query` for a named symbol), with `Grep`/`Glob`/`Read` reserved as a last resort. It is the pre-built index for this repo, so prefer it over a grep+read sweep. Use the project's domain glossary vocabulary throughout the PRD, and respect any ADRs in the area you're touching.
