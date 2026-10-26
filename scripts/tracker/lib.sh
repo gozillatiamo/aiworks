@@ -176,6 +176,7 @@ tracker_char_count() {
 tracker_split_body() {
   printf '%s' "$2" | _TS_LIMIT="$1" _TS_POINTER="$3" perl -CS -0777 -ne '
     my ($limit, $pointer) = ($ENV{_TS_LIMIT}, $ENV{_TS_POINTER});
+    utf8::decode($pointer); # env is bytes; the record pointer carries a non-ASCII `·`
     sub u16 { my $s = shift; $s =~ s/!\[[^\]]*\]\(attachment:[^)]*\)//g; my $n = length $s; $n += () = $s =~ /[\x{10000}-\x{10FFFF}]/g; $n }
     my @lines = split /\n/, $_, -1;
     my (@cuts, $fence);
