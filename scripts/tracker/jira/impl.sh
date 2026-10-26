@@ -742,6 +742,20 @@ tracker_remove_attachment() {
   printf 'Deleted attachment %s (id %s) from %s\n' "$att_name" "$att_id" "$key"
 }
 
+# Jira holds real files, so the description cap attaches `<KEY>-details.md` (lib.sh).
+tracker_supports_attachments() { return 0; }
+tracker_ticket_key() { jira_key "$1"; }
+
+# tracker_attachment_ids_by_name TICKET NAME — every attachment id carrying that filename, one per
+# line. Jira allows same-name duplicates, and tracker_remove_attachment resolves a name to the
+# FIRST match only, so replacing a file means removing the old copies by id.
+tracker_attachment_ids_by_name() {
+  local key
+  key="$(jira_key "$1")"
+  jira_api GET "/rest/api/3/issue/$key?fields=attachment" \
+    | jq -r --arg n "$2" '(.fields.attachment // [])[] | select(.filename == $n) | .id | tostring'
+}
+
 # DESTRUCTIVE, and the most destructive verb in this adapter. A deleted Jira issue does
 # not go to a trash can — its comments, attachments and history go with it and the key is
 # never reused, so a mistyped key is unrecoverable. The wrapper demands --yes for this

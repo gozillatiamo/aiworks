@@ -85,6 +85,14 @@ Behavior:
   CREATE a ticket — its number/key is auto-assigned. Pass at least one property flag
   or --body.
 
+Size cap:
+  A description is a short page: at most tracker.max_description_chars (default 5000,
+  UTF-16 units, image tokens not counted). A --body over the cap keeps the part before
+  "## Details" (else before the last heading that fits) plus one pointer line; the full
+  body is attached as <KEY>-details.md (Jira) or kept in the "[details · <KEY>]" record
+  (Notion, Linear) — one per ticket, replaced on every write. A --description over the
+  cap is refused. Env TRACKER_MAX_DESCRIPTION_CHARS overrides the config.
+
 Environment:
   TRACKER_PROVIDER     notion | jira | linear (default: notion). Provider creds live in .env.
 EOF
@@ -158,4 +166,50 @@ fields="$(jq -n --argjson cur "$fields" --argjson comps "$components_json" --arg
 # (see tracker_redact_prod_pii in lib.sh).
 [[ "$have_body" -eq 1 ]] && body_md="$(tracker_redact_prod_pii "$body_md")"
 
-tracker_upsert "$ticket" "$dry" "$fields" "$body_md"
+# Size cap (docs/adr/0044): a description is a short page. --description is a one-line field
+# and is refused over the cap; a --body over the cap is split into a core plus a pointer, and
+# the full body goes to ONE <KEY>-details.md (or the [details · <KEY>] record) after the write.
+cap="$(tracker_max_description_chars)"
+desc="$(jq -r '.description // ""' <<<"$fields")"
+if [[ -n "$desc" ]]; then
+  n="$(tracker_char_count "$desc")"
+  [[ "$n" -le "$cap" ]] || die "--description is $n characters; the cap is $cap (tracker.max_description_chars). Put the detail in --body under '## Details' instead."
+fi
+details_file=""; key=""
+if [[ "$have_body" -eq 1 ]]; then
+  [[ "$ticket" == new ]] || key="$(tracker_ticket_key "$ticket")"
+  n="$(tracker_char_count "$body_md")"
+  if [[ "$n" -gt "$cap" ]]; then
+    if tracker_supports_attachments; then
+      pointer="Full details: attached ${key:-<KEY>}-details.md"
+    else
+      pointer="Full details: see the [details · ${key:-<KEY>}] record on this ticket"
+    fi
+    core="$(tracker_split_body "$cap" "$body_md" "$pointer")" \
+      || die "body is $n characters, the cap is $cap, and no heading boundary keeps the first section under it — put the detail under '## Details' (tracker.max_description_chars)"
+    details_file="$(mktemp -d)/${key:-new}-details.md"
+    printf '%s\n' "$body_md" > "$details_file"
+    echo "note: body is $n characters, over the cap of $cap — the description keeps the first $(tracker_char_count "$core") characters plus a pointer; the full body goes to $(basename "$details_file")" >&2
+    body_md="$core"
+  elif [[ -n "$key" && "$dry" -eq 0 ]] && tracker_supports_attachments \
+       && [[ -n "$(tracker_attachment_ids_by_name "$key" "$key-details.md")" ]]; then
+    echo "warn: $key still carries $key-details.md from an earlier over-cap write; this body is under the cap, so that file is now stale — remove it with remove-ticket-attachment.sh if it no longer applies (never deleted automatically)" >&2
+  fi
+fi
+
+if [[ -z "$details_file" ]]; then
+  tracker_upsert "$ticket" "$dry" "$fields" "$body_md"
+  exit 0
+fi
+
+out="$(tracker_upsert "$ticket" "$dry" "$fields" "$body_md")"
+printf '%s\n' "$out"
+if [[ -z "$key" ]]; then
+  key="$(printf '%s\n' "$out" | sed -n 's/^Created \([A-Za-z][A-Za-z0-9]*-[0-9][0-9]*\).*/\1/p' | head -n1)"
+  if [[ -z "$key" ]]; then
+    [[ "$dry" -eq 1 ]] && { echo "DRY RUN — attach <KEY>-details.md to the created ticket" >&2; exit 0; }
+    die "the body was written with a details pointer, but no created key was found to attach $details_file to — attach it by hand"
+  fi
+  mv "$details_file" "$(dirname "$details_file")/$key-details.md"; details_file="$(dirname "$details_file")/$key-details.md"
+fi
+tracker_upsert_details_file "$key" "$dry" "$details_file"
