@@ -216,6 +216,15 @@ spliced in with `upsert-ticket-comment.sh --section` so a parallel sibling's blo
 → [ADR 0026](docs/adr/0026-a-ticket-is-a-record-not-a-transcript.md).
 *Avoid*: status comment, progress update (both describe a transcript entry).
 
+**Details attachment**:
+The single `<KEY>-details.md` file the tracker adapter attaches when a ticket description
+exceeds `tracker.max_description_chars` (default 5000). The description keeps its core — what is
+wanted or wrong, who is affected, how to see it, the acceptance checks, links — and everything
+under `## Details` moves into the attachment, so the ticket page stays a short page. A later
+under-cap write leaves a stale attachment in place with a warning; it is never deleted.
+→ [ADR 0044](docs/adr/0044-a-ticket-description-is-a-short-page.md).
+*Avoid*: overflow file, description dump (neither says the core stays on the ticket).
+
 **Record ledger**:
 The append-only `agent_logs/<KEY>-<kind>-history.tsv` a durable record renders its history from —
 one `printf >>` per run. It exists because asking an agent to carry old history lines forward into a

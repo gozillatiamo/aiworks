@@ -155,6 +155,19 @@ tracker:
                                    #   to turn a bare ticket key into a link (stagehand opens
                                    #   <base_url>/browse/<KEY>). A public hostname, not a credential;
                                    #   the API token stays in scripts/tracker/.env.
+  max_description_chars: 5000      # a ticket description is a short page (docs/adr/0044): the
+                                   #   cap on what upsert-ticket-details.sh writes as the
+                                   #   description, in UTF-16 units of the Markdown after PII
+                                   #   redaction (Jira's own count; Thai = 1 per code point,
+                                   #   emoji = 2; inline image tokens not counted). A longer
+                                   #   --body keeps the part before "## Details" plus one pointer
+                                   #   line; the FULL body is attached as <KEY>-details.md (Jira)
+                                   #   or kept in the "[details · <KEY>]" record (Notion, Linear),
+                                   #   one per ticket, replaced on each write. A --description
+                                   #   over the cap is refused. Minimum 500. Overridable in
+                                   #   workspace.config.local.yaml (shallow: a local `tracker:`
+                                   #   block without this key means the default) and by env
+                                   #   TRACKER_MAX_DESCRIPTION_CHARS.
   # Canonical workflow phase → the org's REAL status name (what the tracker shows / Jira
   # transitions to). Skills/agents/dev-cycle use these names when moving a ticket.
   # Declare WHATEVER your board uses — every key here is mirrored into the workflow. The

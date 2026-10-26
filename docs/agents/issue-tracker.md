@@ -38,6 +38,7 @@ is an ordinary comment. That is the whole test. Full reasoning:
 | `[qa-plan · <repo>]` | the QA planner | the BDD plan (current revision) + a revision ledger |
 | `[test-report · <repo>]` | `/report-test-results` | the run's verdict, screenshots and video |
 | `[plans · <KEY>]` | the main session | ONE ticket-wide record holding every repo's plan Artifact link, one line each — never a comment per repo, and omitted entirely when no page was published (artifacts off, or `planning.to_html` off) |
+| `[details · <KEY>]` | `upsert-ticket-details.sh` | the FULL description body when it is over `tracker.max_description_chars` and the provider cannot hold a file (Notion, Linear); on Jira the same body is the `<KEY>-details.md` attachment instead, replaced on every re-run |
 
 **One record, several writers — `--section`.** A record co-written by more than one agent (the
 `[dev · <KEY>]` one: a `### <repo>` section per repo) is **spliced**, never rewritten whole. Each
@@ -103,6 +104,22 @@ back to the closest; see `scripts/tracker/README.md`.
 (both providers). Use it to move an already-created issue under a freshly created epic
 (e.g. `decompose-ticket`'s epic-shape split no longer has to supersede the original —
 it can re-parent it under the new epic instead).
+
+## A description is a short page
+
+A description is read by a person in one minute, so it is capped at
+`tracker.max_description_chars` (default 5000; UTF-16 units of the Markdown source, inline image
+tokens excluded; a personal `workspace.config.local.yaml` override is allowed). A ticket writer
+puts the **core** first — what is wrong or wanted, who is affected, how to see it in 5 steps or
+fewer, at most 6 acceptance checks, links, and any user-supplied images under `## Evidence` with a
+caption — and everything else under `## Details`. A `--body` over the cap is not refused: the
+adapter keeps the part before `## Details` (else before the last heading that fits), appends one
+pointer line, and writes the full body to ONE `<KEY>-details.md` attachment (Jira), replaced on
+every re-run and never lost when an upload fails; a provider without attachments keeps it in the
+`[details · <KEY>]` record. A `--description` over the cap IS refused — it is a one-line field.
+A later under-cap write leaves an older `<KEY>-details.md` in place with a warning; it is never
+deleted automatically. Images go in the core because an embed token does not render inside the
+`.md` attachment. Full reasoning: [ADR 0044](../adr/0044-a-ticket-description-is-a-short-page.md).
 
 ## This workspace's settings
 

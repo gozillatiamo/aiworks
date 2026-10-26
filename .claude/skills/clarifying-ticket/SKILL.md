@@ -59,6 +59,8 @@ for this org's ticket-id format, status names, and any read-only fields.
 > ticket for a finding the board already tracks. Always `--dry-run` a write first when
 > unsure.
 
+**A description is a short page (docs/adr/0044).** Write the core first — what is wrong or wanted, who is affected, how to see it in 5 steps or fewer, at most 6 acceptance checks, links — and put everything else under `## Details`. The adapter caps the description at `tracker.max_description_chars` (default 5000) and moves an over-cap body to ONE `<KEY>-details.md` attachment, keeping the core. Images the user supplied are attached (`add-ticket-attachment.sh <KEY> <file> --embed-id`) and embedded IN THE CORE under a short `## Evidence` line with a one-line caption — never only under `## Details` (an embed token does not render inside a `.md` attachment); they do not count toward the cap; keep them few and captioned. Shape: `templates.md`.
+
 ## Modes (detect from how you were called)
 
 - **A — File an Improvement from a gate finding** (autonomous; the dev-cycle

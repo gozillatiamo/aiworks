@@ -138,6 +138,8 @@ User story / context:
 <…3–5 total scenarios, each a distinct focus area…>
 ```
 
+**A description is a short page (docs/adr/0044).** The scenarios ARE the core; keep them plain and put any long preamble, environment notes or data setup under `## Details`. The adapter caps the description at `tracker.max_description_chars` (default 5000) and moves an over-cap body to ONE `<KEY>-details.md` attachment, keeping the core. Images the user supplied are attached (`add-ticket-attachment.sh <KEY> <file> --embed-id`) and embedded IN THE CORE under a short `## Evidence` line with a one-line caption — never only under `## Details`; they do not count toward the cap.
+
 ### Create + link to parent (one adapter call)
 
 Write the scenarios to a temp markdown file, then create the sub-task:

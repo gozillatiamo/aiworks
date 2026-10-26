@@ -65,8 +65,11 @@ const ARGS = process.env.ARGS
 
 const PROMPTS = {}
 const LINES = []
+let INVESTIGATE = 0
+const investigateCalls = () => INVESTIGATE
 
 async function runOnce(argsVal, canned) {
+  INVESTIGATE = 0
   const budget = { spent: () => 0 }
   const phase = () => {}
   const log = (s) => LINES.push(String(s))
@@ -74,6 +77,7 @@ async function runOnce(argsVal, canned) {
   const agent = async (prompt, opts) => {
     const label = opts && opts.label
     if (!label || !(label in canned)) throw new Error('selftest: unstubbed agent label ' + label)
+    if (label.startsWith('investigate:')) INVESTIGATE += 1
     PROMPTS[label] = prompt
     return canned[label]
   }
@@ -115,6 +119,23 @@ const CANNED_DOC_URL = {
   'tickets:brd-import': { tickets: [{ task_name: 'Some feature', url: 'https://tracker/NEW-1', ui_bearing: false, figma_link: null, priority: 'Medium', effort: 'Small', sprint: 'unscheduled' }], board_url: 'https://tracker', coverage_note: '' },
   'summary:brd-import': { summary_path: 'agent_logs/brd-import-PRD-SUMMARY.md', note: '' },
 }
+// Two briefs (one a bug) for the single-request collapse scenarios; stubs keyed by workKey.
+// A collapsed run investigates only the merged feature (first brief's name → slug 'fix-login').
+const TWO_FEATURES = [
+  { name: 'Fix login', ui_bearing: false, is_bug: true, brief: 'login breaks', user_value: 'v', acceptance_intent: ['A1'], priority: 'Medium', effort: 'Small', dependencies: [] },
+  { name: 'Add logout', ui_bearing: true, is_bug: false, brief: 'logout button', user_value: 'v', acceptance_intent: ['A2'], priority: 'High', effort: 'Large', dependencies: [] },
+]
+const INVESTIGATION = { root_cause: 'r', reproduce_steps: ['s1'], fix_guideline: 'f', affected: [], confidence: 'CONFIRMED' }
+const cannedTwo = (wk) => ({
+  'resolve-language': CANNED_BASE['resolve-language'],
+  ['recon:' + wk]: { existing: [], anchor: null, note: '' },
+  ['intake:' + wk]: { features: TWO_FEATURES, notes: '' },
+  ['consult:' + wk]: { findings: [{ feature: 'Fix login', feasible: true }, { feature: 'Add logout', feasible: true }], notes: '' },
+  'investigate:fix-login': INVESTIGATION,
+  'investigate:add-logout': INVESTIGATION,
+  ['tickets:' + wk]: { tickets: [{ task_name: 'Fix login', url: 'https://tracker/NEW-1', ui_bearing: false, figma_link: null, priority: 'High', effort: 'Large', sprint: 'unscheduled' }], board_url: 'https://tracker', coverage_note: '' },
+  ['summary:' + wk]: { summary_path: 'agent_logs/' + wk + '-PRD-SUMMARY.md', note: '' },
+})
 
 ;(async () => {
   try {
@@ -149,6 +170,59 @@ const CANNED_DOC_URL = {
       report('T4_prompt_bans_moving_anchor_off_active_sprint', ticketingPrompt.includes('a writable key ALREADY sitting in an ACTIVE sprint is NEVER moved'))
       report('T4_prompt_never_the_anchor_itself', ticketingPrompt.includes('not even the anchor itself'))
       report('T4_prompt_bans_new_ticket_for_grounding_finding', ticketingPrompt.includes('NEVER create a new ticket in TICKET MODE'))
+    } else if (SCENARIO === 'T5_TICKETING_CARRIES_DETAILS_RULE') {
+      await runOnce('https://tracker.example/browse/APP-501', CANNED_BASE)
+      const p = PROMPTS['tickets:app-501'] || ''
+      report('T5_prompt_names_description_shape', p.includes('DESCRIPTION SHAPE (docs/adr/0044)'))
+      report('T5_prompt_puts_rest_under_details', p.includes('## Details'))
+      report('T5_technical_notes_under_details', p.includes('"Technical notes" block under the `## Details` heading'))
+    } else if (SCENARIO === 'T6_FREE_TEXT_COLLAPSES_TO_ONE') {
+      const text = 'fix the login page and add a logout button'
+      const wk = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+      const result = await runOnce(text, cannedTwo(wk))
+      report('T6_one_feature', result.featureCount === 1, `got ${result.featureCount}`)
+      report('T6_intake_asks_one_brief', (PROMPTS['intake:' + wk] || '').includes('SINGLE REQUEST — return EXACTLY ONE brief'))
+      report('T6_one_investigate_run', investigateCalls() === 1, `got ${investigateCalls()}`)
+      const m = result.briefs.features[0]
+      report('T6_merged_is_bug_and_highest_priority', m.is_bug === true && m.ui_bearing === true && m.priority === 'High' && m.effort === 'Large', JSON.stringify([m.is_bug, m.ui_bearing, m.priority, m.effort]))
+      report('T6_merged_brief_lists_slices', m.brief.startsWith('Slice: Fix login — ') && m.brief.includes('\nSlice: Add logout — ') && m.acceptance_intent.length === 2)
+      report('T6_log_says_collapsed', LINES.some((l) => l.includes('collapsed 2 briefs into 1')))
+    } else if (SCENARIO === 'T7_KEY_AND_AGENT_LOGS_PATH_COLLAPSE') {
+      const r1 = await runOnce('APP-501', cannedTwo('app-501'))
+      report('T7_ticket_key_one_feature', r1.featureCount === 1, `got ${r1.featureCount}`)
+      const r2 = await runOnce('agent_logs/x/brief.md', cannedTwo('brief'))
+      report('T7_agent_logs_path_one_feature', r2.featureCount === 1, `got ${r2.featureCount}`)
+    } else if (SCENARIO === 'T8_BRD_INPUTS_KEEP_ALL_FEATURES') {
+      const r1 = await runOnce('phase-2', cannedTwo('phase-2'))
+      report('T8_phase_two_features', r1.featureCount === 2, `got ${r1.featureCount}`)
+      const r2 = await runOnce('docs/brd/phase-2.md', cannedTwo('phase-2'))
+      report('T8_brd_path_two_features', r2.featureCount === 2, `got ${r2.featureCount}`)
+      const r3 = await runOnce('https://notion.so/team/Some-Feature-42-notes-abcdef0123456789', cannedTwo('brd-import'))
+      report('T8_doc_url_two_features', r3.featureCount === 2, `got ${r3.featureCount}`)
+      report('T8_ticketing_prompt_has_no_single_rule', !(PROMPTS['tickets:brd-import'] || '').includes('SINGLE REQUEST'))
+      const r4 = await runOnce({ brd: 'phase-2', single: true }, cannedTwo('phase-2'))
+      report('T8_single_true_overrides_to_one', r4.featureCount === 1, `got ${r4.featureCount}`)
+      const r5 = await runOnce({ brd: 'APP-501', single: false }, cannedTwo('app-501'))
+      report('T8_single_false_overrides_to_two', r5.featureCount === 2, `got ${r5.featureCount}`)
+    } else if (SCENARIO === 'T9_TICKETING_STAGE_COLLAPSES') {
+      const result = await runOnce({
+        brd: 'APP-501', stage: 'ticketing',
+        features: TWO_FEATURES,
+        ctoFindings: [{ feature: 'Fix login', feasible: true }, { feature: 'Add logout', feasible: true }],
+        bugInvestigations: [],
+      }, cannedTwo('app-501'))
+      report('T9_one_feature', result.featureCount === 1, `got ${result.featureCount}`)
+      const p = PROMPTS['tickets:app-501'] || ''
+      report('T9_findings_renamed_to_merged', p.includes('{"feature":"Fix login","feasible":true},{"feature":"Fix login","feasible":true}'))
+      report('T9_prompt_demands_exactly_one_ticket', p.includes('EXACTLY ONE ticket'))
+      report('T9_prompt_never_split', p.includes('never split it, never flag it oversized'))
+    } else if (SCENARIO === 'T10_IMAGES_PASS_THROUGH') {
+      await runOnce({ brd: 'APP-501', images: ['/tmp/a.png', { path: '/tmp/b.png', caption: 'before' }] }, CANNED_BASE)
+      const p1 = PROMPTS['tickets:app-501'] || ''
+      report('T10_images_block_present', p1.includes('IMAGES —') && p1.includes('/tmp/a.png') && p1.includes('/tmp/b.png'))
+      report('T10_images_embedded_in_core', p1.includes('## Evidence'))
+      await runOnce('https://tracker.example/browse/APP-501', CANNED_BASE)
+      report('T10_images_block_absent_without_args', !(PROMPTS['tickets:app-501'] || '').includes('IMAGES —'))
     } else {
       throw new Error('unknown SCENARIO ' + SCENARIO)
     }
@@ -193,6 +267,24 @@ out="$(run_scenario T3_INTAKE_FORBIDS_SPLIT_BUG_TICKET)"; [[ "$VERBOSE" -eq 1 ]]
 
 echo "── T4 — Ticketing's prompt bans moving the anchor off its active sprint + minting a sibling ticket"
 out="$(run_scenario T4_TICKETING_GUARDS_SPRINT_AND_NEW_TICKET)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── T5 — Ticketing's prompt carries the short-page description rule (core first, rest under ## Details)"
+out="$(run_scenario T5_TICKETING_CARRIES_DETAILS_RULE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── T6 — free text is a single request: two briefs collapse into one feature, one Investigate run"
+out="$(run_scenario T6_FREE_TEXT_COLLAPSES_TO_ONE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── T7 — a ticket key and an agent_logs/ path are single requests too"
+out="$(run_scenario T7_KEY_AND_AGENT_LOGS_PATH_COLLAPSE)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── T8 — phase-N, docs/brd path and a doc URL keep one ticket per feature; args.single overrides"
+out="$(run_scenario T8_BRD_INPUTS_KEEP_ALL_FEATURES)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── T9 — stage:'ticketing' collapses a single request's features and renames the CTO findings"
+out="$(run_scenario T9_TICKETING_STAGE_COLLAPSES)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
+
+echo "── T10 — args.images reach the Ticketing prompt as an ## Evidence embed instruction"
+out="$(run_scenario T10_IMAGES_PASS_THROUGH)"; [[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'; ingest "$out"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

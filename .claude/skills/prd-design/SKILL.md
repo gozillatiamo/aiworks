@@ -197,6 +197,14 @@ finished.
 
 ## Notes
 - Pass `args` as a real JSON object to Workflow, not a stringified one.
+- One request, one ticket (docs/adr/0044): a ticket key or URL, an `agent_logs/` path, or free
+  text is a SINGLE request — the intake stage returns one brief (extra briefs are collapsed into
+  the first) and the ticketing stage writes exactly ONE ticket. A BRD ref keeps one ticket per
+  feature. `single: true|false` in `args` overrides the classifier; carry it into both calls.
+- Pasted images: collect every `[Image: source: <path>]` the harness showed in the conversation
+  (files under the session `images/` dir) and pass the absolute paths, optionally
+  `{ path, caption }`, as `args.images` on the ticketing call. The Product Owner attaches each one
+  and embeds it in the description core under `## Evidence`; a missing path is a warning only.
 - Concurrency: run the read-only **planners** concurrently, but **serialize the
   Figma-WRITING steps** (`ux-ui-designer` builds + `graphic-designer` Assets-page writes) —
   concurrent writers on the one canonical file collide/cross-contaminate pages (see step 2).

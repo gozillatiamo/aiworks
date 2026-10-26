@@ -13,4 +13,13 @@ Run the canonical `.claude/workflows/src/prd.js`; never improvise or restate its
 - Under Codex, run `./aiworks workflow prd --harness codex <original arguments>`.
 - Under Cursor, run `./aiworks workflow prd --harness cursor <original arguments>`.
 
+One request, one ticket (docs/adr/0044): a ticket key or URL, a path under `agent_logs/`, or
+free text is a SINGLE request and always produces exactly ONE ticket, however large; only a BRD
+(`phase-N`, `docs/brd/<key>.md`, a doc-space URL, a one-word work-key) yields one ticket per
+feature. Pass `args: { brd: <ref>, single: true|false }` to override the classifier. Before
+invoking, collect every image the user pasted into the conversation — the harness shows each as
+`[Image: source: <path>]`, stored under the session `images/` dir — and pass the absolute paths
+(optionally `{ path, caption }`) as `args.images`; the Product Owner attaches each one and embeds
+it in the description core under `## Evidence`. A missing path is a warning, never a failure.
+
 Stream phase output and return the runtime's final summary. Use the existing `prd-design` skill when its documented authenticated Figma split is required.

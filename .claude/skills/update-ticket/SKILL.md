@@ -37,6 +37,8 @@ and id format are defined in `docs/agents/issue-tracker.md` / `workspace.config.
 Do **both** when the task calls for it (e.g. comment the plan *and* move Status →
 Testing) — just run the two scripts.
 
+**A description is a short page (docs/adr/0044).** A `--body` you write keeps the core first — what is wrong or wanted, who is affected, how to see it in 5 steps or fewer, at most 6 acceptance checks, links — and everything else under `## Details`. `upsert-ticket-details.sh` caps the description at `tracker.max_description_chars` (default 5000) and moves an over-cap body to ONE `<KEY>-details.md` attachment (the `[details · <KEY>]` record on Notion/Linear), keeping the core; a `--description` over the cap is refused. Images the user supplied are attached (`add-ticket-attachment.sh <KEY> <file> --embed-id`) and embedded IN THE CORE under a short `## Evidence` line with a one-line caption — never only under `## Details` (an embed token does not render inside a `.md` attachment); they do not count toward the cap; keep them few and captioned.
+
 ## 1. Resolve the ticket
 
 `$ticket` accepts a full key (`FM-9` / `APP-123`), a bare number (`9`), a tracker page
