@@ -76,6 +76,14 @@ workspace.config.local.yaml
 # traversable and Cursor still reads them. Measured both ways.
 .cursor/rules/repos/**/*.mdc
 
+# This root's project-scope MCP registration — `.mcp.json`'s servers plus the triage
+# entries that `scripts/triage-mcp.sh sync` adds (docs/adr/0038). Written by `aiworks
+# cursor` and `aiworks codex`, never committed: every triage entry carries THIS
+# checkout's absolute path, and triage-mcp.sh refuses to write into a file that is
+# tracked or not ignored. Anchored: a repo clone's own .cursor/mcp.json is its own.
+/.cursor/mcp.json
+/.codex/config.toml
+
 # product repo clones (cloned by aiworks; not committed to the workspace meta-repo).
 # `aiworks add` appends one ANCHORED `/<repo-dir>/` line per onboarded repo below this
 # comment, and `aiworks remove` drops it again — no hand-editing needed. The leading
