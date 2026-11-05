@@ -9,9 +9,38 @@ aiworks gc --all -n                   # preview a real run
 aiworks gc --orphans                  # reap the UI-Delete leftovers
 aiworks gc --artifacts --idle-days 7  # clear target//node_modules from week-idle worktrees
 aiworks gc --dispatch --ttl-days 3    # reap stale slack/req-* dispatch worktrees
+aiworks gc --caches                   # clear uv / pnpm / npm / puppeteer caches
+aiworks gc --path ~/code              # idle target//node_modules outside Superset worktrees
 aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
 aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts
 ```
+
+## Beyond worktrees: host caches and plain checkouts
+
+Two selectors cover disk that is not a Superset worktree. Both are included in `--all` and in
+the bare report.
+
+**`--caches`** clears host-wide tool caches. Everything in it regenerates on next use:
+
+| Cache | Command | Reclaims |
+|---|---|---|
+| uv | `UV_LOCK_TIMEOUT=10 uv cache clean` | the whole cache |
+| pnpm | `pnpm store prune` | unreferenced packages only |
+| npm | `npm cache clean --force` | the whole cache |
+| puppeteer | `rm -rf ~/.cache/puppeteer` | downloaded browsers |
+
+The worktree liveness and git checks do not apply here; each tool's own lock is the guard. uv
+holds one while any `uv run` / `uvx` process lives (an MCP server started that way is enough),
+so the GC bounds the wait to 10s, **skips** that cache with a warning and carries on. It never
+forces past the lock. A tool that is not installed is silently skipped.
+
+**`--path DIR`** (repeatable) extends the `--artifacts` sweep to checkouts that are not
+Superset worktrees, such as a primary clone's `target/`, which on a Rust service is routinely
+tens of GiB. It implies `--artifacts` and still runs the sweep through the Superset CLI
+precondition. It keeps invariant I2 but judges it **per project** (the directory holding the
+`target/` or `node_modules/`), not per root: one repo being edited does not shield its idle
+neighbours, and a running build is never touched. `target/` is only cleared beside a
+`Cargo.toml`, since elsewhere it is just a directory name.
 
 ## What leaks, and why
 

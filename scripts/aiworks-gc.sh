@@ -43,10 +43,14 @@
 #     --orphans        reap worktrees Superset no longer lists (the UI-Delete leftovers)
 #     --artifacts      reap target/ + node_modules from IDLE worktrees, live ones included
 #     --dispatch       reap slack/req-* dispatch worktrees past their TTL
-#     --all            all three
+#     --caches         clear host tool caches: uv · pnpm store · npm · puppeteer (all regenerable)
+#     --all            all four
 #
 #   Options:
 #     --project NAME   only this Superset project (default: every project)
+#     --path DIR       (repeatable) also sweep target/ + node_modules under DIR, for checkouts that
+#                      are not Superset worktrees. Implies --artifacts. Same liveness checks, run per
+#                      project; target/ is only cleared beside a Cargo.toml.
 #     --idle-days N    (--artifacts) idle threshold, default 3 (7 for the scheduled job)
 #     --ttl-days N     (--dispatch)  age threshold, default 7
 #     -n, --dry-run    print what WOULD happen; change nothing
@@ -77,7 +81,8 @@ warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────────
-DO_ORPHANS=0 DO_ARTIFACTS=0 DO_DISPATCH=0 REPORT_ONLY=1
+DO_ORPHANS=0 DO_ARTIFACTS=0 DO_DISPATCH=0 DO_CACHES=0 REPORT_ONLY=1
+EXTRA_PATHS=()
 DRY=0 FORCE=0 IDLE_DAYS=3 TTL_DAYS=7 PROJECT= SCCACHE=0 IDLE_SET=0 SCHEDULE=
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
 while [[ $# -gt 0 ]]; do
@@ -85,7 +90,9 @@ while [[ $# -gt 0 ]]; do
     --orphans)   DO_ORPHANS=1;  REPORT_ONLY=0; shift ;;
     --artifacts) DO_ARTIFACTS=1; REPORT_ONLY=0; shift ;;
     --dispatch)  DO_DISPATCH=1; REPORT_ONLY=0; shift ;;
-    --all)       DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; REPORT_ONLY=0; shift ;;
+    --caches)    DO_CACHES=1;   REPORT_ONLY=0; shift ;;
+    --all)       DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; REPORT_ONLY=0; shift ;;
+    --path)      EXTRA_PATHS+=("${2:?--path needs a directory}"); DO_ARTIFACTS=1; REPORT_ONLY=0; shift 2 ;;
     --project)   PROJECT="${2:?--project needs a name}"; shift 2 ;;
     --idle-days) IDLE_DAYS="${2:?--idle-days needs a number}"; IDLE_SET=1; shift 2 ;;
     --ttl-days)  TTL_DAYS="${2:?--ttl-days needs a number}"; shift 2 ;;
@@ -105,7 +112,7 @@ done
 # No selector: report every category, touch nothing. Reporting is always safe. A bare
 # --enable-sccache / --*-schedule is a host-setup action on its own, not a reason to sweep.
 if [[ "$REPORT_ONLY" -eq 1 && "$SCCACHE" -eq 0 && -z "$SCHEDULE" ]]; then
-  DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DRY=1
+  DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; DRY=1
 fi
 
 WT_ROOT="${SUPERSET_HOME:-$HOME/.superset}/worktrees"
@@ -258,6 +265,44 @@ discover() {
   done
 }
 
+# ── host tool caches (--caches) ───────────────────────────────────────────────────
+# Host-wide and regenerable, nothing to do with worktrees, so the worktree liveness and git
+# checks do not apply — each tool's own lock is the guard. A cache in use (uv holds a lock
+# while any `uv run`/`uvx` lives, e.g. an MCP server) is skipped with a warning, never forced:
+# the next run gets it.
+clear_cache() {  # $1 label · $2 dir to size (may be empty) · $3.. the command that clears it
+  local label="$1" dir="$2" before=0 after=0; shift 2
+  [[ -n "$dir" && -d "$dir" ]] && before="$(size_kb "$dir")"; before="${before:-0}"
+  if [[ "$DRY" -eq 1 ]]; then
+    info "would clear  $label  (up to $(human "$before"))"; FREED_KB=$((FREED_KB + before)); return 0
+  fi
+  if "$@" >/dev/null 2>&1; then
+    [[ -n "$dir" && -d "$dir" ]] && after="$(size_kb "$dir")"; after="${after:-0}"
+    ok "cleared  $label  ($(human $((before - after))))"; FREED_KB=$((FREED_KB + before - after))
+  else
+    warn "skip  $label  — \`$*\` failed (in use? re-run when idle)"
+  fi
+}
+
+clear_host_caches() {
+  step "Host tool caches"
+  local n=0
+  if command -v uv >/dev/null 2>&1; then
+    n=1; clear_cache "uv cache" "$(uv cache dir 2>/dev/null)" env UV_LOCK_TIMEOUT=10 uv cache clean
+  fi
+  if command -v pnpm >/dev/null 2>&1; then
+    n=1; clear_cache "pnpm store (unreferenced packages)" "$(pnpm store path 2>/dev/null)" pnpm store prune
+  fi
+  if command -v npm >/dev/null 2>&1; then
+    n=1; clear_cache "npm cache" "$(npm config get cache 2>/dev/null)" npm cache clean --force
+  fi
+  if [[ -d "$HOME/.cache/puppeteer" ]]; then
+    n=1; clear_cache "puppeteer browsers" "$HOME/.cache/puppeteer" rm -rf "$HOME/.cache/puppeteer"
+  fi
+  [[ "$n" -eq 0 ]] && info "no known caches present"
+  return 0
+}
+
 # ── sccache (opt-in, one-time host setup) ─────────────────────────────────────────
 # The parallel-safe half of the disk story: a cache SERVER, not a locked shared directory,
 # so N worktrees can compile at once and still reuse each other's objects.
@@ -401,6 +446,16 @@ schedule_status() {
   fi
 }
 
+summary() {
+  step "Summary"
+  if [[ "$DRY" -eq 1 ]]; then
+    info "reclaimable: $(human "$FREED_KB")"
+    [[ "$REPORT_ONLY" -eq 1 ]] && info "report only — pass --all (or a selector) to act, -n to preview a real run"
+  else
+    ok "reclaimed: $(human "$FREED_KB")"
+  fi
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────────
 case "$SCHEDULE" in
   install)   install_schedule; exit 0 ;;
@@ -413,6 +468,11 @@ command -v jq >/dev/null 2>&1 || die "jq is required (brew install jq)"
 if [[ "$SCCACHE" -eq 1 ]]; then
   enable_sccache
   [[ "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]] && exit 0
+fi
+
+if [[ "$DO_CACHES" -eq 1 ]]; then
+  clear_host_caches
+  if [[ "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]]; then summary; exit 0; fi
 fi
 
 command -v superset >/dev/null 2>&1 || die "the 'superset' CLI is not on PATH — this GC reads the live workspace list from it and refuses to guess"
@@ -467,6 +527,25 @@ if [[ "$DO_ARTIFACTS" -eq 1 ]]; then
     done < <(find "$wt" -maxdepth 3 \( -name target -o -name node_modules \) -type d -prune 2>/dev/null)
     [[ "$found" -eq 0 ]] && dim "none  $(basename "$wt")"
   done
+  # --path roots: checkouts outside Superset. I2 is judged per PROJECT (the dir holding the
+  # artifact), so one live repo does not shield its idle neighbours and nothing under a running
+  # build is touched. target/ only counts beside a Cargo.toml — elsewhere it is just a name.
+  for root in "${EXTRA_PATHS[@]:-}"; do
+    [[ -n "$root" ]] || continue
+    [[ -d "$root" ]] || { warn "--path $root is not a directory"; continue; }
+    while IFS= read -r art; do
+      [[ -n "$art" ]] || continue
+      proj="$(dirname "$art")"
+      [[ "$(basename "$art")" == target && ! -f "$proj/Cargo.toml" ]] && continue
+      if reason="$(busy_reason "$proj" "$IDLE_DAYS")"; then
+        busy=$((busy + 1)); info "keep  ${art#$root/}  — in use ($reason)"; continue
+      fi
+      acted=1; kb="$(size_kb "$art")"; kb="${kb:-0}"
+      if [[ "$DRY" -eq 1 ]]; then info "would clear  $art  ($(human "$kb"))"
+      else rm -rf "$art" && ok "cleared  $art  ($(human "$kb"))"; fi
+      FREED_KB=$((FREED_KB + kb))
+    done < <(find "$root" -maxdepth 3 \( -name target -o -name node_modules \) -type d -prune 2>/dev/null)
+  done
   [[ "$acted" -eq 0 && "$busy" -eq 0 ]] && info "nothing to clear"
   [[ "$busy" -gt 0 ]] && info "${c_dim}$busy worktree(s) left alone so their builds keep running — raise --idle-days to be stricter${c_off}"
 fi
@@ -499,11 +578,4 @@ if [[ "$DO_DISPATCH" -eq 1 ]]; then
   [[ "$hits" -eq 0 ]] && info "none past TTL"
 fi
 
-# ── summary ───────────────────────────────────────────────────────────────────────
-step "Summary"
-if [[ "$DRY" -eq 1 ]]; then
-  info "reclaimable: $(human "$FREED_KB")"
-  [[ "$REPORT_ONLY" -eq 1 ]] && info "report only — pass --all (or a selector) to act, -n to preview a real run"
-else
-  ok "reclaimed: $(human "$FREED_KB")"
-fi
+summary
