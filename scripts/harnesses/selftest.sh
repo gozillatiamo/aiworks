@@ -17,6 +17,11 @@ HELPER="$ROOT/scripts/harnesses/config.py"
 REGISTRY="$ROOT/scripts/harnesses/registry.json"
 fallback="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --fallback | tr '\n' ' ')"
 test "$fallback" = "claude cursor "
+# The example config's inline form carries a trailing comment; it must read as the empty list,
+# not as a Harness named `# claude | cursor | codex…`.
+printf 'harnesses: []   # claude | cursor | codex; multiple values supported\n' > "$FIXTURE/shared-commented.yaml"
+commented="$(python3 "$HELPER" list --config "$FIXTURE/shared-commented.yaml" --registry "$REGISTRY" --fallback | tr '\n' ' ')"
+test "$commented" = "claude cursor "
 python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses codex,claude >/dev/null
 selected="$(python3 "$HELPER" list --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" | tr '\n' ' ')"
 test "$selected" = "codex claude "

@@ -32,7 +32,9 @@ def configured(path: Path) -> list[str] | None:
         match = re.match(r"^harnesses:\s*(.*?)\s*$", raw)
         if not match:
             continue
-        inline = match.group(1)
+        # Trailing `# comment` is dropped: ids are [a-z0-9-], so a `#` is never part of one
+        # (workspace.config.example.yaml ships `harnesses: []   # claude | cursor | codex`).
+        inline = re.sub(r"\s*#.*$", "", match.group(1))
         if inline:
             inline = inline.strip()
             if inline.startswith("[") and inline.endswith("]"):

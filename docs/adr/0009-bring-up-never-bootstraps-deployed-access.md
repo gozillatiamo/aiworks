@@ -1,6 +1,8 @@
 # Workspace bring-up never bootstraps deployed-environment access
 
-**Status:** Accepted
+**Status:** Accepted. Amended by [ADR 0045](0045-sync-registers-the-triage-mcps.md): `aiworks sync`
+runs `scripts/triage-mcp.sh sync` again; the Kubernetes-identity half (no probe, no bootstrap)
+stands.
 
 `aiworks sync` is the repo onboarding sweep: clone what is declared, link the adapters, wire the
 agent config. It had also grown two deployed-environment steps — it registered the three read-only

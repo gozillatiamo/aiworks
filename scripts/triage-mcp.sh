@@ -35,9 +35,9 @@
 #   scripts/triage-mcp.sh status       # report policy + what is registered
 #   scripts/triage-mcp.sh sync -n      # preview; change nothing
 #
-# RUN IT YOURSELF — `aiworks sync` does NOT (docs/adr/0009). Sync onboards repos; it does not
-# reach into a deployed environment on your behalf, so it only REPORTS an unregistered server in
-# its summary. `aiworks doctor` scores the same gap and `aiworks doctor --fix` runs this script.
+# `aiworks sync` runs this at the end of every run (docs/adr/0045), so a fresh clone needs no second
+# command; run it yourself after changing `triage.*` or to see why a registration was refused.
+# `aiworks doctor` scores the same gap and `aiworks doctor --fix` runs this script.
 # A machine that also wants production adds `triage.prod: true` — no re-registration needed.
 set -uo pipefail
 

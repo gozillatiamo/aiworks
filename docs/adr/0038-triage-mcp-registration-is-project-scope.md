@@ -60,8 +60,9 @@ on one winner, never on "both, correctly."
 ## Consequences
 
 - A fresh clone has neither `<root>/.cursor/mcp.json` nor `<root>/.codex/config.toml` until
-  `aiworks sync` runs the projectors once, and no triage until `scripts/triage-mcp.sh sync` runs.
-  Both are one-time, explicit, and named by the tool that reports the gap.
+  `aiworks sync` runs the projectors once; the same sync then runs `scripts/triage-mcp.sh sync`
+  (`docs/adr/0045`), so the one command fills both. Both files are git-ignored by the committed
+  `.gitignore` — the guard refuses to write triage into a file that is tracked or not ignored.
 - Upgrading past this change deletes both files' tracked history in one commit
   (`git rm --cached`). Existing machines keep their *own* global registrations until the next
   `scripts/triage-mcp.sh sync`, so there is no outage window: the old global entry keeps serving
