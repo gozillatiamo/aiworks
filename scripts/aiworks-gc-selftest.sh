@@ -110,6 +110,17 @@ check "target/ under a process cwd is KEPT" "$r" "present"
 [[ -d "$P/notcargo/target" ]] && r=present || r=gone
 check "a target/ with no Cargo.toml beside it is KEPT" "$r" "present"
 
+# A root like ~/projects holds org/workspace/repo/target — 4 levels down, past the worktree depth.
+D="$TMP/deep"; mkdir -p "$D/org/ws/repo/target" "$D/empty"
+touch "$D/org/ws/repo/Cargo.toml" "$D/org/ws/repo/target/x"
+find "$D" -exec touch -t 202001010000 {} +
+out="$(PATH="$TMP/bin:$PATH" SUPERSET_HOME="$TMP/home/.superset" bash "$GC" --path "$D" 2>&1)"
+[[ -d "$D/org/ws/repo/target" ]] && r=present || r=gone
+check "target/ four levels below the root is found and cleared" "$r" "gone"
+out="$(PATH="$TMP/bin:$PATH" SUPERSET_HOME="$TMP/home/.superset" bash "$GC" --path "$D/empty" 2>&1)"
+grep -q "nothing to clear under $D/empty" <<<"$out" && r=said || r=silent
+check "a root that yields nothing says so instead of staying silent" "$r" "said"
+
 # ── --caches: host tool caches ───────────────────────────────────────────────────
 echo "── --caches"
 

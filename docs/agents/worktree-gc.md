@@ -59,7 +59,8 @@ tens of GiB. It implies `--artifacts` and still runs the sweep through the Super
 precondition. It keeps invariant I2 but judges it **per project** (the directory holding the
 `target/` or `node_modules/`), not per root: one repo being edited does not shield its idle
 neighbours, and a running build is never touched. `target/` is only cleared beside a
-`Cargo.toml`, since elsewhere it is just a directory name.
+`Cargo.toml`, since elsewhere it is just a directory name. Each root is searched 8 levels
+deep, and a root that yields nothing says so rather than staying silent.
 
 ## What leaks, and why
 

@@ -569,8 +569,10 @@ if [[ "$DO_ARTIFACTS" -eq 1 ]]; then
   for root in "${EXTRA_PATHS[@]:-}"; do
     [[ -n "$root" ]] || continue
     [[ -d "$root" ]] || { warn "--path $root is not a directory"; continue; }
+    seen=0
     while IFS= read -r art; do
       [[ -n "$art" ]] || continue
+      seen=$((seen + 1))
       proj="$(dirname "$art")"
       [[ "$(basename "$art")" == target && ! -f "$proj/Cargo.toml" ]] && continue
       if reason="$(busy_reason "$proj" "$IDLE_DAYS")"; then
@@ -580,7 +582,11 @@ if [[ "$DO_ARTIFACTS" -eq 1 ]]; then
       if [[ "$DRY" -eq 1 ]]; then info "would clear  $art  ($(human "$kb"))"
       else rm -rf "$art" && ok "cleared  $art  ($(human "$kb"))"; fi
       FREED_KB=$((FREED_KB + kb))
-    done < <(find "$root" -maxdepth 3 \( -name target -o -name node_modules \) -type d -prune 2>/dev/null)
+    # Depth 8, not the worktree's 3: a root such as ~/projects holds org/workspace/repo/target
+    # (4 deep), and a nested worktree under it goes deeper still. A depth that is too shallow
+    # finds nothing and looks like a clean machine — so say so when a root yields nothing.
+    done < <(find "$root" -maxdepth 8 \( -name target -o -name node_modules \) -type d -prune 2>/dev/null)
+    [[ "$seen" -eq 0 ]] && info "nothing to clear under $root  (searched 8 levels deep)"
   done
   [[ "$acted" -eq 0 && "$busy" -eq 0 ]] && info "nothing to clear"
   [[ "$busy" -gt 0 ]] && info "${c_dim}$busy worktree(s) left alone so their builds keep running — raise --idle-days to be stricter${c_off}"
