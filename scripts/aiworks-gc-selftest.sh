@@ -152,6 +152,46 @@ check "npm cache is cleaned" "$r" "yes"
 [[ -d "$TMP/home/.cache/puppeteer" ]] && r=present || r=gone
 check "puppeteer browsers are removed" "$r" "gone"
 
+# ── --docker: the safe subset only ───────────────────────────────────────────────
+echo "── --docker"
+
+cat > "$TMP/bin/docker" <<EOF
+#!/usr/bin/env bash
+[[ "\$1" == info ]] && { [[ -n "\${DOCKER_DOWN:-}" ]] && exit 1; exit 0; }
+[[ "\$1 \$2" == "system df" ]] && { echo "TYPE TOTAL"; exit 0; }
+echo "docker \$*" >> "$CALLS"
+echo "Total:  0B"
+exit 0
+EOF
+chmod +x "$TMP/bin/docker"
+run_docker() { PATH="$TMP/bin:$PATH" HOME="$TMP/home" SUPERSET_HOME="$TMP/home/.superset" bash "$GC" --docker "$@" 2>&1; }
+
+: > "$CALLS"
+run_docker -n >/dev/null
+[[ -s "$CALLS" ]] && r=ran || r=idle
+check "--docker -n prunes nothing" "$r" "idle"
+
+: > "$CALLS"
+out="$(run_docker)"
+[[ "$VERBOSE" -eq 1 ]] && printf '%s\n' "$out" | sed 's/^/      /'
+grep -q '^docker builder prune -f$' "$CALLS" && r=yes || r=no
+check "build cache is pruned" "$r" "yes"
+grep -q '^docker image prune -f$' "$CALLS" && r=yes || r=no
+check "dangling images are pruned" "$r" "yes"
+# Safe subset: no volume prune, no -a (that would take tagged images with it).
+grep -q -E 'volume|system prune| -a' "$CALLS" && r=reached || r=safe
+check "volumes and tagged images are never touched" "$r" "safe"
+grep -q 'docker volume prune' <<<"$out" && r=yes || r=no
+check "the further-cleaning hints are printed" "$r" "yes"
+
+: > "$CALLS"
+out="$(DOCKER_DOWN=1 run_docker)"; rc=$?
+check "a stopped daemon does not fail the run" "$rc" "0"
+grep -q 'daemon is not running' <<<"$out" && r=yes || r=no
+check "a stopped daemon is reported" "$r" "yes"
+[[ -s "$CALLS" ]] && r=ran || r=idle
+check "a stopped daemon runs no prune" "$r" "idle"
+
 # ── an empty live list must abort, not classify everything as garbage ────────────
 echo "── refuses to guess"
 cat > "$TMP/bin/superset" <<'EOF'

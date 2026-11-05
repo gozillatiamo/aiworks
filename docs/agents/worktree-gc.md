@@ -10,6 +10,7 @@ aiworks gc --orphans                  # reap the UI-Delete leftovers
 aiworks gc --artifacts --idle-days 7  # clear target//node_modules from week-idle worktrees
 aiworks gc --dispatch --ttl-days 3    # reap stale slack/req-* dispatch worktrees
 aiworks gc --caches                   # clear uv / pnpm / npm / puppeteer caches
+aiworks gc --docker                   # docker build cache + dangling images (never volumes)
 aiworks gc --path ~/code              # idle target//node_modules outside Superset worktrees
 aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
 aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts
@@ -17,7 +18,7 @@ aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts
 
 ## Beyond worktrees: host caches and plain checkouts
 
-Two selectors cover disk that is not a Superset worktree. Both are included in `--all` and in
+Three selectors cover disk that is not a Superset worktree. All are included in `--all` and in
 the bare report.
 
 **`--caches`** clears host-wide tool caches. Everything in it regenerates on next use:
@@ -33,6 +34,24 @@ The worktree liveness and git checks do not apply here; each tool's own lock is 
 holds one while any `uv run` / `uvx` process lives (an MCP server started that way is enough),
 so the GC bounds the wait to 10s, **skips** that cache with a warning and carries on. It never
 forces past the lock. A tool that is not installed is silently skipped.
+
+**`--docker`** runs the safe subset only: `docker builder prune -f` (build cache) and
+`docker image prune -f` (dangling, untagged images). Tagged images, containers and **volumes
+are never touched**; a volume is where a local database lives. A stopped daemon is reported and
+skipped, not an error. On macOS, Docker Desktop keeps its VM disk image at full size after a
+prune until Docker is restarted.
+
+**Going further.** After `--caches` or `--docker` the run prints the cleanups it deliberately
+does not automate, because each deletes something a person may want:
+
+| Command | Deletes |
+|---|---|
+| `docker system prune -a` | every image not used by a running container (re-pulled on next `up`) |
+| `docker volume prune` | unused volumes; check `docker volume ls` first, local databases live here |
+| `brew cleanup --prune=all -s` | old Homebrew downloads and versions |
+| `cargo sweep --time 30 -r DIR` | Rust `target/` dirs idle 30 days (`cargo install cargo-sweep`), or use `--path DIR` |
+| `rm -rf ~/Library/Developer/Xcode/DerivedData` | Xcode build products (macOS) |
+| `ncdu -x ~` | nothing; shows what is actually big (`brew install ncdu`) |
 
 **`--path DIR`** (repeatable) extends the `--artifacts` sweep to checkouts that are not
 Superset worktrees, such as a primary clone's `target/`, which on a Rust service is routinely

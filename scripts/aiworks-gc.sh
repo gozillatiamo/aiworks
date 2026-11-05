@@ -44,7 +44,8 @@
 #     --artifacts      reap target/ + node_modules from IDLE worktrees, live ones included
 #     --dispatch       reap slack/req-* dispatch worktrees past their TTL
 #     --caches         clear host tool caches: uv · pnpm store · npm · puppeteer (all regenerable)
-#     --all            all four
+#     --docker         docker builder prune + dangling-image prune. Never volumes, never tagged images
+#     --all            all five
 #
 #   Options:
 #     --project NAME   only this Superset project (default: every project)
@@ -81,7 +82,7 @@ warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────────
-DO_ORPHANS=0 DO_ARTIFACTS=0 DO_DISPATCH=0 DO_CACHES=0 REPORT_ONLY=1
+DO_ORPHANS=0 DO_ARTIFACTS=0 DO_DISPATCH=0 DO_CACHES=0 DO_DOCKER=0 REPORT_ONLY=1
 EXTRA_PATHS=()
 DRY=0 FORCE=0 IDLE_DAYS=3 TTL_DAYS=7 PROJECT= SCCACHE=0 IDLE_SET=0 SCHEDULE=
 usage() { sed -n '2,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//; s/^#//' | sed '$d'; }
@@ -91,7 +92,8 @@ while [[ $# -gt 0 ]]; do
     --artifacts) DO_ARTIFACTS=1; REPORT_ONLY=0; shift ;;
     --dispatch)  DO_DISPATCH=1; REPORT_ONLY=0; shift ;;
     --caches)    DO_CACHES=1;   REPORT_ONLY=0; shift ;;
-    --all)       DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; REPORT_ONLY=0; shift ;;
+    --docker)    DO_DOCKER=1;   REPORT_ONLY=0; shift ;;
+    --all)       DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; DO_DOCKER=1; REPORT_ONLY=0; shift ;;
     --path)      EXTRA_PATHS+=("${2:?--path needs a directory}"); DO_ARTIFACTS=1; REPORT_ONLY=0; shift 2 ;;
     --project)   PROJECT="${2:?--project needs a name}"; shift 2 ;;
     --idle-days) IDLE_DAYS="${2:?--idle-days needs a number}"; IDLE_SET=1; shift 2 ;;
@@ -112,7 +114,7 @@ done
 # No selector: report every category, touch nothing. Reporting is always safe. A bare
 # --enable-sccache / --*-schedule is a host-setup action on its own, not a reason to sweep.
 if [[ "$REPORT_ONLY" -eq 1 && "$SCCACHE" -eq 0 && -z "$SCHEDULE" ]]; then
-  DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; DRY=1
+  DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; DO_DOCKER=1; DRY=1
 fi
 
 WT_ROOT="${SUPERSET_HOME:-$HOME/.superset}/worktrees"
@@ -303,6 +305,39 @@ clear_host_caches() {
   return 0
 }
 
+# ── docker (--docker) ─────────────────────────────────────────────────────────────
+# The SAFE subset only: build cache and dangling (untagged) images, both rebuilt or re-pulled
+# on demand. Tagged images, containers and volumes are never touched — a volume is where a
+# local database lives. The aggressive forms are listed by further_hints, for a human to run.
+clear_docker() {
+  step "Docker — build cache + dangling images (never volumes, never tagged images)"
+  command -v docker >/dev/null 2>&1 || { info "docker not installed"; return 0; }
+  docker info >/dev/null 2>&1 || { warn "skip  docker — the daemon is not running (start Docker Desktop, re-run)"; return 0; }
+  if [[ "$DRY" -eq 1 ]]; then
+    docker system df 2>/dev/null | sed 's/^/    /'
+    info "would run: docker builder prune -f  ·  docker image prune -f"
+    return 0
+  fi
+  local out
+  if out="$(docker builder prune -f 2>&1)"; then ok "build cache: $(tail -1 <<<"$out")"
+  else warn "skip  docker builder prune — $(tail -1 <<<"$out")"; fi
+  if out="$(docker image prune -f 2>&1)"; then ok "dangling images: $(tail -1 <<<"$out")"
+  else warn "skip  docker image prune — $(tail -1 <<<"$out")"; fi
+}
+
+# Printed after the caches/docker sections: the cleanups that are NOT automatic because each
+# deletes something a person may want. Information only — this script never runs them.
+further_hints() {
+  step "Going further — manual, each deletes something you may want"
+  info "docker system prune -a        every image not used by a running container (re-pulled on next up)"
+  info "docker volume prune           unused volumes. Local databases live here: check \`docker volume ls\` first"
+  info "brew cleanup --prune=all -s   old Homebrew downloads and versions"
+  info "cargo sweep --time 30 -r DIR  Rust target/ dirs idle 30d (cargo install cargo-sweep); or --path DIR"
+  info "rm -rf ~/Library/Developer/Xcode/DerivedData     Xcode build products (macOS)"
+  info "ncdu -x ~                     find what is actually big (brew install ncdu)"
+  info "${c_dim}Docker Desktop on macOS keeps its VM disk at full size after a prune until Docker is restarted${c_off}"
+}
+
 # ── sccache (opt-in, one-time host setup) ─────────────────────────────────────────
 # The parallel-safe half of the disk story: a cache SERVER, not a locked shared directory,
 # so N worktrees can compile at once and still reuse each other's objects.
@@ -454,6 +489,8 @@ summary() {
   else
     ok "reclaimed: $(human "$FREED_KB")"
   fi
+  [[ "$DO_CACHES$DO_DOCKER" != "00" ]] && further_hints
+  return 0
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────────
@@ -467,13 +504,12 @@ command -v jq >/dev/null 2>&1 || die "jq is required (brew install jq)"
 
 if [[ "$SCCACHE" -eq 1 ]]; then
   enable_sccache
-  [[ "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]] && exit 0
+  [[ "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH$DO_CACHES$DO_DOCKER" == "00000" ]] && exit 0
 fi
 
-if [[ "$DO_CACHES" -eq 1 ]]; then
-  clear_host_caches
-  if [[ "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]]; then summary; exit 0; fi
-fi
+[[ "$DO_CACHES" -eq 1 ]] && clear_host_caches
+[[ "$DO_DOCKER" -eq 1 ]] && clear_docker
+if [[ "$DO_CACHES$DO_DOCKER" != "00" && "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]]; then summary; exit 0; fi
 
 command -v superset >/dev/null 2>&1 || die "the 'superset' CLI is not on PATH — this GC reads the live workspace list from it and refuses to guess"
 [[ -d "$WT_ROOT" ]] || { ok "no $WT_ROOT — nothing to collect"; exit 0; }

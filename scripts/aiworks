@@ -216,7 +216,8 @@ Examples:
   aiworks gc --artifacts --idle-days 7  # clear target//node_modules from week-idle worktrees
   aiworks gc --dispatch --ttl-days 3    # reap stale slack/req-* dispatch worktrees
   aiworks gc --caches                   # clear uv · pnpm · npm · puppeteer caches (regenerable)
-  aiworks gc --path ~/code              # also clear idle target//node_modules in non-worktree checkouts
+  aiworks gc --docker                   # docker build cache + dangling images (never volumes)
+  aiworks gc --path ~/code             # also clear idle target//node_modules in non-worktree checkouts
   aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
   aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts (launchd)
   aiworks gc --schedule-status          # installed? loaded? when did it last run?
