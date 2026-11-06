@@ -15,7 +15,7 @@ print **plain text** to stdout. A ticket key is `FM-9` / `APP-123` / a bare numb
 | `add-ticket-comment.sh`   | Add a comment (text from an argument or stdin) — Markdown is rendered to the tracker's native style, not posted raw |
 | `find-ticket-comment.sh`  | **Read-only.** Print the id + body of the one comment carrying `--marker <text>`, or nothing |
 | `upsert-ticket-comment.sh`| Add that comment the first time and **update it in place** every run after — one durable comment per marker instead of a growing pile |
-| `upsert-release-details.sh`| **Overwrite a release's description** — where a release note lives. `<release>` is the Jira release URL, version id or name (`v1.0.0`); plain text, replaced whole every run. Jira only; Notion/Linear refuse |
+| `upsert-release-details.sh`| **Write a release's note** onto the release page's text section (titled "Release note") and clear the version description. `<release>` is the Jira release URL, version id or name (`v1.0.0`); plain text with `•` bullets, replaced whole every run. Jira only; Notion/Linear refuse |
 | `… --section '### <repo>'` | Write only that heading's block inside the marked record, leaving every other section byte-identical — one comment co-written by several agents (`find-ticket-comment.sh --section` reads one back) |
 
 The two write scripts accept `--dry-run` to print the request instead of sending it.
@@ -140,8 +140,8 @@ tracker/
 ├── upsert-ticket-comment.sh   # writer: update the marked record, else add it
 ├── durable-record-selftest.sh # offline regression for the marker upsert on every provider
 ├── fix-version-selftest.sh    # offline regression for the --fix-version JQL clause + provider refusal
-├── upsert-release-details.sh  # writer: replace a release's (Jira version's) description
-├── release-details-selftest.sh # offline regression: ref resolution, 16,384-byte cap, provider refusal
+├── upsert-release-details.sh  # writer: a release's (Jira version's) note → its page's text section
+├── release-details-selftest.sh # offline regression: ref resolution, section write, provider refusal
 ├── notion/{impl.sh,notion.jq} # Notion REST implementation (records are page BLOCKS — see above)
 ├── jira/{impl.sh,jira.jq}     # Jira Cloud REST v3 implementation (ADF)
 └── linear/impl.sh             # Linear GraphQL implementation (Markdown-native)
@@ -173,7 +173,7 @@ Requires `bash`, `curl`, and `jq`.
 ./find-tickets.sh --query "encryption" --open
 ./find-tickets.sh --type Bug --open --json
 ./find-tickets.sh --fix-version 10042 --json      # Jira: every ticket in one release
-./upsert-release-details.sh v1.0.0 --description-file note.txt   # Jira: the release note, replaced whole
+./upsert-release-details.sh v1.0.0 --description-file note.txt   # Jira: the release note onto the release page, replaced whole
 
 # update — provider-neutral flags
 ./upsert-ticket-details.sh FM-9    --status Testing

@@ -179,6 +179,26 @@ def _adf_li($s; $ctx):   { type: "listItem",  content: [_adf_para($s; $ctx)] };
 def _adf_list($kind; $items):
   { type: (if $kind == "ordered" then "orderedList" else "bulletList" end), content: $items };
 
+# Release-note text → the ADF a version's rich-text section renders. The note skeleton is
+# plain lines: a `• ` (or `- `) line opens a bullet, the INDENTED lines under it are its
+# how-to and stay inside that item as hard breaks (so the steps sit under their bullet, not
+# beside it as stray paragraphs), a blank line closes the list, anything else is a paragraph.
+def note_to_adf($ctx):
+  ( . // "" ) | gsub("\r"; "") | split("\n")
+  | reduce .[] as $l ( {content:[], items:[]};
+      if ($l | test("^[•\\-*] ")) then
+        .items += [_adf_li(($l | sub("^[•\\-*] "; "")); $ctx)]
+      elif ($l | test("^\\s+\\S")) and ((.items | length) > 0) then
+        ((.items | length) - 1) as $i
+        | .items[$i].content[0].content += ([{type:"hardBreak"}] + (($l | sub("^\\s+"; "")) | _inline_adf($ctx)))
+      else
+        (if (.items | length) > 0 then (.content += [_adf_list("bullet"; .items)] | .items = []) else . end)
+        | (if ($l | test("^\\s*$")) then . else .content += [_adf_para($l; $ctx)] end)
+      end )
+  | (if (.items | length) > 0 then .content += [_adf_list("bullet"; .items)] else . end)
+  | { type:"doc", version:1, content: (if (.content | length) == 0 then [_adf_para(""; $ctx)] else .content end) };
+def note_to_adf: note_to_adf({base:"", prefix:""});
+
 # Pipe-table helpers (GitHub-flavoured Markdown) → an ADF table node. A 2nd
 # separator row marks the first row as the column header (tableHeader cells).
 def _split_cells($row):

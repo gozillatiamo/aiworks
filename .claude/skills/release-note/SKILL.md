@@ -1,11 +1,11 @@
 ---
 name: release-note
 description: >-
-  Write a Thai, non-technical release note for one Jira release and post it as that release's
-  description — one entry per ticket, how-to bullets for anything a user sees, one line for
+  Write a Thai, non-technical release note for one Jira release and post it onto that release's
+  page — one entry per ticket, how-to bullets for anything a user sees, one line for
   anything purely technical. Use whenever someone asks for a release note, release notes,
   "what's in v1.0.0", a release announcement for users, or to write/update/refresh the Jira
-  release (fix version) description — given a release URL, a version name like v1.0.0, or a
+  release (fix version) page — given a release URL, a version name like v1.0.0, or a
   version id, even if they do not say "Jira". Not for a PR/MR changelog or a sprint summary.
 argument-hint: "<release url | version name | id> [--dry-run]"
 arguments: [release, flags]
@@ -16,8 +16,8 @@ allowed-tools:
 
 # Release note
 
-Turn one Jira release into a short Thai note its users can read, and store it as the release's
-description. Run the tracker scripts **from the workspace root**.
+Turn one Jira release into a short Thai note its users can read, and store it on the release's
+page. Run the tracker scripts **from the workspace root**.
 
 ## What this note is
 
@@ -56,16 +56,18 @@ stays plain.
 5. **Post it.** Write the text to a temp file (`$TMPDIR`, never `agent_logs/` — Thai in a
    `.md` is banned by `language.md`), then
    `scripts/tracker/upsert-release-details.sh <release> --description-file <tmp>`. The script
-   accepts the release URL, the name or the id, and replaces the description whole. With
-   `--dry-run` it prints the request and nothing changes. Jira caps the field at 16,384
-   bytes and the script refuses an oversized note: tighten the how-tos, never drop a ticket.
+   accepts the release URL, the name or the id, writes the note into the text section at the
+   top of the release page (titled `Release note`) and clears the version's description —
+   the releases list prints that beside every version, which is no place for a note. Both
+   are replaced whole. With `--dry-run` it prints the request and nothing changes.
 6. **Reply** with the note as posted and the release URL the script prints. No chat
    notification — anyone who wants it in Slack pastes the link.
 
 ## Skeleton
 
-Plain text: Jira renders no headings or Markdown in a version description. Structure is line
-breaks and `•`. The opening is the *conclusion* of the release — what it is about, one or two
+Plain text, no Markdown: the script turns each `•` line into a list item and keeps the
+indented lines under it as that item's how-to; a blank line ends a list; any other line is a
+paragraph. The opening is the *conclusion* of the release — what it is about, one or two
 lines — not a list restated.
 
 ```
