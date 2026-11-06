@@ -53,6 +53,8 @@ hasnt "…not quoted (Jira would read it as a name)" 'fixVersion = "10042"'     
 has   "…ANDed with the project scope"           "project = PROJ AND fixVersion = 10042 ORDER BY" "$out"
 out="$(jira_jql '2026.09 Release')"
 has   "a version name is quoted"                'fixVersion = "2026.09 Release"' "$out"
+out="$(jira_jql 'https://example.atlassian.net/projects/PROJ/versions/10042/tab/release-report-all-issues')"
+has   "a release URL → its numeric id, bare"    "fixVersion = 10042"           "$out"
 out="$(jira_jql '')"
 hasnt "no flag → no clause"                      "fixVersion"                  "$out"
 

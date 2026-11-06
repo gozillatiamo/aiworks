@@ -32,6 +32,8 @@
 #                                             per provider) to a local path DEST, for viewing (e.g. Read)
 #   tracker_remove_attachment KEY DRY REF    — DESTRUCTIVE: delete one attachment (REF = filename or id)
 #   tracker_delete_ticket KEY DRY SUBTASKS   — DESTRUCTIVE: delete the whole ticket (SUBTASKS = 0|1)
+#   tracker_upsert_release REF DRY TEXT     — overwrite one RELEASE's description (REF = release URL,
+#                                             version id or name) — Jira only; others refuse
 #   tracker_comments_for_block BLOCK_ID     — internal --deep worker (no-op for providers without it)
 #
 # A ticket KEY is provider-neutral: a full key (FM-9 / APP-123), a bare number, or a
@@ -114,6 +116,9 @@ declare -F tracker_add_marked >/dev/null || tracker_add_marked() { tracker_add_c
 declare -F tracker_supports_attachments >/dev/null || tracker_supports_attachments() { return 1; }
 # The provider's canonical key for a ref (Jira resolves a URL / bare number); default: as given.
 declare -F tracker_ticket_key >/dev/null || tracker_ticket_key() { printf '%s' "$1"; }
+# A release (fix version) exists only in Jira; a provider without one refuses rather than
+# pretending the write landed somewhere.
+declare -F tracker_upsert_release >/dev/null || tracker_upsert_release() { die "releases are not supported by the $TRACKER_PROVIDER provider"; }
 
 tracker_require_config
 

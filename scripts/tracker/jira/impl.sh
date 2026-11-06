@@ -830,6 +830,9 @@ tracker_find() {
   done_only="$(printf '%s' "$opts" | jq -r '.done // false')"
   estimated="$(printf '%s' "$opts" | jq -r '.estimated // false')"
   fix_version="$(printf '%s' "$opts" | jq -r '.fix_version // ""')"
+  # a release URL carries the version id after /versions/ — quoted whole it would be a NAME that
+  # matches nothing, and an empty release note built from zero tickets is the silent failure.
+  [[ "$fix_version" =~ /versions/([0-9]+) ]] && fix_version="${BASH_REMATCH[1]}"
   limit="$(printf '%s' "$opts" | jq -r '.limit // 50')"
   as_json="$(printf '%s' "$opts" | jq -r '.as_json // false')"
   types_json="$(printf '%s' "$opts" | jq -c '.types // []')"
@@ -942,4 +945,37 @@ tracker_delete_comment() {
   fi
   rm -f "$tmp"
   printf 'Deleted comment %s from %s\n' "$comment_id" "$key"
+}
+
+# ── releases (Jira versions) ───────────────────────────────────────────────────
+# jira_version_id REF — the numeric version id for REF: a release URL (…/versions/<id>/…),
+# a bare id, or a version NAME looked up inside JIRA_PROJECT_KEY. A name that matches zero
+# or several versions dies — a release note written onto the wrong version is worse than no
+# write.
+jira_version_id() {
+  local raw="$1" ids n
+  if [[ "$raw" =~ /versions/([0-9]+) ]]; then printf '%s' "${BASH_REMATCH[1]}"; return; fi
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then printf '%s' "$raw"; return; fi
+  [[ -n "$JIRA_PROJECT_KEY" ]] || die "version name '$raw' needs JIRA_PROJECT_KEY set to look it up"
+  ids="$(jira_api GET "/rest/api/3/project/$JIRA_PROJECT_KEY/versions" | jq -r --arg n "$raw" '.[] | select(.name == $n) | .id')"
+  n="$(printf '%s' "$ids" | grep -c . || true)"
+  [[ "$n" -eq 1 ]] || die "version '$raw' matched $n versions in project $JIRA_PROJECT_KEY (pass the release URL or numeric id)"
+  printf '%s' "$ids"
+}
+
+# tracker_upsert_release REF DRY DESCRIPTION — overwrite a version's description (plain text:
+# Jira renders no markup there). Jira caps the field at 16,384 BYTES — Thai is 3 bytes a
+# character — so the size is checked here and the caller is told to shorten, never truncated.
+tracker_upsert_release() {
+  local ref="$1" dry="$2" text="$3" id bytes body
+  id="$(jira_version_id "$ref")"
+  bytes="$(printf '%s' "$text" | wc -c | tr -d ' ')"
+  (( bytes <= 16384 )) || die "release description is $bytes bytes; Jira allows 16384 — shorten the note"
+  body="$(jq -n --arg d "$text" '{description: $d}')"
+  if [[ "$dry" -eq 1 ]]; then
+    printf 'DRY RUN — PUT /rest/api/3/version/%s\n%s\n' "$id" "$body"; return 0
+  fi
+  jira_api PUT "/rest/api/3/version/$id" "$body" >/dev/null
+  printf 'Updated release %s (version %s, %s bytes)\n' "$ref" "$id" "$bytes"
+  printf '%s/projects/%s/versions/%s\n' "$JIRA_BASE_URL" "$JIRA_PROJECT_KEY" "$id"
 }

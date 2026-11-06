@@ -552,6 +552,28 @@ _Avoid_: working surface
 A file committed into a repo (`docs/`, `README`, ADRs, PRD/BRD files committed into a product
 repo) — always **English**, even under `th`, since it lives beside the code.
 
+## Releases
+
+**Release**:
+A Jira version (`fixVersion`) and every ticket assigned to it, whatever its status. Named by the
+team (`v1.0.0`), reached by name, numeric ID or release URL.
+_Avoid_: sprint, milestone, deploy
+
+**Release Note**:
+The Thai, non-technical summary of one Release, written in the company voice (`ทางเรา`) for the
+product's users and stored as that Jira version's description — a record overwritten on every
+rerun, never appended. Always Thai, independent of the workspace `language:` switch.
+_Avoid_: changelog, release report
+
+**User-facing ticket**:
+A ticket in a Release that changes something a user sees or does; its Release Note entry carries a
+short how-to.
+_Avoid_: UI ticket, feature ticket
+
+**Technical ticket**:
+A ticket in a Release that changes nothing a user sees or does; its Release Note entry is one line.
+_Avoid_: backend ticket, infra ticket
+
 ## Config
 
 **`workspace.config.yaml`**:
