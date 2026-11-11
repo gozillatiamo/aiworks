@@ -21,6 +21,9 @@
 #   vcs_approve_pr NUMBER BODY [DRY]            — reviewer PASS signal: post BODY as a one-line verdict + host-level approve (decoupled from merge). IDEMPOTENT: a no-op when vcs_pr_approved already says yes
 #   vcs_close_pr  NUMBER [DRY]                  — close without merging (branch kept), then pr-view
 #   vcs_upload_media KEY FILE [DRY]             — host one media file, print its embeddable markdown line
+#   vcs_ci_runs   LIMIT SOURCE REF SINCE        — TSV of recent CI runs (pipelines / workflow runs), newest first (read-only)
+#   vcs_ci_jobs   RUN_ID                        — TSV of one run's jobs (read-only)
+#   vcs_ci_job_log JOB_ID                       — one job's raw log (read-only)
 #
 # default-branch and the media helpers below are provider-neutral, so they live here.
 #

@@ -20,6 +20,7 @@ remote** when unset. All commands run against the repo in the current directory.
 | `pr-resolve-thread.sh` | Check **"Resolve thread"** on a review thread once addressed (`--unresolve` to reopen) |
 | `merge-pr.sh`       | **Squash-merge server-side** so the web PR/MR shows *Merged*, then prints pr-view |
 | `pr-approve.sh`     | **The reviewer's PASS signal** — register a host approval (+ post a one-line verdict via `--body`). Decoupled from merge; the merge stays gated on `vcs.auto_merge` |
+| `ci.sh`             | **Read CI** — `runs` lists recent pipelines / workflow runs (`--source schedule`, `--ref`, `--since`, `--limit`), `jobs <run id>` lists a run's jobs, `log <job id>` prints a job's raw log. Read-only; a refused call exits non-zero rather than printing an empty list |
 
 `open-pr.sh`, `upload-media.sh`, `pr-comment.sh`, `pr-resolve-thread.sh`, `merge-pr.sh`,
 `retarget-pr.sh`, `update-pr.sh`, and `pr-approve.sh` accept `--dry-run`.
@@ -42,7 +43,8 @@ vcs/
 ├── gitlab.sh          # glab implementation
 ├── default-branch.sh  open-pr.sh  pr-view.sh  pr-comment.sh  pr-comments.sh
 ├── pr-threads.sh  pr-resolve-thread.sh  merge-pr.sh  pr-approve.sh
-├── retarget-pr.sh     update-pr.sh find-prs.sh  list-prs.sh  close-pr.sh
+├── retarget-pr.sh     update-pr.sh find-prs.sh  list-prs.sh  close-pr.sh  ci.sh
+├── ci-selftest.sh            # offline regression for the CI readers (stubbed CLI)
 ├── approve-selftest.sh       # offline regression for the approval read + write (stubbed CLI)
 ├── open-pr-selftest.sh       # offline regression for the open-PR/MR FAILURE paths (stubbed CLI)
 ├── update-pr-selftest.sh     # offline regression for re-describing a PR/MR (stubbed CLI)

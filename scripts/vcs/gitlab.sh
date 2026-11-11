@@ -618,3 +618,31 @@ vcs_approve_pr() {
   fi
   printf 'Approved MR !%s (verdict recorded as a NOTE — host-level approval unavailable on this project)\n' "$num"
 }
+
+# ── CI (read-only) ───────────────────────────────────────────────────────────────
+# A "run" == a GitLab pipeline. Unlike the PR/MR readers above, these do NOT swallow a failed
+# call: an empty list must mean "the forge has none", never "the forge refused to answer".
+
+# vcs_ci_runs LIMIT SOURCE REF SINCE -> TSV: id, status, source, ref, created_at, url
+vcs_ci_runs() {
+  local q="per_page=$1" json
+  [[ -n "$2" ]] && q="$q&source=$2"
+  [[ -n "$3" ]] && q="$q&ref=$3"
+  [[ -n "$4" ]] && q="$q&updated_after=${4}T00:00:00Z"
+  json="$(glab api "projects/$(_gl_project)/pipelines?$q")" || die "could not list pipelines"
+  printf '%s' "$json" | jq -r '.[] | [ (.id|tostring), (.status // "-"), (.source // "-"),
+      (.ref // "-"), (.created_at // "-"), (.web_url // "") ] | @tsv'
+}
+
+# vcs_ci_jobs RUN_ID -> TSV: id, status, stage, name, started_at, url
+vcs_ci_jobs() {
+  local json
+  json="$(glab api "projects/$(_gl_project)/pipelines/$1/jobs?per_page=100")" || die "could not list the jobs of pipeline $1"
+  printf '%s' "$json" | jq -r '.[] | [ (.id|tostring), (.status // "-"), (.stage // "-"),
+      (.name // "-"), (.started_at // "-"), (.web_url // "") ] | @tsv'
+}
+
+# vcs_ci_job_log JOB_ID -> the job's raw log on stdout
+vcs_ci_job_log() {
+  glab api "projects/$(_gl_project)/jobs/$1/trace" || die "could not read the log of job $1"
+}

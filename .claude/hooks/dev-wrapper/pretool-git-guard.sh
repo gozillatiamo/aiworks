@@ -228,7 +228,7 @@ for seg in $bare_segments; do
         echo "  approve           scripts/vcs/pr-approve.sh <number> --body \"…\""
         echo "  merge             scripts/vcs/merge-pr.sh <number> --subject \"…\""
         echo "  close             scripts/vcs/close-pr.sh <number>"
-        echo "  read (allowed)    pr-view.sh · pr-comments.sh · pr-threads.sh · list-prs.sh · find-prs.sh"
+        echo "  read (allowed)    pr-view.sh · pr-comments.sh · pr-threads.sh · list-prs.sh · find-prs.sh · ci.sh"
         echo
         echo "⚠️  A WRITER must run BARE — its own command, no 'cd X && …', no pipe, no"
         echo "    redirect. The compound form is denied and you get NO permission prompt,"

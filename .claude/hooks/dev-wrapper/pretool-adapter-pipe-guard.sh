@@ -47,7 +47,7 @@ nobody=$(printf '%s' "$cmd" | awk '
       tag=substr(line, RSTART, RLENGTH); gsub(/^<<-?[[:space:]]*|'"'"'/, "", tag); intag=tag }
     print line }')
 
-# The mutating adapter entrypoints. Readers (pr-view, pr-comments, list-prs, find-prs,
+# The mutating adapter entrypoints. Readers (pr-view, pr-comments, list-prs, find-prs, ci,
 # get-ticket-*, default-branch) are deliberately absent: they are safe to pipe.
 writers='merge-pr\.sh|open-pr\.sh|close-pr\.sh|retarget-pr\.sh|update-pr\.sh|pr-approve\.sh|pr-comment\.sh|pr-resolve-thread\.sh|upload-media\.sh|upsert-ticket-details\.sh|add-ticket-comment\.sh|edit-ticket-comment\.sh|upsert-ticket-comment\.sh|add-ticket-attachment\.sh|remove-ticket-attachment\.sh|delete-ticket\.sh|delete-ticket-comment\.sh|send\.sh'
 

@@ -474,3 +474,37 @@ vcs_approve_pr() {
     || die "PR #$num: approval was refused AND the fallback verdict comment failed — nothing records this review"
   printf 'Approved PR #%s (verdict recorded as a COMMENT — host-level approval unavailable on this repository)\n' "$num"
 }
+
+# ── CI (read-only) ───────────────────────────────────────────────────────────────
+# A "run" == a GitHub Actions workflow run. Same contract as the GitLab implementation: a failed
+# call dies, so an empty list never stands in for an unanswered question.
+
+# Every Actions read goes through here, scoped to the resolved repo — never the cwd's remote.
+_gh_actions() {
+  _gh_nwo_resolve || die "could not resolve the target repository (VCS_REPO=${VCS_REPO:-<unset>}, VCS_REMOTE=${VCS_REMOTE:-origin})"
+  gh api "repos/$_GH_NWO/actions/$1"
+}
+
+# vcs_ci_runs LIMIT SOURCE REF SINCE -> TSV: id, status, source, ref, created_at, url
+vcs_ci_runs() {
+  local q="per_page=$1" json
+  [[ -n "$2" ]] && q="$q&event=$2"
+  [[ -n "$3" ]] && q="$q&branch=$3"
+  [[ -n "$4" ]] && q="$q&created=%3E%3D$4"
+  json="$(_gh_actions "runs?$q")" || die "could not list workflow runs"
+  printf '%s' "$json" | jq -r '.workflow_runs[] | [ (.id|tostring), (.conclusion // .status // "-"),
+      (.event // "-"), (.head_branch // "-"), (.created_at // "-"), (.html_url // "") ] | @tsv'
+}
+
+# vcs_ci_jobs RUN_ID -> TSV: id, status, stage, name, started_at, url  (Actions has no stage: "-")
+vcs_ci_jobs() {
+  local json
+  json="$(_gh_actions "runs/$1/jobs?per_page=100")" || die "could not list the jobs of run $1"
+  printf '%s' "$json" | jq -r '.jobs[] | [ (.id|tostring), (.conclusion // .status // "-"), "-",
+      (.name // "-"), (.started_at // "-"), (.html_url // "") ] | @tsv'
+}
+
+# vcs_ci_job_log JOB_ID -> the job's raw log on stdout
+vcs_ci_job_log() {
+  _gh_actions "jobs/$1/logs" || die "could not read the log of job $1"
+}
