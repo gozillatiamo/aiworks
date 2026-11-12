@@ -16,7 +16,8 @@ conclude() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
 # Pre-rename switch names still work (a silently ignored SUPERSET_DB_DATA=copy would turn into
 # symlink mode, which deletes the per-worktree DB copy). SUPERSET_ENV is the platform's own
-# local|cloud variable, so it maps only when it carries one of OUR values.
+# local|cloud variable, so it maps only when it carries one of OUR values; every other old switch
+# maps whatever it holds, so a typo reaches switch_mode and is skipped rather than defaulted.
 map_legacy_switches() {
   local pair old new v
   for pair in SUPERSET_LOCAL:PARADEV_LOCAL SUPERSET_DB_DATA:PARADEV_DB_DATA \
@@ -24,18 +25,23 @@ map_legacy_switches() {
               SUPERSET_ENV:PARADEV_ENV_FILES; do
     old="${pair%%:*}" new="${pair#*:}" v="${!old:-}"
     [[ -n "$v" && -z "${!new:-}" ]] || continue
-    case "$v" in symlink|copy|skip) printf -v "$new" '%s' "$v"; export "${new?}"
-      warn "$old is renamed $new — honouring $old=$v; rename it." ;; esac
+    if [[ "$old" == SUPERSET_ENV ]]; then
+      case "$v" in symlink|copy|skip) ;; *) continue ;; esac
+    fi
+    printf -v "$new" '%s' "$v"; export "${new?}"
+    warn "$old is renamed $new — honouring $old=$v; rename it."
   done
 }
 
-# switch_mode NAME — the symlink|copy|skip mode in $NAME (default symlink). Anything else would
-# fall into a branch that COPIES, so it is refused loudly instead.
+# switch_mode NAME — the symlink|copy|skip mode in $NAME (default symlink), case and surrounding
+# space ignored. Anything else is SKIPPED, loudly: symlink mode deletes a real per-worktree copy
+# (db-data), so a typo must never select it, and copy is what the platform's SUPERSET_ENV once
+# selected by accident. skip touches nothing.
 switch_mode() {
-  local v="${!1:-symlink}"
+  local v; v="$(printf '%s' "${!1:-symlink}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   case "$v" in
     symlink|copy|skip) printf '%s' "$v" ;;
-    *) warn "$1=$v is not symlink|copy|skip — using symlink" >&2; printf 'symlink' ;;
+    *) warn "$1=${!1} is not symlink|copy|skip — skipping this step" >&2; printf 'skip' ;;
   esac
 }
 

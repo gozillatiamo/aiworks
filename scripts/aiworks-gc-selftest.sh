@@ -70,7 +70,7 @@ mkdir -p "$WT/live" "$WT/orphan-busy" "$TMP/bin"
 # Stub the CLI: only `live` is a known workspace, so `orphan-busy` classifies as an orphan.
 cat > "$TMP/bin/paradev" <<EOF
 #!/usr/bin/env bash
-[[ "\$1" == "ws" && "\$2" == "list" ]] && printf '[{"worktreePath":"%s","id":"w1"}]\n' "$WT/live"
+[[ "\$1" == "ws" && "\$2" == "list" && " \$* " == *" --local "* ]] && printf '[{"worktreePath":"%s","id":"w1"}]\n' "$WT/live"
 exit 0
 EOF
 chmod +x "$TMP/bin/paradev"
@@ -251,6 +251,21 @@ grep -q '\.paradev/bin' "$TMP/test.plist" && r=yes || r=no
 check "plist PATH reaches ~/.paradev/bin" "$r" "yes"
 cron_line 7 | grep -q -- '--orphans --artifacts --idle-days 7' && r=ok || r=bad
 check "non-Darwin cron fallback line is well-formed" "$r" "ok"
+
+# ── the workspace CLI must be told --local: bare, it answers for cloud workspaces ──
+echo "── --dispatch archives the workspace on this machine"
+D="$TMP/home/.paradev/worktrees/proj-1/slack/req-1"
+mkdir -p "$D"; touch -t 202001010000 "$D"
+cat > "$TMP/bin/paradev" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$TMP/paradev.args"
+[[ "\$1" == "ws" && "\$2" == "list" && " \$* " == *" --local "* ]] && printf '[{"worktreePath":"%s","id":"w9"}]\n' "$D"
+exit 0
+EOF
+chmod +x "$TMP/bin/paradev"
+PATH="$TMP/bin:$PATH" SUPERSET_HOME_DIR="$TMP/home/.paradev" bash "$GC" --dispatch --ttl-days 1 --force >/dev/null 2>&1
+grep -q '^ws archive --local w9$' "$TMP/paradev.args" 2>/dev/null && r=local || r=missing
+check "a live dispatch worktree past TTL is archived with --local" "$r" "local"
 
 echo
 if [[ "$FAIL" -gt 0 ]]; then printf '%s%d passed, %d FAILED%s\n' "$c_err" "$PASS" "$FAIL" "$c_off"; exit 1; fi

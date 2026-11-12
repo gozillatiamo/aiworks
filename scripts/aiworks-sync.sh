@@ -45,7 +45,7 @@
 # alone cost several gcloud/kubectl round-trips per run (the 0009 half that stands).
 #
 # It also ENSURES the workspace lifecycle hooks — .paradev/{setup,run,teardown}.sh — exist and
-# that .paradev/config.json registers all three (via scripts/aiworks-paradev.sh). The hooks loop
+# that .paradev/config.toml registers all three (via scripts/aiworks-paradev.sh). The hooks loop
 # over every cloned repo, so the synced set is covered automatically; this creates the run hook
 # (.paradev/run.sh → each repo's `scripts/dev.sh run`) on workspaces that predate it.
 #
@@ -1033,7 +1033,7 @@ fi
 
 # ── ensure the workspace lifecycle hooks (.paradev/{setup,run,teardown}) cover the repo set ──
 # The hooks loop over every cloned repo, so the synced set is covered automatically — this just
-# makes sure the trio EXISTS and config.json registers all three (creating .paradev/run.sh on
+# makes sure the trio EXISTS and config.toml registers all three (creating .paradev/run.sh on
 # workspaces that predate the run hook). Idempotent; honoured in dry-run too.
 PDGEN="$DIR/aiworks-paradev.sh"
 if [[ -x "$PDGEN" ]]; then   # prints its own "==> Ensure .paradev lifecycle hooks…" header

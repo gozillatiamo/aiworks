@@ -8,7 +8,7 @@ shaped so: `docs/adr/0041`; the rename: `docs/adr/0046`.
 
 `archive` never blocks: Paradev stops the processes and deletes the worktree itself, so
 `teardown.sh` only cleans what Paradev cannot see (shared MCP services, per-product run state).
-`aiworks paradev` writes `config.toml` when it is missing, and warns, without rewriting, when an
+`scripts/aiworks-paradev.sh` (run by `aiworks add` and `aiworks sync`) writes `config.toml` when it is missing, and warns, without rewriting, when an
 existing one does not reference a hook script.
 
 ## Setup steps
@@ -27,7 +27,8 @@ existing one does not reference a hook script.
 | 6b | Run each product's optional `setup_product` hook | — |
 | 7 | Start the shared MCP services; list the `.env` files still needing values | — |
 
-Each `PARADEV_*` switch defaults to doing the work; `=skip` leaves that item to you.
+Each `PARADEV_*` switch defaults to doing the work; `=skip` leaves that item to you. A value that is
+not `symlink`, `copy` or `skip` warns and is treated as `skip`.
 
 `SUPERSET_ENV=local|cloud` and `SUPERSET_ROOT_PATH` are the platform's own variables (it still
 injects `SUPERSET_*`), not switches of ours. The framework never reads `SUPERSET_ENV` as a

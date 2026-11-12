@@ -171,8 +171,17 @@ out="$(shim SUPERSET_ENV=copy)";   ck "S8 legacy SUPERSET_ENV=copy maps to files
 out="$(shim SUPERSET_DB_DATA=copy)"; ck "S8 legacy SUPERSET_DB_DATA=copy maps to db=copy" "db=copy" "$out"
 ck "S8 legacy name warns" "SUPERSET_DB_DATA is renamed PARADEV_DB_DATA" "$out"
 out="$(shim SUPERSET_DB_DATA=copy PARADEV_DB_DATA=skip)"; ck "S8 the new name wins" "db=skip" "$out"
-out="$(shim PARADEV_ENV_FILES=bogus)"; ck "S8 a bogus mode falls back to symlink" "files=symlink" "$out"
+out="$(shim PARADEV_ENV_FILES=bogus)"; ck "S8 a bogus mode is skipped, never defaulted" "files=skip" "$out"
 ck "S8 a bogus mode warns" "is not symlink|copy|skip" "$out"
+out="$(shim PARADEV_DB_DATA=Copy)"; ck "S8 mode case is ignored" "db=copy" "$out"
+# symlink mode deletes the per-worktree DB copy, so a typo must land on skip — old name or new.
+out="$(shim PARADEV_DB_DATA=cp)";  ck "S8 a typo in the DB switch is skipped" "db=skip" "$out"
+out="$(shim SUPERSET_DB_DATA=cp)"; ck "S8 a typo in the LEGACY DB switch is skipped too" "db=skip" "$out"
+map_ln="$(grep -n '^map_legacy_switches' "$ROOT/.paradev/setup.sh" | head -1 | cut -d: -f1)"
+sw_ln="$(grep -n 'switch_mode ' "$ROOT/.paradev/setup.sh" | head -1 | cut -d: -f1)"
+[[ -n "$map_ln" && -n "$sw_ln" && "$map_ln" -lt "$sw_ln" ]] \
+  && ok "S8 setup.sh maps legacy switches before the first mode read" \
+  || bad "S8 setup.sh maps legacy switches before the first mode read" "map=$map_ln first-read=$sw_ln"
 
 # S5a-d — the guard writes config.toml, never rewrites one, and migrates a pre-rename .superset/.
 guard_fx() {  # guard_fx <name> — a bare workspace with the three hooks and the guard script
@@ -203,6 +212,12 @@ rm "$fx/.superset/products/acme.sh"; guard
 
 guard_fx g4; printf '{}\n' > "$fx/.paradev/config.json"; guard
 ck "S5d config.json beside config.toml warns" "ignored by Paradev while config.toml exists" "$out"
+
+guard_fx g5; mkdir -p "$fx/.superset/my products"; : > "$fx/.superset/my products/a b.sh"
+out="$(cd "$fx" && bash scripts/aiworks-paradev.sh -n 2>&1)"
+[[ -f "$fx/.superset/my products/a b.sh" && ! -e "$fx/.paradev/my products" ]] && ok "S5e -n migrates nothing" || bad "S5e -n migrates nothing" "$out"
+guard
+[[ -f "$fx/.paradev/my products/a b.sh" && ! -d "$fx/.superset" ]] && ok "S5e a path with spaces migrates" || bad "S5e a path with spaces migrates" "$out"
 
 fx="$T/s6"; mkdir -p "$fx/.paradev/products"
 printf 'setup_product() { touch "%s/ran"; }\n' "$fx" > "$fx/.paradev/products/acme.sh"

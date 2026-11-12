@@ -15,15 +15,15 @@ Two things broke:
 
 Rename what the framework owns; keep what belongs to the platform or to an operator's existing `.env`.
 
-- **Rename:** the `.superset/` directory to `.paradev/`, `config.json` to `config.toml`, the lifecycle guard (`aiworks paradev`), the doc and selftest file names, the Python classes and attributes of slack-dispatch, `~/.paradev`, and the prose. The CLI is called as `paradev`; gc has no fallback to `superset`.
+- **Rename:** the `.superset/` directory to `.paradev/`, `config.json` to `config.toml`, the lifecycle guard (`scripts/aiworks-paradev.sh`, run by `aiworks add` and `aiworks sync`), the doc and selftest file names, the Python classes and attributes of slack-dispatch, `~/.paradev`, and the prose. The CLI is called as `paradev`; gc has no fallback to `superset`.
 - **Keep:** every variable the platform injects or reads (`SUPERSET_ROOT_PATH`, `SUPERSET_ENV`, `SUPERSET_HOME_DIR`, `SUPERSET_API_KEY`, the rest), the external package `@superset_sh/sdk`, and the slack-dispatch `.env` key names (`SUPERSET_PROJECT_ID`, `SUPERSET_HOST_ID`, `SUPERSET_AGENT_PRESET`, `SUPERSET_BASE_BRANCH`), per [ADR 0005](0005-deployed-env-triage-and-the-prod-gate.md): a renamed key reads as silently unconfigured on every machine.
 - **Never reuse a name the platform could inject.** The framework's own switches are `PARADEV_LOCAL`, `PARADEV_ENV_FILES`, `PARADEV_DB_DATA`, `PARADEV_SIGNING` and `PARADEV_PRODUCTS`. The env-file switch is not `PARADEV_ENV`, because the platform may inject that name later and repeat the collision.
 - gc takes its home from the platform's `SUPERSET_HOME_DIR`, default `~/.paradev`; the framework's own `SUPERSET_HOME` is dropped.
-- The lifecycle is declared in `.paradev/config.toml` (`[setup]`, `[terminals.dev]`, `[archive]`). `aiworks paradev` writes it when missing and only warns when an existing file lacks a hook.
+- The lifecycle is declared in `.paradev/config.toml` (`[setup]`, `[terminals.dev]`, `[archive]`). The guard writes it when missing and only warns when an existing file lacks a hook.
 
 ## Consequences
 
-- The old switch names are still honoured, with a warning: `SUPERSET_LOCAL`, `SUPERSET_DB_DATA`, `SUPERSET_SIGNING`, `SUPERSET_PRODUCTS`, and `SUPERSET_ENV` only when it carries `symlink`, `copy` or `skip`. Ignoring `SUPERSET_DB_DATA=copy` would turn into symlink mode, which deletes the per-worktree DB copy. An unknown mode value now warns and falls back to `symlink`.
+- The old switch names are still honoured, with a warning: `SUPERSET_LOCAL`, `SUPERSET_DB_DATA`, `SUPERSET_SIGNING`, `SUPERSET_PRODUCTS`, and `SUPERSET_ENV` only when it carries `symlink`, `copy` or `skip`. Ignoring `SUPERSET_DB_DATA=copy` would turn into symlink mode, which deletes the per-worktree DB copy. An unknown mode value warns and is treated as `skip`, never as `symlink`: symlink mode deletes a real per-worktree copy, so a typo must not select it. Mode case and surrounding space are ignored.
 - A one-time migration: `aiworks sync` in the root workspace moves untracked state from `.superset/` to `.paradev/` without overwriting anything and without touching `~/.superset`. One `/.superset/` line stays in `.gitignore` for workspaces not yet migrated.
 - Worktrees created before the rename keep dangling symlinks into the old directory until `aiworks setup` is re-run there. An installed gc schedule keeps its old plist until `aiworks gc --install-schedule` is re-run.
 - The slack-dispatch daemon's `PATH` must contain `~/.paradev/bin`.

@@ -33,7 +33,7 @@ QUIET=0
 step() { [[ "$QUIET" -eq 1 ]] || printf '\n%s==> %s%s\n' "$c_step" "$*" "$c_off"; }
 ok()   { [[ "$QUIET" -eq 1 ]] || printf '    %s✓ %s%s\n' "$c_ok" "$*" "$c_off"; }
 dim()  { [[ "$QUIET" -eq 1 ]] || printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
-warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off"; }
+warn() { printf '    %s! %s%s\n' "$c_warn" "$*" "$c_off" >&2; }
 die()  { printf '%serror: %s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 
 # ── args ──────────────────────────────────────────────────────────────────────────
@@ -136,6 +136,7 @@ ensure_config() {
       body="$body$sep$(toml_table "$h")"; sep=$'\n'
     done
     if [[ "$DRY" -eq 1 ]]; then dim "would write .paradev/config.toml (setup/run/teardown)"
+    elif [[ -z "$body" ]]; then warn "no lifecycle hook script exists — config.toml not written"
     else printf '%s\n' "$body" > "$cfg" && ok "config.toml written (setup/run/teardown)"; fi
   else
     for h in setup run teardown; do

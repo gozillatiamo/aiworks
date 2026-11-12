@@ -611,13 +611,13 @@ fi
 
 # ── 2.7. ensure the workspace lifecycle hooks (.paradev/{setup,run,teardown}) cover this repo ─
 # The hooks are workspace-level and DYNAMIC — each loops over every cloned repo — so the new repo
-# is picked up with no per-repo edit. This just makes sure the trio EXISTS and config.json
+# is picked up with no per-repo edit. This just makes sure the trio EXISTS and config.toml
 # registers all three (it creates .paradev/run.sh on workspaces that predate the run hook). See
 # scripts/aiworks-paradev.sh.
 step "2.7. Ensure .paradev lifecycle hooks (setup/run/teardown) cover every repo"
 PDGEN="$(cd "$(dirname "$0")" && pwd)/aiworks-paradev.sh"
 if [[ -x "$PDGEN" ]]; then
-  if out="$("$PDGEN" -q 2>&1)"; then ok "lifecycle hooks present; config.json registers setup/run/teardown${out:+ — $out}"
+  if out="$("$PDGEN" -q 2>&1)"; then ok "lifecycle hooks present; config.toml registers setup/run/teardown${out:+ — $out}"
   else skip "2.7. could not ensure .paradev hooks — run 'aiworks-paradev.sh' by hand. Detail: ${out}"; fi
 else
   skip "2.7. aiworks-paradev.sh not found next to aiworks-add.sh — ensure .paradev/{setup,run,teardown}.sh by hand"
