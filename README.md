@@ -43,7 +43,7 @@ scripts/vcs|tracker|notify  # GitHub/GitLab · Jira/Notion · Slack adapters
 .cursor/ + .codex/          # generated Harness projections — never hand-edit
 mani.yaml + mani.d/         # repo registry — generated, do not hand-edit
 <workspace>.code-workspace  # multi-root IDE workspace — generated
-.superset/products/         # local-stack definitions (copy example.sh; yours are gitignored)
+.paradev/products/         # local-stack definitions (copy example.sh; yours are gitignored)
 ```
 
 The product repos clone **into** this folder but stay git-ignored — each is its own
@@ -102,7 +102,7 @@ cp scripts/notify/.env.example  scripts/notify/.env    # Slack token
 > direnv allow
 > ```
 > SonarQube MCP still uses HTTP headers from process env (shared container
-> `aiworks-mcp-sonarqube`). Set `SONARQUBE_ORG` in `.superset/.env` if it differs from the
+> `aiworks-mcp-sonarqube`). Set `SONARQUBE_ORG` in `.paradev/.env` if it differs from the
 > default. Restart Claude Code / Cursor after the first setup so MCP reloads.
 
 **4. Set up the workspace** — first choose one or more Agent harnesses, then install/login,
@@ -113,16 +113,16 @@ shared MCP services. Idempotent, safe to re-run:
 ./aiworks setup
 ```
 
-A Superset worktree runs the same `setup.sh` automatically (`.superset/config.json`). Cloning
+A Paradev worktree runs the same `setup.sh` automatically (`.paradev/config.toml`). Cloning
 takes minutes while the agent session starts at once, so a `SessionStart` hook reports which
 repos are ready and whether setup is still running until it finishes
-(`.claude/hooks/repo-health-check.sh --status`; see `docs/agents/superset.md`).
+(`.claude/hooks/repo-health-check.sh --status`; see `docs/agents/paradev.md`).
 
 **5. Fill the repo env files.** Setup ends with an **ACTION REQUIRED** list of the
 `.env` files still needing real values — fill each one (ask a teammate for working values).
 
 **6. Define + run your local stack** (optional). Copy
-`.superset/products/example.sh` to `.superset/products/<product-id>.sh`, declare your
+`.paradev/products/example.sh` to `.paradev/products/<product-id>.sh`, declare your
 repos per tier (databases / backends / frontends) and, if you need organisation-only setup
 such as local host aliases, an optional `setup_product` hook that setup runs for you, then:
 

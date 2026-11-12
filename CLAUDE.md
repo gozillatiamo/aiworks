@@ -53,7 +53,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
   masks personal data only when a sanctioned PRODUCTION read returned it (keyed hash, never shape).
 - `docs/agents/submodules.md` — never develop inside a submodule checkout, its primary clone is at the workspace root ·
   `plan-artifacts.md` — one plan per repo, never committed · `worktree-gc.md` — bare `gc` only REPORTS ·
-  `superset.md` — worktree setup steps, the setup lock, the readiness check (`--status`/`--wait`), the `setup_product` hook ·
+  `paradev.md` — worktree setup steps, the setup lock, the readiness check (`--status`/`--wait`), the `setup_product` hook ·
   `workflow-resume.md` — a run keeps the config it started with; change config ⇒ invoke BY NAME, never hand-edit a
   persisted run script. It also keeps **the base it started with**: recorded per repo, authoritative on resume, moved
   only by `--accept-base-change`, and the forge's own `target_branch` is asserted against it (`docs/adr/0025`) — a base

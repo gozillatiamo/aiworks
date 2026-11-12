@@ -85,7 +85,7 @@ PR/MR left open, evidence on the ticket and the MR.
 Keyed `<repo>/<scenario>/<base-sha>/<env-fingerprint>` under `loadtest.baseline_cache`,
 machine-global by default (`~/.cache/aiworks/loadtest-baselines`).
 
-Machine-global on purpose. A Superset worktree is ephemeral, so a cache inside the repo would
+Machine-global on purpose. A Paradev worktree is ephemeral, so a cache inside the repo would
 be re-measured for every worktree — several runs of pure wall clock to learn what was already
 known. The **base SHA** in the key makes a moved base self-invalidating; the **environment
 fingerprint** stops a baseline measured on one machine from being compared against a candidate

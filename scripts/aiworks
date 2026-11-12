@@ -144,10 +144,10 @@ Commands:
              own rather than shadowing it. Best-effort: one failure never aborts the run.
              node and repo dependencies are REPORTED, never changed (--check-deps lists what
              is outdated per repo). Use -n to preview, --only/--skip to narrow.
-  gc         Reclaim disk from Superset worktrees. Superset's UI Delete drops the workspace
+  gc         Reclaim disk from Paradev worktrees. Paradev's UI Delete drops the workspace
              row but leaves the worktree DIRECTORY, the `git worktree` registration and the
              local branch behind; slack-dispatch leaks one worktree per @-mention and has no
-             cleanup path at all. `gc` reaps three things: orphaned worktrees (Superset no
+             cleanup path at all. `gc` reaps three things: orphaned worktrees (Paradev no
              longer lists them), build artifacts inside IDLE worktrees, and dispatch worktrees
              past their TTL. It never creates shared build state — a shared CARGO_TARGET_DIR
              would serialize concurrent builds — so worktrees stay fully parallel; it only

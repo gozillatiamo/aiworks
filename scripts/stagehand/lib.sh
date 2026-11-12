@@ -12,7 +12,7 @@
 #   1. it HIDES every other visible app while it works and restores them at end of turn — the
 #      exact opposite of "spread live previews across three displays";
 #   2. it holds a machine-wide lock until the session EXITS, so a second Claude Code session
-#      (a Superset worktree, say) cannot use the machine at all;
+#      (a Paradev worktree, say) cannot use the machine at all;
 #   3. its permission tiers make the two headline asks impossible anyway — browsers are
 #      view-only (cannot be told to open a URL) and IDEs are click-only (cannot be told to open
 #      a file);
@@ -22,7 +22,7 @@
 # `open`, the `cursor` CLI, and AX window placement. No lock, no hiding, no screenshots, no plan
 # tier, and it works on every turn including ones the model never thinks about.
 #
-# ROOT WORKTREE ONLY — the hard scope rule. A Superset worktree runs its own Claude Code session
+# ROOT WORKTREE ONLY — the hard scope rule. A Paradev worktree runs its own Claude Code session
 # against the same physical screen; two sessions racing to place windows would fight over the
 # same display space and neither could win. The root/main checkout owns the screen. The gate is
 # mechanical, never guessed: `git rev-parse --git-common-dir` points at <main>/.git from inside a
@@ -139,7 +139,7 @@ stage_gate_or_exit() {
 
   # Root worktree only — three independent proofs, all mechanical.
   [[ -z "$STAGE_MAIN_CLONE" ]]        || { slog "linked worktree (main=$STAGE_MAIN_CLONE)"; exit 0; }
-  [[ -z "${SUPERSET_ROOT_PATH:-}" ]]  || { slog "under Superset"; exit 0; }
+  [[ -z "${SUPERSET_ROOT_PATH:-}" ]]  || { slog "under Paradev"; exit 0; }
   [[ -d "$STAGE_ROOT/.git" ]]         || { slog ".git is not a directory"; exit 0; }
 
   if [[ "${STAGEHAND:-}" != "on" ]]; then

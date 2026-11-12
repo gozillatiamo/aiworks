@@ -1,9 +1,15 @@
-# Superset worktrees — setup, the setup lock, and the readiness check
+# Paradev worktrees — setup, the setup lock, and the readiness check
 
-Superset runs each ticket in its own git worktree. `.superset/config.json` names the three
-lifecycle scripts it calls there: `setup` → `.superset/setup.sh`, `run` → `.superset/run.sh`,
-`teardown` → `.superset/teardown.sh`. The same scripts work in a manual `git worktree` and in the
-main checkout; all three are idempotent. Why this is shaped so: `docs/adr/0041`.
+Paradev (formerly Superset) runs each ticket in its own git worktree. `.paradev/config.toml`
+names the three lifecycle scripts it calls there: `[setup]` → `./.paradev/setup.sh`,
+`[terminals.dev]` → `./.paradev/run.sh`, `[archive]` → `./.paradev/teardown.sh`. The same scripts
+work in a manual `git worktree` and in the main checkout; all three are idempotent. Why this is
+shaped so: `docs/adr/0041`; the rename: `docs/adr/0046`.
+
+`archive` never blocks: Paradev stops the processes and deletes the worktree itself, so
+`teardown.sh` only cleans what Paradev cannot see (shared MCP services, per-product run state).
+`aiworks paradev` writes `config.toml` when it is missing, and warns, without rewriting, when an
+existing one does not reference a hook script.
 
 ## Setup steps
 
@@ -12,16 +18,20 @@ main checkout; all three are idempotent. Why this is shaped so: `docs/adr/0041`.
 | Step | What | Switch |
 |---|---|---|
 | 0 | Select the shared Agent harnesses (main workspace only; a worktree reuses the selection) | `--harnesses`, `--reconfigure-harnesses` |
-| 1 | Symlink the personal git-ignored config from the root workspace (`workspace.config.local.yaml`, `.claude/settings.local.json`) | `SUPERSET_LOCAL=symlink\|skip` |
-| 2 | Provision the adapter credentials (`scripts/{tracker,notify,vcs}/.env`) from the root workspace — before tooling and sync, so any adapter call during onboarding has them | `SUPERSET_ENV=symlink\|copy\|skip` |
+| 1 | Symlink the personal git-ignored config from the root workspace (`workspace.config.local.yaml`, `.claude/settings.local.json`) | `PARADEV_LOCAL=symlink\|skip` |
+| 2 | Provision the adapter credentials (`scripts/{tracker,notify,vcs}/.env`) from the root workspace — before tooling and sync, so any adapter call during onboarding has them | `PARADEV_ENV_FILES=symlink\|copy\|skip` |
 | 3 | Ensure host tooling: `jq`, `ngrok`, `glab`, `pnpm`, `dap` (best-effort); reconcile the declared Claude plugins at project scope — main checkout and independent clones; a linked worktree uses its main checkout's install | — |
 | 4 | `aiworks sync -y` — clone and fully onboard every repo under `products[]` | — |
-| 5 | Copy the real local state from the root workspace: every `.env*`, Terraform local init (`.terraform`, gitignored lock + `terraform.tfvars`), seeded `db-data`, signing secrets, the product files `.superset/products/*.sh` | `SUPERSET_ENV` (env and Terraform), `SUPERSET_DB_DATA`, `SUPERSET_SIGNING`, `SUPERSET_PRODUCTS` (each `symlink\|copy\|skip`) |
+| 5 | Copy the real local state from the root workspace: every `.env*`, Terraform local init (`.terraform`, gitignored lock + `terraform.tfvars`), seeded `db-data`, signing secrets, the product files `.paradev/products/*.sh` | `PARADEV_ENV_FILES` (env and Terraform), `PARADEV_DB_DATA`, `PARADEV_SIGNING`, `PARADEV_PRODUCTS` (each `symlink\|copy\|skip`) |
 | 6 | Install Node dependencies, check each repo's `.env` | — |
 | 6b | Run each product's optional `setup_product` hook | — |
 | 7 | Start the shared MCP services; list the `.env` files still needing values | — |
 
-Each `SUPERSET_*` switch defaults to doing the work; `=skip` leaves that item to you.
+Each `PARADEV_*` switch defaults to doing the work; `=skip` leaves that item to you.
+
+`SUPERSET_ENV=local|cloud` and `SUPERSET_ROOT_PATH` are the platform's own variables (it still
+injects `SUPERSET_*`), not switches of ours. The framework never reads `SUPERSET_ENV` as a
+switch, which is why the env-file switch is `PARADEV_ENV_FILES`.
 
 ## Plugins in a worktree
 
@@ -34,8 +44,8 @@ independent projects and still install for themselves. Why: `docs/adr/0042`.
 
 ## The setup lock
 
-Right after the prerequisite checks, `setup.sh` calls `setup_lock_acquire .superset/run/setup.lock`
-(in `.superset/lib.sh`). The lock records `pid=`, `started_epoch=` and `started=`; an `EXIT`/`INT`/
+Right after the prerequisite checks, `setup.sh` calls `setup_lock_acquire .paradev/run/setup.lock`
+(in `.paradev/lib.sh`). The lock records `pid=`, `started_epoch=` and `started=`; an `EXIT`/`INT`/
 `TERM` trap removes it. It is written at the top level of the setup shell on purpose, so the
 recorded pid is the one the readiness check probes. A lock whose pid is dead means setup was
 hard-killed before the trap fired.
@@ -63,21 +73,35 @@ otherwise — it never concludes a declared repo is missing.
 
 ## `setup_product` — the organisation-specific extension point
 
-`.superset/products/<product-id>.sh` is git-ignored and per organisation (`docs/adr/0009`). It may
+`.paradev/products/<product-id>.sh` is git-ignored and per organisation (`docs/adr/0009`). It may
 define `setup_product`; step 6b calls it for every product file. Rules: idempotent, local-only,
 best-effort — it must never fail setup. The one shipped helper is
 `ensure_hosts_entries <ip> <host>…`, which maps local hostnames to a loopback IP for multi-tenant
 apps that resolve the tenant from the `Host` header. It adds only the missing names; editing
 `/etc/hosts` needs root, so without it the helper prints the lines to add by hand and carries on.
 `HOSTS_FILE` redirects the target (tests use a temp file). See the commented example in
-`.superset/products/example.sh`.
+`.paradev/products/example.sh`.
 
 ## Selftest
 
 ```sh
-bash scripts/aiworks-superset-selftest.sh     # also passes under /bin/bash 3.2
+bash scripts/aiworks-paradev-selftest.sh     # also passes under /bin/bash 3.2
 ```
 
 Hermetic: a temp workspace, a fake `mani.d` + `workspace.config.yaml`, fake clones, a lock with a
 live and a dead pid, a temp `HOSTS_FILE`. It covers the union, the three states, `--status`,
 `--wait`, the hook runner, the hosts helper, and the plugin walk in a linked worktree (S7).
+
+## Migrating a pre-rename workspace
+
+- Run `aiworks sync` in the root workspace. It moves untracked state (product files, `.env`,
+  pidfiles) from `.superset/` to `.paradev/` and writes `.paradev/config.toml`. It never
+  overwrites a file and never touches `~/.superset`.
+- The old switch names (`SUPERSET_LOCAL`, `SUPERSET_DB_DATA`, `SUPERSET_SIGNING`,
+  `SUPERSET_PRODUCTS`, and `SUPERSET_ENV` when it carries `symlink|copy|skip`) are still
+  honoured, with a warning. A silently ignored `SUPERSET_DB_DATA=copy` would turn into symlink
+  mode and delete the per-worktree DB copy. Rename them.
+- A worktree created before the rename keeps dangling symlinks into the root's old `.superset/`
+  until `aiworks setup` is re-run there.
+- Re-run `aiworks gc --install-schedule` so the weekly job gets the new `PATH` and the
+  `paradev` CLI.

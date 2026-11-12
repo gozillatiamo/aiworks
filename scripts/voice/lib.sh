@@ -25,7 +25,7 @@
 #   2. <main clone>/workspace.config.local.yaml    only when <root> is a LINKED WORKTREE
 #   3. <root>/workspace.config.yaml                shared, committed
 #
-#   Layer 2 is not decoration. A Superset worktree is a `git worktree` of this repo, and a
+#   Layer 2 is not decoration. A Paradev worktree is a `git worktree` of this repo, and a
 #   git-ignored file does not travel into one — so a worktree sees the SHARED config only,
 #   which deliberately ships voice.enabled: false. Without layer 2 the feature would be
 #   silently dead in exactly the sessions that need the identity prefix most. The main clone

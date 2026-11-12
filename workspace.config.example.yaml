@@ -271,7 +271,7 @@ loadtest:
   baseline_cache: ~/.cache/aiworks/loadtest-baselines
                                    # where base-build results are cached, keyed by
                                    #   <repo>/<scenario>/<base-sha>/<env-fingerprint>.
-                                   #   Machine-global ON PURPOSE: a Superset worktree is ephemeral,
+                                   #   Machine-global ON PURPOSE: a Paradev worktree is ephemeral,
                                    #   so a cache inside the repo would be re-measured for every
                                    #   worktree. The base SHA in the key makes a moved base
                                    #   self-invalidating; the env fingerprint stops a baseline from
@@ -437,7 +437,7 @@ artifacts:
 headroom:
   enabled: true                    # MASTER switch (default ON — it only ever SAVES tokens).
                                    #   Gates provisioning, not the plugin: `aiworks doctor`
-                                   #   stops checking for the engine, `.superset/setup.sh`
+                                   #   stops checking for the engine, `.paradev/setup.sh`
                                    #   stops installing it, and the statusline is left alone.
                                    #   false on an already-provisioned machine ⇒ also run
                                    #   `claude plugin uninstall headroom-usage-indicator@headroom-tools`.

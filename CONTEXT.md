@@ -332,12 +332,12 @@ path; the ladder shortens the implementation, never the requirement.
 The cross-repo CLI (`sync` · `list projects` · `exec` · `run`) driven by the generated
 `mani.d/<product>.yaml` files.
 
-**Superset**:
-The parallel run harness (`.superset/`) that gives each ticket its own git **worktree** so
+**Paradev** (formerly Superset; "Superset" is the synonym to avoid):
+The parallel run harness (`.paradev/`) that gives each ticket its own git **worktree** so
 several `dev-cycle` runs proceed at once. Its setup writes a lock the readiness check reads.
 
 **Worktree**:
-An isolated git checkout Superset provisions per ticket; git-ignored root state (`.env*`, the
+An isolated git checkout Paradev provisions per ticket; git-ignored root state (`.env*`, the
 personal local config) is symlinked into it.
 
 **Readiness check**:
@@ -346,7 +346,7 @@ the declared repos (`mani.d/` ∪ `workspace.config.yaml`) with the clones prese
 agent to wait while setup is `running`, or what to run when it is `crashed` or `idle`.
 
 **Product setup hook**:
-The optional `setup_product` function in `.superset/products/<product-id>.sh`, run by setup
+The optional `setup_product` function in `.paradev/products/<product-id>.sh`, run by setup
 step 6b — the git-ignored home for organisation-specific, idempotent, local-only setup.
 
 **`Human:` review**:

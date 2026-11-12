@@ -128,7 +128,7 @@ Groups 1–8 run offline by default. 9–12 need `--deep`.
 | 7 | `voice` | delegates `aiworks voice status` — skipped unless `voice.enabled` |
 | 8 | `triage` | the three read-only triage MCPs are registered (offline) · `--deep` · the Kubernetes triage identity reads and cannot write — skipped unless `triage.enabled` |
 | 9 | `mcp` | `--deep` · the shared MCP compose stack is up |
-| 10 | `services` | `--deep` · every host port published by `.superset/mcp-compose.yml` answers |
+| 10 | `services` | `--deep` · every host port published by `.paradev/mcp-compose.yml` answers |
 | 11 | `credentials` | `--deep` · each adapter's own reader authenticates against the live API |
 | 12 | `disk` | `--deep` · delegates `aiworks gc`, reads its orphan **count**, and reads its **refusals** — an orphan gc will not touch is not something `--fix` can clear |
 
@@ -175,7 +175,7 @@ on purpose:
 
 ## In a linked worktree
 
-Superset and slack-dispatch worktrees are a first-class place to run this. Doctor detects one
+Paradev and slack-dispatch worktrees are a first-class place to run this. Doctor detects one
 (`git rev-parse --git-dir` ≠ `--git-common-dir`), prints the branch and the main clone, and
 keeps the **severity the same** — a stub `.env` blocks a workflow just as hard there. What
 changes is the instruction: the fix is a copy from the main clone, not "go make a token".

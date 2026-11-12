@@ -20,7 +20,7 @@ it is the wrong engine for it. Four reasons, all from
    hidden … When Claude finishes the turn, hidden apps are restored." The goal here is the exact
    opposite — windows spread across displays and left there.
 2. **It holds a machine-wide lock until the session exits.** A second Claude Code session (a
-   Superset worktree, a second terminal) then cannot use the machine at all.
+   Paradev worktree, a second terminal) then cannot use the machine at all.
 3. **Its permission tiers forbid the two headline actions.** "Browsers and trading platforms are
    view-only, terminals and IDEs are click-only." A view-only browser cannot be told to open a URL;
    a click-only IDE cannot be told to open a file.
@@ -38,7 +38,7 @@ decision.
 
 ## Root worktree only
 
-A Superset worktree runs its own Claude Code session against the same physical screen. Two sessions
+A Paradev worktree runs its own Claude Code session against the same physical screen. Two sessions
 racing to place windows would fight over the same space and neither could win, so the root/main
 checkout owns the screen and every other checkout stays silent.
 

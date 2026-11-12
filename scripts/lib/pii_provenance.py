@@ -44,7 +44,7 @@ MODES (env `PII_GATE`)
 STORAGE
   `PII_VAULT_DIR` (default `~/.claude/prod-pii-vault`) holds `salt` (0600, per machine) and
   `vault.tsv` (`<hmac-hex>\t<category>\t<epoch>`). It lives under $HOME, NOT in the repo, so
-  one machine shares one vault across every clone and Superset worktree — a value read in the
+  one machine shares one vault across every clone and Paradev worktree — a value read in the
   main clone is still redacted when a worktree posts the ticket. Entries older than
   `PII_VAULT_TTL_DAYS` (default 30) are dropped on the next write.
 

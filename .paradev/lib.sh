@@ -572,7 +572,7 @@ ensure_headroom() {
 }
 
 # ── active Agent Harness CLIs + authentication ───────────────────────────────
-# Called only by the MAIN workspace setup. Superset worktrees reuse machine-global binaries and
+# Called only by the MAIN workspace setup. Paradev worktrees reuse machine-global binaries and
 # login state and never open installers or browser auth flows.
 _selected_harnesses() {
   local root="${1:-$PWD}"
@@ -889,7 +889,7 @@ install_dap_script() {
 }
 
 # Setup progress lock (per-worktree; git-ignored under .paradev/run/). Written the moment real
-# work begins and removed on exit via trap. A fresh Superset worktree starts an agent session
+# work begins and removed on exit via trap. A fresh Paradev worktree starts an agent session
 # BEFORE the long clone+onboard finishes, so the SessionStart readiness check
 # (.claude/hooks/repo-health-check.sh) reads this lock to steer the agent to WAIT rather than
 # treat an un-cloned repo as missing — and, crucially, to tell "setup is still running" apart

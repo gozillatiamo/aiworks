@@ -1,6 +1,6 @@
 # A linked worktree inherits the main checkout's plugins
 
-**Status:** Accepted. Amends [ADR 0035](0035-declared-plugins-install-at-project-scope.md).
+**Status:** Accepted. Amends [ADR 0035](0035-declared-plugins-install-at-project-scope.md). Amended by [ADR 0046](0046-the-framework-follows-the-paradev-rename.md): names in this record predate the Paradev rename.
 
 ## Context
 

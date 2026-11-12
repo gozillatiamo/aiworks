@@ -24,7 +24,7 @@ workflow for a workflow spawn. If you add a workflow call site, `grep agentType`
 the ones already wired.
 
 A **repo-only session** (`cd <repo> && claude`) is covered too: each repo's
-`.claude/settings.json` enables the plugin, and `.superset/setup.sh` installs it once at
+`.claude/settings.json` enables the plugin, and `.paradev/setup.sh` installs it once at
 **user** scope. Declaring alone is not installing — also measured.
 
 ## The boundary: compression is an OUTPUT rule

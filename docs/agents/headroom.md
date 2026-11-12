@@ -14,7 +14,7 @@ Two pieces, and it matters which is which:
 
 | Piece | What it is | Where it comes from |
 |---|---|---|
-| **engine** | the `headroom` binary — the compression pipeline everything shells out to | `uv tool install --python 3.13 'headroom-ai[mcp]'`, via `.superset/setup.sh` |
+| **engine** | the `headroom` binary — the compression pipeline everything shells out to | `uv tool install --python 3.13 'headroom-ai[mcp]'`, via `.paradev/setup.sh` |
 | **plugin** | `headroom-usage-indicator@headroom-tools` — hooks, `hcat`, the savings badge | `.claude/settings.json` `enabledPlugins` → `ensure_claude_plugins` |
 
 The plugin is a **gauge and a set of hooks**; it contains no compressor. Both halves fail OPEN —
@@ -426,7 +426,7 @@ headroom:
 ```
 
 `enabled` gates **provisioning**, not the plugin: turning it off stops the doctor checking and
-`.superset/setup.sh` installing. On a machine already provisioned, also run
+`.paradev/setup.sh` installing. On a machine already provisioned, also run
 `claude plugin uninstall headroom-usage-indicator@headroom-tools`.
 
 Rationale: [ADR 0014](../adr/0014-compression-is-explicit-and-file-scoped.md).

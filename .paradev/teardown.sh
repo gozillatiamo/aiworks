@@ -13,12 +13,12 @@
 #   3. databases   (down_databases)
 #
 # --purge-repos additionally REMOVES the cloned product repos (the original
-# Superset worktree-removal behaviour). Destructive: push uncommitted work in
+# Paradev worktree-removal behaviour). Destructive: push uncommitted work in
 # the clones first. Without the flag, repos (and db-data volumes) are kept.
 # Undoes setup: stops the shared MCP service containers, then removes the product repos
 # that `mani sync` cloned into the workspace root (and the adapter symlinks inside them).
 # The clones are untracked (gitignored from the parent repo), so clearing them lets
-# Superset remove the worktree cleanly. Deleting a workspace discards its state by design
+# Paradev remove the worktree cleanly. Deleting a workspace discards its state by design
 # — push uncommitted work in these clones first.
 #
 set -euo pipefail
@@ -72,7 +72,7 @@ fi
 
 rm -rf ".paradev/run/$PRODUCT"
 
-# Optional: remove the cloned product repos so Superset can delete the
+# Optional: remove the cloned product repos so Paradev can delete the
 # worktree cleanly (they are untracked, gitignored clones).
 purged_note=""
 if [[ "$PURGE_REPOS" == true ]]; then

@@ -1,6 +1,6 @@
 # Personal config overrides apply at runtime only, never in the committed mirror
 
-**Status:** Accepted
+**Status:** Accepted. Amended by [ADR 0046](0046-the-framework-follows-the-paradev-rename.md): names in this record predate the Paradev rename.
 **Revised:** 2026-08-07 — `planning.auto_approve` moved from the never-override group into the
 override group. The original wording drew the line at *output preference vs control flow*; this
 revision draws it at **reversibility** instead. See "Rejected alternatives" for why the first line

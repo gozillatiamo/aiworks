@@ -1,6 +1,6 @@
 # A fresh worktree knows its repos before sync, and its session knows when setup is running
 
-**Status:** Accepted.
+**Status:** Accepted. Amended by [ADR 0046](0046-the-framework-follows-the-paradev-rename.md): names in this record predate the Paradev rename.
 
 ## Context
 

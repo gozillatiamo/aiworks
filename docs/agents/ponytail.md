@@ -114,7 +114,7 @@ dimension is precisely the over-build ponytail exists to refuse.
 Declared in `.claude/settings.json` (`enabledPlugins` + `extraKnownMarketplaces`) at the root and,
 through `aiworks-add.sh`, in every repo — so a repo-only session (`cd <repo> && claude`) is covered too.
 ⚠️ **Declaring is not installing.** The install is a machine-local step done once at **user** scope by
-`ensure_claude_plugins` in `.superset/lib.sh` (setup step 3), which reads the same `enabledPlugins`
+`ensure_claude_plugins` in `.paradev/lib.sh` (setup step 3), which reads the same `enabledPlugins`
 list. A repo carrying both keys with no install answers NOT-FOUND for `ponytail:ponytail` — measured
 for caveman, and the same trap here.
 

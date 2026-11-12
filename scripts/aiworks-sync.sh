@@ -935,7 +935,7 @@ reconcile_mani_registry
 # The per-repo loop below delegates to `aiworks add`, whose step 3 clones via a BARE
 # `mani sync` — so a fresh workspace clones all N repos ONE AT A TIME. Measured on a large
 # set (~18 repos): 125s sequential vs 42s with `mani sync --parallel` (~3x, saves ~83s). On a
-# fresh Superset worktree the clone is the single biggest, CACHE-IMMUNE cost — node installs
+# fresh Paradev worktree the clone is the single biggest, CACHE-IMMUNE cost — node installs
 # hit the machine-global pnpm/npm store (warm) and codegraph indexes fast, but every new
 # worktree must re-clone from scratch. So clone the whole set here, in parallel, BEFORE the
 # onboard loop; each per-repo `aiworks add` then finds its repo already cloned (step 3 SKIP)

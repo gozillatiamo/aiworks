@@ -4,7 +4,7 @@
 #
 # Why this exists
 # ---------------
-# A fresh Superset worktree runs .paradev/setup.sh (which calls `aiworks sync`) to CLONE
+# A fresh Paradev worktree runs .paradev/setup.sh (which calls `aiworks sync`) to CLONE
 # and onboard every product repo declared in workspace.config.yaml. Cloning + onboarding
 # every declared repo takes several minutes — but the Claude Code session in the new worktree starts
 # IMMEDIATELY, before setup finishes. So Claude would try to cd / grep / search a repo
@@ -191,7 +191,7 @@ fi
 setup_state
 case "$SETUP_STATE" in
   running)
-    cause="The workspace setup (.paradev/setup.sh via aiworks sync) is still running - $setup_detail. A fresh Superset worktree clones and onboards every product repo, which takes several minutes."
+    cause="The workspace setup (.paradev/setup.sh via aiworks sync) is still running - $setup_detail. A fresh Paradev worktree clones and onboards every product repo, which takes several minutes."
     action="Do NOT treat a not-ready repo as an error, do not cd/grep/search inside it, and do not conclude it is absent - it is simply not cloned YET. If the user asks you to work in a not-ready repo, wait for setup: run  .claude/hooks/repo-health-check.sh --wait  to block until every repo is ready (or  --status  to recheck now), then proceed."
     ;;
   crashed)

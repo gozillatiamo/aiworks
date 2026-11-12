@@ -320,8 +320,8 @@ if [[ "$has_root" == 1 ]]; then
     if [[ "$products_count" -gt 0 ]]; then
       products_verb="linked"; [[ "$products_mode" == copy ]] && products_verb="copied"
       log "$products_verb $products_count product definition file(s) from the root workspace."
-    elif ls "$root_ws"/.superset/products/*.sh >/dev/null 2>&1; then
-      warn "the root workspace has not migrated yet — run 'aiworks sync' in $root_ws (its product files are still under .superset/products/)."
+    elif ls "$root_ws"/.paradev/products/*.sh >/dev/null 2>&1; then
+      warn "the root workspace has not migrated yet — run 'aiworks sync' in $root_ws (its product files are still under .paradev/products/)."
     else
       warn "no real .paradev/products/*.sh at the root workspace ($root_ws) — setup/run/teardown will fail to resolve a default product unless one is passed explicitly."
     fi

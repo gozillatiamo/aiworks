@@ -10,7 +10,7 @@
 # Prints NOTHING on stdout and always exits 0. A window placer must never be the reason a tool
 # call reports failure, and PostToolUse stdout is context the model would then have to read.
 #
-# Inert unless stagehand.enabled AND this is the ROOT worktree (a linked/Superset worktree shares
+# Inert unless stagehand.enabled AND this is the ROOT worktree (a linked/Paradev worktree shares
 # the same physical screen and would fight this one for it). Both gates live in
 # scripts/stagehand/lib.sh — kept there, not here, so the CLI and the hook can never disagree
 # about when the feature is on.

@@ -65,7 +65,7 @@ summary exists to carry, and none of them identify a real-world person.
 without the machine's salt a copied vault file is inert.
 
 It lives under `$HOME`, not in the repo, so one machine shares one vault across every clone and
-Superset worktree — a value read in the main clone is still redacted when a worktree posts the
+Paradev worktree — a value read in the main clone is still redacted when a worktree posts the
 ticket. Entries expire after `PII_VAULT_TTL_DAYS` (default 30) and are pruned on the next write.
 
 ```bash

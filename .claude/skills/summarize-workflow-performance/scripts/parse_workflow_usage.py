@@ -36,7 +36,7 @@ def projects_root():
 def encode_project_path(path):
     """Encode a filesystem path the way Claude Code names its project dir under
     ~/.claude/projects/. It replaces BOTH '/' and '.' with '-' — so a worktree at
-    /Users/me/.superset/worktrees/<id>/x becomes -Users-me--superset-worktrees-<id>-x
+    /Users/me/.paradev/worktrees/<id>/x becomes -Users-me--paradev-worktrees-<id>-x
     (note the DOUBLE dash from '/.' → '--'). Replacing only '/' (the old bug) misses
     the dot and points the scan at a dir that does not exist."""
     return path.replace("/", "-").replace(".", "-")
@@ -133,7 +133,7 @@ def main():
 
     # Where to search. A workflow run can write its transcripts under a project dir we
     # can't predict from cwd — notably when dev-cycle runs inside a git worktree (e.g.
-    # .superset/worktrees/<id>/...), whose encoded project dir differs from the launch
+    # .paradev/worktrees/<id>/...), whose encoded project dir differs from the launch
     # cwd. So by DEFAULT scan the whole projects root recursively and let the (specific)
     # marker filter below pick out this run. --project-dir narrows the search when given.
     search_root = args.project_dir or projects_root()
