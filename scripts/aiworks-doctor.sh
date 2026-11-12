@@ -217,7 +217,7 @@ cfg_bool() {  # <dotted.path> [default] — a value that is neither truthy nor f
 }
 
 # ── where are we ──────────────────────────────────────────────────────────────────
-# A linked worktree (Superset, slack-dispatch) is a first-class place to run this, but its
+# A linked worktree (Paradev, slack-dispatch) is a first-class place to run this, but its
 # adapter .env files are stubs by design — the fix there is a copy from the main clone, not
 # "go make a token". Same finding, same severity, different instruction.
 MAIN_CLONE=""
@@ -1124,7 +1124,7 @@ EOF
   # drifted apart, which is the only warning available before a CLI update adds a rule nobody here
   # has heard of. ~30ms even when the string is absent, so it runs on a default pass.
   local cbin=""
-  # First `claude` on PATH that is a real binary — a launcher wrapper (Superset's ~/.paradev/bin/claude)
+  # First `claude` on PATH that is a real binary — a launcher wrapper (Paradev's ~/.paradev/bin/claude)
   # is a shell script that never carries the rule sentence.
   local cand
   while IFS= read -r cand; do
@@ -1830,7 +1830,7 @@ check_disk() {
          "see: ./aiworks gc   (read the reasons, then ./aiworks gc --orphans --artifacts)" slow
   elif [[ "$orphans" -gt 0 ]]; then
     warn $g "$orphans orphaned worktree(s)" \
-         "Superset no longer lists them but the directories remain$( [[ "$blocked" -gt 0 ]] && printf ' · %d of them gc will refuse (in use, or uncommitted work)' "$blocked" )" \
+         "Paradev no longer lists them but the directories remain$( [[ "$blocked" -gt 0 ]] && printf ' · %d of them gc will refuse (in use, or uncommitted work)' "$blocked" )" \
          "./aiworks gc --orphans --artifacts" slow
   else
     pass $g "worktree disk" "nothing orphaned"

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# aiworks-gc.sh  (`aiworks gc`) — reclaim disk from Superset worktrees, WITHOUT ever making
+# aiworks-gc.sh  (`aiworks gc`) — reclaim disk from Paradev worktrees, WITHOUT ever making
 # two worktrees wait for each other.
 #
 # THE PROBLEM
-#   Superset's UI "Delete" removes the workspace row but leaves behind (measured, 2026-08-06):
+#   Paradev's UI "Delete" removes the workspace row but leaves behind (measured, 2026-08-06):
 #     * the worktree DIRECTORY tree, build artifacts and all,
 #     * the `git worktree` registration + .git/worktrees/<name> metadata in the parent repo,
 #     * the local branch.
@@ -33,14 +33,14 @@
 #   a locked directory, so a reaped worktree rebuilds from cache while others build in parallel.
 #
 # SOURCE OF TRUTH
-#   Which workspaces still exist is read from `superset ws list --json`, never from
-#   ~/.superset/*.sqlite. Reading the sqlite file directly under-reported live workspaces in
+#   Which workspaces still exist is read from `paradev ws list --json`, never from
+#   ~/.paradev/*.sqlite. Reading the sqlite file directly under-reported live workspaces in
 #   testing (it missed 2 of 6, including a 17 GiB one) — a GC that trusts it deletes live work.
 #
 # Usage: aiworks-gc.sh [selector…] [options]
 #
 #   Selectors — with NONE, every category is REPORTED and nothing is changed:
-#     --orphans        reap worktrees Superset no longer lists (the UI-Delete leftovers)
+#     --orphans        reap worktrees Paradev no longer lists (the UI-Delete leftovers)
 #     --artifacts      reap target/ + node_modules from IDLE worktrees, live ones included
 #     --dispatch       reap slack/req-* dispatch worktrees past their TTL
 #     --caches         clear host tool caches: uv · pnpm store · npm · puppeteer (all regenerable)
@@ -48,9 +48,9 @@
 #     --all            all five
 #
 #   Options:
-#     --project NAME   only this Superset project (default: every project)
+#     --project NAME   only this Paradev project (default: every project)
 #     --path DIR       (repeatable) also sweep target/ + node_modules under DIR, for checkouts that
-#                      are not Superset worktrees. Implies --artifacts. Same liveness checks, run per
+#                      are not Paradev worktrees. Implies --artifacts. Same liveness checks, run per
 #                      project; target/ is only cleared beside a Cargo.toml.
 #     --idle-days N    (--artifacts) idle threshold, default 3 (7 for the scheduled job)
 #     --ttl-days N     (--dispatch)  age threshold, default 7
@@ -117,7 +117,7 @@ if [[ "$REPORT_ONLY" -eq 1 && "$SCCACHE" -eq 0 && -z "$SCHEDULE" ]]; then
   DO_ORPHANS=1; DO_ARTIFACTS=1; DO_DISPATCH=1; DO_CACHES=1; DO_DOCKER=1; DRY=1
 fi
 
-WT_ROOT="${SUPERSET_HOME:-$HOME/.superset}/worktrees"
+WT_ROOT="${SUPERSET_HOME_DIR:-$HOME/.paradev}/worktrees"
 FREED_KB=0
 
 # ── helpers ───────────────────────────────────────────────────────────────────────
@@ -132,19 +132,19 @@ human() {  # KiB -> human
 
 size_kb() { du -sk "$1" 2>/dev/null | awk '{print $1}'; }
 
-# The set of worktree paths Superset still knows about. Authoritative — see SOURCE OF TRUTH.
+# The set of worktree paths Paradev still knows about. Authoritative — see SOURCE OF TRUTH.
 # Emits one absolute path per line. Fails loud: an empty/failed listing must NOT be read as
 # "nothing is alive", which would make every worktree look like an orphan.
 live_paths() {
   local out
-  out="$(superset ws list --json 2>/dev/null)" || return 1
+  out="$(paradev ws list --json 2>/dev/null)" || return 1
   [[ -n "$out" ]] || return 1
   printf '%s' "$out" | jq -e -r '.[].worktreePath | select(. != null and . != "")' 2>/dev/null
 }
 
-# Superset's workspace id for a path (empty when it is not a live workspace).
+# Paradev's workspace id for a path (empty when it is not a live workspace).
 live_id_for() {
-  superset ws list --json 2>/dev/null \
+  paradev ws list --json 2>/dev/null \
     | jq -r --arg p "$1" '.[] | select(.worktreePath == $p) | .id' 2>/dev/null | head -1
 }
 
@@ -189,7 +189,7 @@ busy_reason() {  # echoes a reason and returns 0 when busy; returns 1 when idle
 }
 
 # ── git safety: the candidate itself AND every repo nested inside it ─────────────────
-# A Superset workspace of this workspace contains ~21 nested product clones, each with its
+# A Paradev workspace of this workspace contains ~21 nested product clones, each with its
 # own state. Checking only the top level would happily delete a colleague's afternoon.
 git_unsafe_reason() {
   local root="$1" gitpath repo dirty ahead
@@ -403,10 +403,10 @@ write_plist() {  # $1 = destination path, $2 = idle days
     <key>Hour</key><integer>3</integer>
     <key>Minute</key><integer>0</integer>
   </dict>
-  <!-- A launchd job inherits a minimal PATH; the GC needs git, jq and the superset CLI. -->
+  <!-- A launchd job inherits a minimal PATH; the GC needs git, jq and the paradev CLI. -->
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>$HOME/.paradev/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>StandardOutPath</key><string>$SCHED_LOG</string>
   <key>StandardErrorPath</key><string>$SCHED_LOG</string>
@@ -511,10 +511,10 @@ fi
 [[ "$DO_DOCKER" -eq 1 ]] && clear_docker
 if [[ "$DO_CACHES$DO_DOCKER" != "00" && "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" == "000" ]]; then summary; exit 0; fi
 
-command -v superset >/dev/null 2>&1 || die "the 'superset' CLI is not on PATH — this GC reads the live workspace list from it and refuses to guess"
+command -v paradev >/dev/null 2>&1 || die "the 'paradev' CLI is not on PATH — this GC reads the live workspace list from it and refuses to guess"
 [[ -d "$WT_ROOT" ]] || { ok "no $WT_ROOT — nothing to collect"; exit 0; }
 
-LIVE_LIST="$(live_paths)" || die "\`superset ws list --json\` returned nothing usable — refusing to run, since an empty live set would classify every worktree as an orphan"
+LIVE_LIST="$(live_paths)" || die "\`paradev ws list --json\` returned nothing usable — refusing to run, since an empty live set would classify every worktree as an orphan"
 
 for proj in "$WT_ROOT"/*; do
   [[ -d "$proj" ]] || continue
@@ -522,13 +522,13 @@ for proj in "$WT_ROOT"/*; do
   discover "$proj" 1
 done
 
-step "Superset worktrees under $WT_ROOT"
+step "Paradev worktrees under $WT_ROOT"
 info "live: ${#ALIVE[@]}   ·   orphaned: ${#ORPHANS[@]}   ·   idle threshold: ${IDLE_DAYS}d   ·   dispatch TTL: ${TTL_DAYS}d"
 [[ "$DRY" -eq 1 ]] && info "${c_dim}dry run — nothing will be changed${c_off}"
 
 # ── 1. orphans ────────────────────────────────────────────────────────────────────
 if [[ "$DO_ORPHANS" -eq 1 ]]; then
-  step "Orphans — worktrees Superset no longer lists"
+  step "Orphans — worktrees Paradev no longer lists"
   [[ "${#ORPHANS[@]}" -eq 0 ]] && info "none"
   for wt in "${ORPHANS[@]:-}"; do
     [[ -n "$wt" ]] || continue
@@ -563,7 +563,7 @@ if [[ "$DO_ARTIFACTS" -eq 1 ]]; then
     done < <(find "$wt" -maxdepth 3 \( -name target -o -name node_modules \) -type d -prune 2>/dev/null)
     [[ "$found" -eq 0 ]] && dim "none  $(basename "$wt")"
   done
-  # --path roots: checkouts outside Superset. I2 is judged per PROJECT (the dir holding the
+  # --path roots: checkouts outside Paradev. I2 is judged per PROJECT (the dir holding the
   # artifact), so one live repo does not shield its idle neighbours and nothing under a running
   # build is touched. target/ only counts beside a Cargo.toml — elsewhere it is just a name.
   for root in "${EXTRA_PATHS[@]:-}"; do
@@ -609,11 +609,11 @@ if [[ "$DO_DISPATCH" -eq 1 ]]; then
       if [[ "$FORCE" -eq 1 ]]; then warn "forcing removal despite: $reason"
       else warn "skip  $(basename "$wt")  — $reason  (--force to override)"; continue; fi
     fi
-    # Keep Superset's own list in sync when the worktree is still a live workspace.
+    # Keep Paradev's own list in sync when the worktree is still a live workspace.
     wsid="$(live_id_for "$wt")"
     if [[ -n "$wsid" ]]; then
-      if [[ "$DRY" -eq 1 ]]; then info "would also: superset ws delete $wsid"
-      else superset ws delete "$wsid" >/dev/null 2>&1 || warn "superset ws delete $wsid failed — removing the directory anyway"; fi
+      if [[ "$DRY" -eq 1 ]]; then info "would also: paradev ws delete $wsid"
+      else paradev ws delete "$wsid" >/dev/null 2>&1 || warn "paradev ws delete $wsid failed — removing the directory anyway"; fi
     fi
     remove_worktree "$wt"
   done

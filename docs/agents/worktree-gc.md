@@ -1,6 +1,6 @@
 # Worktree GC — reclaiming disk without serializing builds
 
-`aiworks gc` reclaims disk from Superset worktrees. Run it with no arguments and it only
+`aiworks gc` reclaims disk from Paradev worktrees. Run it with no arguments and it only
 reports; it changes nothing until you pass a selector.
 
 ```bash
@@ -11,14 +11,14 @@ aiworks gc --artifacts --idle-days 7  # clear target//node_modules from week-idl
 aiworks gc --dispatch --ttl-days 3    # reap stale slack/req-* dispatch worktrees
 aiworks gc --caches                   # clear uv / pnpm / npm / puppeteer caches
 aiworks gc --docker                   # docker build cache + dangling images (never volumes)
-aiworks gc --path ~/code              # idle target//node_modules outside Superset worktrees
+aiworks gc --path ~/code              # idle target//node_modules outside Paradev worktrees
 aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
 aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts
 ```
 
 ## Beyond worktrees: host caches and plain checkouts
 
-Three selectors cover disk that is not a Superset worktree. All are included in `--all` and in
+Three selectors cover disk that is not a Paradev worktree. All are included in `--all` and in
 the bare report.
 
 **`--caches`** clears host-wide tool caches. Everything in it regenerates on next use:
@@ -54,8 +54,8 @@ does not automate, because each deletes something a person may want:
 | `ncdu -x ~` | nothing; shows what is actually big (`brew install ncdu`) |
 
 **`--path DIR`** (repeatable) extends the `--artifacts` sweep to checkouts that are not
-Superset worktrees, such as a primary clone's `target/`, which on a Rust service is routinely
-tens of GiB. It implies `--artifacts` and still runs the sweep through the Superset CLI
+Paradev worktrees, such as a primary clone's `target/`, which on a Rust service is routinely
+tens of GiB. It implies `--artifacts` and still runs the sweep through the Paradev CLI
 precondition. It keeps invariant I2 but judges it **per project** (the directory holding the
 `target/` or `node_modules/`), not per root: one repo being edited does not shield its idle
 neighbours, and a running build is never touched. `target/` is only cleared beside a
@@ -64,7 +64,7 @@ deep, and a root that yields nothing says so rather than staying silent.
 
 ## What leaks, and why
 
-Superset's UI **Delete** removes the workspace row from its database and stops there. Left
+Paradev's UI **Delete** removes the workspace row from its database and stops there. Left
 behind, measured on one machine on 2026-08-06:
 
 - the worktree **directory**, build artifacts and all,
@@ -76,7 +76,7 @@ The slack-dispatch service leaked the same way but faster: it creates a worktree
 in its RUNBOOK. One project had **16.4 GiB** of orphaned worktrees plus a further
 **24.8 GiB** of build artifacts inside live ones.
 
-The cost is structural, not incidental. A Superset workspace of this repo is one worktree
+The cost is structural, not incidental. A Paradev workspace of this repo is one worktree
 of the meta-repo plus ~21 nested product clones, each of which builds its own `target/` and
 installs its own `node_modules`. That is why a single workspace reached 17 GiB.
 
@@ -124,8 +124,8 @@ and noted rather than done.
 
 ## Source of truth
 
-Which workspaces still exist is read from `superset ws list --json`, **never** from
-`~/.superset/*.sqlite`.
+Which workspaces still exist is read from `paradev ws list --json`, **never** from
+`~/.paradev/*.sqlite`.
 
 Reading the sqlite file directly under-reported live workspaces during development — it
 missed 2 of 6, including a 17 GiB one that was still in active use. A GC that trusts it
@@ -195,8 +195,10 @@ Two details the plist has to get right, both covered by the selftest:
   `target/` that someone returns to on Monday costs them a long rebuild, so a full week of
   silence is the bar. `--idle-days N` at install time overrides it.
 - **`PATH` is set explicitly.** A launchd job inherits a minimal environment, and the GC
-  needs `git`, `jq` and the `superset` CLI — without this the job runs and silently fails
+  needs `git`, `jq` and the `paradev` CLI — without this the job runs and silently fails
   its own precondition check.
+  The PATH starts with `~/.paradev/bin`. An install that predates the rename keeps the old
+  plist: re-run `aiworks gc --install-schedule` to pick up the new PATH.
 
 Output goes to `~/Library/Logs/aiworks-gc.log`. Verify a fresh install actually works with
 `launchctl kickstart -k gui/$UID/dev.aiworks.gc` and read that log — a weekly job that has

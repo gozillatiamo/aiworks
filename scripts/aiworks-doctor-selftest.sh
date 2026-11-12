@@ -503,7 +503,7 @@ ck "the fix runs the one script that owns the install" "ensure_claude_plugins" "
 
 # A LINKED WORKTREE has no project entry of its own and never will: Claude Code keys its project
 # by the MAIN checkout path, and setup installs there (docs/adr/0042). So the check must read the
-# main checkout's entry, or every Superset worktree reports a finding its owner command cannot
+# main checkout's entry, or every Paradev worktree reports a finding its owner command cannot
 # clear. The worktree is created first — make_ws's `mkdir .git/info` then fails on the gitlink
 # file (harmless, silenced) and `git init` re-initialises the linked worktree in place.
 M="$T/pluginmain"; git init -q "$M"
@@ -829,9 +829,9 @@ fake_gc() {  # fake_gc <fixture-dir> <orphan-count> <blocked-count>
   mkdir -p "$w/scripts"
   {
     printf '#!/usr/bin/env bash\n'
-    printf 'printf "\\n==> Superset worktrees under /tmp/wt\\n"\n'
+    printf 'printf "\\n==> Paradev worktrees under /tmp/wt\\n"\n'
     printf 'printf "    live: 0   ·   orphaned: %s   ·   idle threshold: 3d\\n"\n' "$n"
-    printf 'printf "\\n==> Orphans — worktrees Superset no longer lists\\n"\n'
+    printf 'printf "\\n==> Orphans — worktrees Paradev no longer lists\\n"\n'
     for ((i = 0; i < b; i++)); do
       printf 'printf "    ! skip  a/w%s  — demo-repo has 3 uncommitted file(s)  (--force to override)\\n"\n' "$i"
     done
