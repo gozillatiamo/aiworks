@@ -33,7 +33,7 @@
 #   a locked directory, so a reaped worktree rebuilds from cache while others build in parallel.
 #
 # SOURCE OF TRUTH
-#   Which workspaces still exist is read from `paradev ws list --json`, never from
+#   Which workspaces still exist is read from `paradev ws list --local --json`, never from
 #   ~/.paradev/*.sqlite. Reading the sqlite file directly under-reported live workspaces in
 #   testing (it missed 2 of 6, including a 17 GiB one) — a GC that trusts it deletes live work.
 #
@@ -137,14 +137,14 @@ size_kb() { du -sk "$1" 2>/dev/null | awk '{print $1}'; }
 # "nothing is alive", which would make every worktree look like an orphan.
 live_paths() {
   local out
-  out="$(paradev ws list --json 2>/dev/null)" || return 1
+  out="$(paradev ws list --local --json 2>/dev/null)" || return 1
   [[ -n "$out" ]] || return 1
   printf '%s' "$out" | jq -e -r '.[].worktreePath | select(. != null and . != "")' 2>/dev/null
 }
 
 # Paradev's workspace id for a path (empty when it is not a live workspace).
 live_id_for() {
-  paradev ws list --json 2>/dev/null \
+  paradev ws list --local --json 2>/dev/null \
     | jq -r --arg p "$1" '.[] | select(.worktreePath == $p) | .id' 2>/dev/null | head -1
 }
 
@@ -514,7 +514,7 @@ if [[ "$DO_CACHES$DO_DOCKER" != "00" && "$DO_ORPHANS$DO_ARTIFACTS$DO_DISPATCH" =
 command -v paradev >/dev/null 2>&1 || die "the 'paradev' CLI is not on PATH — this GC reads the live workspace list from it and refuses to guess"
 [[ -d "$WT_ROOT" ]] || { ok "no $WT_ROOT — nothing to collect"; exit 0; }
 
-LIVE_LIST="$(live_paths)" || die "\`paradev ws list --json\` returned nothing usable — refusing to run, since an empty live set would classify every worktree as an orphan"
+LIVE_LIST="$(live_paths)" || die "\`paradev ws list --local --json\` returned nothing usable — refusing to run, since an empty live set would classify every worktree as an orphan"
 
 for proj in "$WT_ROOT"/*; do
   [[ -d "$proj" ]] || continue
@@ -612,8 +612,8 @@ if [[ "$DO_DISPATCH" -eq 1 ]]; then
     # Keep Paradev's own list in sync when the worktree is still a live workspace.
     wsid="$(live_id_for "$wt")"
     if [[ -n "$wsid" ]]; then
-      if [[ "$DRY" -eq 1 ]]; then info "would also: paradev ws delete $wsid"
-      else paradev ws delete "$wsid" >/dev/null 2>&1 || warn "paradev ws delete $wsid failed — removing the directory anyway"; fi
+      if [[ "$DRY" -eq 1 ]]; then info "would also: paradev ws archive --local $wsid"
+      else paradev ws archive --local "$wsid" >/dev/null 2>&1 || warn "paradev ws archive --local $wsid failed — removing the directory anyway"; fi
     fi
     remove_worktree "$wt"
   done

@@ -24,7 +24,7 @@ map_legacy_switches() {
               SUPERSET_ENV:PARADEV_ENV_FILES; do
     old="${pair%%:*}" new="${pair#*:}" v="${!old:-}"
     [[ -n "$v" && -z "${!new:-}" ]] || continue
-    case "$v" in symlink|copy|skip) printf -v "$new" '%s' "$v"; export "$new"
+    case "$v" in symlink|copy|skip) printf -v "$new" '%s' "$v"; export "${new?}"
       warn "$old is renamed $new — honouring $old=$v; rename it." ;; esac
   done
 }

@@ -124,7 +124,7 @@ and noted rather than done.
 
 ## Source of truth
 
-Which workspaces still exist is read from `paradev ws list --json`, **never** from
+Which workspaces still exist is read from `paradev ws list --local --json`, **never** from
 `~/.paradev/*.sqlite`.
 
 Reading the sqlite file directly under-reported live workspaces during development — it

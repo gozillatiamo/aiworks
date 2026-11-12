@@ -242,7 +242,7 @@ for k in $(docker exec $C redis-cli --scan --pattern 'thread:*' | grep -v ':busy
 docker exec $C redis-cli get outcome:req-xxxx | jq .
 
 # worktrees the dispatcher created
-paradev ws list --json | jq -r '.[] | select(.name|startswith("slack/")) | "\(.name)\t\(.worktreePath)\t\(.worktreeExists)"'
+paradev ws list --local --json | jq -r '.[] | select(.name|startswith("slack/")) | "\(.name)\t\(.worktreePath)\t\(.worktreeExists)"'
 
 # per-thread running log + context file (substitute the worktreePath)
 cat "<worktreePath>/.aiworks/thread-log.md"
@@ -261,8 +261,9 @@ cd /path/to/ai-workspace/scripts/slack-dispatch && docker compose down
 aiworks gc --dispatch --ttl-days 0
 ```
 
-`paradev ws delete` alone leaves the worktree directory, the `git worktree` registration
-and the local branch behind — `aiworks gc` removes all four, and refuses any worktree that
+`paradev ws archive --local` alone removes the worktree folder but leaves the local branch
+behind, and the app's UI Delete leaves the directory and the `git worktree` registration too —
+`aiworks gc` removes the workspace row and all three, and refuses any worktree that
 is still in use. In normal operation you never run this: the service sweeps on an interval
 (`GC_ENABLED` / `GC_INTERVAL_SEC` / `GC_TTL_DAYS`, see `.env.example`). Use `aiworks gc` with
 no arguments to see what it would collect.
