@@ -40,6 +40,13 @@ def server_mode(root: Path, name: str, mode: str) -> str:
     return mode
 
 
+def absent_state(root: Path, name: str) -> str:
+    """An unwanted keyed server is OFF, not missing: doctor counts "not registered" as a failure."""
+    if name in KEYED and not has_keys(root, KEYED[name]):
+        return f"off ({' / '.join(KEYED[name])} unset)"
+    return "not registered"
+
+
 # Shared .mcp.json servers that need a secret: approved/rendered only when CONFIGURED, i.e. the
 # config flag is on AND every key is present in the workspace .env (docs/adr/0043).
 # name -> (section, key, wanted value, required .env keys)
@@ -305,7 +312,7 @@ def status_cursor(root: Path) -> None:
             existing = {}
     for name, relative in SERVERS.items():
         registered = existing.get(name) == expected(root, relative)
-        state = "registered (project scope)" if registered else "not registered"
+        state = "registered (project scope)" if registered else absent_state(root, name)
         print(f"    {'✓' if registered else '-'} cursor/{name} — {state}")
 
 
@@ -443,7 +450,7 @@ def _report_global_codex(root: Path, want: bool, servers: dict, dry: bool, write
 def status_codex(root: Path) -> None:
     for name, relative in SERVERS.items():
         registered = codex_project_registered(root, name, relative)
-        state = "registered (project scope)" if registered else "not registered"
+        state = "registered (project scope)" if registered else absent_state(root, name)
         print(f"    {'✓' if registered else '-'} codex/{name} — {state}")
 
 

@@ -194,7 +194,9 @@ if [[ "$ACTION" == "status" ]]; then
   for entry in "${SERVERS[@]}"; do
     name="${entry%%|*}"; rel="${entry#*|}"
     have="$(registered_args "$name")"
-    if [[ -z "$have" ]]; then dim "$name — not registered"
+    # An unwanted keyed server is OFF, not missing: doctor counts "not registered" as a failure.
+    if [[ -z "$have" && $name == n8n && $N8N_WANT -eq 0 ]]; then dim "$name — off (N8N_MCP_URL / N8N_MCP_ACCESS_TOKEN unset)"
+    elif [[ -z "$have" ]]; then dim "$name — not registered"
     elif [[ "$have" == "$(expected_args "$rel")" ]]; then ok "$name — registered (local scope)"
     elif owned_stale_args "$have" "$rel"; then
       warn "$name — registered under a STALE path; 'scripts/triage-mcp.sh sync' repoints it: $have"
