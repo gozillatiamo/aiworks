@@ -1,7 +1,7 @@
-"""aiworks_dispatch — Slack @-mention -> Superset on-demand Claude dispatcher.
+"""aiworks_dispatch — Slack @-mention -> Paradev on-demand Claude dispatcher.
 
 A long-running Socket Mode service that turns a Slack `@bot <request>` into a
-fresh Superset git worktree on this machine with a Claude agent launched inside
+fresh Paradev git worktree on this machine with a Claude agent launched inside
 it. The agent posts its result back to the originating Slack thread itself, via
 the workspace notify adapter (scripts/notify/send.sh) — this service only mints
 a correlation id, dispatches, and acknowledges receipt.

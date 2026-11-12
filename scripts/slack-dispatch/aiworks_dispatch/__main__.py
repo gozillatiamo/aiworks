@@ -12,7 +12,7 @@ import sys
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from .config import Config, ConfigError
-from .dispatcher import SupersetLocalDispatcher
+from .dispatcher import ParadevLocalDispatcher
 from .logging_setup import setup_logging
 from .slack_app import build_app
 from .store import RedisStore
@@ -31,7 +31,7 @@ def main() -> int:
 
     setup_logging(cfg.log_level, cfg.log_format, cfg.log_name_width, cfg.log_tz)
     log.info("aiworks-dispatch starting (project=%s base=%s agent=%s)",
-             cfg.superset_project_id, cfg.superset_base_branch, cfg.superset_agent_preset)
+             cfg.paradev_project_id, cfg.paradev_base_branch, cfg.paradev_agent_preset)
 
     try:
         store = RedisStore(
@@ -43,7 +43,7 @@ def main() -> int:
         log.error("cannot reach Redis at %s: %s — start it with docker compose up -d", cfg.redis_url, e)
         return 3
 
-    dispatcher = SupersetLocalDispatcher(cfg)
+    dispatcher = ParadevLocalDispatcher(cfg)
     app = build_app(cfg, store, dispatcher)
     handler = SocketModeHandler(app, cfg.slack_app_token)
 

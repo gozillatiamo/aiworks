@@ -1,7 +1,7 @@
-# aiworks-dispatch — Slack `@bot` → Superset on-demand Claude
+# aiworks-dispatch — Slack `@bot` → Paradev on-demand Claude
 
 A long-running service that turns a Slack mention into a Claude agent running in a
-fresh Superset worktree on this machine, and lets that agent reply back into the
+fresh Paradev worktree on this machine, and lets that agent reply back into the
 originating Slack thread itself.
 
 ```
@@ -9,9 +9,9 @@ Slack  ──@aiworks /prd APP-123──►  dispatcher (this service, Socket Mo
                                       │ 1. dedup on event id (Redis)
                                       │ 2. mint correlationId + capture channel/thread/user
                                       │ 3. immediate ack in the thread
-                                      │ 4. superset workspaces create  (fresh worktree)
+                                      │ 4. paradev workspaces create  (fresh worktree)
                                       │ 5. write .aiworks/slack-context.json into it
-                                      │ 6. superset agents create      (launch Claude)
+                                      │ 6. paradev agents create      (launch Claude)
                                       ▼
                               Claude agent works in the worktree
                                       │ (final step, per its prompt)
@@ -25,8 +25,8 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
 
 ## Why these choices
 
-- **Local `superset` CLI**, not the alpha SaaS SDK. The host service already runs on
-  this machine (`superset status`), so a worktree + agent is two CLI calls — no API
+- **Local `paradev` CLI**, not the alpha SaaS SDK. The host service already runs on
+  this machine (`paradev status`), so a worktree + agent is two CLI calls — no API
   key, no relay, no online-host dependency. The engine sits behind the `Dispatcher`
   interface (`dispatcher.py`) so an SDK or `claude -p` variant can drop in later.
 - **Extend the notify adapter** for post-back. `scripts/notify/send.sh` gained a
@@ -40,10 +40,10 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
 
 ## Prerequisites
 
-1. **Superset host online.** `superset status` → `running: true, healthy: true`. If
-   not: `superset start`.
-2. **Project + agent preset.** `superset projects list` (the meta-repo →
-   `SUPERSET_PROJECT_ID`), `superset agents list --local` (confirm the `claude` preset).
+1. **Paradev host online.** `paradev status` → `running: true, healthy: true`. If
+   not: `paradev start`.
+2. **Project + agent preset.** `paradev projects list` (the meta-repo →
+   `SUPERSET_PROJECT_ID`), `paradev agents list --local` (confirm the `claude` preset).
 3. **Slack app** with Socket Mode — see `slack-app-manifest.yaml`. You need a bot
    token (`xoxb-…`, scopes `app_mentions:read` + `chat:write`, plus `channels:history` /
    `groups:history` to read a thread when mentioned inside one, `files:read` for attachment
@@ -131,7 +131,7 @@ spam on the host.
 - **Mapping.** `thread:<channel>:<thread_ts>` in Redis → the thread's worktree
   (`workspace_id`, `worktree_path`, `branch`). Lives **`THREAD_TTL_SEC` from creation**
   (fixed 7d default, not refreshed on reuse).
-- **What "continue" means.** The `superset` CLI cannot resume a live Claude session, so
+- **What "continue" means.** The `paradev` CLI cannot resume a live Claude session, so
   a follow-up launches a *new* agent session in the *same* worktree/branch. Context
   carries via **`.aiworks/thread-log.md`** — each turn reads it for history and appends
   its own summary (the prompt enforces this).
@@ -196,9 +196,9 @@ spam on the host.
   the previous turn is still running is **refused** ("still working… mention me again"),
   never queued — two agents on one worktree would collide on the git index. A Redis busy
   flag enforces it, freed in three layers: the agent clears it as its final step (from
-  the prompt — reliable, doesn't depend on the Stop-hook firing in a Superset session),
+  the prompt — reliable, doesn't depend on the Stop-hook firing in a Paradev session),
   the Stop-hook clears it as a belt, and a `BUSY_TTL_SEC` cap frees it if both fail.
-- **Worktree path.** `superset ws create` returns before the worktree materializes
+- **Worktree path.** `paradev ws create` returns before the worktree materializes
   (worktreePath is null in its response), so the dispatcher polls `ws get` until the dir
   exists before writing `.aiworks/slack-context.json` — otherwise the Stop-hook backstop
   is silently disabled.
@@ -267,7 +267,7 @@ Controls in place:
 - **Branch, don't merge** — the agent is told to open a PR/MR for human review. This
   is the real backstop against a bad or injected request; prompt injection via the
   request text can't be fully prevented.
-- **Least-privilege agent** — scope the host's `claude` agent (Superset → host
+- **Least-privilege agent** — scope the host's `claude` agent (Paradev → host
   settings) to a tool allowlist; this service can't set that.
 - **No secrets in prompts or workspace names.** Post-back uses the main clone's
   adapter by path; no token is ever interpolated.
@@ -355,7 +355,7 @@ LOG_NAME_WIDTH=10                      LOG_NAME_WIDTH=0
 ```
 
 **Embedded payloads are treated as JSON, not as text.** Many messages carry one (a
-superset CLI response, a Slack API body, the JSON inside a `RuntimeError`). Both shapes
+paradev CLI response, a Slack API body, the JSON inside a `RuntimeError`). Both shapes
 detect the `{…}` / `[…]` span and re-render it *as JSON* — a pretty-printed or
 newline-laden blob comes out compact and intact on the one line:
 
@@ -380,7 +380,7 @@ Eyeball every shape without starting the service:
 
 ## Cost note
 
-Each dispatch creates a fresh worktree, which runs the project's `.superset/setup.sh`
+Each dispatch creates a fresh worktree, which runs the project's `.paradev/setup.sh`
 (clones the product repos + installs) — minutes and real disk per request. Tune the
 project's setup or reuse worktrees if this is too heavy for your usage.
 
@@ -393,7 +393,7 @@ project's setup or reuse worktrees if this is too heavy for your usage.
 | `aiworks_dispatch/prompt.py` | trusted preamble + untrusted request block |
 | `aiworks_dispatch/store.py` | Redis dedup + correlation/outcome store + thread mapping/busy |
 | `aiworks_dispatch/clear_busy.py` | Stop-hook helper: free a thread's busy flag |
-| `aiworks_dispatch/dispatcher.py` | `Dispatcher` interface + `SupersetLocalDispatcher` |
+| `aiworks_dispatch/dispatcher.py` | `Dispatcher` interface + `ParadevLocalDispatcher` |
 | `aiworks_dispatch/slack_app.py` | Socket Mode `app_mention` handler |
 | `aiworks_dispatch/__main__.py` | entrypoint / wiring / graceful shutdown |
 | `aiworks_dispatch/logging_setup.py` | one-line log formatters (pretty / JSON) |

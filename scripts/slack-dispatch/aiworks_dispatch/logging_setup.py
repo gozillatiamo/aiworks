@@ -80,7 +80,7 @@ _NAME_W = 10
 # `key=` inside a message — dimmed so the values stand out (correlation=abc123…).
 _KV_KEY = re.compile(r"(?<![\w.])([a-z][\w.]*)=")
 
-# A message often carries a JSON payload (a superset CLI response, a Slack API body).
+# A message often carries a JSON payload (a paradev CLI response, a Slack API body).
 # Those are re-rendered AS JSON rather than passed through as an opaque blob. Past this
 # rendered length pretty gives up on colouring and truncates — the untouched payload is
 # always available via LOG_FORMAT=json.

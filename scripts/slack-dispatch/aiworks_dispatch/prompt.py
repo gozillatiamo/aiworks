@@ -33,7 +33,7 @@ def build_prompt(
 
     `redis_url` lets the agent free its thread's busy flag as its final step, so
     thread continuity does not depend on the Stop-hook firing (it may not in a
-    Superset-launched session) or on the dispatcher writing the context file.
+    Paradev-launched session) or on the dispatcher writing the context file.
 
     `is_followup` marks a later mention in the SAME Slack thread: the worktree is
     reused (same branch, prior work present) and .aiworks/thread-log.md already

@@ -1,6 +1,6 @@
 """Background worktree GC — the cleanup half of the dispatch lifecycle.
 
-Every mention that opens a thread creates a Superset worktree, and nothing removed them:
+Every mention that opens a thread creates a Paradev worktree, and nothing removed them:
 the service had no cleanup path at all, only a manual one-liner in its RUNBOOK. They
 accumulated until a human noticed the disk.
 
@@ -13,7 +13,7 @@ Two properties matter and both come from the GC, not from here:
   * It never touches a worktree that is in use. A running agent, a held cargo lock, or any
     process cwd'd inside vetoes removal, so the sweeper cannot disturb work in flight or
     serialize a concurrent build.
-  * It reads the live workspace list from the `superset` CLI and aborts if that list comes
+  * It reads the live workspace list from the `paradev` CLI and aborts if that list comes
     back empty, rather than concluding everything is garbage.
 
 The age threshold defaults to `thread_ttl_sec` (see Config.gc_ttl_days): a worktree that a

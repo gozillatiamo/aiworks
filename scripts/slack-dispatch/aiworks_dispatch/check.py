@@ -2,7 +2,7 @@
 
     python -m aiworks_dispatch.check
 
-Prints the local Superset host status, the configured project, the installed agent
+Prints the local Paradev host status, the configured project, the installed agent
 presets, and whether Redis + the notify adapter are reachable, so an operator can
 fill in the env vars and confirm the prerequisites without guessing.
 """
@@ -16,13 +16,13 @@ import sys
 from pathlib import Path
 
 
-def _superset(args: list[str]) -> tuple[bool, object]:
+def _paradev(args: list[str]) -> tuple[bool, object]:
     try:
-        proc = subprocess.run(["superset", *args, "--json"], capture_output=True, text=True, timeout=30)
+        proc = subprocess.run(["paradev", *args, "--json"], capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
-        return False, "superset CLI not found on PATH"
+        return False, "paradev CLI not found on PATH"
     except subprocess.TimeoutExpired:
-        return False, "superset timed out"
+        return False, "paradev timed out"
     if proc.returncode != 0:
         return False, (proc.stderr.strip() or proc.stdout.strip())
     try:
@@ -44,17 +44,17 @@ def main() -> int:
     project_id = os.environ.get("SUPERSET_PROJECT_ID", "").strip()
     agent_preset = os.environ.get("SUPERSET_AGENT_PRESET", "claude").strip() or "claude"
 
-    print("Superset host:")
-    ok, status = _superset(["status"])
+    print("Paradev host:")
+    ok, status = _paradev(["status"])
     if ok and isinstance(status, dict) and status.get("running") and status.get("healthy"):
         _ok("host running + healthy", f"{status.get('hostName')} ({status.get('hostId', '')[:12]}…)")
     else:
         _bad("host not healthy", json.dumps(status) if isinstance(status, dict) else str(status))
-        _bad("hint", "start it with:  superset start")
+        _bad("hint", "start it with:  paradev start")
         problems += 1
 
     print("Project:")
-    ok, projects = _superset(["projects", "list"])
+    ok, projects = _paradev(["projects", "list"])
     if ok and isinstance(projects, list):
         match = next((p for p in projects if p.get("id") == project_id), None)
         if match:
@@ -72,7 +72,7 @@ def main() -> int:
         problems += 1
 
     print("Agent preset:")
-    ok, agents = _superset(["agents", "list", "--local"])
+    ok, agents = _paradev(["agents", "list", "--local"])
     if ok and isinstance(agents, list):
         ids = {a.get("presetId") for a in agents}
         if agent_preset in ids:

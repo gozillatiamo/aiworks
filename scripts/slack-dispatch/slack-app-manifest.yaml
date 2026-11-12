@@ -17,7 +17,7 @@
 
 display_information:
   name: aiworks
-  description: Dispatches a Claude agent into a Superset worktree from a Slack mention.
+  description: Dispatches a Claude agent into a Paradev worktree from a Slack mention.
   background_color: "#1a1a2e"
 
 features:

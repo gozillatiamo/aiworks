@@ -5,7 +5,7 @@ by hand. See `README.md` for architecture; this is the operational drill.
 
 ## 0. Prerequisites (one-time)
 
-- **Superset host online:** `superset status` → `running: true, healthy: true`.
+- **Paradev host online:** `paradev status` → `running: true, healthy: true`.
 - **Docker** running (for the dedicated Redis).
 - **Slack app** with Socket Mode, installed to the workspace, bot invited to the
   trigger channel. Bot scopes required:
@@ -85,7 +85,7 @@ tail -f dispatch.log      # watch logs
 
 Redirected like that, the log shape flips to one-line JSON (`LOG_FORMAT=auto`) so the file
 stays greppable — `grep 7f3a9b dispatch.log | jq -r .msg` follows one correlation id, and
-`ERROR` lines carry the full `exc` traceback. A message carrying a payload (superset CLI
+`ERROR` lines carry the full `exc` traceback. A message carrying a payload (paradev CLI
 response, Slack API body) also gets it as a nested object, so pull fields straight out:
 ```bash
 grep 'workspace created' dispatch.log | jq -r '.data.worktreePath'
@@ -242,7 +242,7 @@ for k in $(docker exec $C redis-cli --scan --pattern 'thread:*' | grep -v ':busy
 docker exec $C redis-cli get outcome:req-xxxx | jq .
 
 # worktrees the dispatcher created
-superset ws list --json | jq -r '.[] | select(.name|startswith("slack/")) | "\(.name)\t\(.worktreePath)\t\(.worktreeExists)"'
+paradev ws list --json | jq -r '.[] | select(.name|startswith("slack/")) | "\(.name)\t\(.worktreePath)\t\(.worktreeExists)"'
 
 # per-thread running log + context file (substitute the worktreePath)
 cat "<worktreePath>/.aiworks/thread-log.md"
@@ -261,7 +261,7 @@ cd /path/to/ai-workspace/scripts/slack-dispatch && docker compose down
 aiworks gc --dispatch --ttl-days 0
 ```
 
-`superset ws delete` alone leaves the worktree directory, the `git worktree` registration
+`paradev ws delete` alone leaves the worktree directory, the `git worktree` registration
 and the local branch behind — `aiworks gc` removes all four, and refuses any worktree that
 is still in use. In normal operation you never run this: the service sweeps on an interval
 (`GC_ENABLED` / `GC_INTERVAL_SEC` / `GC_TTL_DAYS`, see `.env.example`). Use `aiworks gc` with
@@ -273,7 +273,7 @@ no arguments to see what it would collect.
 |---|---|
 | Pre-flight `send.sh missing — /path/to/…` | `WORKSPACE_ROOT` uncommented with the placeholder. Comment it out or set the real path (§1). |
 | No ack in Slack | Bot not in the channel · wrong `SLACK_APP_TOKEN` (xapp-) · Socket Mode off. Check Terminal 1 log. |
-| Ack, but no "Created worktree" | Log shows `dispatch failed` with the raw superset error. Check `superset status`. |
+| Ack, but no "Created worktree" | Log shows `dispatch failed` with the raw paradev error. Check `paradev status`. |
 | Agent finished but no reply in thread | Post-back token (`scripts/notify/.env`) broken, or that bot isn't in the channel (redo §0/`send.sh --channel '#your-channel' test`). The Stop-hook backstop should post `:warning: Session ended (backstop…)` instead. |
 | Every follow-up says "still working" | Busy flag stuck. The agent clears it as its last step and the Stop-hook is the belt; a stuck flag frees itself after `BUSY_TTL_SEC`. Clear manually: `docker exec aiworks-slack-dispatch-redis redis-cli del 'thread:<ch>:<ts>:busy'`. |
 | `:lock: …can't read its history` | Missing `channels:history` / `groups:history` scope. Add, reinstall the app, restart. |

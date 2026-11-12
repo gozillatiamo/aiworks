@@ -1,15 +1,15 @@
-"""Dispatch abstraction + the local-Superset implementation.
+"""Dispatch abstraction + the local-Paradev implementation.
 
 The `Dispatcher` interface isolates HOW a worktree+agent is created so the engine
 can be swapped without touching Slack/correlation/prompt code. Today's engine is
-the local `superset` CLI (the host service already runs on this machine); a future
-`SupersetSdkDispatcher` (the @superset_sh/sdk relay) or a bare `claude -p` fallback
+the local `paradev` CLI (the host service already runs on this machine); a future
+`ParadevSdkDispatcher` (the @superset_sh/sdk relay) or a bare `claude -p` fallback
 can drop in behind the same interface.
 
 The local flow is deliberately two steps with known-per-command JSON shapes:
-  1. `superset workspaces create` — make the worktree (runs the project setup.sh).
+  1. `paradev workspaces create` — make the worktree (runs the project setup.sh).
   2. write .aiworks/slack-context.json into the returned worktreePath (host FS).
-  3. `superset agents create` — launch the Claude agent with the built prompt.
+  3. `paradev agents create` — launch the Claude agent with the built prompt.
 Step 2 sits between so the context file is present before the agent can post back.
 """
 
@@ -86,17 +86,17 @@ def _first(d: dict, *keys: str) -> str | None:
     return None
 
 
-class SupersetLocalDispatcher(Dispatcher):
+class ParadevLocalDispatcher(Dispatcher):
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
     # -- CLI plumbing -------------------------------------------------------
 
     def _target_flags(self) -> list[str]:
-        return ["--host", self.cfg.superset_host_id] if self.cfg.superset_host_id else ["--local"]
+        return ["--host", self.cfg.paradev_host_id] if self.cfg.paradev_host_id else ["--local"]
 
     def _run(self, args: list[str], timeout: int) -> dict:
-        cmd = ["superset", *args, "--json"]
+        cmd = ["paradev", *args, "--json"]
         log.debug("exec: %s", " ".join(cmd[:6]) + " …")
         proc = subprocess.run(
             cmd,
@@ -107,13 +107,13 @@ class SupersetLocalDispatcher(Dispatcher):
         )
         if proc.returncode != 0:
             raise RuntimeError(
-                f"superset {args[0]} {args[1] if len(args) > 1 else ''} failed "
+                f"paradev {args[0]} {args[1] if len(args) > 1 else ''} failed "
                 f"(exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
             )
         try:
             return json.loads(proc.stdout or "{}")
         except json.JSONDecodeError as e:
-            raise RuntimeError(f"superset returned non-JSON output: {e}: {proc.stdout[:400]!r}")
+            raise RuntimeError(f"paradev returned non-JSON output: {e}: {proc.stdout[:400]!r}")
 
     # -- steps --------------------------------------------------------------
 
@@ -122,10 +122,10 @@ class SupersetLocalDispatcher(Dispatcher):
             [
                 "workspaces", "create",
                 *self._target_flags(),
-                "--project", self.cfg.superset_project_id,
+                "--project", self.cfg.paradev_project_id,
                 "--name", name,
                 "--branch", branch,
-                "--base-branch", self.cfg.superset_base_branch,
+                "--base-branch", self.cfg.paradev_base_branch,
             ],
             timeout=self.cfg.dispatch_timeout_sec,
         )
@@ -203,7 +203,7 @@ class SupersetLocalDispatcher(Dispatcher):
             [
                 "agents", "create",
                 "--workspace", workspace_id,
-                "--agent", self.cfg.superset_agent_preset,
+                "--agent", self.cfg.paradev_agent_preset,
                 "--prompt", prompt,
             ],
             timeout=120,
@@ -279,7 +279,7 @@ class SupersetLocalDispatcher(Dispatcher):
             log.warning("dispatch: attachment scope error for %s: %s", ctx.correlation_id, e)
             return DispatchResult(ok=False, branch=branch, error=str(e), scope_error=True)
         except subprocess.TimeoutExpired:
-            return DispatchResult(ok=False, branch=branch, error="superset timed out (worktree setup took too long)")
+            return DispatchResult(ok=False, branch=branch, error="paradev timed out (worktree setup took too long)")
         except Exception as e:  # surfaced to the Slack thread, never swallowed
             log.exception("dispatch failed for %s", ctx.correlation_id)
             return DispatchResult(ok=False, branch=branch, error=str(e))

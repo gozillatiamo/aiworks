@@ -59,11 +59,11 @@ class Config:
     allowed_channel_ids: set[str] = field(default_factory=set)
     allowed_user_ids: set[str] = field(default_factory=set)
 
-    # Superset (local host CLI)
-    superset_project_id: str = ""     # required — the meta-repo project
-    superset_host_id: str = ""        # optional — empty => --local (this machine)
-    superset_agent_preset: str = "claude"
-    superset_base_branch: str = "develop"
+    # Paradev (local host CLI)
+    paradev_project_id: str = ""     # required — the meta-repo project
+    paradev_host_id: str = ""        # optional — empty => --local (this machine)
+    paradev_agent_preset: str = "claude"
+    paradev_base_branch: str = "develop"
     dispatch_timeout_sec: int = 1800  # ws create runs the project's setup.sh (heavy)
 
     # The main clone whose scripts/notify/.env holds the Slack bot token. The
@@ -134,10 +134,11 @@ class Config:
             slack_app_token=_require("SLACK_APP_TOKEN"),
             allowed_channel_ids=_csv_set("ALLOWED_CHANNEL_IDS"),
             allowed_user_ids=_csv_set("ALLOWED_USER_IDS"),
-            superset_project_id=_require("SUPERSET_PROJECT_ID"),
-            superset_host_id=_optional("SUPERSET_HOST_ID", ""),
-            superset_agent_preset=_optional("SUPERSET_AGENT_PRESET", "claude"),
-            superset_base_branch=_optional("SUPERSET_BASE_BRANCH", "develop"),
+            # .env key names predate the Paradev rename; kept per docs/adr/0005
+            paradev_project_id=_require("SUPERSET_PROJECT_ID"),
+            paradev_host_id=_optional("SUPERSET_HOST_ID", ""),
+            paradev_agent_preset=_optional("SUPERSET_AGENT_PRESET", "claude"),
+            paradev_base_branch=_optional("SUPERSET_BASE_BRANCH", "develop"),
             dispatch_timeout_sec=dispatch_timeout,
             workspace_root=_optional("WORKSPACE_ROOT", _default_workspace_root()),
             redis_url=_optional("REDIS_URL", "redis://localhost:6370/0"),
