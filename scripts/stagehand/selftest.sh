@@ -23,6 +23,19 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
 SHOW="$DIR/show.sh"
 PASS=0 FAIL=0
+
+# The suite proves the root-worktree-only rule, so it must itself run from a MAIN checkout outside
+# Paradev: started in a linked worktree, or with the platform's variable set, every routing case is
+# silent by design and reads as a failure. So it re-runs itself from a throwaway clone of this tree.
+unset SUPERSET_ROOT_PATH
+if [[ -f "$ROOT/.git" && -z "${STAGEHAND_SELFTEST_CLONE:-}" ]]; then
+  clone="$(mktemp -d "${TMPDIR:-/tmp}/stagehand-clone.XXXXXX")"
+  git clone -q "$ROOT" "$clone/main" 2>/dev/null || { echo "selftest: could not clone $ROOT" >&2; rm -rf "$clone"; exit 1; }
+  cp -R "$DIR/." "$clone/main/scripts/stagehand/"
+  cp "$ROOT"/workspace.config*.yaml "$clone/main/" 2>/dev/null
+  STAGEHAND_SELFTEST_CLONE=1 bash "$clone/main/scripts/stagehand/selftest.sh"; rc=$?
+  rm -rf "$clone"; exit "$rc"
+fi
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/stagehand-selftest.XXXXXX")"
 cleanup() {
   [[ -n "${wt:-}" && -d "${wt:-}" ]] && git -C "$ROOT" worktree remove --force "$wt" >/dev/null 2>&1
