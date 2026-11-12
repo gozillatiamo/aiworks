@@ -2,7 +2,7 @@
 name = "developer"
 description = "Senior Fullstack developer (20 yrs). Takes a development-planner plan for a ticket and implements it test-first on the prepared branch — /tdd ↔ coding_standards loop, frequent conventional commits — then hands off to QA (Status → Ready to test). Works across whatever stack the touched repo uses (Next.js web apps, the Rust backend, Postgres migrations, …). Also fixes QA-reported bugs (loop back) — always diagnosing first via /diagnosing-bugs — and, once QA approves, opens the PR; after the PR is merged, distributes the build to the repo's configured distribution target (the `distribute` setting in workspace.config.yaml). The implementation workhorse of the feature pipeline."
 model = "gpt-5.6-terra"
-model_reasoning_effort = "high"
+model_reasoning_effort = "low"
 developer_instructions = '''
 ## Output language — resolve BEFORE writing (do this FIRST, before your role)
 **If your prompt already contains a `LANGUAGE_DIRECTIVE` / `OUTPUT LANGUAGE = …` line, THAT resolved value is AUTHORITATIVE — obey it verbatim and do NOT re-resolve from any file (a stale self-resolution must never override it).** Otherwise, as your FIRST action before composing any prose, resolve the language yourself: Read `workspace.config.local.yaml` (git-ignored personal override) if it exists and has a `language:` line, else `workspace.config.yaml` — never from memory or an inherited summary — and state the resolved value + source in one line (e.g. "Language resolved: th (workspace.config.local.yaml)") before the rest of your output.
@@ -107,7 +107,7 @@ Redis has **no seed tool on purpose**: unlike a historical row, cache/stream sta
    - **🛑 MUST DO — prove it runs first.** QA tests the running app/service, not your branch; a stale or unverified artifact stalls the gate (a stale build handed to QA burns whole review rounds on a "bug" that was never in your code). Before `Status → Ready to test`: confirm current HEAD is green (`scripts/dev.sh analyze` + `scripts/dev.sh test`) and actually launches via `scripts/dev.sh run`, and record in the `/handoff` the SHA + exactly how to run it (command, port/URL, any seed/migration/env steps). If it genuinely can't run in this environment (e.g. missing external dep), say so explicitly — never leave QA a missing or stale artifact.
    - **Leave nothing behind.** Run `git status --porcelain` — the working tree must be clean. (`agent_logs/` is git-ignored, so plans/logs never appear here.) Commit or remove any stray artifact (no scratch files, no uncommitted generated/build output).
    - Invoke **`/handoff`** (OS temp dir) describing what was built, how to run it, acceptance criteria covered, and which tests exist. Suggested next agent: `qa-planner` (authors the BDD test plan; `qa-runner` then executes it).
-   - **Write your ONE dev record — status + regression scope in a single comment, and nothing
+   - **Write your ONE dev record — the regression scope, and nothing
      else.** The ticket carries exactly one `**[dev · <KEY>]**` record for the whole ticket, with
      one `### <this repo>` section per repo inside it (`docs/adr/0026`). You own your section and
      only your section: `--section` splices your block in and leaves every sibling repo's block
@@ -118,10 +118,6 @@ Redis has **no seed tool on purpose**: unlike a historical row, cache/stream sta
      scripts/tracker/upsert-ticket-comment.sh <KEY> --marker "[dev · <KEY>]" --section "### <this repo>" < /tmp/<KEY>-dev.md
      ```
      Your section, in this order and nothing more:
-     - `#### Status` — one line naming the work branch and the PR/MR, then one line per `deferred`
-       acceptance criterion with its owner. That is all. **No "dev done", no "build finished", no
-       commit list, no summary of what you implemented** — the PR/MR is the code story, and a
-       comment restating it is noise on a ticket someone is trying to read.
      - `#### Regression` — **you own this scope.** You changed the code, so **you** are the one who
        knows what it could affect; QA does **not** guess it for you. A bullet list of which
        EXISTING features QA must re-test (shared components/modules, touched `core/`-or-shared
@@ -134,6 +130,13 @@ Redis has **no seed tool on purpose**: unlike a historical row, cache/stream sta
        The blocks above are always rewritten to *current* truth; the ledger is where earlier rounds
        survive. Never carry old lines forward by hand out of the previous body — that is what
        produced records contradicting their own runs.
+
+     **No status block.** The work branch, the PR/MR, and every `deferred` acceptance criterion
+     with its owner belong to the PR/MR — its title, its diff, and the Deferred scope block its
+     body carries verbatim. A ticket comment restating them is noise on a ticket someone is trying
+     to read. A repo that needed **no change** has no PR/MR to carry that story, so its
+     criterion-by-criterion evidence goes in the one-off "already implemented" comment from step 0
+     (`add-ticket-comment.sh`), never as a block in this record.
 
      `upsert --section`, never `add`: you refresh this after every bug-fix batch (below), and with
      `add` a hard ticket ends up carrying five dev notes with no way to tell which is current. Run

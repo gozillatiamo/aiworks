@@ -72,6 +72,21 @@
             "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3Mvdm9pY2UtbmFycmF0ZS5zaA==",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvcG9zdHRvb2wtY29udGV4dC1idWRnZXQuc2g=",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvY29udGV4dC1oYW5kb2ZmLnNo",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PostToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvcG9zdHRvb2wtYWdlbnQtcmVsYXkuc2g=",
+            "timeout": 10,
+            "type": "command"
           }
         ],
         "matcher": "*"
@@ -145,6 +160,11 @@
           },
           {
             "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PreToolUse Bash IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvcHJldG9vbC1vcmNoZXN0cmF0b3ItZ3VhcmQuc2g=",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PreToolUse Bash IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvcHJldG9vbC1jb2RlZ3JhcGgtbnVkZ2Uuc2g=",
             "timeout": 10,
             "type": "command"
           }
@@ -227,6 +247,11 @@
             "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PreToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3Mvdm9pY2UtbmFycmF0ZS5zaA==",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" PreToolUse preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvY29udGV4dC1oYW5kb2ZmLnNo",
+            "timeout": 10,
+            "type": "command"
           }
         ],
         "matcher": "*"
@@ -256,7 +281,7 @@
       {
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" SessionEnd preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvcmVkaXMtdHJpYWdlLXR1bm5lbC1yZWFwLnNo",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" SessionEnd preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvdHJpYWdlLXR1bm5lbC1yZWFwLnNo",
             "timeout": 3,
             "type": "command"
           }
@@ -268,7 +293,7 @@
       {
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" SessionStart preserve LnN1cGVyc2V0L21jcC1zZXJ2aWNlcy5zaCB1cA==",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" SessionStart preserve LnBhcmFkZXYvbWNwLXNlcnZpY2VzLnNoIHVw",
             "type": "command"
           },
           {
@@ -310,6 +335,18 @@
           },
           {
             "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" Stop preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3Mvc3RhZ2VoYW5kLWZvbGxvdy5zaA==",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/hook_shim.sh\" SubagentStop preserve IiRDTEFVREVfUFJPSkVDVF9ESVIiLy5jbGF1ZGUvaG9va3MvZGV2LXdyYXBwZXIvcG9zdHRvb2wtYWdlbnQtcmVsYXkuc2g=",
             "timeout": 10,
             "type": "command"
           }

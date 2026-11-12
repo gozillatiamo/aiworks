@@ -19,6 +19,7 @@
     "SessionEnd": "SessionEnd",
     "SessionStart": "SessionStart",
     "Stop": "Stop",
+    "SubagentStop": "SubagentStop",
     "UserPromptSubmit": "UserPromptSubmit"
   },
   "mcp_sse": {
