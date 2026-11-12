@@ -965,7 +965,7 @@ EOF
     skip $g "codex projection" "Codex is not in the active Harness set"
   fi
 
-  # PLUGIN SCOPE. `.superset/lib.sh` installs every declared plugin at PROJECT scope: a workspace
+  # PLUGIN SCOPE. `.paradev/lib.sh` installs every declared plugin at PROJECT scope: a workspace
   # declares its dependencies in a committed settings.json, so the install that satisfies the
   # declaration belongs to the same project rather than to the machine of whoever cloned it
   # (docs/adr/0035). So the finding here is a project that DECLARES a plugin and does not carry
@@ -1017,7 +1017,7 @@ $(jq -r '(.enabledPlugins // {}) | keys[]' "$settings" 2>/dev/null)
 EOF
     # "Declared" reads as done and is not. `aiworks sync` converges enabledPlugins +
     # extraKnownMarketplaces into the root and every declared repo, and stops there — the install
-    # is `ensure_claude_plugins` in .superset/lib.sh, which ONLY setup.sh calls.
+    # is `ensure_claude_plugins` in .paradev/lib.sh, which ONLY setup.sh calls.
     # Reported separately from the divergence below: a project can be missing one plugin while
     # another has parted from the machine's copy, and collapsing them would hide whichever lost
     # the branch.
@@ -1028,7 +1028,7 @@ EOF
       # measured 2026-08-13. Sourcing lib.sh keeps the write in the one script that owns it.
       warn $g "declared plugin(s) not installed in this project" \
            "$missing — declaring is not installing: no SessionStart/SubagentStart hooks in this project" \
-           "bash -c '. .superset/lib.sh && ensure_claude_plugins'" slow
+           "bash -c '. .paradev/lib.sh && ensure_claude_plugins'" slow
     fi
 
     if [[ -n "$diverged" ]]; then
@@ -1124,7 +1124,7 @@ EOF
   # drifted apart, which is the only warning available before a CLI update adds a rule nobody here
   # has heard of. ~30ms even when the string is absent, so it runs on a default pass.
   local cbin=""
-  # First `claude` on PATH that is a real binary — a launcher wrapper (Superset's ~/.superset/bin/claude)
+  # First `claude` on PATH that is a real binary — a launcher wrapper (Superset's ~/.paradev/bin/claude)
   # is a shell script that never carries the rule sentence.
   local cand
   while IFS= read -r cand; do
@@ -1169,7 +1169,7 @@ EOF
 # answers it (`aiworks update -n`) takes ~7s — longer than this whole command is meant to.
 # `aiworks update` moves an INSTALLED tool forward; it never installs a missing one, so it is
 # the wrong instruction for something that is not on PATH at all. Point at whoever actually
-# owns the install: `aiworks setup` for the tools .superset/lib.sh has an ensure_* helper for,
+# owns the install: `aiworks setup` for the tools .paradev/lib.sh has an ensure_* helper for,
 # brew for the plain formulae, and a `see:` advisory for the ones no command here should run
 # on someone's behalf (node switches PATH, Docker Desktop is a GUI app).
 tool_installer() {  # <binary> — a runnable command, or a `see:` line meaning "needs you"
@@ -1675,15 +1675,15 @@ check_triage() {
 # ══════════════════════════════════════════════════════════════════════════════════
 check_mcp() {
   local g=mcp
-  local compose="$ROOT/.superset/mcp-compose.yml"
-  [[ -f "$compose" ]] || { skip $g "mcp" "no .superset/mcp-compose.yml"; return; }
+  local compose="$ROOT/.paradev/mcp-compose.yml"
+  [[ -f "$compose" ]] || { skip $g "mcp" "no .paradev/mcp-compose.yml"; return; }
   command -v docker >/dev/null 2>&1 || { fail $g "docker not on PATH" "the shared MCP stack cannot run" \
                                               "./aiworks update --only brew" slow; return; }
   local running; running="$(docker compose -p aiworks-mcp ps --status running -q 2>/dev/null | grep -c . || true)"
   if [[ "${running:-0}" -gt 0 ]]; then
     pass $g "mcp stack up" "$running container(s)"
   else
-    fail $g "mcp stack is down" "no running container in project aiworks-mcp" ".superset/mcp-services.sh up"
+    fail $g "mcp stack is down" "no running container in project aiworks-mcp" ".paradev/mcp-services.sh up"
   fi
 }
 
@@ -1698,9 +1698,9 @@ port_open() { nc -z -G 1 127.0.0.1 "$1" >/dev/null 2>&1 || nc -z -w 1 127.0.0.1 
 # all?) does not already cover.
 check_services() {
   local g=services
-  local compose="$ROOT/.superset/mcp-compose.yml"
+  local compose="$ROOT/.paradev/mcp-compose.yml"
   command -v nc >/dev/null 2>&1 || { skip $g "port probes" "nc not on PATH"; return; }
-  [[ -f "$compose" ]] || { skip $g "port probes" "no .superset/mcp-compose.yml to read ports from"; return; }
+  [[ -f "$compose" ]] || { skip $g "port probes" "no .paradev/mcp-compose.yml to read ports from"; return; }
 
   # `- "127.0.0.1:${VAR:-25432}:8000"` → 25432, and a plain `- "127.0.0.1:25432:8000"` too.
   # The default inside the parameter expansion is what a workspace gets when it overrides
@@ -1729,8 +1729,8 @@ check_services() {
       # image pull — and `--quiet-pull` plus --fix's captured output means it prints nothing
       # at all while it runs. Warm, it is seconds. The marker is the only warning a person
       # gets before answering `yes`, so it has to describe the cold case, not the warm one.
-      warn $g "declared port $p not listening" "published by .superset/mcp-compose.yml" \
-           ".superset/mcp-services.sh up" slow
+      warn $g "declared port $p not listening" "published by .paradev/mcp-compose.yml" \
+           ".paradev/mcp-services.sh up" slow
     fi
   done
 }

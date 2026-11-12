@@ -2,7 +2,7 @@
 #
 # Workspace setup — mani multi-repo workspace.
 #
-#   .superset/setup.sh [-v|--verbose] [--harnesses claude,cursor,codex]
+#   .paradev/setup.sh [-v|--verbose] [--harnesses claude,cursor,codex]
 #                       [--reconfigure-harnesses]
 #
 # Output is QUIET by default (only warnings, errors, and the closing summary). Pass
@@ -41,14 +41,14 @@
 #    search re-inclusion, scripts/dev.sh, lifecycle hooks); -y skips its prompt.
 # 5. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
-#    .superset/.env) recursively, Terraform local init (.terraform, the lock file,
+#    .paradev/.env) recursively, Terraform local init (.terraform, the lock file,
 #    terraform.tfvars — same SUPERSET_ENV switch), every repo's seeded db-data Postgres
 #    cluster, AND any Android release-signing secrets (key.properties + the keystore).
 #    Runs before the MCP services so they come up on real config + a seeded DB.
 # 6. Installs Node dependencies in every repo that has a package.json
 #    (pnpm when the repo uses pnpm, npm otherwise — aiworks does not do this), checks each
 #    repo's .env, then runs each product's optional `setup_product` hook
-#    (.superset/products/<product>.sh) — the home for org-specific setup.
+#    (.paradev/products/<product>.sh) — the home for org-specific setup.
 # 7. Starts the shared MCP service containers, then reports which repos still
 #    need their .env reviewed.
 #
@@ -58,7 +58,7 @@ set -euo pipefail
 
 # Always operate from the workspace root, where mani.yaml lives.
 cd "$(dirname "$0")/.."
-source .superset/lib.sh
+source .paradev/lib.sh
 
 # Quiet by default; -v/--verbose flips on the full step log. Exported so lib.sh's log() (reads
 # $VERBOSE at call-time) and the child `aiworks sync` both honour it.
@@ -83,7 +83,7 @@ fi
 
 # ── Setup progress lock — read by the SessionStart readiness check to tell "running" from
 # "crashed" from "never ran" (see setup_lock_acquire in lib.sh). Top level, not a subshell.
-setup_lock_acquire .superset/run/setup.lock
+setup_lock_acquire .paradev/run/setup.lock
 
 # ── Resolve the root workspace — the source of the git-ignored local state a fresh worktree
 # carries NONE of. Superset sets SUPERSET_ROOT_PATH; for a MANUAL `git worktree` (no Superset)
@@ -213,7 +213,7 @@ ensure_harness_statuslines || true
 # ── 4. Clone + FULLY onboard every repo declared in workspace.config.yaml products[]. Runs the
 # full `aiworks add` toolchain per repo (codegraph index, skill packs, adapter symlinks into
 # each repo + .git/info/exclude, Cursor .cursorindexingignore / VS Code search re-inclusion,
-# scripts/dev.sh, the .superset lifecycle hooks). Idempotent — already-onboarded repos SKIP.
+# scripts/dev.sh, the .paradev lifecycle hooks). Idempotent — already-onboarded repos SKIP.
 # -y skips the Proceed prompt so setup stays non-interactive.
 log "aiworks sync -y (clone + fully onboard every product repo)…"
 sync_args=(-y); [[ "$VERBOSE" == 1 ]] && sync_args+=(--verbose)
@@ -223,7 +223,7 @@ scripts/aiworks sync "${sync_args[@]}"
 # this worktree from the root workspace — by DEFAULT as symlinks (one source of truth; cheap):
 #   • every .env / .env.* file (except .env.example, which is committed upstream and already
 #     travels with the clone), recursively, preserving each file's relative path — every
-#     repo's env AND .superset/.env (read by the MCP service containers in step 7); the
+#     repo's env AND .paradev/.env (read by the MCP service containers in step 7); the
 #     adapters' own scripts/*/.env were already provisioned in step 2 and are pruned here.
 #     SUPERSET_ENV (default symlink) → symlink each at the root's (edit once, every worktree
 #     sees it), =copy for an independent per-worktree snapshot, or =skip to manage them yourself.
@@ -242,7 +242,7 @@ scripts/aiworks sync "${sync_args[@]}"
 #     silently DEBUG-signs the release build). Provisioned from the root like the above.
 #     SUPERSET_SIGNING (default symlink) → symlink the root's, =copy for a per-worktree
 #     snapshot, or =skip. No <repo>/android/key.properties at the root → nothing to do.
-#   • .superset/products/*.sh — the REAL per-product definition(s) (git-ignored: .gitignore
+#   • .paradev/products/*.sh — the REAL per-product definition(s) (git-ignored: .gitignore
 #     tracks only products/example.sh), which is what default_product() in lib.sh resolves
 #     for setup/run/teardown when no product is named explicitly. Without this, a fresh
 #     worktree has ONLY example.sh and every lifecycle hook called without an explicit
@@ -291,20 +291,20 @@ if [[ "$has_root" == 1 ]]; then
     provision_tf_local "$root_ws" "$env_mode"
   fi
 
-  # .superset/products/*.sh — the real product definition(s) (git-ignored; only example.sh
+  # .paradev/products/*.sh — the real product definition(s) (git-ignored; only example.sh
   # ships with a clone). Provisioning mode → SUPERSET_PRODUCTS (default: symlink). See the
   # step-5 header above for why a fresh worktree needs this at all.
   products_mode="${SUPERSET_PRODUCTS:-symlink}"
   if [[ "$products_mode" == skip ]]; then
-    log "product files: SUPERSET_PRODUCTS=skip — leaving .superset/products/ as-is."
+    log "product files: SUPERSET_PRODUCTS=skip — leaving .paradev/products/ as-is."
   else
     products_count=0
-    for p_src in "$root_ws"/.superset/products/*.sh; do
+    for p_src in "$root_ws"/.paradev/products/*.sh; do
       [[ -f "$p_src" ]] || continue
       p_base="$(basename "$p_src")"
       [[ "$p_base" == example.sh ]] && continue
-      p_dst=".superset/products/$p_base"
-      mkdir -p .superset/products
+      p_dst=".paradev/products/$p_base"
+      mkdir -p .paradev/products
       if [[ "$products_mode" == symlink ]]; then
         if [[ -L "$p_dst" && "$(readlink "$p_dst")" == "$p_src" ]]; then products_count=$((products_count + 1)); continue; fi
         rm -f "$p_dst" 2>/dev/null   # replace any stale link / copied file with the link
@@ -320,7 +320,7 @@ if [[ "$has_root" == 1 ]]; then
       products_verb="linked"; [[ "$products_mode" == copy ]] && products_verb="copied"
       log "$products_verb $products_count product definition file(s) from the root workspace."
     else
-      warn "no real .superset/products/*.sh at the root workspace ($root_ws) — setup/run/teardown will fail to resolve a default product unless one is passed explicitly."
+      warn "no real .paradev/products/*.sh at the root workspace ($root_ws) — setup/run/teardown will fail to resolve a default product unless one is passed explicitly."
     fi
   fi
 
@@ -471,7 +471,7 @@ for repo in */; do
   fi
 done
 
-# ── 6b. Product setup hooks — each .superset/products/<product>.sh may define an optional
+# ── 6b. Product setup hooks — each .paradev/products/<product>.sh may define an optional
 # `setup_product` (local host aliases, …): org-specific setup lives THERE, never in this file.
 # Runs after the .env check so every repo's .env exists on disk for the product's own logic.
 run_product_setup_hooks
@@ -482,11 +482,11 @@ run_product_setup_hooks
 
 # ── 7. Start the shared, long-lived MCP service containers (one container shared by every
 # client/agent over SSE — replaces the old per-client `docker run` servers that orphaned
-# on crash). Reads .superset/.env (copied from the root in step 5) for DATABASE_URI etc.
-# Idempotent and self-skipping if docker is unavailable. See .superset/mcp-compose.yml.
+# on crash). Reads .paradev/.env (copied from the root in step 5) for DATABASE_URI etc.
+# Idempotent and self-skipping if docker is unavailable. See .paradev/mcp-compose.yml.
 log "Starting shared MCP services…"
-if [[ "$VERBOSE" == 1 ]]; then ./.superset/mcp-services.sh up || true
-else ./.superset/mcp-services.sh up >/dev/null 2>&1 || true; fi
+if [[ "$VERBOSE" == 1 ]]; then ./.paradev/mcp-services.sh up || true
+else ./.paradev/mcp-services.sh up >/dev/null 2>&1 || true; fi
 
 # ── conclusion (always shown, even when quiet — the run's closing section) ──────────
 conclude "Workspace ready. Projects:"
@@ -496,4 +496,4 @@ if [[ "${#ENV_TODO[@]}" -gt 0 ]]; then
   warn "ACTION REQUIRED — set the environment values in:"
   printf '      %s\n' "${ENV_TODO[@]}"
 fi
-conclude "Next: .superset/run.sh [product]"
+conclude "Next: .paradev/run.sh [product]"

@@ -2,7 +2,7 @@
 #
 # Workspace run — start a product's full local stack.
 #
-#   .superset/run.sh [product] [-s <site>] [-S] [-v]   (default: the ONE product file)
+#   .paradev/run.sh [product] [-s <site>] [-S] [-v]   (default: the ONE product file)
 #
 # Options:
 #   -s, --site <name>  frontend profile for the product (product-defined names;
@@ -11,7 +11,7 @@
 #   -v, --verbose    show the full step-by-step log (quiet by default).
 #   -h, --help       show this help.
 #
-# Sequence (defined per product in .superset/products/<product>.sh):
+# Sequence (defined per product in .paradev/products/<product>.sh):
 #   1. databases + migrations  (run_databases)
 #   2. backends — docker       (run_backends)
 #   3. frontends               (run_frontends)
@@ -24,13 +24,13 @@
 # Phase 6 is additionally skipped on demand with -S / --no-seed.
 #
 # Docker services are managed by compose; non-docker apps (e.g. next dev) run in
-# the background with pidfiles in .superset/run/<product>/ and logs in
-# .superset/logs/<product>/. Idempotent — safe to re-run.
+# the background with pidfiles in .paradev/run/<product>/ and logs in
+# .paradev/logs/<product>/. Idempotent — safe to re-run.
 #
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-source .superset/lib.sh
+source .paradev/lib.sh
 
 usage() { sed -n '4,12p' "$0" | sed 's/^# \{0,1\}//'; }
 
@@ -96,4 +96,4 @@ else
 fi
 
 # ── conclusion (always shown, even when quiet) ──────────────────────────────────
-conclude "Product '$PRODUCT' is up. Teardown with: .superset/teardown.sh $PRODUCT"
+conclude "Product '$PRODUCT' is up. Teardown with: .paradev/teardown.sh $PRODUCT"

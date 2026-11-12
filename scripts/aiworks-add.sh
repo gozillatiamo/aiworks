@@ -609,18 +609,18 @@ else
   skip "2.6. aiworks-config.sh not found next to aiworks-add.sh — mirror dev-cycle.js by hand"
 fi
 
-# ── 2.7. ensure the workspace lifecycle hooks (.superset/{setup,run,teardown}) cover this repo ─
+# ── 2.7. ensure the workspace lifecycle hooks (.paradev/{setup,run,teardown}) cover this repo ─
 # The hooks are workspace-level and DYNAMIC — each loops over every cloned repo — so the new repo
 # is picked up with no per-repo edit. This just makes sure the trio EXISTS and config.json
-# registers all three (it creates .superset/run.sh on workspaces that predate the run hook). See
-# scripts/aiworks-superset.sh.
-step "2.7. Ensure .superset lifecycle hooks (setup/run/teardown) cover every repo"
-SUPGEN="$(cd "$(dirname "$0")" && pwd)/aiworks-superset.sh"
-if [[ -x "$SUPGEN" ]]; then
-  if out="$("$SUPGEN" -q 2>&1)"; then ok "lifecycle hooks present; config.json registers setup/run/teardown${out:+ — $out}"
-  else skip "2.7. could not ensure .superset hooks — run 'aiworks-superset.sh' by hand. Detail: ${out}"; fi
+# registers all three (it creates .paradev/run.sh on workspaces that predate the run hook). See
+# scripts/aiworks-paradev.sh.
+step "2.7. Ensure .paradev lifecycle hooks (setup/run/teardown) cover every repo"
+PDGEN="$(cd "$(dirname "$0")" && pwd)/aiworks-paradev.sh"
+if [[ -x "$PDGEN" ]]; then
+  if out="$("$PDGEN" -q 2>&1)"; then ok "lifecycle hooks present; config.json registers setup/run/teardown${out:+ — $out}"
+  else skip "2.7. could not ensure .paradev hooks — run 'aiworks-paradev.sh' by hand. Detail: ${out}"; fi
 else
-  skip "2.7. aiworks-superset.sh not found next to aiworks-add.sh — ensure .superset/{setup,run,teardown}.sh by hand"
+  skip "2.7. aiworks-paradev.sh not found next to aiworks-add.sh — ensure .paradev/{setup,run,teardown}.sh by hand"
 fi
 
 # ── 3. clone via mani + 3.1 gitignore ─────────────────────────────────────────
@@ -1099,7 +1099,7 @@ if have jq; then
   # install it — measured, because the opposite reads as working: a repo carrying both keys
   # still answered NOT-FOUND for `caveman:caveman` while the workspace root answered
   # AVAILABLE under the same probe. The install is a machine-local step, done once at USER
-  # scope by `ensure_claude_plugins` in .superset/lib.sh (setup step 3), which covers the
+  # scope by `ensure_claude_plugins` in .paradev/lib.sh (setup step 3), which covers the
   # root and every clone at once. Both are OBJECTS, so `*` deep-merges them:
   # a repo that enables its own plugins keeps them and gains caveman. (Arrays, by
   # contrast, are replaced wholesale — which is precisely why `permissions` stays out.)

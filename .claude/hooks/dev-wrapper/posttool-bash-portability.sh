@@ -58,7 +58,7 @@ if [[ "${1:-}" == "--scan" ]]; then
     case "$f" in */node_modules/*|*/vendor/*) continue ;; esac
     n=$((n+1))
     report "$f" || rc=1
-  done < <(git ls-files '*.sh' 'aiworks' 'scripts/aiworks' '.superset/*' 2>/dev/null)
+  done < <(git ls-files '*.sh' 'aiworks' 'scripts/aiworks' '.paradev/*' 2>/dev/null)
   # Say when the scan found nothing to scan. `git ls-files` is silent outside a checkout, and
   # a check that could not run must never print as a check that passed.
   if [[ "$n" -eq 0 ]]; then

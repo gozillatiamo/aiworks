@@ -23,7 +23,7 @@ port="${MCP_SONARQUBE_PORT:-25434}"
 # The container is started by the SessionStart hook, concurrently with MCP connection.
 deadline=$(( SECONDS + ${MCP_PORT_WAIT_SECS:-20} ))
 until (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; do
-  (( SECONDS < deadline )) || { echo "sonarqube MCP not listening on 127.0.0.1:${port} (.superset/mcp-services.sh up)" >&2; exit 1; }
+  (( SECONDS < deadline )) || { echo "sonarqube MCP not listening on 127.0.0.1:${port} (.paradev/mcp-services.sh up)" >&2; exit 1; }
   sleep 1
 done
 

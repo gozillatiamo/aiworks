@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# aiworks-superset.sh  (called by `aiworks add`/`sync`) — keep the workspace lifecycle
-# hooks (.superset/{setup,run,teardown}.sh) present and registered so EVERY onboarded repo
+# aiworks-paradev.sh  (called by `aiworks add`/`sync`) — keep the workspace lifecycle
+# hooks (.paradev/{setup,run,teardown}.sh) present and registered so EVERY onboarded repo
 # is covered by setup, run AND teardown.
 #
 # The three hooks are workspace-level and DYNAMIC: each loops over every cloned product repo
 # (a top-level dir with a .git entry) rather than carrying a per-repo list — so a repo added by
 # `aiworks add`/`sync` is picked up automatically, with no per-repo edit. This guard only makes
-# sure the trio EXISTS and that .superset/config.json declares each one:
+# sure the trio EXISTS and that .paradev/config.json declares each one:
 #   * setup.sh / teardown.sh — committed template files; WARN (don't regenerate) if missing.
 #   * run.sh                 — the run hook (aiworks run); this script is its source of truth, so
 #                              it is CREATED from the embedded template when missing — workspaces
@@ -15,11 +15,11 @@
 #   * config.json            — (re)written so the {setup,run,teardown} keys point at the hooks
 #                              that exist, in canonical order, preserving any other keys.
 #
-# Idempotent. add/sync call it automatically; run it yourself after hand-editing .superset/.
+# Idempotent. add/sync call it automatically; run it yourself after hand-editing .paradev/.
 #
-# Usage: aiworks-superset.sh [-n|--dry-run] [-f|--force] [-q|--quiet] [-h|--help]
+# Usage: aiworks-paradev.sh [-n|--dry-run] [-f|--force] [-q|--quiet] [-h|--help]
 #   -n, --dry-run   show what WOULD change; write nothing.
-#   -f, --force     rewrite .superset/run.sh from the template even if it already exists.
+#   -f, --force     rewrite .paradev/run.sh from the template even if it already exists.
 #   -q, --quiet     only print warnings/errors (used by `aiworks add`).
 #   -h, --help      show this help.
 #
@@ -51,7 +51,7 @@ done
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 [[ -f "$ROOT/mani.yaml" ]] || die "no mani.yaml in $ROOT — run this from a workspace (next to mani.yaml)"
-SUP="$ROOT/.superset"
+PDIR="$ROOT/.paradev"
 
 # Write the canonical run hook to $1. The body is the source of truth for the run lifecycle.
 # A QUOTED heredoc delimiter keeps it verbatim (no expansion when this generator runs).
@@ -61,13 +61,13 @@ write_run_hook() {
 #
 # Workspace run — mani multi-repo workspace (provider-agnostic template).
 #
-# The "run" lifecycle hook (aiworks run -> .superset/run.sh). Like setup.sh and teardown.sh it
+# The "run" lifecycle hook (aiworks run -> .paradev/run.sh). Like setup.sh and teardown.sh it
 # operates on EVERY cloned product repo: for each it delegates to that repo's scripts/dev.sh run
 # — the single source of truth for how to build, launch and drive that app as a non-interactive
 # agent path that proves it works and exits with a verdict (scaffolded by `aiworks add` step 10).
 # Pass repo name(s) to run only those; default = every cloned repo.
 #
-# Created/repaired by `aiworks add`/`sync` (scripts/aiworks-superset.sh) so a freshly onboarded
+# Created/repaired by `aiworks add`/`sync` (scripts/aiworks-paradev.sh) so a freshly onboarded
 # repo is covered by setup/run/teardown alike. Re-creatable: delete it and re-run add/sync.
 #
 #   aiworks run                   # run every cloned repo (scripts/dev.sh run each)
@@ -145,48 +145,48 @@ NODE
   else
     { printf '{\n'; f2=1
       for h in setup run teardown; do
-        [[ -f "$SUP/$h.sh" ]] || continue
+        [[ -f "$PDIR/$h.sh" ]] || continue
         [[ "$f2" -eq 1 ]] || printf ',\n'
-        printf '  "%s": ["./.superset/%s.sh"]' "$h" "$h"; f2=0
+        printf '  "%s": ["./.paradev/%s.sh"]' "$h" "$h"; f2=0
       done
       printf '\n}\n'; } > "$cfg" && ok "config.json written (setup/run/teardown; node not found)"
   fi
 }
 
-step "Ensure .superset lifecycle hooks (setup/run/teardown) cover every repo"
+step "Ensure .paradev lifecycle hooks (setup/run/teardown) cover every repo"
 
-if [[ ! -d "$SUP" ]]; then
-  if [[ "$DRY" -eq 1 ]]; then dim "would create .superset/"; else mkdir -p "$SUP"; fi
+if [[ ! -d "$PDIR" ]]; then
+  if [[ "$DRY" -eq 1 ]]; then dim "would create .paradev/"; else mkdir -p "$PDIR"; fi
 fi
 
 # ── run.sh — the hook this script owns; create it from the template when missing ──
-RUN="$SUP/run.sh"
+RUN="$PDIR/run.sh"
 if [[ -f "$RUN" && "$FORCE" -ne 1 ]]; then
   ok "run.sh present (every cloned repo → scripts/dev.sh run)"
 elif [[ "$DRY" -eq 1 ]]; then
-  dim "would $([[ -f "$RUN" ]] && echo rewrite || echo create) .superset/run.sh (the workspace run hook)"
+  dim "would $([[ -f "$RUN" ]] && echo rewrite || echo create) .paradev/run.sh (the workspace run hook)"
 else
-  write_run_hook "$RUN" && ok "$([[ "$FORCE" -eq 1 ]] && echo rewrote || echo created) .superset/run.sh (delegates to each repo's scripts/dev.sh run)"
+  write_run_hook "$RUN" && ok "$([[ "$FORCE" -eq 1 ]] && echo rewrote || echo created) .paradev/run.sh (delegates to each repo's scripts/dev.sh run)"
 fi
 
 # ── setup.sh / teardown.sh — committed template files; warn (don't regenerate) if absent ──
 for h in setup teardown; do
-  if [[ -f "$SUP/$h.sh" ]]; then ok "$h.sh present (loops over every cloned repo)"
-  else warn "$h.sh MISSING from .superset/ — restore it from the workspace template (e.g. git checkout .superset/$h.sh)"; fi
+  if [[ -f "$PDIR/$h.sh" ]]; then ok "$h.sh present (loops over every cloned repo)"
+  else warn "$h.sh MISSING from .paradev/ — restore it from the workspace template (e.g. git checkout .paradev/$h.sh)"; fi
 done
 
 # ── config.json — declare the {setup,run,teardown} keys for the hooks that exist ──
-CFG="$SUP/config.json"
+CFG="$PDIR/config.json"
 hooks_json="{"; first=1
 for h in setup run teardown; do
-  [[ -f "$SUP/$h.sh" ]] || continue
+  [[ -f "$PDIR/$h.sh" ]] || continue
   [[ "$first" -eq 1 ]] || hooks_json+=","
-  hooks_json+="\"$h\":[\"./.superset/$h.sh\"]"; first=0
+  hooks_json+="\"$h\":[\"./.paradev/$h.sh\"]"; first=0
 done
 hooks_json+="}"
 
 if [[ "$DRY" -eq 1 ]]; then
-  dim "would ensure .superset/config.json declares: $hooks_json"
+  dim "would ensure .paradev/config.json declares: $hooks_json"
 else
   ensure_config "$CFG" "$hooks_json"
 fi

@@ -376,14 +376,14 @@ ck "a non-executable hook is named" "demo-guard.sh" "$OUT"
 ck "a non-executable hook offers chmod" "chmod +x" "$OUT"
 
 # ── 18 · the compose port parser ──────────────────────────────────────────────────
-# `services` hardcodes no ports — it reads them from .superset/mcp-compose.yml, so a
+# `services` hardcodes no ports — it reads them from .paradev/mcp-compose.yml, so a
 # workspace that renumbers its stack is still checked correctly. This parser already failed
 # once, silently: written as a two-expression sed split over a continued line, the second
 # expression carried leading whitespace, BSD sed rejected it, and the group cheerfully
 # reported "no host ports" against a compose publishing three. Parsing is pure text, so it
 # is cheap to pin — and a silent no-match is exactly the failure a green tick would hide.
-W="$T/ports"; make_ws "$W"; stage "$W"; mkdir -p "$W/.superset"
-cat > "$W/.superset/mcp-compose.yml" <<'YML'
+W="$T/ports"; make_ws "$W"; stage "$W"; mkdir -p "$W/.paradev"
+cat > "$W/.paradev/mcp-compose.yml" <<'YML'
 name: aiworks-mcp
 services:
   a-mcp:
@@ -416,7 +416,7 @@ OUT="$(PATH="$W/bin:$PATH" "$W/scripts/aiworks-doctor.sh" --deep --only services
 PLAN_SEC="$(printf '%s\n' "$OUT" | sed -n '/will run, in order/,/needs you/p')"
 ck "a closed port still offers to start the stack" "mcp-services.sh up" "$PLAN_SEC"
 ck "…marked slow, because a cold run pulls images" "slow"              "$PLAN_SEC"
-: > "$W/.superset/mcp-compose.yml"
+: > "$W/.paradev/mcp-compose.yml"
 OUT="$("$W/scripts/aiworks-doctor.sh" --deep --only services 2>&1)"
 ck "an empty compose says so, not a false pass" "publishes no host ports" "$OUT"
 

@@ -4,7 +4,7 @@
 #
 # Why this exists
 # ---------------
-# A fresh Superset worktree runs .superset/setup.sh (which calls `aiworks sync`) to CLONE
+# A fresh Superset worktree runs .paradev/setup.sh (which calls `aiworks sync`) to CLONE
 # and onboard every product repo declared in workspace.config.yaml. Cloning + onboarding
 # every declared repo takes several minutes — but the Claude Code session in the new worktree starts
 # IMMEDIATELY, before setup finishes. So Claude would try to cd / grep / search a repo
@@ -70,12 +70,12 @@ compute() {
 # "never ran". Sets two globals (NOT echoed — a $(...) subshell would drop $setup_detail):
 # SETUP_STATE = running | crashed | idle, and $setup_detail (a human phrase for the message).
 #
-# Preferred signal: the per-worktree lock .superset/run/setup.lock that setup.sh writes at start
+# Preferred signal: the per-worktree lock .paradev/run/setup.lock that setup.sh writes at start
 # and trap-removes on exit (deterministic, scoped to THIS worktree, no command-string guessing).
 #   • lock present + recorded pid alive  → running
 #   • lock present + recorded pid gone    → crashed (hard-killed / power loss; trap never fired)
 #   • no lock                             → fall back to pgrep (manual/legacy setup) → running|idle
-LOCK="$root/.superset/run/setup.lock"
+LOCK="$root/.paradev/run/setup.lock"
 SETUP_STATE=""
 setup_detail=""
 setup_state() {
@@ -92,7 +92,7 @@ setup_state() {
     SETUP_STATE=crashed; return
   fi
   if command -v pgrep >/dev/null 2>&1; then
-    if pgrep -f '[.]superset/setup\.sh' >/dev/null 2>&1 \
+    if pgrep -f '[.]paradev/setup\.sh' >/dev/null 2>&1 \
        || pgrep -f 'aiworks[ ].*sync' >/dev/null 2>&1 \
        || pgrep -f 'mani[ ].*sync' >/dev/null 2>&1; then
       setup_detail="a setup/sync process is running (detected via pgrep; no lock file)"
@@ -113,8 +113,8 @@ case "${1:-}" in
     setup_state
     case "$SETUP_STATE" in
       running) echo "  setup is running ($setup_detail) — should clear as it finishes." ;;
-      crashed) echo "  setup looks interrupted ($setup_detail) — re-run .superset/setup.sh (idempotent)." ;;
-      idle)    echo "  no setup running — run .superset/setup.sh." ;;
+      crashed) echo "  setup looks interrupted ($setup_detail) — re-run .paradev/setup.sh (idempotent)." ;;
+      idle)    echo "  no setup running — run .paradev/setup.sh." ;;
     esac
     exit 1
     ;;
@@ -191,16 +191,16 @@ fi
 setup_state
 case "$SETUP_STATE" in
   running)
-    cause="The workspace setup (.superset/setup.sh via aiworks sync) is still running - $setup_detail. A fresh Superset worktree clones and onboards every product repo, which takes several minutes."
+    cause="The workspace setup (.paradev/setup.sh via aiworks sync) is still running - $setup_detail. A fresh Superset worktree clones and onboards every product repo, which takes several minutes."
     action="Do NOT treat a not-ready repo as an error, do not cd/grep/search inside it, and do not conclude it is absent - it is simply not cloned YET. If the user asks you to work in a not-ready repo, wait for setup: run  .claude/hooks/repo-health-check.sh --wait  to block until every repo is ready (or  --status  to recheck now), then proceed."
     ;;
   crashed)
     cause="A previous setup did not finish - $setup_detail (likely hard-killed or a crash)."
-    action="Tell the user setup was interrupted and offer to re-run  .superset/setup.sh  to finish cloning the missing repos (it is idempotent - already-cloned repos are skipped). Do not treat the missing repos as a real error until setup completes."
+    action="Tell the user setup was interrupted and offer to re-run  .paradev/setup.sh  to finish cloning the missing repos (it is idempotent - already-cloned repos are skipped). Do not treat the missing repos as a real error until setup completes."
     ;;
   *)
     cause="No setup is running and no setup lock is present, so setup has not started."
-    action="Tell the user and offer to run  .superset/setup.sh  to clone and onboard the missing repos. Do not treat the missing repos as a real error until setup has completed."
+    action="Tell the user and offer to run  .paradev/setup.sh  to clone and onboard the missing repos. Do not treat the missing repos as a real error until setup has completed."
     ;;
 esac
 full="[workspace repo health] Only $present_count of $total product repos are cloned in this worktree. NOT ready: $missing. $cause $action"

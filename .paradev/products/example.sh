@@ -3,7 +3,7 @@
 # Product definition: example (a TEMPLATE — copy, don't run).
 #
 # A product file declares the repos per tier and the lifecycle hooks the
-# orchestrators call (helpers come from .superset/lib.sh):
+# orchestrators call (helpers come from .paradev/lib.sh):
 #
 #   run_databases / run_backends / run_frontends      — called by run.sh, in order
 #   run_thirdparty_setup / wait_backends_ready / seed_data
@@ -13,10 +13,10 @@
 #   down_frontends / down_backends / down_databases   — called by teardown.sh, in order
 #   setup_product                                     — called by setup.sh, optional
 #
-# To define YOUR product: copy this file to .superset/products/<product-id>.sh
+# To define YOUR product: copy this file to .paradev/products/<product-id>.sh
 # (matching a products[].id in workspace.config.yaml), replace the placeholder
 # repo names with your clone dirs, and delete the hooks you don't need — then
-# `.superset/run.sh <product-id>` / `.superset/teardown.sh <product-id>`.
+# `.paradev/run.sh <product-id>` / `.paradev/teardown.sh <product-id>`.
 # Real product files are gitignored (like workspace.config.yaml): they describe
 # YOUR org's stack, not the template.
 #

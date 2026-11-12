@@ -43,7 +43,7 @@ tools:
   # Interactive debugger: the `debugging-code` skill drives `dap` (DAP CLI) to set breakpoints,
   # step through execution, and inspect live variable + call-stack state — the escalation when a
   # repro loop / print-debugging isn't revealing root cause (see "Bugs — diagnose before you fix").
-  # `dap` is installed by .superset/setup.sh; the skill self-checks & offers to install if absent.
+  # `dap` is installed by .paradev/setup.sh; the skill self-checks & offers to install if absent.
   - Bash(dap *)
   # Codegraph (per-repo index): the FIRST lookup for "where in this repo is X" —
   # codegraph explore/query/callers/impact before any grep. Index stays fresh via the

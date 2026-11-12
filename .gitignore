@@ -22,17 +22,24 @@ socks.auth
 __pycache__/
 *.py[cod]
 
-# .superset runtime state (pidfiles + service logs from run.sh)
-.superset/run/
-.superset/logs/
+# .paradev runtime state (pidfiles + service logs from run.sh)
+.paradev/run/
+.paradev/logs/
 
 # Slack-dispatcher per-worktree runtime context (correlationId + reply target the
 # dispatched agent posts back with; written into each worktree, never committed).
 .aiworks/
 
-# the org's real product definitions — copy .superset/products/example.sh to <product-id>.sh
-.superset/products/*.sh
-!.superset/products/example.sh
+# the org's real product definitions — copy .paradev/products/example.sh to <product-id>.sh
+.paradev/products/*.sh
+!.paradev/products/example.sh
+
+# Pre-rename product files: a workspace synced before the Superset-to-Paradev rename keeps
+# them under .superset/ until `aiworks sync` migrates them; never commit them.
+/.superset/
+
+# Paradev personal override (not shared)
+.paradev/config.local.toml
 
 # The doc graph (graphify — docs/adr/0013) is DERIVED, per-workspace state, not source, so
 # none of it is committed here. Three reasons, and docs/agents/graphify.md has the detail:

@@ -114,7 +114,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".superset/mcp-services.sh up"
+            "command": ".paradev/mcp-services.sh up"
           },
           {
             "type": "command",

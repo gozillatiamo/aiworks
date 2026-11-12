@@ -4,7 +4,7 @@
 #
 # These replace the old per-client `docker run -i` MCP servers in .mcp.json (which were
 # spawned once per agent and orphaned on crash). One long-lived container, shared by every
-# client/agent over SSE. See .superset/mcp-compose.yml for the rationale.
+# client/agent over SSE. See .paradev/mcp-compose.yml for the rationale.
 #
 #   mcp-services.sh up      start (or no-op if already running) the shared MCP stack
 #   mcp-services.sh down    stop + remove the shared MCP stack
@@ -18,8 +18,8 @@
 # bash 3.2-compatible (macOS system bash) — no mapfile / associative arrays.
 set -uo pipefail
 
-cd "$(dirname "$0")/.."                   # workspace root (sibling of scripts/, .superset/)
-COMPOSE_FILE=".superset/mcp-compose.yml"
+cd "$(dirname "$0")/.."                   # workspace root (sibling of scripts/, .paradev/)
+COMPOSE_FILE=".paradev/mcp-compose.yml"
 PROJECT="aiworks-mcp"                     # must match `name:` in the compose file
 # Images run as per-client stdio MCP servers in the old model — reaped as strays.
 STRAY_IMAGES="crystaldba/postgres-mcp mcp/sonarqube"
@@ -30,7 +30,7 @@ have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 
 compose() {
   local args=(-f "$COMPOSE_FILE")
-  [[ -f .superset/.env ]] && args+=(--env-file .superset/.env)
+  [[ -f .paradev/.env ]] && args+=(--env-file .paradev/.env)
   docker compose "${args[@]}" "$@"
 }
 

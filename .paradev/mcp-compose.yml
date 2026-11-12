@@ -16,9 +16,9 @@
 # LIFECYCLE
 #   up    : `scripts/aiworks setup`  (+ a SessionStart safety-net) → docker compose up -d
 #   down  : `scripts/aiworks teardown`
-#   manual: `.superset/mcp-services.sh up | down | reap | status`
+#   manual: `.paradev/mcp-services.sh up | down | reap | status`
 #
-# CONFIG (override in `.superset/.env` — git-ignored — or the environment)
+# CONFIG (override in `.paradev/.env` — git-ignored — or the environment)
 #   DATABASE_URI_MAIN / DATABASE_URI_SECONDARY
 #                      host Postgres each postgres-mcp server talks to
 #   MCP_POSTGRES_MAIN_PORT / MCP_POSTGRES_SECONDARY_PORT

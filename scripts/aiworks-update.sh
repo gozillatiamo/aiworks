@@ -3,7 +3,7 @@
 # aiworks-update.sh  (`aiworks update`) — move the workspace's PREREQUISITE tooling forward,
 # in one shot.
 #
-# `aiworks setup` only ever INSTALLS what is missing: every ensure_* helper in .superset/lib.sh
+# `aiworks setup` only ever INSTALLS what is missing: every ensure_* helper in .paradev/lib.sh
 # returns early the moment the binary is on PATH ("glab already installed (…)"), and node_install
 # is a lockfile install. So nothing in the workspace ever upgrades a tool — this is that missing
 # half. It upgrades each prerequisite THROUGH THE INSTALLER THAT OWNS IT on THIS machine, and
@@ -50,8 +50,8 @@
 #              the baseline is seeded (re-run to take upstream on top); on overlapping edits the
 #              local version is kept and the new upstream copy is parked at <path>.upstream.new —
 #              conflict markers are never written into a file an agent loads as instructions.
-#   mcp        docker compose pull the shared MCP images (.superset/mcp-compose.yml), then
-#              restart the stack via .superset/mcp-services.sh.
+#   mcp        docker compose pull the shared MCP images (.paradev/mcp-compose.yml), then
+#              restart the stack via .paradev/mcp-services.sh.
 #
 # Deliberately NOT touched — each is REPORTED, never performed:
 #   • node itself. An nvm major switch moves the global bin dir, so pnpm and every other global
@@ -84,10 +84,10 @@ ROOT="$(cd "$DIR/.." && pwd)"
 [[ -f "$ROOT/mani.yaml" ]] || { printf 'error: no mani.yaml in %s — run this from a workspace\n' "$ROOT" >&2; exit 1; }
 cd "$ROOT"
 
-# log / warn / err / conclude / run_glance — the same renderer the .superset lifecycle scripts
+# log / warn / err / conclude / run_glance — the same renderer the .paradev lifecycle scripts
 # use, so `aiworks update` reads like `aiworks setup`. lib.sh is pure function definitions.
 # shellcheck source=/dev/null
-. "$ROOT/.superset/lib.sh"
+. "$ROOT/.paradev/lib.sh"
 
 ALL_GROUPS="brew rust pnpm uv gcloud claude cursor codex codegraph graphify plugins skills mcp"
 
@@ -569,18 +569,18 @@ if want mcp; then
   if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
     warn "docker unavailable / daemon down — skipping the MCP image pull."
     record "mcp images" "skipped" "docker down" "-"
-  elif [[ ! -f .superset/mcp-compose.yml ]]; then
+  elif [[ ! -f .paradev/mcp-compose.yml ]]; then
     record "mcp images" "skipped" "no mcp-compose.yml" "-"
   else
     # --env-file only when the file is there; the image tags carry no interpolation, so the
     # pull works either way — this just keeps compose from warning about unset variables.
-    compose_args=(-f .superset/mcp-compose.yml)
-    [[ -f .superset/.env ]] && compose_args+=(--env-file .superset/.env)
+    compose_args=(-f .paradev/mcp-compose.yml)
+    [[ -f .paradev/.env ]] && compose_args+=(--env-file .paradev/.env)
     upgrade "docker compose pull (shared MCP images)" "" docker compose "${compose_args[@]}" pull
     if [[ "$DRY" != 1 ]]; then
       # Recreate off the freshly pulled images — a running container keeps its old image.
-      upgrade "mcp-services: down" "" .superset/mcp-services.sh down
-      upgrade "mcp-services: up"   "" .superset/mcp-services.sh up
+      upgrade "mcp-services: down" "" .paradev/mcp-services.sh down
+      upgrade "mcp-services: up"   "" .paradev/mcp-services.sh up
     fi
   fi
 fi

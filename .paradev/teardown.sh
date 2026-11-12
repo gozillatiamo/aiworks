@@ -2,12 +2,12 @@
 #
 # Workspace teardown — stop a product's full local stack.
 #
-#   .superset/teardown.sh [product] [--purge-repos] [-v|--verbose]   (default: the ONE product file)
+#   .paradev/teardown.sh [product] [--purge-repos] [-v|--verbose]   (default: the ONE product file)
 #
 # Output is QUIET by default; pass -v/--verbose for the full step log.
 #
 # Downs every service in reverse run order (defined per product in
-# .superset/products/<product>.sh):
+# .paradev/products/<product>.sh):
 #   1. frontends   (down_frontends)
 #   2. backends    (down_backends)
 #   3. databases   (down_databases)
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-source .superset/lib.sh
+source .paradev/lib.sh
 
 export VERBOSE="${VERBOSE:-0}"   # quiet by default; -v/--verbose shows the full step log
 PRODUCT=""
@@ -39,8 +39,8 @@ done
 PRODUCT="${PRODUCT:-$(default_product)}" || exit 2
 
 log "Stopping shared MCP services…"
-if [[ "$VERBOSE" == 1 ]]; then ./.superset/mcp-services.sh down || true; ./.superset/mcp-services.sh reap || true
-else ./.superset/mcp-services.sh down >/dev/null 2>&1 || true; ./.superset/mcp-services.sh reap >/dev/null 2>&1 || true; fi
+if [[ "$VERBOSE" == 1 ]]; then ./.paradev/mcp-services.sh down || true; ./.paradev/mcp-services.sh reap || true
+else ./.paradev/mcp-services.sh down >/dev/null 2>&1 || true; ./.paradev/mcp-services.sh reap >/dev/null 2>&1 || true; fi
 
 runtime_dirs "$PRODUCT"
 load_product "$PRODUCT"
@@ -70,7 +70,7 @@ else
   done
 fi
 
-rm -rf ".superset/run/$PRODUCT"
+rm -rf ".paradev/run/$PRODUCT"
 
 # Optional: remove the cloned product repos so Superset can delete the
 # worktree cleanly (they are untracked, gitignored clones).

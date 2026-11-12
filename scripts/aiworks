@@ -13,12 +13,12 @@
 #   aiworks workflow               [args…]     # run canonical Workflow      (→ aiworks-workflow.sh)
 #   aiworks update                 [options]   # upgrade the prerequisites   (→ aiworks-update.sh)
 #   aiworks gc                     [options]   # reclaim worktree disk       (→ aiworks-gc.sh)
-#   aiworks setup                  [args…]     # workspace setup             (→ .superset/setup.sh)
-#   aiworks run                    [args…]     # workspace run               (→ .superset/run.sh)
-#   aiworks teardown               [args…]     # workspace teardown          (→ .superset/teardown.sh)
+#   aiworks setup                  [args…]     # workspace setup             (→ .paradev/setup.sh)
+#   aiworks run                    [args…]     # workspace run               (→ .paradev/run.sh)
+#   aiworks teardown               [args…]     # workspace teardown          (→ .paradev/teardown.sh)
 #   aiworks help | -h | --help
 #
-# setup / run / teardown are thin pass-throughs: they exec the matching .superset/<cmd>.sh
+# setup / run / teardown are thin pass-throughs: they exec the matching .paradev/<cmd>.sh
 # at the workspace root verbatim, forwarding any extra args. No extra logic.
 #
 # Each subcommand has its own --help:  aiworks add -h  ·  aiworks sync -h  ·  aiworks remove -h
@@ -91,7 +91,7 @@ Commands:
              mani.yaml), clone it, build the codegraph index, install the agent skill packs,
              seed hooks/permissions, seed the default coding-standards rules
              (.claude/rules/coding_standards/, backend/frontend flavor by the repo's stack),
-             scaffold scripts/dev.sh, run the skill generator, and ensure the .superset
+             scaffold scripts/dev.sh, run the skill generator, and ensure the .paradev
              lifecycle hooks (setup/run/teardown) exist + cover the repo.
   sync       Onboard every repo DECLARED in workspace.config.yaml products[].repos[]
              (optionally narrowed to one product, or one repo via a repo-name positional
@@ -101,7 +101,7 @@ Commands:
              repos just SKIP. Use -n to preview. Also seeds the adapter .env files
              (scripts/{tracker,vcs}/.env) when missing — from .env.example, pre-filled with
              the providers/keys from workspace.config.yaml (an existing .env is left as-is) —
-             and ensures the .superset lifecycle hooks (setup/run/teardown) cover every repo.
+             and ensures the .paradev lifecycle hooks (setup/run/teardown) cover every repo.
   remove     Offboard a repo (or every repo, with --all): deregister it from
              workspace.config.yaml products[].repos[], mani.d/<product>.yaml, mani.yaml and
              the .gitignore, unlink the workspace adapters (optionally --purge the clone).
@@ -157,9 +157,9 @@ Commands:
   setup      Run the workspace setup hook: first-run Harness picker + selected CLI install/login,
              then mani sync, adapter seeding/linking, Harness projection, dependencies and MCP.
              Pass-through — forwards options such as --harnesses and --reconfigure-harnesses.
-  run        Run the workspace run hook: exec .superset/run.sh verbatim. Pass-through —
-             forwards any extra args. (Errors clearly if .superset/run.sh does not exist.)
-  teardown   Run the workspace teardown hook: exec .superset/teardown.sh verbatim (remove the
+  run        Run the workspace run hook: exec .paradev/run.sh verbatim. Pass-through —
+             forwards any extra args. (Errors clearly if .paradev/run.sh does not exist.)
+  teardown   Run the workspace teardown hook: exec .paradev/teardown.sh verbatim (remove the
              cloned product repos). Pass-through — forwards any extra args.
   voice      Front door to the voice adapter (scripts/voice/, `th`-only, off by default).
              `setup` installs its prerequisites — deliberately NOT part of `aiworks setup`, since
@@ -221,22 +221,22 @@ Examples:
   aiworks gc --enable-sccache           # one-time: parallel-safe rebuild cache for Rust
   aiworks gc --install-schedule         # one-time: weekly --orphans --artifacts (launchd)
   aiworks gc --schedule-status          # installed? loaded? when did it last run?
-  # workspace lifecycle — pass straight through to the .superset hooks:
-  aiworks setup                         # exec .superset/setup.sh
-  aiworks run                           # exec .superset/run.sh (scripts/dev.sh run per repo)
+  # workspace lifecycle — pass straight through to the .paradev hooks:
+  aiworks setup                         # exec .paradev/setup.sh
+  aiworks run                           # exec .paradev/run.sh (scripts/dev.sh run per repo)
   aiworks run your-app                  # …run only the named repo(s)
-  aiworks teardown                      # exec .superset/teardown.sh
+  aiworks teardown                      # exec .paradev/teardown.sh
 EOF
 }
 
-# Pass-through to a .superset/<name>.sh hook at the workspace root, verbatim. The
-# scripts/ dir always lives at <root>/scripts, so .superset is a sibling of $DIR.
-superset_hook() {
+# Pass-through to a .paradev/<name>.sh hook at the workspace root, verbatim. The
+# scripts/ dir always lives at <root>/scripts, so .paradev is a sibling of $DIR.
+paradev_hook() {
   local name="$1"; shift
-  local script="$DIR/../.superset/$name.sh"
+  local script="$DIR/../.paradev/$name.sh"
   if [[ ! -f "$script" ]]; then
     printf 'aiworks %s: no hook found at %s\n' "$name" "$script" >&2
-    printf '  create a .superset/%s.sh (see .superset/setup.sh for the pattern).\n' "$name" >&2
+    printf '  create a .paradev/%s.sh (see .paradev/setup.sh for the pattern).\n' "$name" >&2
     exit 1
   fi
   # $AIWORKS_BASH, not the shebang: the hooks are bash and must run the interpreter this
@@ -263,9 +263,9 @@ case "$cmd" in
   update)         exec "$AIWORKS_BASH" "$DIR/aiworks-update.sh" "$@" ;;
   voice)          exec "$AIWORKS_BASH" "$DIR/aiworks-voice.sh" "$@" ;;
   gc)             exec "$AIWORKS_BASH" "$DIR/aiworks-gc.sh" "$@" ;;
-  setup)          superset_hook setup "$@" ;;
-  run)            superset_hook run "$@" ;;
-  teardown)       superset_hook teardown "$@" ;;
+  setup)          paradev_hook setup "$@" ;;
+  run)            paradev_hook run "$@" ;;
+  teardown)       paradev_hook teardown "$@" ;;
   help|-h|--help|"") usage ;;
   *) printf 'aiworks: unknown command %q (try `aiworks help`)\n' "$cmd" >&2; exit 1 ;;
 esac

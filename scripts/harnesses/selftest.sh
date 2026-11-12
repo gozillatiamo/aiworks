@@ -131,16 +131,16 @@ fi
 # Cursor statusline setup follows the active subset, not every shared projection.
 python3 "$HELPER" set --config "$FIXTURE/workspace.config.yaml" --registry "$REGISTRY" --harnesses cursor,codex >/dev/null
 printf 'harnesses:\n  - codex\n' > "$FIXTURE/workspace.config.local.yaml"
-AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.superset/lib.sh'; ensure_harness_statuslines" >/dev/null
+AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.paradev/lib.sh'; ensure_harness_statuslines" >/dev/null
 test ! -e "$FIXTURE/cursor-cli.json"
 printf 'harnesses:\n  - cursor\n' > "$FIXTURE/workspace.config.local.yaml"
-AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.superset/lib.sh'; ensure_harness_statuslines" >/dev/null
+AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.paradev/lib.sh'; ensure_harness_statuslines" >/dev/null
 jq -e '.statusLine.command | contains("caveman-statusline/statusline.sh")' "$FIXTURE/cursor-cli.json" >/dev/null
 mcp_selected="$(PYTHONPATH="$FIXTURE/scripts/harnesses" python3 -c 'from pathlib import Path; from triage_mcp import selected; print(" ".join(sorted(selected(Path(__import__("sys").argv[1])))))' "$FIXTURE")"
 test "$mcp_selected" = "cursor"
 jq '.statusLine.command = "my-status"' "$FIXTURE/cursor-cli.json" > "$FIXTURE/cursor-user.json"
 mv "$FIXTURE/cursor-user.json" "$FIXTURE/cursor-cli.json"
-AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.superset/lib.sh'; ensure_harness_statuslines" >/dev/null
+AIWORKS_CURSOR_CONFIG="$FIXTURE/cursor-cli.json" bash -c "cd '$FIXTURE'; . '$ROOT/.paradev/lib.sh'; ensure_harness_statuslines" >/dev/null
 test "$(jq -r '.statusLine.command' "$FIXTURE/cursor-cli.json")" = my-status
 
 # ── Triage MCP registration is PROJECT scope for Cursor and Codex (docs/adr/0038) ────────────

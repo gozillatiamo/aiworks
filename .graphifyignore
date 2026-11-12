@@ -63,7 +63,7 @@
 .cursor/
 
 # ── runtime state ──────────────────────────────────────────────────────────────
-.superset/
+.paradev/
 .aiworks/
 graphify-out/
 .codegraph/

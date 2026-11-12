@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Shared helpers for the .superset lifecycle scripts (setup / run / teardown).
+# Shared helpers for the .paradev lifecycle scripts (setup / run / teardown).
 # Sourced, never executed. Works on macOS bash 3.2 (no associative arrays).
 #
 
@@ -98,7 +98,7 @@ run_glance() {  # <title> <cmd> [args…]
 
 # ── host tooling prerequisites ─────────────────────────────────────────────────
 # Ensure the `ngrok` CLI is installed. A third-party phase (run.sh Phase 4,
-# a product hook — see .superset/products/example.sh) may tunnel a local port through
+# a product hook — see .paradev/products/example.sh) may tunnel a local port through
 # ngrok so an external callback reaches this machine. Best-effort + idempotent: present → no-op; otherwise
 # install per OS. NEVER fatal to setup — a missing ngrok only breaks that one optional
 # phase (which already warns and carries on). macOS bash 3.2 safe.
@@ -863,7 +863,7 @@ install_dap_script() {
   return 0
 }
 
-# Setup progress lock (per-worktree; git-ignored under .superset/run/). Written the moment real
+# Setup progress lock (per-worktree; git-ignored under .paradev/run/). Written the moment real
 # work begins and removed on exit via trap. A fresh Superset worktree starts an agent session
 # BEFORE the long clone+onboard finishes, so the SessionStart readiness check
 # (.claude/hooks/repo-health-check.sh) reads this lock to steer the agent to WAIT rather than
@@ -948,7 +948,7 @@ ensure_hosts_entries() {
   return 0
 }
 
-# Run each product's optional `setup_product` hook (.superset/products/<product>.sh, except the
+# Run each product's optional `setup_product` hook (.paradev/products/<product>.sh, except the
 # example.sh template) — the home for org-specific setup (local host aliases, …) so a downstream
 # repo never edits setup.sh. Each product runs in a SUBSHELL so two product files cannot clobber
 # each other's arrays/functions, and a failing hook warns and continues: setup runs under
@@ -956,7 +956,7 @@ ensure_hosts_entries() {
 # access from a hook (docs/adr/0009). Hooks must be idempotent (setup re-runs).
 run_product_setup_hooks() {
   local f name
-  for f in .superset/products/*.sh; do
+  for f in .paradev/products/*.sh; do
     [[ -f "$f" ]] || continue
     name="$(basename "$f" .sh)"
     [[ "$name" == example ]] && continue
@@ -969,8 +969,8 @@ run_product_setup_hooks() {
 # Runtime state for background (non-docker) apps, per product.
 # Set by run.sh/teardown.sh before sourcing a product file.
 runtime_dirs() {  # <product>
-  RUN_DIR=".superset/run/$1"
-  LOG_DIR=".superset/logs/$1"
+  RUN_DIR=".paradev/run/$1"
+  LOG_DIR=".paradev/logs/$1"
   mkdir -p "$RUN_DIR" "$LOG_DIR"
 }
 
@@ -1025,7 +1025,7 @@ node_install() {  # <repo>
 }
 
 # Start a long-running package.json script in the background, with a pidfile
-# and a logfile under .superset/{run,logs}/<product>/.
+# and a logfile under .paradev/{run,logs}/<product>/.
 start_node_app() {  # <repo> <script> [port]
   local repo="$1" script="$2" port="${3:-}"
   local pidfile="$PWD/$RUN_DIR/$repo.pid" logfile="$PWD/$LOG_DIR/$repo.log" pm pid
@@ -1147,12 +1147,12 @@ run_migration() {  # <repo> <compose-file> <service>
   log "$repo: migrations from $file applied."
 }
 
-# Resolve the default product: exactly ONE real product file in .superset/products/
+# Resolve the default product: exactly ONE real product file in .paradev/products/
 # (example.sh is the shipped template, never a runnable default). Zero or several →
 # fail with guidance, so orchestrators never guess an org's stack.
 default_product() {
   local files=() f
-  for f in .superset/products/*.sh; do
+  for f in .paradev/products/*.sh; do
     [[ -e "$f" && "$(basename "$f")" != "example.sh" ]] && files+=("$f")
   done
   if [[ ${#files[@]} -eq 1 ]]; then
@@ -1160,7 +1160,7 @@ default_product() {
     return 0
   fi
   if [[ ${#files[@]} -eq 0 ]]; then
-    err "no product defined — copy .superset/products/example.sh to .superset/products/<product-id>.sh first."
+    err "no product defined — copy .paradev/products/example.sh to .paradev/products/<product-id>.sh first."
   else
     err "several products defined — name one:"
     for f in "${files[@]}"; do basename "$f" .sh | sed 's/^/  - /' >&2; done
@@ -1230,10 +1230,10 @@ provision_tf_local() {  # <root_ws> <symlink|copy>
 
 # Source the product definition file; lists available products on a miss.
 load_product() {  # <product>
-  local product="$1" file=".superset/products/$1.sh"
+  local product="$1" file=".paradev/products/$1.sh"
   if [[ ! -f "$file" ]]; then
     err "unknown product '$product'. Available products:"
-    ls .superset/products/ 2>/dev/null | sed -e 's/\.sh$//' -e 's/^/  - /' >&2
+    ls .paradev/products/ 2>/dev/null | sed -e 's/\.sh$//' -e 's/^/  - /' >&2
     exit 1
   fi
   # shellcheck source=/dev/null

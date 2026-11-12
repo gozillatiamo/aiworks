@@ -2,7 +2,7 @@
 #
 # Superset lifecycle selftest — the readiness hook, the setup lock, and the setup helpers.
 #
-#   ./scripts/aiworks-superset-selftest.sh
+#   ./scripts/aiworks-paradev-selftest.sh
 #
 # WHY THIS SUITE EXISTS. A fresh Superset worktree starts its agent session BEFORE setup has
 # cloned the declared repos, and the readiness hook (.claude/hooks/repo-health-check.sh) is the
@@ -20,9 +20,9 @@ set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 HOOK="$ROOT/.claude/hooks/repo-health-check.sh"
-LIB="$ROOT/.superset/lib.sh"
+LIB="$ROOT/.paradev/lib.sh"
 pass=0 fail=0
-T="$(mktemp -d "${TMPDIR:-/tmp}/aiworks-superset-selftest.XXXXXX")"
+T="$(mktemp -d "${TMPDIR:-/tmp}/aiworks-paradev-selftest.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
 
 ok()  { pass=$((pass+1)); printf '  ok   %s\n' "$1"; }
@@ -89,13 +89,13 @@ ck_exit "H4 no mani.d, config declares 2: exit 1" 1 "$rc"; ck "H4 counts from co
 mkfx h5 0; rm "$fx/workspace.config.yaml"; hook "$fx" --status
 ck_exit "H5 nothing declared: exit 0" 0 "$rc"; ck "H5 says so" "nothing to check" "$out"
 
-mkfx h6 1 app-a; mkdir -p "$fx/.superset/run"
-printf 'pid=%s\nstarted=now\n' "$$" > "$fx/.superset/run/setup.lock"; hook "$fx" --status
+mkfx h6 1 app-a; mkdir -p "$fx/.paradev/run"
+printf 'pid=%s\nstarted=now\n' "$$" > "$fx/.paradev/run/setup.lock"; hook "$fx" --status
 ck "H6 live lock pid: running" "setup is running" "$out"
 
-mkfx h7 1 app-a; mkdir -p "$fx/.superset/run"
+mkfx h7 1 app-a; mkdir -p "$fx/.paradev/run"
 sleep 0 & dead=$!; wait "$dead"
-printf 'pid=%s\nstarted=then\n' "$dead" > "$fx/.superset/run/setup.lock"; hook "$fx" --status
+printf 'pid=%s\nstarted=then\n' "$dead" > "$fx/.paradev/run/setup.lock"; hook "$fx" --status
 ck "H7 dead lock pid: interrupted" "setup looks interrupted" "$out"
 
 mkfx h8 1 app-a app-b; hook_event "$fx" SessionStart s1
@@ -119,8 +119,8 @@ ck_exit "H11 --wait clears when the clone lands" 0 "$rc"; ck "H11 OK line" "OK:"
 mkfx h12 1 app-a; hook "$fx" --wait 1
 ck_exit "H12 --wait times out" 1 "$rc"; ck "H12 says TIMEOUT" "TIMEOUT" "$out"
 
-# ── setup lock + helpers (.superset/lib.sh) ───────────────────────────────────────
-echo ".superset/lib.sh"
+# ── setup lock + helpers (.paradev/lib.sh) ───────────────────────────────────────
+echo ".paradev/lib.sh"
 
 hf="$T/hosts"; printf '127.0.0.1 localhost\n' > "$hf"
 hosts() { ( cd "$T" && HOSTS_FILE="$hf" bash -c 'source "$1"; shift; ensure_hosts_entries "$@"' _ "$LIB" "$@" ); }
@@ -146,28 +146,28 @@ sleep 0.5; kill -TERM "$lp" 2>/dev/null; wait "$lp" 2>/dev/null
 bash -c 'source "$1"; setup_lock_acquire "$2"; sleep 30 & wait' _ "$LIB" "$lock" & lp=$!
 sleep 0.5; kill -KILL "$lp" 2>/dev/null; wait "$lp" 2>/dev/null
 [[ -f "$lock" ]] && ok "S4 lock survives KILL" || bad "S4 lock survives KILL" "missing"
-mkfx s4 1 app-a; mkdir -p "$fx/.superset/run"; cp "$lock" "$fx/.superset/run/setup.lock"; hook "$fx" --status
+mkfx s4 1 app-a; mkdir -p "$fx/.paradev/run"; cp "$lock" "$fx/.paradev/run/setup.lock"; hook "$fx" --status
 ck "S4 hook classifies the KILL leftover as interrupted" "setup looks interrupted" "$out"
 
-fx="$T/s5"; mkdir -p "$fx/scripts"; cp -R "$ROOT/.superset" "$fx/.superset"; : > "$fx/mani.yaml"
-cp "$ROOT/scripts/aiworks-superset.sh" "$fx/scripts/"
-sum() { ( cd "$fx/.superset" && find . -type f -print0 | sort -z | xargs -0 cat | cksum ); }
-s_before="$(sum)"; ( cd "$fx" && bash scripts/aiworks-superset.sh -n -q >/dev/null 2>&1 ); rc=$?
+fx="$T/s5"; mkdir -p "$fx/scripts"; cp -R "$ROOT/.paradev" "$fx/.paradev"; : > "$fx/mani.yaml"
+cp "$ROOT/scripts/aiworks-paradev.sh" "$fx/scripts/"
+sum() { ( cd "$fx/.paradev" && find . -type f -print0 | sort -z | xargs -0 cat | cksum ); }
+s_before="$(sum)"; ( cd "$fx" && bash scripts/aiworks-paradev.sh -n -q >/dev/null 2>&1 ); rc=$?
 ck_exit "S5 superset.sh -n exits 0" 0 "$rc"
 [[ "$(sum)" == "$s_before" ]] && ok "S5 -n writes nothing" || bad "S5 -n writes nothing" "checksum changed"
-( cd "$fx" && bash scripts/aiworks-superset.sh -q >/dev/null 2>&1 ); s_after="$(sum)"
-( cd "$fx" && bash scripts/aiworks-superset.sh -q >/dev/null 2>&1 )
+( cd "$fx" && bash scripts/aiworks-paradev.sh -q >/dev/null 2>&1 ); s_after="$(sum)"
+( cd "$fx" && bash scripts/aiworks-paradev.sh -q >/dev/null 2>&1 )
 [[ "$(sum)" == "$s_after" ]] && ok "S5 second real run is a no-op" || bad "S5 second real run is a no-op" "checksum changed"
 
-fx="$T/s6"; mkdir -p "$fx/.superset/products"
-printf 'setup_product() { touch "%s/ran"; }\n' "$fx" > "$fx/.superset/products/acme.sh"
-printf 'setup_product() { touch "%s/example-ran"; }\n' "$fx" > "$fx/.superset/products/example.sh"
-printf 'DB_REPOS=(x)\n' > "$fx/.superset/products/nohook.sh"
+fx="$T/s6"; mkdir -p "$fx/.paradev/products"
+printf 'setup_product() { touch "%s/ran"; }\n' "$fx" > "$fx/.paradev/products/acme.sh"
+printf 'setup_product() { touch "%s/example-ran"; }\n' "$fx" > "$fx/.paradev/products/example.sh"
+printf 'DB_REPOS=(x)\n' > "$fx/.paradev/products/nohook.sh"
 ( cd "$fx" && bash -c 'source "$1"; run_product_setup_hooks' _ "$LIB" >/dev/null 2>&1 ); rc=$?
 ck_exit "S6 dispatch exits 0" 0 "$rc"
 [[ -f "$fx/ran" ]] && ok "S6 acme setup_product ran" || bad "S6 acme setup_product ran" "no marker"
 [[ ! -f "$fx/example-ran" ]] && ok "S6 example.sh skipped" || bad "S6 example.sh skipped" "example-ran exists"
-printf 'setup_product() { return 7; }\n' > "$fx/.superset/products/broken.sh"
+printf 'setup_product() { return 7; }\n' > "$fx/.paradev/products/broken.sh"
 out="$(cd "$fx" && bash -c 'set -e; source "$1"; run_product_setup_hooks; echo survived' _ "$LIB" 2>&1)"
 ck "S6 a failing hook never aborts setup" "survived" "$out"
 ck "S6 a failing hook warns" "broken: setup_product failed" "$out"

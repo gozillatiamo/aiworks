@@ -44,10 +44,10 @@
 # `scripts/k8s/bootstrap-sa.sh` — sync only names it, because it cannot grant IAM and the probe
 # alone cost several gcloud/kubectl round-trips per run (the 0009 half that stands).
 #
-# It also ENSURES the workspace lifecycle hooks — .superset/{setup,run,teardown}.sh — exist and
-# that .superset/config.json registers all three (via scripts/aiworks-superset.sh). The hooks loop
+# It also ENSURES the workspace lifecycle hooks — .paradev/{setup,run,teardown}.sh — exist and
+# that .paradev/config.json registers all three (via scripts/aiworks-paradev.sh). The hooks loop
 # over every cloned repo, so the synced set is covered automatically; this creates the run hook
-# (.superset/run.sh → each repo's `scripts/dev.sh run`) on workspaces that predate it.
+# (.paradev/run.sh → each repo's `scripts/dev.sh run`) on workspaces that predate it.
 #
 # Usage:
 #   aiworks sync [<product>|<repo>] [options]
@@ -1031,15 +1031,15 @@ if [[ "$DRY" -ne 1 ]]; then
   fi
 fi
 
-# ── ensure the workspace lifecycle hooks (.superset/{setup,run,teardown}) cover the repo set ──
+# ── ensure the workspace lifecycle hooks (.paradev/{setup,run,teardown}) cover the repo set ──
 # The hooks loop over every cloned repo, so the synced set is covered automatically — this just
-# makes sure the trio EXISTS and config.json registers all three (creating .superset/run.sh on
+# makes sure the trio EXISTS and config.json registers all three (creating .paradev/run.sh on
 # workspaces that predate the run hook). Idempotent; honoured in dry-run too.
-SUPGEN="$DIR/aiworks-superset.sh"
-if [[ -x "$SUPGEN" ]]; then   # prints its own "==> Ensure .superset lifecycle hooks…" header
-  if   [[ "$DRY" -eq 1 ]];     then "$SUPGEN" -n || warn "could not preview .superset hooks"
-  elif [[ "$VERBOSE" -eq 1 ]]; then "$SUPGEN"    || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"
-  else "$SUPGEN" >/dev/null || warn "could not ensure .superset hooks — run 'aiworks-superset.sh' by hand"; fi   # quiet by default
+PDGEN="$DIR/aiworks-paradev.sh"
+if [[ -x "$PDGEN" ]]; then   # prints its own "==> Ensure .paradev lifecycle hooks…" header
+  if   [[ "$DRY" -eq 1 ]];     then "$PDGEN" -n || warn "could not preview .paradev hooks"
+  elif [[ "$VERBOSE" -eq 1 ]]; then "$PDGEN"    || warn "could not ensure .paradev hooks — run 'aiworks-paradev.sh' by hand"
+  else "$PDGEN" >/dev/null || warn "could not ensure .paradev hooks — run 'aiworks-paradev.sh' by hand"; fi   # quiet by default
 fi
 
 # ── reconcile every active Agent harness ──────────────────────────────────────
