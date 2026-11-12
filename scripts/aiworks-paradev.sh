@@ -7,13 +7,14 @@
 # The three hooks are workspace-level and DYNAMIC: each loops over every cloned product repo
 # (a top-level dir with a .git entry) rather than carrying a per-repo list — so a repo added by
 # `aiworks add`/`sync` is picked up automatically, with no per-repo edit. This guard only makes
-# sure the trio EXISTS and that .paradev/config.json declares each one:
+# sure the trio EXISTS and that .paradev/config.toml references each one:
 #   * setup.sh / teardown.sh — committed template files; WARN (don't regenerate) if missing.
 #   * run.sh                 — the run hook (aiworks run); this script is its source of truth, so
 #                              it is CREATED from the embedded template when missing — workspaces
 #                              that predate the run hook self-heal on the next add/sync.
-#   * config.json            — (re)written so the {setup,run,teardown} keys point at the hooks
-#                              that exist, in canonical order, preserving any other keys.
+#   * config.toml            — written when missing (setup / terminals.dev / archive tables); an
+#                              existing file is never rewritten, only warned about. A legacy .superset/
+#                              directory is migrated into .paradev/ without overwriting.
 #
 # Idempotent. add/sync call it automatically; run it yourself after hand-editing .paradev/.
 #
@@ -115,42 +116,57 @@ RUNEOF
   chmod +x "$1" 2>/dev/null || true
 }
 
-# (Re)write config.json so the {setup,run,teardown} keys point at the hooks that exist, in
-# canonical order, preserving any other keys. Prefers a node merge (keeps unknown keys); falls
-# back to a plain canonical write (lifecycle keys only) when node is unavailable.
+# config.toml table for each lifecycle hook, in canonical order. Paradev reads .paradev/config.toml
+# first; the schema is strict (unknown keys are errors), so only these three tables are written.
+toml_table() {
+  case "$1" in
+    setup)    printf '[setup]\nrun = ["./.paradev/setup.sh"]\n' ;;
+    run)      printf '[terminals.dev]\nrun = "./.paradev/run.sh"\ndefault = true\n' ;;
+    teardown) printf '[archive]\nrun = ["./.paradev/teardown.sh"]\n' ;;
+  esac
+}
+
+# Write a canonical config.toml covering the hooks whose script exists. No TOML parser: an
+# existing file is never rewritten, only checked for a reference to each present hook.
 ensure_config() {
-  local cfg="$1" hooks="$2" out rc h f2
-  if command -v node >/dev/null 2>&1; then
-    out="$(CFG="$cfg" HOOKS="$hooks" node <<'NODE'
-const fs = require('fs');
-const f = process.env.CFG, hooks = JSON.parse(process.env.HOOKS);
-let j = {};
-try { const r = fs.readFileSync(f, 'utf8'); if (r.trim() !== '') j = JSON.parse(r); }
-catch (e) { if (e.code !== 'ENOENT') { console.log('PARSE_ERROR'); process.exit(0); } }
-const order = ['setup', 'run', 'teardown'];
-const out = {};
-for (const k of order) if (k in hooks) out[k] = hooks[k];                 // present hooks, canonical order
-for (const k of Object.keys(j)) if (!(k in out) && !order.includes(k)) out[k] = j[k]; // keep unknown keys
-const changed = JSON.stringify(j) !== JSON.stringify(out);
-if (changed) fs.writeFileSync(f, JSON.stringify(out, null, 2) + '\n');
-console.log(changed ? 'CHANGED' : 'OK');
-NODE
-)"; rc=$?
-    case "$out" in
-      CHANGED)     ok "config.json declares setup/run/teardown" ;;
-      OK)          ok "config.json already declares the present hooks" ;;
-      PARSE_ERROR) warn "config.json is not valid JSON — left untouched; add the \"run\" hook by hand" ;;
-      *)           warn "could not update config.json (node rc=$rc)" ;;
-    esac
+  local cfg="$1" h sep="" body=""
+  if [[ ! -f "$cfg" ]]; then
+    for h in setup run teardown; do
+      [[ -f "$PDIR/$h.sh" ]] || continue
+      body="$body$sep$(toml_table "$h")"; sep=$'\n'
+    done
+    if [[ "$DRY" -eq 1 ]]; then dim "would write .paradev/config.toml (setup/run/teardown)"
+    else printf '%s\n' "$body" > "$cfg" && ok "config.toml written (setup/run/teardown)"; fi
   else
-    { printf '{\n'; f2=1
-      for h in setup run teardown; do
-        [[ -f "$PDIR/$h.sh" ]] || continue
-        [[ "$f2" -eq 1 ]] || printf ',\n'
-        printf '  "%s": ["./.paradev/%s.sh"]' "$h" "$h"; f2=0
-      done
-      printf '\n}\n'; } > "$cfg" && ok "config.json written (setup/run/teardown; node not found)"
+    for h in setup run teardown; do
+      [[ -f "$PDIR/$h.sh" ]] || continue
+      grep -qF "./.paradev/$h.sh" "$cfg" || warn "config.toml does not reference ./.paradev/$h.sh — add it by hand"
+    done
+    ok "config.toml present — left untouched"
   fi
+  [[ -f "$PDIR/config.json" && -f "$cfg" ]] \
+    && warn ".paradev/config.json is ignored by Paradev while config.toml exists — delete it"
+  return 0
+}
+
+# A workspace synced before the Superset-to-Paradev rename keeps untracked state (product files,
+# .env, pidfiles) under .superset/. Move it to the same path under .paradev/, never overwriting.
+migrate_legacy() {
+  local old="$ROOT/.superset" f rel dst n=0
+  [[ -d "$old" && ! -L "$old" ]] || return 0
+  while IFS= read -r -d '' f; do
+    rel="${f#"$old"/}"; dst="$PDIR/$rel"
+    if [[ -e "$dst" || -L "$dst" ]]; then
+      warn ".superset/$rel not moved — .paradev/$rel already exists (kept both; resolve by hand)"
+    elif [[ "$DRY" -eq 1 ]]; then dim "would move .superset/$rel to .paradev/$rel"
+    else mkdir -p "$(dirname "$dst")" && mv "$f" "$dst" && n=$((n + 1)); fi
+  done < <(find "$old" \( -type f -o -type l \) -print0)
+  if [[ "$DRY" -ne 1 ]]; then
+    find "$old" -depth -type d -empty -delete 2>/dev/null
+    [[ "$n" -eq 0 ]] || ok "migrated $n file(s) from .superset/ to .paradev/"
+    [[ ! -d "$old" ]] || warn ".superset/ still holds files — both directories exist, resolve by hand"
+  fi
+  return 0
 }
 
 step "Ensure .paradev lifecycle hooks (setup/run/teardown) cover every repo"
@@ -158,6 +174,8 @@ step "Ensure .paradev lifecycle hooks (setup/run/teardown) cover every repo"
 if [[ ! -d "$PDIR" ]]; then
   if [[ "$DRY" -eq 1 ]]; then dim "would create .paradev/"; else mkdir -p "$PDIR"; fi
 fi
+
+migrate_legacy
 
 # ── run.sh — the hook this script owns; create it from the template when missing ──
 RUN="$PDIR/run.sh"
@@ -175,18 +193,5 @@ for h in setup teardown; do
   else warn "$h.sh MISSING from .paradev/ — restore it from the workspace template (e.g. git checkout .paradev/$h.sh)"; fi
 done
 
-# ── config.json — declare the {setup,run,teardown} keys for the hooks that exist ──
-CFG="$PDIR/config.json"
-hooks_json="{"; first=1
-for h in setup run teardown; do
-  [[ -f "$PDIR/$h.sh" ]] || continue
-  [[ "$first" -eq 1 ]] || hooks_json+=","
-  hooks_json+="\"$h\":[\"./.paradev/$h.sh\"]"; first=0
-done
-hooks_json+="}"
-
-if [[ "$DRY" -eq 1 ]]; then
-  dim "would ensure .paradev/config.json declares: $hooks_json"
-else
-  ensure_config "$CFG" "$hooks_json"
-fi
+# ── config.toml — declare the hooks that exist ──
+ensure_config "$PDIR/config.toml"

@@ -1,0 +1,9 @@
+[setup]
+run = ["./.paradev/setup.sh"]
+
+[terminals.dev]
+run = "./.paradev/run.sh"
+default = true
+
+[archive]
+run = ["./.paradev/teardown.sh"]

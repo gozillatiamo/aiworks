@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Superset lifecycle selftest — the readiness hook, the setup lock, and the setup helpers.
+# Paradev lifecycle selftest — the readiness hook, the setup lock, and the setup helpers.
 #
 #   ./scripts/aiworks-paradev-selftest.sh
 #
-# WHY THIS SUITE EXISTS. A fresh Superset worktree starts its agent session BEFORE setup has
+# WHY THIS SUITE EXISTS. A fresh Paradev worktree starts its agent session BEFORE setup has
 # cloned the declared repos, and the readiness hook (.claude/hooks/repo-health-check.sh) is the
 # only thing standing between the agent and "that repo does not exist". It has to see the expected
 # repo set before `aiworks sync` generates mani.d/, tell a running setup from a crashed one from
@@ -153,11 +153,41 @@ fx="$T/s5"; mkdir -p "$fx/scripts"; cp -R "$ROOT/.paradev" "$fx/.paradev"; : > "
 cp "$ROOT/scripts/aiworks-paradev.sh" "$fx/scripts/"
 sum() { ( cd "$fx/.paradev" && find . -type f -print0 | sort -z | xargs -0 cat | cksum ); }
 s_before="$(sum)"; ( cd "$fx" && bash scripts/aiworks-paradev.sh -n -q >/dev/null 2>&1 ); rc=$?
-ck_exit "S5 superset.sh -n exits 0" 0 "$rc"
+ck_exit "S5 aiworks-paradev.sh -n exits 0" 0 "$rc"
 [[ "$(sum)" == "$s_before" ]] && ok "S5 -n writes nothing" || bad "S5 -n writes nothing" "checksum changed"
 ( cd "$fx" && bash scripts/aiworks-paradev.sh -q >/dev/null 2>&1 ); s_after="$(sum)"
 ( cd "$fx" && bash scripts/aiworks-paradev.sh -q >/dev/null 2>&1 )
 [[ "$(sum)" == "$s_after" ]] && ok "S5 second real run is a no-op" || bad "S5 second real run is a no-op" "checksum changed"
+
+# S5a-d — the guard writes config.toml, never rewrites one, and migrates a pre-rename .superset/.
+guard_fx() {  # guard_fx <name> — a bare workspace with the three hooks and the guard script
+  fx="$T/$1"; mkdir -p "$fx/scripts" "$fx/.paradev"; : > "$fx/mani.yaml"
+  cp "$ROOT/scripts/aiworks-paradev.sh" "$fx/scripts/"
+  for h in setup run teardown; do : > "$fx/.paradev/$h.sh"; done
+}
+guard() { out="$(cd "$fx" && bash scripts/aiworks-paradev.sh 2>&1)"; rc=$?; }
+
+guard_fx g1; guard
+for p in setup run teardown; do ck "S5a config.toml references $p" "./.paradev/$p.sh" "$(cat "$fx/.paradev/config.toml")"; done
+ck "S5a config.toml has the archive table" "[archive]" "$(cat "$fx/.paradev/config.toml")"
+
+guard_fx g2; printf '[setup]\nrun = ["./.paradev/setup.sh"]\n' > "$fx/.paradev/config.toml"
+g2_before="$(cksum < "$fx/.paradev/config.toml")"; guard
+ck "S5b a toml lacking [archive] warns" "does not reference ./.paradev/teardown.sh" "$out"
+[[ "$(cksum < "$fx/.paradev/config.toml")" == "$g2_before" ]] && ok "S5b the present toml is byte-identical" || bad "S5b the present toml is byte-identical" "rewritten"
+
+guard_fx g3; mkdir -p "$fx/.superset/products" "$fx/.superset/run/p" "$fx/.paradev/products"
+printf 'old\n' > "$fx/.superset/products/acme.sh"; printf 'KEY=1\n' > "$fx/.superset/.env"; : > "$fx/.superset/run/p/x.pid"
+printf 'new\n' > "$fx/.paradev/products/acme.sh"; guard
+ck "S5c pre-existing .paradev file is not overwritten" "new" "$(cat "$fx/.paradev/products/acme.sh")"
+ck "S5c the conflict is warned about" "already exists" "$out"
+[[ -f "$fx/.paradev/.env" && -f "$fx/.paradev/run/p/x.pid" ]] && ok "S5c other files migrate" || bad "S5c other files migrate" "missing"
+[[ -f "$fx/.superset/products/acme.sh" ]] && ok "S5c the conflicting legacy copy stays" || bad "S5c the conflicting legacy copy stays" "gone"
+rm "$fx/.superset/products/acme.sh"; guard
+[[ ! -d "$fx/.superset" ]] && ok "S5c an emptied .superset/ is removed" || bad "S5c an emptied .superset/ is removed" "still there"
+
+guard_fx g4; printf '{}\n' > "$fx/.paradev/config.json"; guard
+ck "S5d config.json beside config.toml warns" "ignored by Paradev while config.toml exists" "$out"
 
 fx="$T/s6"; mkdir -p "$fx/.paradev/products"
 printf 'setup_product() { touch "%s/ran"; }\n' "$fx" > "$fx/.paradev/products/acme.sh"
@@ -236,5 +266,5 @@ cp "$wtp/app-a/.gitignore" "$w2/app-a/.gitignore"
   && ok "TF copy is a real directory" || bad "TF copy is a real directory"
 
 echo
-echo "superset selftest: pass=$pass fail=$fail"
+echo "paradev selftest: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]
