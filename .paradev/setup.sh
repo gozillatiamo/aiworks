@@ -16,13 +16,13 @@
 #    host tooling / aiworks sync / anything else, so it's already linked if a later step aborts
 #    AND so aiworks + every step after read it: workspace.config.local.yaml (runtime override
 #    of workspace.config.yaml) and .claude/settings.local.json (your local Claude Code
-#    settings). Neither is tracked, so a fresh worktree carries neither. SUPERSET_LOCAL
+#    settings). Neither is tracked, so a fresh worktree carries neither. PARADEV_LOCAL
 #    (default symlink) → =skip to manage them yourself. Best-effort — a missing source is
 #    simply skipped.
 # 2. Provisions the adapter credentials (scripts/tracker, scripts/notify, scripts/vcs — each
 #    reads a git-ignored .env) from the root workspace NEXT, before host tooling / sync, so
 #    every later step and any adapter call during sync runs on real credentials. Honors
-#    SUPERSET_ENV like step 5 (default symlink; =copy; =skip).
+#    PARADEV_ENV_FILES like step 5 (default symlink; =copy; =skip).
 # 3. Ensures the host CLI tooling is present — installs (if missing) jq, used by aiworks
 #    itself (.code-workspace generation, VS Code settings merge) and the tracker/notify
 #    adapters (Homebrew / apt, else the official static binary); ngrok, used by the run
@@ -42,7 +42,7 @@
 # 5. Copies the REAL local state from the root workspace into this worktree — a fresh
 #    worktree carries none of its own: every .env / .env.* (every repo + adapter +
 #    .paradev/.env) recursively, Terraform local init (.terraform, the lock file,
-#    terraform.tfvars — same SUPERSET_ENV switch), every repo's seeded db-data Postgres
+#    terraform.tfvars — same PARADEV_ENV_FILES switch), every repo's seeded db-data Postgres
 #    cluster, AND any Android release-signing secrets (key.properties + the keystore).
 #    Runs before the MCP services so they come up on real config + a seeded DB.
 # 6. Installs Node dependencies in every repo that has a package.json
@@ -59,6 +59,7 @@ set -euo pipefail
 # Always operate from the workspace root, where mani.yaml lives.
 cd "$(dirname "$0")/.."
 source .paradev/lib.sh
+map_legacy_switches
 
 # Quiet by default; -v/--verbose flips on the full step log. Exported so lib.sh's log() (reads
 # $VERBOSE at call-time) and the child `aiworks sync` both honour it.
@@ -86,7 +87,7 @@ fi
 setup_lock_acquire .paradev/run/setup.lock
 
 # ── Resolve the root workspace — the source of the git-ignored local state a fresh worktree
-# carries NONE of. Superset sets SUPERSET_ROOT_PATH; for a MANUAL `git worktree` (no Superset)
+# carries NONE of. Paradev sets SUPERSET_ROOT_PATH; for a MANUAL `git worktree` (no Paradev)
 # it's unset, so fall back to git's MAIN worktree — the root checkout holding the real
 # git-ignored state (always the first entry of `git worktree list`). When this IS the main
 # worktree it equals $PWD, so has_root stays 0 and the provisioning steps below correctly no-op.
@@ -95,7 +96,7 @@ root_ws="${SUPERSET_ROOT_PATH:-}"
 if [[ -z "$root_ws" ]]; then
   root_ws="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{sub(/^worktree /,""); print; exit}')"
   [[ -n "$root_ws" && "$(cd "$root_ws" 2>/dev/null && pwd)" != "$PWD" ]] \
-    && log "Not under Superset — provisioning git-ignored state from git's main worktree: $root_ws"
+    && log "Not under Paradev — provisioning git-ignored state from git's main worktree: $root_ws"
 fi
 has_root=0
 if [[ -n "$root_ws" && -d "$root_ws" && "$(cd "$root_ws" && pwd)" != "$PWD" ]]; then
@@ -126,12 +127,12 @@ fi
 # it: workspace.config.local.yaml (runtime override of workspace.config.yaml — see
 # docs/agents/language.md) and .claude/settings.local.json (your local Claude Code settings).
 # Neither is tracked, so a fresh worktree carries neither — link each at the root's so your prefs
-# follow you in. SUPERSET_LOCAL (default symlink) → =skip to manage them yourself. A missing
+# follow you in. PARADEV_LOCAL (default symlink) → =skip to manage them yourself. A missing
 # source file is simply skipped (best-effort, never aborts).
 if [[ "$has_root" == 1 ]]; then
-  local_mode="${SUPERSET_LOCAL:-symlink}"
+  local_mode="$(switch_mode PARADEV_LOCAL)"
   if [[ "$local_mode" == skip ]]; then
-    log "personal local config: SUPERSET_LOCAL=skip — leaving workspace.config.local.yaml / .claude/settings.local.json as-is."
+    log "personal local config: PARADEV_LOCAL=skip — leaving workspace.config.local.yaml / .claude/settings.local.json as-is."
   else
     for rel in workspace.config.local.yaml .claude/settings.local.json; do
       if [[ ! -f "$root_ws/$rel" ]]; then log "no $rel at the root workspace — skipping (nothing to link)."; continue; fi
@@ -148,13 +149,13 @@ fi
 # scripts/notify, scripts/vcs) each read a git-ignored .env holding real creds. A fresh worktree
 # carries none, so the adapters would run against a stub .env. Provision each from the root
 # workspace up front — BEFORE host tooling / aiworks sync — so every step after (and any adapter
-# call during sync) has real credentials. Honors SUPERSET_ENV like the general .env sweep in
+# call during sync) has real credentials. Honors PARADEV_ENV_FILES like the general .env sweep in
 # step 5 (default symlink; =copy snapshots per-worktree; =skip leaves them); step 5 prunes the
 # top-level scripts/ so each adapter .env is provisioned here in exactly one place.
 if [[ "$has_root" == 1 ]]; then
-  adapter_env_mode="${SUPERSET_ENV:-symlink}"
+  adapter_env_mode="$(switch_mode PARADEV_ENV_FILES)"
   if [[ "$adapter_env_mode" == skip ]]; then
-    log "adapter .env: SUPERSET_ENV=skip — leaving scripts/*/.env as-is."
+    log "adapter .env: PARADEV_ENV_FILES=skip — leaving scripts/*/.env as-is."
   else
     if [[ "$adapter_env_mode" == symlink ]]; then log "Symlinking adapter .env (scripts/*/.env) from the root workspace ($root_ws)…"
     else                                          log "Copying adapter .env (scripts/*/.env) from the root workspace ($root_ws)…"; fi
@@ -225,29 +226,29 @@ scripts/aiworks sync "${sync_args[@]}"
 #     travels with the clone), recursively, preserving each file's relative path — every
 #     repo's env AND .paradev/.env (read by the MCP service containers in step 7); the
 #     adapters' own scripts/*/.env were already provisioned in step 2 and are pruned here.
-#     SUPERSET_ENV (default symlink) → symlink each at the root's (edit once, every worktree
+#     PARADEV_ENV_FILES (default symlink) → symlink each at the root's (edit once, every worktree
 #     sees it), =copy for an independent per-worktree snapshot, or =skip to manage them yourself.
-#   • Terraform local init, same SUPERSET_ENV switch: a `.terraform` directory (backend
+#   • Terraform local init, same PARADEV_ENV_FILES switch: a `.terraform` directory (backend
 #     pointer + provider cache), plus a gitignored `.terraform.lock.hcl` and `terraform.tfvars`
 #     beside it. Remote state stays in the backend; this only shares the local init so
 #     `terraform plan` works in a fresh worktree. A `.terraform/` gitignore does not match a
 #     symlink, so the repo's `.git/info/exclude` also lists `.terraform`.
 #   • <repo>/db-data — a seeded local Postgres cluster a DB repo's containers bind-mount;
 #     without it the local DB comes up empty. Every <repo>/db-data dir found in the root
-#     workspace is provisioned. SUPERSET_DB_DATA (default symlink — instant, no big copy,
+#     workspace is provisioned. PARADEV_DB_DATA (default symlink — instant, no big copy,
 #     no sudo) → symlink the root's, =copy for an isolated per-worktree copy, or =skip to
 #     manage it yourself.
 #   • Android release-signing secrets — <repo>/android/key.properties + the keystore it
 #     references (git-ignored, so a fresh worktree has none; then android/app/build.gradle.kts
 #     silently DEBUG-signs the release build). Provisioned from the root like the above.
-#     SUPERSET_SIGNING (default symlink) → symlink the root's, =copy for a per-worktree
+#     PARADEV_SIGNING (default symlink) → symlink the root's, =copy for a per-worktree
 #     snapshot, or =skip. No <repo>/android/key.properties at the root → nothing to do.
 #   • .paradev/products/*.sh — the REAL per-product definition(s) (git-ignored: .gitignore
 #     tracks only products/example.sh), which is what default_product() in lib.sh resolves
 #     for setup/run/teardown when no product is named explicitly. Without this, a fresh
 #     worktree has ONLY example.sh and every lifecycle hook called without an explicit
-#     product (notably Superset's own teardown-before-worktree-removal call) fails with
-#     "no product defined". SUPERSET_PRODUCTS (default symlink) → symlink the root's,
+#     product (notably Paradev's own teardown-before-worktree-removal call) fails with
+#     "no product defined". PARADEV_PRODUCTS (default symlink) → symlink the root's,
 #     =copy for a per-worktree snapshot, =skip to manage it yourself.
 # (Your personal workspace.config.local.yaml + .claude/settings.local.json are provisioned
 # FIRST in step 1 above — before host tooling / sync — not here.)
@@ -255,11 +256,11 @@ scripts/aiworks sync "${sync_args[@]}"
 # root_ws / has_root were resolved at the top; the root stays the source of truth (an existing
 # file/link at the destination is replaced to match it).
 if [[ "$has_root" == 1 ]]; then
-  # Env provisioning mode → SUPERSET_ENV (default: symlink). symlink keeps ONE source of truth
+  # Env provisioning mode → PARADEV_ENV_FILES (default: symlink). symlink keeps ONE source of truth
   # (the root's file); copy snapshots it per-worktree; skip leaves the worktree's env alone.
-  env_mode="${SUPERSET_ENV:-symlink}"
+  env_mode="$(switch_mode PARADEV_ENV_FILES)"
   if [[ "$env_mode" == skip ]]; then
-    log "env files: SUPERSET_ENV=skip — leaving them as-is."
+    log "env files: PARADEV_ENV_FILES=skip — leaving them as-is."
   else
     if [[ "$env_mode" == symlink ]]; then log "Symlinking .env / .env.* from the root workspace ($root_ws)…"
     else                                  log "Copying .env / .env.* from the root workspace ($root_ws)…"; fi
@@ -284,19 +285,19 @@ if [[ "$has_root" == 1 ]]; then
     log "$env_verb $env_count env file(s) from the root workspace."
   fi
 
-  # Terraform local init — same SUPERSET_ENV switch as .env. See the step-5 header.
+  # Terraform local init — same PARADEV_ENV_FILES switch as .env. See the step-5 header.
   if [[ "$env_mode" == skip ]]; then
-    log "terraform: SUPERSET_ENV=skip — leaving tf local state as-is."
+    log "terraform: PARADEV_ENV_FILES=skip — leaving tf local state as-is."
   else
     provision_tf_local "$root_ws" "$env_mode"
   fi
 
   # .paradev/products/*.sh — the real product definition(s) (git-ignored; only example.sh
-  # ships with a clone). Provisioning mode → SUPERSET_PRODUCTS (default: symlink). See the
+  # ships with a clone). Provisioning mode → PARADEV_PRODUCTS (default: symlink). See the
   # step-5 header above for why a fresh worktree needs this at all.
-  products_mode="${SUPERSET_PRODUCTS:-symlink}"
+  products_mode="$(switch_mode PARADEV_PRODUCTS)"
   if [[ "$products_mode" == skip ]]; then
-    log "product files: SUPERSET_PRODUCTS=skip — leaving .paradev/products/ as-is."
+    log "product files: PARADEV_PRODUCTS=skip — leaving .paradev/products/ as-is."
   else
     products_count=0
     for p_src in "$root_ws"/.paradev/products/*.sh; do
@@ -319,6 +320,8 @@ if [[ "$has_root" == 1 ]]; then
     if [[ "$products_count" -gt 0 ]]; then
       products_verb="linked"; [[ "$products_mode" == copy ]] && products_verb="copied"
       log "$products_verb $products_count product definition file(s) from the root workspace."
+    elif ls "$root_ws"/.superset/products/*.sh >/dev/null 2>&1; then
+      warn "the root workspace has not migrated yet — run 'aiworks sync' in $root_ws (its product files are still under .superset/products/)."
     else
       warn "no real .paradev/products/*.sh at the root workspace ($root_ws) — setup/run/teardown will fail to resolve a default product unless one is passed explicitly."
     fi
@@ -327,10 +330,10 @@ if [[ "$has_root" == 1 ]]; then
   # <repo>/db-data — seeded local Postgres clusters (git-ignored). A DB repo's containers
   # bind-mount its db-data subdirs, so without it the local DB comes up empty. Every
   # <repo>/db-data dir found in the root workspace is provisioned here. Provisioning mode →
-  # SUPERSET_DB_DATA (default: symlink). See the step-5 header above for the trade-offs.
-  db_mode="${SUPERSET_DB_DATA:-symlink}"
+  # PARADEV_DB_DATA (default: symlink). See the step-5 header above for the trade-offs.
+  db_mode="$(switch_mode PARADEV_DB_DATA)"
   if [[ "$db_mode" == skip ]]; then
-    log "db-data: SUPERSET_DB_DATA=skip — leaving seeded DB clusters as-is."
+    log "db-data: PARADEV_DB_DATA=skip — leaving seeded DB clusters as-is."
   else
     for db_src in "$root_ws"/*/db-data; do
       [[ -d "$db_src" ]] || continue
@@ -354,7 +357,7 @@ if [[ "$has_root" == 1 ]]; then
                 warn "$db_dst: removing the existing per-worktree copy needs root (PGDATA owned by the container uid) — sudo may prompt…"
                 sudo rm -rf "$db_dst" || warn "$db_dst: could not remove the existing copy — remove it by hand, then re-run."
               else
-                warn "$db_dst: a real copy is in the way and can't be removed (no sudo). Remove it by hand, or set SUPERSET_DB_DATA=copy."
+                warn "$db_dst: a real copy is in the way and can't be removed (no sudo). Remove it by hand, or set PARADEV_DB_DATA=copy."
               fi
             fi
           fi
@@ -362,7 +365,7 @@ if [[ "$has_root" == 1 ]]; then
           if [[ ! -e "$db_dst" ]] && ln -s "$db_src" "$db_dst"; then
             log "$db_dst → $db_src (symlinked; shared with the root workspace)."
           else
-            warn "$db_dst: could not symlink to the root workspace (a real dir may remain). Remove it and re-run, or use SUPERSET_DB_DATA=copy."
+            warn "$db_dst: could not symlink to the root workspace (a real dir may remain). Remove it and re-run, or use PARADEV_DB_DATA=copy."
           fi
         fi
       else
@@ -398,13 +401,13 @@ if [[ "$has_root" == 1 ]]; then
   # fresh worktree carries none and android/app/build.gradle.kts silently falls back to DEBUG
   # signing. Provision them from the root workspace like .env / db-data above: for every
   # <repo>/android/key.properties present at the root, link that file plus any keystore
-  # (*.jks / *.keystore) beside it or under app/. Provisioning mode → SUPERSET_SIGNING
+  # (*.jks / *.keystore) beside it or under app/. Provisioning mode → PARADEV_SIGNING
   # (default: symlink — one source of truth for the keystore; edit once, every worktree sees
   # it). =copy for a per-worktree snapshot, =skip to manage them yourself. No key.properties
   # at the root → silent no-op (non-Flutter workspaces, or a root that never set signing up).
-  sign_mode="${SUPERSET_SIGNING:-symlink}"
+  sign_mode="$(switch_mode PARADEV_SIGNING)"
   if [[ "$sign_mode" == skip ]]; then
-    log "signing secrets: SUPERSET_SIGNING=skip — leaving them as-is."
+    log "signing secrets: PARADEV_SIGNING=skip — leaving them as-is."
   else
     # Link (or copy) one root-relative file into this worktree; return 1 if the root lacks it.
     provision_signing_file() {

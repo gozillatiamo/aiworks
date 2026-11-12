@@ -14,6 +14,31 @@ warn()     { printf '\033[1;33m !!\033[0m %s\n' "$*"; }
 err()      { printf '\033[1;31m err\033[0m %s\n' "$*" >&2; }
 conclude() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
+# Pre-rename switch names still work (a silently ignored SUPERSET_DB_DATA=copy would turn into
+# symlink mode, which deletes the per-worktree DB copy). SUPERSET_ENV is the platform's own
+# local|cloud variable, so it maps only when it carries one of OUR values.
+map_legacy_switches() {
+  local pair old new v
+  for pair in SUPERSET_LOCAL:PARADEV_LOCAL SUPERSET_DB_DATA:PARADEV_DB_DATA \
+              SUPERSET_SIGNING:PARADEV_SIGNING SUPERSET_PRODUCTS:PARADEV_PRODUCTS \
+              SUPERSET_ENV:PARADEV_ENV_FILES; do
+    old="${pair%%:*}" new="${pair#*:}" v="${!old:-}"
+    [[ -n "$v" && -z "${!new:-}" ]] || continue
+    case "$v" in symlink|copy|skip) printf -v "$new" '%s' "$v"; export "$new"
+      warn "$old is renamed $new — honouring $old=$v; rename it." ;; esac
+  done
+}
+
+# switch_mode NAME — the symlink|copy|skip mode in $NAME (default symlink). Anything else would
+# fall into a branch that COPIES, so it is refused loudly instead.
+switch_mode() {
+  local v="${!1:-symlink}"
+  case "$v" in
+    symlink|copy|skip) printf '%s' "$v" ;;
+    *) warn "$1=$v is not symlink|copy|skip — using symlink" >&2; printf 'symlink' ;;
+  esac
+}
+
 # How many trailing output lines the quiet-mode "glance" keeps on screen (override with
 # GLANCE_MAX=N). The debug/verbose mode ignores this and streams everything.
 GLANCE_MAX="${GLANCE_MAX:-5}"

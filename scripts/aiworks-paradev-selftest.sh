@@ -159,6 +159,21 @@ ck_exit "S5 aiworks-paradev.sh -n exits 0" 0 "$rc"
 ( cd "$fx" && bash scripts/aiworks-paradev.sh -q >/dev/null 2>&1 )
 [[ "$(sum)" == "$s_after" ]] && ok "S5 second real run is a no-op" || bad "S5 second real run is a no-op" "checksum changed"
 
+# S8 — switch names: the platform's own SUPERSET_ENV=local|cloud must never act as our env-file
+# switch, and the pre-rename names keep working (a dropped SUPERSET_DB_DATA=copy would delete a DB copy).
+shim() {  # shim VAR=val… — prints the resolved modes after map_legacy_switches
+  ( cd "$T" && env -i PATH="$PATH" "$@" bash -c 'source "$1"; map_legacy_switches; echo "files=$(switch_mode PARADEV_ENV_FILES) db=$(switch_mode PARADEV_DB_DATA)"' _ "$LIB" 2>&1 )
+}
+out="$(shim SUPERSET_ENV=local)";  ck "S8 platform SUPERSET_ENV=local leaves files=symlink" "files=symlink" "$out"
+ck "S8 platform SUPERSET_ENV=local does not warn" "ABSENT:renamed" "$out"
+out="$(shim SUPERSET_ENV=cloud)";  ck "S8 platform SUPERSET_ENV=cloud leaves files=symlink" "files=symlink" "$out"
+out="$(shim SUPERSET_ENV=copy)";   ck "S8 legacy SUPERSET_ENV=copy maps to files=copy" "files=copy" "$out"
+out="$(shim SUPERSET_DB_DATA=copy)"; ck "S8 legacy SUPERSET_DB_DATA=copy maps to db=copy" "db=copy" "$out"
+ck "S8 legacy name warns" "SUPERSET_DB_DATA is renamed PARADEV_DB_DATA" "$out"
+out="$(shim SUPERSET_DB_DATA=copy PARADEV_DB_DATA=skip)"; ck "S8 the new name wins" "db=skip" "$out"
+out="$(shim PARADEV_ENV_FILES=bogus)"; ck "S8 a bogus mode falls back to symlink" "files=symlink" "$out"
+ck "S8 a bogus mode warns" "is not symlink|copy|skip" "$out"
+
 # S5a-d — the guard writes config.toml, never rewrites one, and migrates a pre-rename .superset/.
 guard_fx() {  # guard_fx <name> — a bare workspace with the three hooks and the guard script
   fx="$T/$1"; mkdir -p "$fx/scripts" "$fx/.paradev"; : > "$fx/mani.yaml"
