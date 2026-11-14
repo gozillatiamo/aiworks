@@ -43,6 +43,10 @@ input=$(cat)
 prompt=$(printf '%s' "$input" | jq -r '.tool_input.prompt // ""' 2>/dev/null)
 agent=$(printf '%s' "$input" | jq -r '.tool_input.subagent_type // ""' 2>/dev/null)
 [ -z "$prompt" ] && exit 0
+# "git commit messages" is a noun phrase, not an order to commit — and the th
+# LANGUAGE_DIRECTIVE carries it into EVERY brief, which made rule 1b refuse every
+# agent without Bash(git *) (planners, product-owner, cto, ...) under language: th.
+prompt=$(printf '%s' "$prompt" | sed -E 's/git commit messages?//g')
 
 root="${CLAUDE_PROJECT_DIR:-.}"
 agent_file="$root/.claude/agents/$agent.md"

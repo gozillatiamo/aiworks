@@ -270,6 +270,9 @@ t "product-owner handed the vcs adapter blocked" 2 pretool-agent-brief-guard.sh 
 t "product-owner may use the tracker"         0 pretool-agent-brief-guard.sh "$(ja product-owner 'Create the tickets with scripts/tracker/upsert-ticket-details.sh.')"
 t "planner told to git commit blocked"        2 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan it, then git commit the result on the ticket branch.')"
 t "developer told to git commit allowed"      0 pretool-agent-brief-guard.sh "$(ja developer 'Implement it and git commit as you go.')"
+# The th LANGUAGE_DIRECTIVE names "git commit messages" as a thing to keep English.
+t "language directive is not a commit order"  0 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan APP-1. LANGUAGE_DIRECTIVE — keep ALL code + code comments + git commit messages + branch names English.')"
+t "commit order beside the directive blocked" 2 pretool-agent-brief-guard.sh "$(ja development-planner 'Plan it, then git commit the result. Keep git commit messages English.')"
 # A grant the agent DOES hold must never trip 1b just because the path is named.
 t "planner reading git status allowed"        0 pretool-agent-brief-guard.sh "$(ja development-planner 'Start from git status and git log to see what changed.')"
 # The comment in development-planner/qa-planner frontmatter EXPLAINS that Bash(git *)
