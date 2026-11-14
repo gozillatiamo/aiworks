@@ -28,6 +28,7 @@ import asyncio
 import re
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,17 +64,28 @@ def scrub(text: str, token: str) -> str:
     return text.replace(token, "<redacted>") if token else text
 
 
-async def _with_session(fn):
-    from mcp import ClientSession
-    try:  # newer mcp SDKs renamed the client; keep the old name for older SDKs
-        from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
+@asynccontextmanager
+async def _transport(url: str, headers: dict):
+    try:  # newer mcp SDKs renamed the client and moved `headers` onto an httpx client
+        from mcp.client.streamable_http import streamable_http_client
+        from mcp.shared._httpx_utils import create_mcp_http_client
     except ImportError:
         from mcp.client.streamable_http import streamablehttp_client
+        async with streamablehttp_client(url, headers=headers) as streams:
+            yield streams
+        return
+    async with create_mcp_http_client(headers=headers) as http:
+        async with streamable_http_client(url, http_client=http) as streams:
+            yield streams
+
+
+async def _with_session(fn):
+    from mcp import ClientSession
 
     url, token = load(env_file())
     try:
         # ponytail: one HTTP session per call; keep a pooled session if call volume ever matters.
-        async with streamablehttp_client(url, headers={"Authorization": f"Bearer {token}"}) as (r, w, _):
+        async with _transport(url, {"Authorization": f"Bearer {token}"}) as (r, w, _):
             async with ClientSession(r, w) as session:
                 await session.initialize()
                 return await fn(session)
