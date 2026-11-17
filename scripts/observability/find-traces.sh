@@ -26,7 +26,9 @@
 #   --until <when>      same formats. Default now.
 #   --at <when>         bracket an instant instead of a range: [at - window, at + window].
 #   --window <dur>      half-width for --at (30s/5m/2h/1d). Default 5m.
-#   --by <key>          group the count by a span attribute
+#   --env <name>        deployment.environment (local | dev | staging | prod). Services that share a
+#                       name across environments are otherwise counted together.
+#   --by <key>          group the count by a span or resource attribute
 #   --interval <dur>    bucket the count over time (30m, 1h, 6h, 1d)
 #   --list              return matching trace ids instead of a count
 #
@@ -43,9 +45,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 . "$HERE/lib.sh"
 
-usage() { sed -n '3,32p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '3,34p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
-SERVICE=""; STATUS=""; OPERATION=""; ONLY_ERR=0; MIN_MS=""
+SERVICE=""; STATUS=""; OPERATION=""; ONLY_ERR=0; MIN_MS=""; ENV_NAME=""
 SINCE="-7d"; UNTIL="now"; BY=""; INTERVAL=""; LIST=0; LIMIT=20; RAW=0
 AT=""; WINDOW="5m"; RANGE_SET=0
 TAGS=()
@@ -62,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --until|--to)   UNTIL="${2:-}"; RANGE_SET=1; shift 2 ;;
     --at)           AT="${2:-}"; shift 2 ;;
     --window)       WINDOW="${2:-}"; shift 2 ;;
+    --env)          ENV_NAME="${2:-}"; shift 2 ;;
     --by|--group-by) BY="${2:-}"; shift 2 ;;
     --interval)     INTERVAL="${2:-}"; shift 2 ;;
     --list)         LIST=1; shift ;;
@@ -106,8 +109,16 @@ _data_type() {
     *)            echo string ;;
   esac
 }
-_key_json() { jq -n --arg k "$1" --arg d "$(_data_type "$1")" --argjson c "$(_is_column "$1")" \
-  '{key:$k,dataType:$d,type:(if $c then "tag" else "tag" end),isColumn:$c}'; }
+# Resource attributes describe the emitter, not the span, and SigNoz keeps them apart: one sent as
+# type "tag" matches nothing and returns 0 rather than an error.
+_key_type() {
+  case "$1" in
+    deployment.environment|service.namespace|service.version|host.name|k8s.*) echo resource ;;
+    *) echo tag ;;
+  esac
+}
+_key_json() { jq -n --arg k "$1" --arg d "$(_data_type "$1")" --arg t "$(_key_type "$1")" \
+  --argjson c "$(_is_column "$1")" '{key:$k,dataType:$d,type:$t,isColumn:$c}'; }
 
 items="[]"
 _add() {  # key op value
@@ -118,6 +129,7 @@ _add() {  # key op value
 [[ -n "$STATUS"    ]] && _add responseStatusCode "=" "$STATUS"
 [[ -n "$OPERATION" ]] && _add name               "=" "$OPERATION"
 [[ $ONLY_ERR -eq 1 ]] && _add hasError           "=" "true"
+[[ -n "$ENV_NAME"  ]] && _add deployment.environment "=" "$ENV_NAME"
 if [[ -n "$MIN_MS" ]]; then
   items="$(jq -c --argjson k "$(_key_json durationNano)" --arg v "$(( MIN_MS * 1000000 ))" \
     '. + [{key:$k, op:">=", value:($v|tonumber)}]' <<<"$items")"
@@ -152,7 +164,8 @@ body="$(jq -n --argjson s "$START" --argjson e "$END" --argjson step "$STEP" \
         orderBy:[{columnName:"timestamp", order:"desc"}]
       } } } }')"
 
-resp="$(curl -sS -X POST -H "${SIGNOZ_AUTH_HEADER}: ${SIGNOZ_API_KEY}" -H 'Content-Type: application/json' \
+# The key reaches curl through a file descriptor, never its argv, so it is not visible in `ps`.
+resp="$(curl -sS -X POST -H @<(printf '%s: %s' "$SIGNOZ_AUTH_HEADER" "$SIGNOZ_API_KEY") -H 'Content-Type: application/json' \
   --data "$body" "${SIGNOZ_BASE_URL}/api/v4/query_range")" || { echo "signoz request failed" >&2; exit 1; }
 
 # A query too broad for the backend to finish comes back as a plain-text gateway error ("error

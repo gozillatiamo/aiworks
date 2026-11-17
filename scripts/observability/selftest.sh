@@ -261,5 +261,19 @@ fixture /api/v4/query_range <<<'{"status":"success","data":{"result":[{"queryNam
 out="$("$GM" --promql 'up' --from -6h --step 60s --summary 2>/dev/null)"
 ck "report names the step the backend actually used" '60 1980' "$(jq -r '"\(.window.step_s) \(.window.effective_step_s)"' <<<"$out")"
 
+# --- find-traces: resource attributes must be sent as type "resource", or they match nothing ------
+FT="$OBS/find-traces.sh"
+reset_fx
+fixture /api/v4/query_range <<<'{"status":"success","data":{"result":[{"queryName":"A","series":[{"labels":{},"values":[{"timestamp":1700000000000,"value":"3"}]}]}]}}'
+out="$("$FT" --service web --env prod --tag method=POST --since -1h 2>&1)"; ck "find-traces --env counts" 3 "$out"
+body="$(cat "$FAKE_DIR/body.json")"
+key_of() { jq -c --arg k "$1" '[.compositeQuery.builderQueries.A.filters.items[] | select(.key.key == $k)][0] | [.key.type, .value]' <<<"$body"; }
+ck "--env filters deployment.environment as a resource" '["resource","prod"]' "$(key_of deployment.environment)"
+ck "a span tag stays type tag" '["tag","POST"]' "$(key_of method)"
+no_secret "find-traces --env" "$out"
+"$FT" --tag method=POST --by deployment.environment --since -1h >/dev/null 2>&1
+ck "--by a resource attribute groups as a resource" resource \
+  "$(jq -r '.compositeQuery.builderQueries.A.groupBy[0].type' "$FAKE_DIR/body.json")"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]
