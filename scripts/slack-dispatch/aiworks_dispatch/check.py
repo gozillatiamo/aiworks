@@ -31,6 +31,16 @@ def _paradev(args: list[str]) -> tuple[bool, object]:
         return True, proc.stdout.strip()
 
 
+def _local_host() -> dict | None:
+    """The host the desktop app runs. `paradev status` only tracks a host the CLI itself
+    started, so for an app-run host it answers running:false, stale:true even while the
+    host serves requests; `hosts list` marks that host online:"local"."""
+    ok, hosts = _paradev(["hosts", "list"])
+    if not (ok and isinstance(hosts, list)):
+        return None
+    return next((h for h in hosts if isinstance(h, dict) and h.get("online") == "local"), None)
+
+
 def _ok(label: str, detail: str = "") -> None:
     print(f"  \033[32m✓\033[0m {label}{(' — ' + detail) if detail else ''}")
 
@@ -46,11 +56,14 @@ def main() -> int:
 
     print("Paradev host:")
     ok, status = _paradev(["status"])
+    local = _local_host()
     if ok and isinstance(status, dict) and status.get("running") and status.get("healthy"):
         _ok("host running + healthy", f"{status.get('hostName')} ({status.get('hostId', '')[:12]}…)")
+    elif local:
+        _ok("host online (run by the desktop app)", f"{local.get('name')} ({str(local.get('id', ''))[:12]}…)")
     else:
         _bad("host not healthy", json.dumps(status) if isinstance(status, dict) else str(status))
-        _bad("hint", "desktop app: quit and reopen Paradev (the app runs the host service)")
+        _bad("hint", "desktop app: open Paradev (the app runs the host service)")
         _bad("hint", "standalone CLI: paradev start")
         problems += 1
 
