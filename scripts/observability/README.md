@@ -64,6 +64,8 @@ find-traces.sh --service APISIX --status 502 --since -7d --interval 1h
 find-traces.sh --service APISIX --status 502 --since -7d --by httpRoute
 # sample ids to hand to get-trace.sh
 find-traces.sh --service APISIX --status 502 --since -7d --list
+# one environment only: staging and prod often share a service name
+find-traces.sh --service APISIX --status 502 --since -7d --env prod
 ```
 
 A clustered result rules out steady causes (request content, an always-wrong branch); a spread one
