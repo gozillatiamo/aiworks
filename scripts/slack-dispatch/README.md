@@ -40,10 +40,11 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
 
 ## Prerequisites
 
-1. **Paradev host online.** `paradev status` → `running: true, healthy: true`. If
-   not: with the desktop app, quit and reopen it — the app runs the host service itself,
-   and its bundled CLI refuses `paradev start`. A `stale: true` status means the same
-   restart. With the standalone CLI (headless): `paradev start`.
+1. **Paradev host online.** Standalone CLI (headless): `paradev status` → `running: true,
+   healthy: true`; if not, `paradev start`. Desktop app: the app runs the host service
+   itself, so its bundled CLI refuses `paradev start` and `paradev status` answers
+   `running: false, stale: true` even while the host is up — check `paradev hosts list`
+   for this machine with `online: local` instead, and open the app if it is missing.
 2. **Project + agent preset.** `paradev projects list` (the meta-repo →
    `SUPERSET_PROJECT_ID`), `paradev agents list --local` (confirm the `claude` preset).
 3. **Slack app** with Socket Mode — see `slack-app-manifest.yaml`. You need a bot

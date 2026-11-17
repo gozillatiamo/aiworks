@@ -5,7 +5,8 @@ by hand. See `README.md` for architecture; this is the operational drill.
 
 ## 0. Prerequisites (one-time)
 
-- **Paradev host online:** `paradev status` → `running: true, healthy: true`.
+- **Paradev host online:** `paradev status` → `running: true, healthy: true`, or — when the
+  desktop app runs the host — `paradev hosts list` shows this machine `online: local`.
 - **Docker** running (for the dedicated Redis).
 - **Slack app** with Socket Mode, installed to the workspace, bot invited to the
   trigger channel. Bot scopes required:
