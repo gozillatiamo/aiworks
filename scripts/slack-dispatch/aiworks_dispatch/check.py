@@ -50,7 +50,8 @@ def main() -> int:
         _ok("host running + healthy", f"{status.get('hostName')} ({status.get('hostId', '')[:12]}…)")
     else:
         _bad("host not healthy", json.dumps(status) if isinstance(status, dict) else str(status))
-        _bad("hint", "start it with:  paradev start")
+        _bad("hint", "desktop app: quit and reopen Paradev (the app runs the host service)")
+        _bad("hint", "standalone CLI: paradev start")
         problems += 1
 
     print("Project:")
