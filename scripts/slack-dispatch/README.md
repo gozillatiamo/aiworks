@@ -41,7 +41,9 @@ adapter. A Stop-hook backstop (below) covers the case where it can't.
 ## Prerequisites
 
 1. **Paradev host online.** `paradev status` → `running: true, healthy: true`. If
-   not: `paradev start`.
+   not: with the desktop app, quit and reopen it — the app runs the host service itself,
+   and its bundled CLI refuses `paradev start`. A `stale: true` status means the same
+   restart. With the standalone CLI (headless): `paradev start`.
 2. **Project + agent preset.** `paradev projects list` (the meta-repo →
    `SUPERSET_PROJECT_ID`), `paradev agents list --local` (confirm the `claude` preset).
 3. **Slack app** with Socket Mode — see `slack-app-manifest.yaml`. You need a bot
