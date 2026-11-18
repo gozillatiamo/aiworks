@@ -18,7 +18,7 @@ existing one does not reference a hook script.
 | Step | What | Switch |
 |---|---|---|
 | 0 | Select the shared Agent harnesses (main workspace only; a worktree reuses the selection) | `--harnesses`, `--reconfigure-harnesses` |
-| 1 | Symlink the personal git-ignored config from the root workspace (`workspace.config.local.yaml`, `.claude/settings.local.json`, the Night Watch records `agent_logs/night-watch`) | `PARADEV_LOCAL=symlink\|skip` |
+| 1 | Symlink the personal git-ignored config from the root workspace (`workspace.config.local.yaml`, `.claude/settings.local.json`, the Night Watch records `agent_logs/night-watch`: a follow-up session reads the Verdicts there and can mark a finding resolved; the write lands in the root's directory) | `PARADEV_LOCAL=symlink\|skip` |
 | 2 | Provision the adapter credentials (`scripts/{tracker,notify,vcs}/.env`) from the root workspace — before tooling and sync, so any adapter call during onboarding has them | `PARADEV_ENV_FILES=symlink\|copy\|skip` |
 | 3 | Ensure host tooling: `jq`, `ngrok`, `glab`, `pnpm`, `dap` (best-effort); reconcile the declared Claude plugins at project scope — main checkout and independent clones; a linked worktree uses its main checkout's install | — |
 | 4 | `aiworks sync -y` — clone and fully onboard every repo under `products[]` | — |

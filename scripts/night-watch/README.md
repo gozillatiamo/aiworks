@@ -28,6 +28,9 @@ scripts/night-watch/run.sh tick     # one Tick now, then exit (cron or launchd f
 scripts/night-watch/run.sh loop     # wait for each slot, Tick, repeat; Ctrl-C stops it
 scripts/night-watch/run.sh plan     # print the current slot, whether it is active, and the next one
 scripts/night-watch/run.sh brief [latest|HH:MM|YYYYMMDDTHHMM]   # print a Verdict for a follow-up (read-only)
+scripts/night-watch/run.sh resolve <latest|HH:MM|YYYYMMDDTHHMM> <n> --note "<one line>" [--alert]   # mark finding n safe
+scripts/night-watch/run.sh unresolve <id>   # remove a resolution
+scripts/night-watch/run.sh resolved         # list active resolutions (read-only)
 scripts/night-watch/selftest.sh     # offline regression, agent and chat stubbed
 ```
 
@@ -38,7 +41,7 @@ skip or gap. Each line is flushed at once, so a process manager sees it live. st
 Under cron, redirect the output (`>> night-watch.out 2>&1`), or cron mails every Tick.
 
 Run one loop on one machine. The lock makes a second loop skip every slot; two machines would both post.
-Run it only in the root checkout: a worktree links this directory, and `tick` and `loop` refuse to run through the link.
+Run it only in the root checkout: a worktree links this directory, and `tick` and `loop` refuse to run through the link; `brief`, `resolve`, `unresolve` and `resolved` work through it and land in the root's directory.
 
 ## States and posting
 
@@ -56,6 +59,27 @@ nobody (and an `ALERT` made only of count findings is not repeated). Fixed-rule 
 Tick 1. A Verdict containing personal data (email, bank-account-like numbers, ...) is rejected before
 posting and counts as FAILED; every post also goes through the adapter's PII gate.
 
+## Resolved cases
+
+After a dig-down concludes that finding `n` of a Verdict is safe, `run.sh resolve <slot> <n> --note "<line>"`
+records a **Resolved case** in `agent_logs/night-watch/resolved.json` (atomic write, own short lock). It
+runs no Tick and needs no config. The note is one line, at most 200 characters, and must pass the same
+PII pattern list as a Verdict. An ALERT finding needs `--alert`. Resolving the same finding twice is a
+no-op; `unresolve <id>` removes one.
+
+A later Tick drops a finding when ALL hold: same realm; same rule (`rule_id`, case-insensitive; a `lead`
+matches on evidence alone, since its `rule_id` is reworded text); severity not higher; every evidence id
+is already in the resolved set. A new id, another realm or rule, or an escalation still posts. Title is
+ignored. The script drops it, not the agent, and the state is recomputed.
+
+- All findings dropped: an `OK` thread reply, "only cases already marked resolved (n)".
+- Some dropped: the post carries one extra line with the count.
+- The dropped findings are kept under `suppressed` in the Verdict file and shown by `brief`.
+- Expiry: 7 days; 1 day when every evidence id is a `metric` or `config` (an aggregate names no
+  occurrence, so it would repeat every Tick). At most 200 entries. `resolved.json` survives retention.
+- Count findings that cite fresh sample trace ids each Tick are not matched. A routine pattern belongs
+  in the Playbook's known routine, not in a resolution.
+
 ## Files (git-ignored, under `agent_logs/night-watch/`)
 
 - `state.json`: counters, the day's parent message, learned `baselines` and `notes`. A corrupt file is
@@ -63,9 +87,11 @@ posting and counts as FAILED; every post also goes through the adapter's PII gat
 - `ticks.log`: one line per Tick (`<slot> <state> <headline or reason> [ts=...]`); the same line is echoed to stderr.
 - `verdicts/<slot>.json`: the Verdict, or the raw agent output of a FAILED Tick.
 - `tick.lock`: held while a Tick runs.
+- `resolved.json`: the active Resolved cases. A corrupt file is kept as `resolved.json.corrupt-<time>`
+  and treated as empty. `resolved.lock`: held for milliseconds while `resolve`/`unresolve` write.
 
-Files older than 7 days are deleted at the end of each Tick, except `state.json`, `tick.lock` and
-`ticks.log`. Links and directories are never followed or removed.
+Files older than 7 days are deleted at the end of each Tick, except `state.json`, `tick.lock`,
+`ticks.log` and `resolved.json`. Links and directories are never followed or removed.
 
 ## Limits
 
@@ -73,5 +99,8 @@ Files older than 7 days are deleted at the end of each Tick, except `state.json`
 - A DST change can skip one slot (shown as a gap line); the same slot never runs twice.
 - `--json-schema` is passed to the CLI but is not enforced by it, so the script extracts the fenced
   JSON from the result and validates it itself. An invalid Verdict is a FAILED Tick.
+- The Tick agent's Edit/Write on `agent_logs/night-watch/` and its engine commands (`run.sh`,
+  `night_watch.py`) are disallowed; resolutions are read before the agent runs, so a write during a
+  Tick changes nothing. `resolve` records no identity: anyone with a shell on the machine can run it.
 - Test seams (selftest only): `NIGHT_WATCH_NOW`, `NIGHT_WATCH_CLAUDE`, `NIGHT_WATCH_TIMEOUT_SEC`,
   `NIGHT_WATCH_ALERT_REPEAT_SEC`, `NIGHT_WATCH_PROD_ALLOWED`.

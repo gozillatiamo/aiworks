@@ -29,6 +29,8 @@ fenced JSON from the result and checks it itself), owns the memory, and posts on
   the message `ts`. A webhook cannot thread, so Night Watch needs a bot token.
 - The agent stays the `oncall` agent, unchanged. The script owns `state.json`; the agent can only
   propose `baselines` and `notes` through the Verdict.
+- The agent cannot write `agent_logs/night-watch/` (Edit/Write disallowed by path); a person marks a
+  finding resolved through `run.sh resolve`, and the script, not the agent, drops a repeat.
 
 Rejected: letting the agent post through `send.sh` (untestable, silent on failure), and letting the
 agent write the state file (script-owned counters would become agent-mutable).
