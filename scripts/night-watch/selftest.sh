@@ -306,13 +306,98 @@ ck "B7 writes nothing" "" "$(find "$T/agent_logs" -newer "$T/marker")"
 mv "$T/cfg.bak" "$T/workspace.config.yaml"
 ck "B8 run.sh brief matches" "$(brief latest)" "$("$NW/run.sh" brief latest 2>&1)"
 
+# --- resolved cases: the resolve / unresolve / resolved commands -------------------------------------
+fx() { # realm rule severity rule_id id... -> one finding with trace evidence ids
+  local realm=$1 rule=$2 sev=$3 rid=$4; shift 4; local ev="" i
+  for i in "$@"; do ev+="${ev:+,}{\"kind\":\"${KIND:-trace}\",\"id\":\"$i\"}"; done
+  echo '{"rule":"'"$rule"'","rule_id":"'"$rid"'","severity":"'"$sev"'","realm":"'"$realm"'","title":"t","evidence":['"$ev"']}'
+}
+vx() { # state finding... -> verdict
+  local s=$1; shift; local IFS=,
+  echo '{"state":"'"$s"'","headline":"h","findings":['"$*"'],"gaps":[],"conclusion":"c","brief_en":"b"}'
+}
+nw() { NIGHT_WATCH_NOW="${AT:-2026-01-01T10:30:00}" python3 "$NW/night_watch.py" "$@" 2>&1; }
+nwrc() { local rc=0; NIGHT_WATCH_NOW="${AT:-2026-01-01T10:30:00}" python3 "$NW/night_watch.py" "$@" >/dev/null 2>&1 || rc=$?; echo "$rc"; }
+NWD="$T/agent_logs/night-watch"; RJ="$NWD/resolved.json"
+rcount() { python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["resolutions"]))' "$RJ"; }
+cfg
+SUSP="$(vx SUSPICIOUS "$(fx payments fixed SUSPICIOUS r1 abc123)")"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null
+out="$(nw resolve latest 1 --note "retry by design")"
+has "X1 resolved line" "resolved 20260101T1000-1 until " "$out"
+has "X1 undo hint" "undo: scripts/night-watch/run.sh unresolve 20260101T1000-1" "$out"
+has "X1 realm stored" '"realm": "payments"' "$(cat "$RJ")"
+has "X1 evidence stored" '"abc123"' "$(cat "$RJ")"
+has "X1 note stored" '"note": "retry by design"' "$(cat "$RJ")"
+ck "X1 UTC, expires 7 days later" "True" "$(python3 -c '
+import json,sys; from datetime import datetime, timedelta
+r=json.load(open(sys.argv[1]))["resolutions"][0]; a=datetime.fromisoformat(r["resolved_at"]); b=datetime.fromisoformat(r["expires_at"])
+print(r["resolved_at"].endswith("+00:00") and b-a==timedelta(days=7))' "$RJ")"
+ck "X2 unknown slot exits 1" 1 "$(nwrc resolve 09:00 1 --note x)"
+has "X2 names the slot" "09:00" "$(nw resolve 09:00 1 --note x)"
+ck "X2 malformed slot exits 2" 2 "$(nwrc resolve nonsense 1 --note x)"
+ck "X3 number out of range exits 1" 1 "$(nwrc resolve latest 2 --note x)"
+has "X3 says how many it has" "it has 1" "$(nw resolve latest 2 --note x)"
+ck "X3 zero exits 1" 1 "$(nwrc resolve latest 0 --note x)"
+ck "X3 non-integer exits 2" 2 "$(nwrc resolve latest x --note x)"
+rm -f "$RJ"
+ck "X4 no note exits 2" 2 "$(nwrc resolve latest 1)"
+ck "X4 empty note exits 2" 2 "$(nwrc resolve latest 1 --note "")"
+out="$(nw resolve latest 1 --note "ask jane@example.com")"
+ck "X4 email in note exits 2" 2 "$(nwrc resolve latest 1 --note "ask jane@example.com")"
+has "X4 says personal data" "personal data" "$out"
+ck "X4 nothing written" "no" "$([[ -e "$RJ" ]] && echo yes || echo no)"
+ck "X4 multi-line note exits 2" 2 "$(nwrc resolve latest 1 --note $'a\nb')"
+ck "X4 201-char note exits 2" 2 "$(nwrc resolve latest 1 --note "$(printf 'x%.0s' $(seq 201))")"
+mv "$T/scripts/lib/pii-patterns.txt" "$T/pii.bak"
+ck "X4 missing PII file exits 2 (fail closed)" "2|no" "$(nwrc resolve latest 1 --note x)|$([[ -e "$RJ" ]] && echo yes || echo no)"
+mv "$T/pii.bak" "$T/scripts/lib/pii-patterns.txt"
+nw resolve latest 1 --note "retry by design" >/dev/null
+ck "X5 resolve again exits 0" 0 "$(nwrc resolve latest 1 --note "other words")"
+has "X5 says already" "already resolved 20260101T1000-1" "$(nw resolve latest 1 --note "other words")"
+ck "X5 still one entry" 1 "$(rcount)"
+reset; say "$(vx ALERT "$(fx payments fixed ALERT r1 abc123)")"; tick 2026-01-01T10:00:00 >/dev/null
+ck "X6 ALERT without --alert exits 2" 2 "$(nwrc resolve latest 1 --note x)"
+ck "X6 ALERT with --alert exits 0" 0 "$(nwrc resolve latest 1 --note x --alert)"
+reset; echo '{"is_error":false,"result":"no verdict here"}' > "$FX/claude.out"; tick 2026-01-01T10:00:00 >/dev/null
+ck "X7 FAILED Tick exits 1" 1 "$(nwrc resolve latest 1 --note x)"
+has "X7 says FAILED Tick" "FAILED Tick" "$(nw resolve latest 1 --note x)"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; nw resolve latest 1 --note "retry by design" >/dev/null
+ck "X8 unresolve exits 0" 0 "$(nwrc unresolve 20260101T1000-1)"
+ck "X8 list is empty" "no active resolutions" "$(nw resolved)"
+ck "X8 unresolve again exits 1" 1 "$(nwrc unresolve 20260101T1000-1)"
+ck "X8 malformed id exits 2" 2 "$(nwrc unresolve bogus)"
+nw resolve latest 1 --note "retry by design" >/dev/null
+out="$(nw resolved)"
+has "X9 lists the id" "20260101T1000-1" "$out"
+has "X9 lists the expiry" "until " "$out"
+has "X9 lists the note" "note: retry by design" "$out"
+: > "$T/marker"; sleep 1; nw resolved >/dev/null
+ck "X9 resolved writes nothing" "" "$(find "$NWD" -newer "$T/marker")"
+echo '{not json' > "$RJ"; sleep 1; : > "$T/marker"; nw resolved >/dev/null
+ck "X9 corrupt file: read-only list creates no aside" "" "$(ls "$NWD" | grep corrupt)"
+nw resolve latest 1 --note "retry by design" >/dev/null
+mv "$T/workspace.config.yaml" "$T/cfg.bak"
+ck "X10 resolve needs no config" 0 "$(nwrc resolve latest 1 --note "again")"
+mv "$T/cfg.bak" "$T/workspace.config.yaml"
+reset; say "$(vx SUSPICIOUS "$(fx payments fixed SUSPICIOUS r1 a1)" "$(fx auth fixed SUSPICIOUS r2 b1)")"; tick 2026-01-01T10:00:00 >/dev/null
+NIGHT_WATCH_NOW=2026-01-01T10:30:00 python3 "$NW/night_watch.py" resolve latest 1 --note one >/dev/null 2>&1 &
+NIGHT_WATCH_NOW=2026-01-01T10:30:00 python3 "$NW/night_watch.py" resolve latest 2 --note two >/dev/null 2>&1 &
+wait
+ck "X11 concurrent resolves keep both" 2 "$(rcount)"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null
+echo '{not json' > "$RJ"
+ck "C1 corrupt file + resolve exits 0" 0 "$(nwrc resolve latest 1 --note x)"
+ck "C1 corrupt file kept aside" "1" "$(ls "$NWD" | grep -c 'resolved.json.corrupt-')"
+ck "C1 new file has one entry" 1 "$(rcount)"
+
 # --- retention ---------------------------------------------------------------------------------
 cfg; NWD="$T/agent_logs/night-watch"
 age() { touch -t "$1" "${@:2}"; }
 reset; say "$OKV"; mkdir -p "$NWD/verdicts" "$T/outside" "$T/outside2"
 : > "$NWD/verdicts/20260101T1000.json"; age 202601020000 "$NWD/verdicts/20260101T1000.json"
 : > "$NWD/verdicts/20260105T1000.json"; age 202601050000 "$NWD/verdicts/20260105T1000.json"
-for f in state.json tick.lock ticks.log; do echo x > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
+for f in state.json tick.lock ticks.log resolved.json; do echo x > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
 for f in state.json.corrupt-20251201T1000 agent.stderr .state.x.tmp; do : > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
 : > "$T/outside/f"; age 202512010000 "$T/outside/f"; ln -s "$T/outside/f" "$NWD/verdicts/old.json"
 mkdir -p "$NWD/verdicts/sub"; : > "$NWD/verdicts/sub/f"; age 202512010000 "$NWD/verdicts/sub/f" "$NWD/verdicts/sub"
@@ -320,7 +405,8 @@ tick 2026-01-10T10:00:00 >/dev/null
 [[ ! -e "$NWD/verdicts/20260101T1000.json" ]] && ok "R1 old verdict deleted" || bad "R1 old verdict deleted" "still there"
 [[ -e "$NWD/verdicts/20260105T1000.json" && -e "$NWD/verdicts/20260110T1000.json" ]] && ok "R1 recent verdicts kept" || bad "R1 recent verdicts kept" "$(ls "$NWD/verdicts")"
 [[ -e "$NWD/state.json" && -e "$NWD/tick.lock" && -e "$NWD/ticks.log" ]] && ok "R2 state, lock, log kept" || bad "R2 state, lock, log kept" "$(ls -a "$NWD")"
-[[ ! -e "$NWD/state.json.corrupt-20251201T1000" && ! -e "$NWD/agent.stderr" && ! -e "$NWD/.state.x.tmp" ]] && ok "R3 stray old files deleted" || bad "R3 stray old files deleted" "$(ls -a "$NWD")"
+[[ -e "$NWD/resolved.json" ]] && ok "R8 resolved.json kept" || bad "R8 resolved.json kept" "$(ls -a "$NWD")"
+[[ ! -e "$NWD/state.json.corrupt-20251201T1000"&& ! -e "$NWD/agent.stderr" && ! -e "$NWD/.state.x.tmp" ]] && ok "R3 stray old files deleted" || bad "R3 stray old files deleted" "$(ls -a "$NWD")"
 [[ -L "$NWD/verdicts/old.json" && -e "$T/outside/f" ]] && ok "R4 symlink and target intact" || bad "R4 symlink and target intact" ""
 [[ -e "$NWD/verdicts/sub/f" ]] && ok "R6 directory and contents intact" || bad "R6 directory and contents intact" ""
 reset; say "$OKV"; mkdir -p "$NWD"; : > "$T/outside2/old.json"; age 202512010000 "$T/outside2/old.json"
@@ -338,6 +424,12 @@ ck "G2 loop exits 2" 2 "$rc"
 ck "G3 primary untouched" "" "$(ls -A "$T/primary-nw")"
 mkdir -p "$T/primary-nw/verdicts"; echo '{"state":"OK","headline":"x"}' > "$T/primary-nw/verdicts/20260101T1000.json"
 has "G3 brief still works through the link" "headline: x" "$(brief latest)"
+echo "$SUSP" > "$T/primary-nw/verdicts/20260101T1100.json"
+ck "L1 resolve through the link exits 0" 0 "$(nwrc resolve latest 1 --note x)"
+ck "L1 lands in the primary directory" "yes" "$([[ -e "$T/primary-nw/resolved.json" ]] && echo yes || echo no)"
+ck "L1 the link is still a link" "yes" "$([[ -L "$NWD" ]] && echo yes || echo no)"
+has "L1 resolved works through the link" "20260101T1100-1" "$(nw resolved)"
+ck "L1 tick still exits 2" 2 "$(tick 2026-01-01T11:00:00)"
 rm -f "$NWD"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"

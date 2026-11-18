@@ -7,7 +7,12 @@ See scripts/night-watch/README.md and docs/adr/0047-*.md.
   night_watch.py loop   wait for each slot, run a Tick, repeat
   night_watch.py plan   print the slot for now, whether it is active, and the next one
   night_watch.py brief [latest|HH:MM|YYYYMMDDTHHMM]   print a Verdict for a follow-up (read-only)
+  night_watch.py resolve <latest|HH:MM|YYYYMMDDTHHMM> <n> --note "<one line>" [--alert]
+                         mark finding n of that Verdict safe; later Ticks drop a repeat of it
+  night_watch.py unresolve <id>   remove a resolution (id printed by resolve and resolved)
+  night_watch.py resolved         list active resolutions (read-only)
 """
+import argparse
 import fcntl
 import json
 import os
@@ -18,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -26,7 +31,11 @@ ROOT = HERE.parent.parent
 NWDIR = ROOT / "agent_logs" / "night-watch"
 LEARN_TICKS = 24
 RETAIN_DAYS = 7
-KEEP = {"state.json", "tick.lock", "ticks.log"}
+KEEP = {"state.json", "tick.lock", "ticks.log", "resolved.json"}
+RESOLVE_DAYS, AGG_DAYS = 7, 1  # aggregate-only evidence names no occurrence, so it lives 1 day
+AGGREGATE = {"metric", "config"}
+MAX_RESOLVED, MAX_RES_IDS, MAX_RES_NOTE = 200, 50, 200
+RANK = {"SUSPICIOUS": 1, "ALERT": 2}
 MAX_NOTES, MAX_NOTE_LEN, MAX_BASELINES = 50, 300, 200
 RAW_CAP = 256 * 1024
 DISALLOW = ["Bash(*scripts/notify/*)", "Bash(*scripts/tracker/*)", "Bash(*scripts/vcs/*)"]
@@ -237,16 +246,20 @@ def prune():
                 pass  # retention is housekeeping: never fail a Tick over it
 
 
-def save_state(st):
+def save_json(name, obj):
     NWDIR.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=NWDIR, prefix=".state.", suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=NWDIR, prefix=f".{name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(st, f, indent=2)
-        os.replace(tmp, NWDIR / "state.json")
+            json.dump(obj, f, indent=2)
+        os.replace(tmp, NWDIR / name)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
+
+
+def save_state(st):
+    save_json("state.json", st)
 
 
 # ── Verdict ──────────────────────────────────────────────────────────────────────────────────────
@@ -686,16 +699,22 @@ def _print_verdict(v):
         print(f"gap {g.get('realm')}: {g.get('reason')}")
 
 
-def brief(arg):
-    """Print a Verdict file for a follow-up session. Read-only: no config, lock, state or write."""
+def _find_verdicts(arg):
+    """Verdict files for a slot argument, newest first; None when the argument is malformed."""
     files = sorted((NWDIR / "verdicts").glob("*.json"))
     if arg == "latest":
-        hit = files[-1:]
-    elif re.fullmatch(r"\d{2}:\d{2}", arg):
-        hit = [f for f in files if f.stem.endswith(arg.replace(":", ""))][::-1]
-    elif re.fullmatch(r"\d{8}T\d{4}", arg):
-        hit = [f for f in files if f.stem == arg]
-    else:
+        return files[-1:]
+    if re.fullmatch(r"\d{2}:\d{2}", arg):
+        return [f for f in files if f.stem.endswith(arg.replace(":", ""))][::-1]
+    if re.fullmatch(r"\d{8}T\d{4}", arg):
+        return [f for f in files if f.stem == arg]
+    return None
+
+
+def brief(arg):
+    """Print a Verdict file for a follow-up session. Read-only: no config, lock, state or write."""
+    hit = _find_verdicts(arg)
+    if hit is None:
         print("usage: night_watch.py brief [latest|HH:MM|YYYYMMDDTHHMM]", file=sys.stderr)
         return 2
     if not hit:
@@ -722,14 +741,183 @@ def brief(arg):
     return 0
 
 
+# ── resolved cases ───────────────────────────────────────────────────────────────────────────────
+def utcnow():
+    return now().astimezone(timezone.utc).replace(microsecond=0)
+
+
+def load_resolved(aside=True):
+    """{"version":1,"resolutions":[...]}; corrupt -> kept as resolved.json.corrupt-<time>, empty."""
+    path = NWDIR / "resolved.json"
+    empty = {"version": 1, "resolutions": []}
+    if not path.is_file():
+        return empty
+    try:
+        r = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(r, dict) or r.get("version") != 1 or not isinstance(r.get("resolutions"), list) \
+                or not all(isinstance(x, dict) and isinstance(x.get("evidence"), list) for x in r["resolutions"]):
+            raise ValueError("bad shape")
+        return r
+    except ValueError:
+        if aside:
+            try:
+                path.rename(NWDIR / f"resolved.json.corrupt-{now():%Y%m%dT%H%M%S}")
+            except OSError:
+                pass  # a concurrent reader already moved it
+        return empty
+
+
+def active(res):
+    t = utcnow()
+    out = []
+    for r in res["resolutions"]:
+        try:
+            if datetime.fromisoformat(r["expires_at"]) > t:
+                out.append(r)
+        except (KeyError, TypeError, ValueError):
+            continue  # an unreadable entry never suppresses
+    return out
+
+
+def _rule_key(f):
+    # A lead's rule_id is free text the agent rewords; its evidence is its identity.
+    return "lead" if f.get("rule") == "lead" else str(f.get("rule_id") or f.get("rule") or "").strip().casefold()
+
+
+def matches(f, r):
+    """Same realm and rule, severity not higher, every evidence id already inside the resolved set."""
+    return f["realm"] == r.get("realm") and _rule_key(f) == _rule_key(r) \
+        and RANK[f["severity"]] <= RANK.get(r.get("severity"), 0) \
+        and {e["id"].strip() for e in f["evidence"]} <= set(r["evidence"])
+
+
+def apply_resolutions(v, res):
+    """Drop findings an active resolution covers; recompute state. Returns how many were dropped."""
+    keep, gone = [], []
+    for f in v["findings"]:
+        r = next((r for r in res if matches(f, r)), None)
+        if r is None:
+            keep.append(f)
+        else:
+            gone.append({"resolution": r["id"], "finding": f})
+    if gone:
+        v["findings"], v["suppressed"] = keep, gone
+        v["state"] = "ALERT" if any(f["severity"] == "ALERT" for f in keep) else "SUSPICIOUS" if keep else "OK"
+    return len(gone)
+
+
+def _err(msg):
+    print(f"night-watch: {msg}", file=sys.stderr)
+
+
+def resolve(argv):
+    ap = argparse.ArgumentParser(prog="run.sh resolve")
+    ap.add_argument("slot")
+    ap.add_argument("n", type=int)
+    ap.add_argument("--note", required=True)
+    ap.add_argument("--alert", action="store_true")
+    a = ap.parse_args(argv)  # argparse exits 2 with usage on bad args
+    note = a.note.strip()
+    if not note or "\n" in a.note.strip() or len(note) > MAX_RES_NOTE:
+        _err(f"--note must be one line, 1..{MAX_RES_NOTE} characters")
+        return 2
+    try:
+        pats = pii_patterns()
+    except OSError:
+        _err("pii-patterns-missing")
+        return 2
+    for cat, rx in pats:
+        if rx.search(note):
+            _err(f"note looks like personal data ({cat}); identifiers only")
+            return 2
+    hits = _find_verdicts(a.slot)
+    if hits is None:
+        _err("usage: run.sh resolve <latest|HH:MM|YYYYMMDDTHHMM> <n> --note \"<one line>\" [--alert]")
+        return 2
+    if not hits:
+        _err(f"no Verdict for {a.slot} under {NWDIR / 'verdicts'}")
+        return 1
+    f0 = hits[0]
+    try:
+        v = json.loads(f0.read_text(encoding="utf-8", errors="replace"))
+    except ValueError:
+        v = None
+    if not (isinstance(v, dict) and isinstance(v.get("findings"), list)):
+        _err(f"{f0.stem} is a FAILED Tick: nothing to resolve")
+        return 1
+    if not 1 <= a.n <= len(v["findings"]):
+        _err(f"no finding {a.n} in {f0.stem} (it has {len(v['findings'])})")
+        return 1
+    f = v["findings"][a.n - 1]
+    if f["severity"] == "ALERT" and not a.alert:
+        _err(f"finding {a.n} is ALERT: pass --alert only when a person in the thread asked to resolve it")
+        return 2
+    rid = f"{f0.stem}-{a.n}"
+    NWDIR.mkdir(parents=True, exist_ok=True)
+    with open(NWDIR / "resolved.lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)  # blocking; held for milliseconds, not tick.lock's 20 minutes
+        live = active(load_resolved())
+        old = next((r for r in live if r["id"] == rid), None)
+        if old:
+            print(f"already resolved {rid} until {old['expires_at']}")
+            return 0
+        t = utcnow()
+        days = AGG_DAYS if all(e["kind"] in AGGREGATE for e in f["evidence"]) else RESOLVE_DAYS
+        new = {"id": rid, "slot": f0.stem, "finding": a.n, "realm": f["realm"], "rule": f["rule"],
+               "rule_id": str(f.get("rule_id") or ""), "severity": f["severity"], "title": f["title"][:200],
+               "evidence": [e["id"].strip() for e in f["evidence"]][:MAX_RES_IDS], "note": note,
+               "resolved_at": t.isoformat(), "expires_at": (t + timedelta(days=days)).isoformat()}
+        live.append(new)
+        live.sort(key=lambda r: r.get("resolved_at", ""))
+        save_json("resolved.json", {"version": 1, "resolutions": live[-MAX_RESOLVED:]})
+    print(f"resolved {rid} until {new['expires_at']} (file: {f0})")
+    print(f"undo: scripts/night-watch/run.sh unresolve {rid}")
+    return 0
+
+
+def unresolve(argv):
+    if len(argv) != 1 or not re.fullmatch(r"\d{8}T\d{4}-\d+", argv[0]):
+        _err("usage: run.sh unresolve <id>  (id looks like 20260101T1000-1)")
+        return 2
+    NWDIR.mkdir(parents=True, exist_ok=True)
+    with open(NWDIR / "resolved.lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        live = active(load_resolved())
+        rest = [r for r in live if r["id"] != argv[0]]
+        if len(rest) == len(live):
+            _err(f"no active resolution {argv[0]}")
+            return 1
+        save_json("resolved.json", {"version": 1, "resolutions": rest})
+    print(f"unresolved {argv[0]}")
+    return 0
+
+
+def list_resolved():
+    live = active(load_resolved(aside=False))
+    for r in live:
+        ids = r["evidence"]
+        more = f" +{len(ids) - MAX_IDS}" if len(ids) > MAX_IDS else ""
+        print(f"{r['id']}  {r.get('severity')} {r.get('realm')} {r.get('rule_id') or r.get('rule')}  "
+              f"until {r['expires_at']}  ids: {' '.join(ids[:MAX_IDS])}{more}  note: {r.get('note')}")
+    if not live:
+        print("no active resolutions")
+    return 0
+
+
 def main(argv):
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     cmd = argv[1] if len(argv) > 1 else ""
-    if cmd not in ("tick", "loop", "plan", "brief"):
+    if cmd not in ("tick", "loop", "plan", "brief", "resolve", "unresolve", "resolved"):
         print(__doc__, file=sys.stderr)
         return 2
     if cmd == "brief":
         return brief(argv[2] if len(argv) > 2 else "latest")
+    if cmd == "resolve":
+        return resolve(argv[2:])
+    if cmd == "unresolve":
+        return unresolve(argv[2:])
+    if cmd == "resolved":
+        return list_resolved()
     if cmd in ("tick", "loop") and NWDIR.is_symlink():
         print("night-watch: agent_logs/night-watch is a link to another checkout; run the watch there", file=sys.stderr)
         return 2
