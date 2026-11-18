@@ -295,6 +295,29 @@ cp "$wtp/app-a/.gitignore" "$w2/app-a/.gitignore"
 [[ ! -L "$w2/app-a/infra/terraform/.terraform" && "$(cat "$w2/app-a/infra/terraform/.terraform/terraform.tfstate")" == "root-state" ]] \
   && ok "TF copy is a real directory" || bad "TF copy is a real directory"
 
+# P — step 1 of setup.sh links the Night Watch records. Run only that block (setup.sh's other steps
+# need the network and host tooling), cut out of the real file so the test follows it.
+echo "night-watch link (setup.sh step 1)"
+awk '/^if \[\[ "\$has_root" == 1 \]\]; then$/ && !s {s=1} /^# ── 2\./ {s=0} s' "$ROOT/.paradev/setup.sh" > "$T/step1.sh"
+[[ -s "$T/step1.sh" ]] || bad "P0 step 1 extracted from setup.sh" "empty"
+px="$T/p"; mkdir -p "$px/root/agent_logs/night-watch" "$px/wt" "$px/empty-root"
+git init -q "$px/wt"; printf "agent_logs/\n.gitignore\n" > "$px/wt/.gitignore"
+step1() { # step1 <root>  — run in the worktree; sets $out
+  out="$(cd "$px/wt" && bash -c 'source "$1"; VERBOSE=1; root_ws="$2"; has_root=1; source "$3"' _ "$LIB" "$1" "$T/step1.sh" 2>&1)"
+}
+step1 "$px/root"
+[[ -L "$px/wt/agent_logs/night-watch" && "$(readlink "$px/wt/agent_logs/night-watch")" == "$px/root/agent_logs/night-watch" ]] \
+  && ok "P1 root records linked into the worktree" || bad "P1 root records linked into the worktree" "$out"
+step1 "$px/root"
+ck "P3 second run reports already linked" "agent_logs/night-watch already symlinked" "$out"
+[[ -z "$(git -C "$px/wt" status --porcelain)" ]] && ok "P5 git status clean after linking" || bad "P5 git status clean after linking" "$(git -C "$px/wt" status --porcelain)"
+rm -rf "$px/wt/agent_logs"; step1 "$px/empty-root"
+[[ ! -e "$px/wt/agent_logs" ]] && ok "P2 no source: no link, no agent_logs/" || bad "P2 no source: no link, no agent_logs/" "$out"
+mkdir -p "$px/wt/agent_logs/night-watch"; step1 "$px/root"
+ck "P4 real directory: warns" "is a real directory here" "$out"
+[[ ! -L "$px/wt/agent_logs/night-watch" && ! -e "$px/wt/agent_logs/night-watch/night-watch" ]] \
+  && ok "P4 real directory left as-is, no nested link" || bad "P4 real directory left as-is, no nested link" "$out"
+
 echo
 echo "paradev selftest: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]

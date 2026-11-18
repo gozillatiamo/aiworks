@@ -206,6 +206,14 @@ spam on the host.
   exists before writing `.aiworks/slack-context.json` — otherwise the Stop-hook backstop
   is silently disabled.
 
+## Following up a Night Watch post
+
+Mention the bot under a Night Watch post to dig further. Every prompt carries a short block
+telling the session to run `<root>/scripts/night-watch/run.sh brief <HH:MM>` first: it prints the
+Verdict file path, `brief_en`, the findings with their evidence ids, and the gaps. `HH:MM` is the
+slot printed in the post (local time, never the UTC thread timestamps). The data is read-only; the
+session must never run `tick` or `loop`. The allowlist is unchanged.
+
 ## The post-back summary — short by contract
 
 The reply the agent posts to the thread is the one artifact of a turn a human actually
@@ -394,6 +402,7 @@ project's setup or reuse worktrees if this is too heavy for your usage.
 | `aiworks_dispatch/config.py` | env → typed `Config`, fail-fast |
 | `aiworks_dispatch/correlation.py` | `CorrelationContext`, id + git-safe slug |
 | `aiworks_dispatch/prompt.py` | trusted preamble + untrusted request block |
+| `selftest.sh` | stdlib-only prompt checks (`scripts/slack-dispatch/selftest.sh`) |
 | `aiworks_dispatch/store.py` | Redis dedup + correlation/outcome store + thread mapping/busy |
 | `aiworks_dispatch/clear_busy.py` | Stop-hook helper: free a thread's busy flag |
 | `aiworks_dispatch/dispatcher.py` | `Dispatcher` interface + `ParadevLocalDispatcher` |

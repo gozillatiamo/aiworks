@@ -27,6 +27,7 @@ only. The English follow-up brief is not posted: it is kept in the Verdict file 
 scripts/night-watch/run.sh tick     # one Tick now, then exit (cron or launchd friendly)
 scripts/night-watch/run.sh loop     # wait for each slot, Tick, repeat; Ctrl-C stops it
 scripts/night-watch/run.sh plan     # print the current slot, whether it is active, and the next one
+scripts/night-watch/run.sh brief [latest|HH:MM|YYYYMMDDTHHMM]   # print a Verdict for a follow-up (read-only)
 scripts/night-watch/selftest.sh     # offline regression, agent and chat stubbed
 ```
 
@@ -37,6 +38,7 @@ skip or gap. Each line is flushed at once, so a process manager sees it live. st
 Under cron, redirect the output (`>> night-watch.out 2>&1`), or cron mails every Tick.
 
 Run one loop on one machine. The lock makes a second loop skip every slot; two machines would both post.
+Run it only in the root checkout: a worktree links this directory, and `tick` and `loop` refuse to run through the link.
 
 ## States and posting
 
@@ -61,6 +63,9 @@ posting and counts as FAILED; every post also goes through the adapter's PII gat
 - `ticks.log`: one line per Tick (`<slot> <state> <headline or reason> [ts=...]`); the same line is echoed to stderr.
 - `verdicts/<slot>.json`: the Verdict, or the raw agent output of a FAILED Tick.
 - `tick.lock`: held while a Tick runs.
+
+Files older than 7 days are deleted at the end of each Tick, except `state.json`, `tick.lock` and
+`ticks.log`. Links and directories are never followed or removed.
 
 ## Limits
 
