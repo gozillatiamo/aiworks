@@ -632,6 +632,21 @@ stagehand:
                                    #   faster than anyone can follow and buries the edit that mattered.
 
 
+# ── Night Watch (scripts/night-watch/) — unattended read-only production watch ──
+# `scripts/night-watch/run.sh loop` runs one Tick per slot (a headless `oncall` agent, production
+# only) and posts its Verdict through scripts/notify/. Needs SLACK_BOT_TOKEN in scripts/notify/.env
+# (threading), `triage.prod: true` on the machine that runs it, and the triage MCPs registered.
+# Omit the block to leave it off. Whole-block precedence: a `night_watch:` block in
+# workspace.config.local.yaml replaces this one. Full doc: scripts/night-watch/README.md
+night_watch:
+  channel: ""                      # channel id or #name the watch posts to (one parent message per day)
+  interval_minutes: 60             # slot length in minutes; must divide 1440. Slots start at local midnight.
+  active_hours: "00:00-23:59"      # local HH:MM-HH:MM; wraps past midnight when end < start
+  playbook: "docs/night-watch/playbook.md"   # workspace-owned rules; start from scripts/night-watch/playbook.template.md
+  mention: []                      # chat member ids mentioned on SUSPICIOUS, ALERT and the first BLIND, e.g. ["U00000000000"]
+  tick_timeout_minutes: 20         # a Tick still running after this is killed and reported as FAILED
+
+
 # ── Voice (scripts/voice/) — spoken acknowledgements, milestones, dictation ────
 # A `th`-ONLY FEATURE, OFF BY DEFAULT, and per-person. The gate lives in scripts/voice/lib.sh:
 # with any other `language` every voice command exits 0 SILENTLY (run it with -v to hear why),

@@ -6,7 +6,7 @@ script; `lib.sh` dispatches to a provider implementation chosen by `NOTIFY_PROVI
 
 | Script | Does |
 |---|---|
-| `send.sh` | Post a message to the configured chat provider; prints `ok=1` + `permalink=` (where available) |
+| `send.sh` | Post a message to the configured chat provider; prints `ok=1` + `permalink=` (where available); with a bot token also `ts=` + `channel=` |
 
 `send.sh` accepts `--channel <id\|#name>` (defaults to `NOTIFY_CHANNEL`) and `--dry-run`.
 The message text is the first positional arg, or stdin.

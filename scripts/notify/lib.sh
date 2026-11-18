@@ -6,7 +6,7 @@
 # scripts/notify/<provider>/impl.sh, which defines the provider interface:
 #
 #   notify_require_config                   — validate the provider's env (token/webhook), die if missing
-#   notify_send  CHANNEL TEXT [DRY] [THREAD] — post TEXT to CHANNEL; a non-empty THREAD replies in-thread. Prints "ok=1" + "permalink=<url>"
+#   notify_send  CHANNEL TEXT [DRY] [THREAD] — post TEXT to CHANNEL; a non-empty THREAD replies in-thread. Prints "ok=1" + "permalink=<url>" (+ "ts=" and "channel=" with a bot token)
 #   notify_send_file CHANNEL FILE [COMMENT] [DRY] [THREAD] [TITLE] — upload FILE to CHANNEL with an optional COMMENT, threaded under THREAD. Prints "ok=1" + "permalink=<url>". Bot-token only (a webhook can't upload)
 #   notify_delete CHANNEL TS [DRY]          — retract a message THIS bot posted. Prints "ok=1" + "deleted=<ts>". Bot-token only; a provider can only delete its own message
 #   notify_parse_permalink URL              — print "<channel> <ts>" for a message permalink, else nothing (so a retraction can be driven by the URL the send printed)

@@ -76,7 +76,7 @@ value. Enforced by `pretool-env-guard.sh` at the root **and in every repo**: a l
 
 ## Provider adapters
 
-`scripts/vcs/` (PR/MR) · `scripts/tracker/` (tickets) · `scripts/notify/` (chat) · `scripts/observability/` (traces).
+`scripts/vcs/` (PR/MR) · `scripts/tracker/` (tickets) · `scripts/notify/` (chat) · `scripts/observability/` (traces) · `scripts/night-watch/` (unattended production watch: posts only through `scripts/notify/`, the agent returns a Verdict).
 **Always go through the adapters — never `gh`/`glab`/Notion/Jira/Slack/the SigNoz API directly.** ⚠️ **Run a WRITER bare**:
 no pipe, `&&`, `;`, `$( )`, heredoc. Allow rules match the WHOLE command string, so a compound matches nothing, falls to
 the classifier, and is denied **silently**. Readers and `--dry-run` pipe freely. `pretool-adapter-pipe-guard.sh`.
