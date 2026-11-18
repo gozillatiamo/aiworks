@@ -57,6 +57,8 @@ STR = {
         "learning": "(baseline learning)",
         "repeat": "ALERT repeat",
         "blind": "🙈 *BLIND {hm}* — re-authenticate: {reauth}",
+        "resolved_only": "only cases already marked resolved ({n})",
+        "resolved": "_Already marked resolved, not repeated: {n}_",
     },
     "th": {
         "day": "Night Watch {date}",
@@ -69,6 +71,8 @@ STR = {
         "learning": "(กำลังเรียน baseline)",
         "repeat": "ALERT ซ้ำ",
         "blind": "🙈 *BLIND {hm}* — ต้องยืนยันตัวตนใหม่: {reauth}",
+        "resolved_only": "มีแต่เคสที่ตรวจแล้วว่าปลอดภัย ({n})",
+        "resolved": "_เคสที่ตรวจแล้วว่าปลอดภัย ไม่แจ้งซ้ำ: {n}_",
     },
 }
 
@@ -383,7 +387,7 @@ def window_start(cfg, state, slot):
     return max(start, slot - timedelta(hours=6))
 
 
-def build_prompt(cfg, state, slot, t):
+def build_prompt(cfg, state, slot, t, res=()):
     ok = state["ticks_ok"]
     start = window_start(cfg, state, slot)
     sub = {
@@ -397,6 +401,9 @@ def build_prompt(cfg, state, slot, t):
         "LEARNING": "baseline learning: count-based findings are labelled and mention nobody"
                     if ok < LEARN_TICKS else "baselines learned",
         "STATE": json.dumps({"baselines": state["baselines"], "notes": state["notes"]}, indent=1),
+        "RESOLVED": json.dumps(
+            [{**{k: r.get(k) for k in ("id", "realm", "rule_id", "severity", "note", "expires_at")},
+              "evidence": r["evidence"][:8]} for r in res], indent=1) if res else "none",
         "SCHEMA": (HERE / "verdict.schema.json").read_text(encoding="utf-8"),
     }
     text = (HERE / "prompt.md").read_text(encoding="utf-8")
@@ -549,7 +556,8 @@ def deliver(poster, v, st):
     st["ticks_ok"] += 1
     if state == "OK":
         extra = f" ({t['gaps'].format(n=len(v['gaps']))})" if v.get("gaps") else ""
-        return poster.reply(t["ok"].format(hm=hm, headline=v["headline"]) + extra)
+        head = t["resolved_only"].format(n=len(v["suppressed"])) if v.get("suppressed") else v["headline"]
+        return poster.reply(t["ok"].format(hm=hm, headline=head) + extra)
     suppress = learning and all(f["rule"] == "count" for f in v["findings"])
     who = "" if suppress else poster.mentions
     counts = " · ".join(f"{DOT[s]} {s} {n}" for s in ("ALERT", "SUSPICIOUS")
@@ -558,6 +566,8 @@ def deliver(poster, v, st):
              *finding_lines(v["findings"], learning, t), ""]
     if v.get("conclusion"):
         lines.append(f"*{t['conclusion']}:* {v['conclusion']}")
+    if v.get("suppressed"):
+        lines.append(t["resolved"].format(n=len(v["suppressed"])))
     if v.get("gaps"):
         lines.append(f"_{t['unchecked']}:_ " + ", ".join(sorted({g["realm"] for g in v["gaps"]})))
     ts = poster.top("\n".join(lines).rstrip())
@@ -608,7 +618,7 @@ def _tick_locked(cfg, t, slot):
         if missed:
             poster.gap(missed)
 
-    verdict, raw, reason = None, "", ""
+    verdict, raw, reason, res, dropped = None, "", "", [], 0
     playbook = ROOT / cfg["playbook"]
     if not prod_allowed():
         verdict = {"state": "BLIND", "headline": "production is not readable on this machine",
@@ -618,7 +628,8 @@ def _tick_locked(cfg, t, slot):
     elif not playbook.is_file():
         reason = f"playbook-missing ({cfg['playbook']})"
     else:
-        out, rc = launch(cfg, build_prompt(cfg, st, slot, t))
+        res = active(load_resolved())  # snapshot before the agent runs: nothing it does changes this Tick
+        out, rc = launch(cfg, build_prompt(cfg, st, slot, t, res))
         if out is None:
             reason = rc
         else:
@@ -628,6 +639,8 @@ def _tick_locked(cfg, t, slot):
                 err = validate(verdict)
                 if err:
                     verdict, reason = None, err
+                elif verdict["state"] in ("SUSPICIOUS", "ALERT"):
+                    dropped = apply_resolutions(verdict, res)
 
     stamp = slot.strftime("%Y%m%dT%H%M")
     (NWDIR / "verdicts").mkdir(exist_ok=True)
@@ -640,7 +653,8 @@ def _tick_locked(cfg, t, slot):
         ts = deliver(poster, verdict, st)
         if verdict["state"] != "BLIND":
             st["last_success_slot"] = slot.isoformat()
-        tlog(slot, verdict["state"], verdict["headline"], ts or "", note=_note(poster, ts, t0))
+        tlog(slot, verdict["state"], verdict["headline"] + (f" (resolved earlier: {dropped})" if dropped else ""),
+             ts or "", note=_note(poster, ts, t0))
     else:
         vfile.write_text(raw[:RAW_CAP] or reason, encoding="utf-8")
         st["failures"]["consecutive"] += 1
@@ -695,6 +709,12 @@ def _print_verdict(v):
         print(f"{i}. {f.get('severity')} {f.get('realm')} {f.get('rule_id') or f.get('rule')}: {f.get('title')}")
         for e in f.get("evidence") or []:
             print(f"   {e.get('kind')} {e.get('id')}" + (f" target={e['target']}" if e.get("target") else ""))
+    for s in v.get("suppressed") or []:
+        f = s.get("finding") or {}
+        print(f"resolved earlier ({s.get('resolution')}): {f.get('severity')} {f.get('realm')} "
+              f"{f.get('rule_id') or f.get('rule')}: {f.get('title')}")
+        for e in f.get("evidence") or []:
+            print(f"   {e.get('kind')} {e.get('id')}")
     for g in v.get("gaps") or []:
         print(f"gap {g.get('realm')}: {g.get('reason')}")
 

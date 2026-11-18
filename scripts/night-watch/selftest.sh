@@ -391,13 +391,76 @@ ck "C1 corrupt file + resolve exits 0" 0 "$(nwrc resolve latest 1 --note x)"
 ck "C1 corrupt file kept aside" "1" "$(ls "$NWD" | grep -c 'resolved.json.corrupt-')"
 ck "C1 new file has one entry" 1 "$(rcount)"
 
+# --- resolved cases: a Tick drops a repeat ----------------------------------------------------------
+resolve1() { nw resolve latest 1 --note "retry by design" "$@" >/dev/null; }
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; resolve1; tick 2026-01-01T11:00:00 >/dev/null
+ck "S1 exact repeat: parent + first post + one reply, no new top-level" 3 "$(nsends)"
+has "S1 thread reply says only resolved cases" "|on|✅ OK 11:00 — only cases already marked resolved (1)" "$(sendn 3)"
+hasnt "S1 no mention on the reply" "<@U1>" "$(sendn 3)"
+has "S1 ticks.log counts it" "OK h (resolved earlier: 1)" "$(tlog)"
+has "S1 saved Verdict keeps it under suppressed" '"suppressed"' "$(cat "$V/20260101T1100.json")"
+has "S1 brief shows it" "resolved earlier (20260101T1000-1)" "$(brief 11:00)"
+reset; say "$(vx SUSPICIOUS "$(fx payments fixed SUSPICIOUS r1 a1 a2)")"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+say "$(vx SUSPICIOUS "$(fx payments fixed SUSPICIOUS r1 a2)")"; tick 2026-01-01T11:00:00 >/dev/null
+ck "S2 subset of resolved ids is dropped" 3 "$(nsends)"
+say "$(vx SUSPICIOUS "$(fx payments fixed SUSPICIOUS r1 a1 new999)")"; tick 2026-01-01T12:00:00 >/dev/null
+has "S3 a new evidence id posts top-level, mention, all ids" "-|on|🟡 *SUSPICIOUS 12:00* <@U1>" "$(sendn 4)"
+has "S3 shows the new id" "new999" "$(sendn 4)"
+reset; say "$(vx ALERT "$(fx payments fixed ALERT r9 x1)" "$(fx payments fixed SUSPICIOUS r1 abc123)")"; tick 2026-01-01T10:00:00 >/dev/null
+nw resolve latest 1 --alert --note "known" >/dev/null; n0="$(nsends)"; tick 2026-01-01T11:00:00 >/dev/null
+ck "S4 partial: one new top-level post, no ALERT repeat" "$((n0+1))" "$(nsends)"
+has "S4 state recomputed to SUSPICIOUS" "-|on|🟡 *SUSPICIOUS 11:00*" "$(sendn "$((n0+1))")"
+has "S4 remaining finding shown" '`r1`' "$(sendn "$((n0+1))")"
+hasnt "S4 resolved finding hidden" "r9" "$(sendn "$((n0+1))")"
+has "S4 count line" "_Already marked resolved, not repeated: 1_" "$(sendn "$((n0+1))")"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+say "$(vx ALERT "$(fx payments fixed ALERT r1 abc123)")"; tick 2026-01-01T11:00:00 >/dev/null
+has "S5 escalation to ALERT still posts" "🚨 *ALERT 11:00* <@U1>" "$(sends)"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+say "$(vx SUSPICIOUS "$(fx auth fixed SUSPICIOUS r1 abc123)")"; tick 2026-01-01T11:00:00 >/dev/null
+has "S6 other realm posts" "🟡 *SUSPICIOUS 11:00* <@U1>" "$(sends)"
+say "$(vx SUSPICIOUS "$(fx payments fixed SUSPICIOUS r2 abc123)")"; tick 2026-01-01T12:00:00 >/dev/null
+has "S6 other rule_id posts" "🟡 *SUSPICIOUS 12:00* <@U1>" "$(sends)"
+reset; say "$(vx SUSPICIOUS "$(fx auth lead SUSPICIOUS 'odd login burst' t1)")"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+say "$(vx SUSPICIOUS "$(fx auth lead SUSPICIOUS 'login burst' t1)")"; tick 2026-01-01T11:00:00 >/dev/null
+ck "S7 lead matches on evidence, not on reworded rule_id" 3 "$(nsends)"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+tick 2026-01-08T11:00:00 >/dev/null
+has "S8 expired resolution posts again" "🟡 *SUSPICIOUS 11:00* <@U1>" "$(sends)"
+reset; say "$(vx SUSPICIOUS "$(KIND=metric fx payments count SUSPICIOUS c1 pay.counter)")"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+tick 2026-01-02T11:00:00 >/dev/null
+has "S9 aggregate-only evidence expires after 1 day" "SUSPICIOUS 11:00" "$(sends)"
+reset; say "$(vx SUSPICIOUS "$(KIND=metric fx payments count SUSPICIOUS c1 pay.counter)")"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+tick 2026-01-01T12:00:00 >/dev/null
+hasnt "S9 within the day it is suppressed" "SUSPICIOUS 12:00" "$(sends)"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+cfg; echo 'case_report_language: th' >> "$T/workspace.config.yaml"
+tick 2026-01-01T11:00:00 >/dev/null
+has "S13 Thai OK reply" "มีแต่เคสที่ตรวจแล้วว่าปลอดภัย (1)" "$(sends)"
+cfg
+reset; say "$SUSP"; mkdir -p "$NWD"; echo '{not json' > "$RJ"; tick 2026-01-01T10:00:00 >/dev/null
+has "C2 corrupt file is treated as empty: finding posts" "🟡 *SUSPICIOUS 10:00* <@U1>" "$(sends)"
+ck "C2 corrupt file kept aside" 1 "$(ls "$NWD" | grep -c 'resolved.json.corrupt-')"
+ck "P1 matches truth table" "True True False False False False True" "$(py "
+f=lambda realm='payments',sev='SUSPICIOUS',rid='r1',ids=('a',),rule='fixed': {'realm':realm,'severity':sev,'rule_id':rid,'rule':rule,'evidence':[{'id':i} for i in ids]}
+r={'realm':'payments','severity':'SUSPICIOUS','rule_id':'R1','rule':'fixed','evidence':['a','b']}
+ra=dict(r,severity='ALERT')
+print(n.matches(f(),r), n.matches(f(ids=('a','b')),r), n.matches(f(ids=('a','c')),r), n.matches(f(realm='auth'),r),
+      n.matches(f(rid='r2'),r), n.matches(f(sev='ALERT'),r), n.matches(f(sev='SUSPICIOUS',rid='other',rule='lead'),dict(r,rule='lead')))")"
+ck "P2 both findings covered: 2 dropped, state OK" "2 OK" "$(py "
+mk=lambda i:{'realm':'payments','severity':'SUSPICIOUS','rule_id':'r%d'%i,'rule':'fixed','evidence':[{'id':'a%d'%i}]}
+rs=[{'id':'x%d'%i,'realm':'payments','severity':'SUSPICIOUS','rule_id':'r%d'%i,'rule':'fixed','evidence':['a%d'%i]} for i in (1,2)]
+v={'state':'SUSPICIOUS','findings':[mk(1),mk(2)]}
+print(n.apply_resolutions(v,rs), v['state'])")"
+
 # --- retention ---------------------------------------------------------------------------------
 cfg; NWD="$T/agent_logs/night-watch"
 age() { touch -t "$1" "${@:2}"; }
 reset; say "$OKV"; mkdir -p "$NWD/verdicts" "$T/outside" "$T/outside2"
 : > "$NWD/verdicts/20260101T1000.json"; age 202601020000 "$NWD/verdicts/20260101T1000.json"
 : > "$NWD/verdicts/20260105T1000.json"; age 202601050000 "$NWD/verdicts/20260105T1000.json"
-for f in state.json tick.lock ticks.log resolved.json; do echo x > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
+for f in state.json tick.lock ticks.log; do echo x > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
+echo '{"version":1,"resolutions":[]}' > "$NWD/resolved.json"; age 202512010000 "$NWD/resolved.json"
 for f in state.json.corrupt-20251201T1000 agent.stderr .state.x.tmp; do : > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
 : > "$T/outside/f"; age 202512010000 "$T/outside/f"; ln -s "$T/outside/f" "$NWD/verdicts/old.json"
 mkdir -p "$NWD/verdicts/sub"; : > "$NWD/verdicts/sub/f"; age 202512010000 "$NWD/verdicts/sub/f" "$NWD/verdicts/sub"
