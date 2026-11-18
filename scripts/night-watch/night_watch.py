@@ -38,7 +38,8 @@ MAX_RESOLVED, MAX_RES_IDS, MAX_RES_NOTE = 200, 50, 200
 RANK = {"SUSPICIOUS": 1, "ALERT": 2}
 MAX_NOTES, MAX_NOTE_LEN, MAX_BASELINES = 50, 300, 200
 RAW_CAP = 256 * 1024
-DISALLOW = ["Bash(*scripts/notify/*)", "Bash(*scripts/tracker/*)", "Bash(*scripts/vcs/*)"]
+DISALLOW = ["Bash(*scripts/notify/*)", "Bash(*scripts/tracker/*)", "Bash(*scripts/vcs/*)",
+            "Bash(*night-watch/run.sh*)", "Bash(*night_watch.py*)"]
 REALMS = {"auth", "payments", "wallet", "callbacks", "infrastructure", "errors", "other"}
 EVIDENCE_KINDS = {"trace", "row", "identity", "metric", "log", "config"}
 MAX_IDS, MAX_CONCLUSION = 4, 600
@@ -417,7 +418,7 @@ def launch(cfg, prompt):
     claude = os.environ.get("NIGHT_WATCH_CLAUDE", "claude")
     argv = [claude, "-p", prompt, "--agent", "oncall", "--output-format", "json",
             "--json-schema", (HERE / "verdict.schema.json").read_text(encoding="utf-8"),
-            "--disallowedTools", *DISALLOW]
+            "--disallowedTools", *DISALLOW, f"Edit(/{NWDIR}/**)", f"Write(/{NWDIR}/**)"]
     secs = float(os.environ.get("NIGHT_WATCH_TIMEOUT_SEC") or cfg["timeout"] * 60)
     try:
         p = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,

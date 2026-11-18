@@ -39,6 +39,7 @@ cat > "$T/claude" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" > "$FX/claude.argv"
 [[ -n "${FAKE_SLEEP:-}" ]] && sleep "$FAKE_SLEEP"
+[[ -n "${FAKE_WRITE:-}" ]] && cp "$FAKE_WRITE" "$PWD/agent_logs/night-watch/resolved.json"
 cat "$FX/claude.out"
 EOF
 chmod +x "$T/scripts/notify/send.sh" "$T/claude"
@@ -441,6 +442,23 @@ cfg
 reset; say "$SUSP"; mkdir -p "$NWD"; echo '{not json' > "$RJ"; tick 2026-01-01T10:00:00 >/dev/null
 has "C2 corrupt file is treated as empty: finding posts" "🟡 *SUSPICIOUS 10:00* <@U1>" "$(sends)"
 ck "C2 corrupt file kept aside" 1 "$(ls "$NWD" | grep -c 'resolved.json.corrupt-')"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; resolve1
+tick 2026-01-01T11:00:00 >/dev/null
+has "S10 prompt carries the resolution id" "20260101T1000-1" "$(cat "$FX/claude.argv")"
+has "S10 prompt carries the note" "retry by design" "$(cat "$FX/claude.argv")"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null
+has "S10 no resolutions: none" "none" "$(cat "$FX/claude.argv")"
+argv="$(cat "$FX/claude.argv")"
+has "S12 engine commands disallowed (run.sh)" "night-watch/run.sh" "$argv"
+has "S12 engine commands disallowed (py)" "night_watch.py" "$argv"
+RT="$(cd "$T" && pwd -P)"
+has "S12 Edit on the records dir disallowed" "Edit(/$RT/agent_logs/night-watch/**)" "$argv"
+has "S12 Write on the records dir disallowed" "Write(/$RT/agent_logs/night-watch/**)" "$argv"
+reset; say "$SUSP"; tick 2026-01-01T10:00:00 >/dev/null; : > "$T/empty.json"
+python3 -c 'import json,sys; json.dump({"version":1,"resolutions":[{"id":"20260101T0900-1","realm":"payments","rule":"fixed","rule_id":"r1","severity":"SUSPICIOUS","evidence":["abc123"],"expires_at":"2030-01-01T00:00:00+00:00"}]},open(sys.argv[1],"w"))' "$T/forged.json"
+echo '{"version":1,"resolutions":[]}' > "$RJ"; : > "$T/marker"
+export FAKE_WRITE="$T/forged.json"; tick 2026-01-01T11:00:00 >/dev/null; unset FAKE_WRITE
+has "S11 a write during the Tick does not change that Tick" "🟡 *SUSPICIOUS 11:00* <@U1>" "$(sends)"
 ck "P1 matches truth table" "True True False False False False True" "$(py "
 f=lambda realm='payments',sev='SUSPICIOUS',rid='r1',ids=('a',),rule='fixed': {'realm':realm,'severity':sev,'rule_id':rid,'rule':rule,'evidence':[{'id':i} for i in ids]}
 r={'realm':'payments','severity':'SUSPICIOUS','rule_id':'R1','rule':'fixed','evidence':['a','b']}
