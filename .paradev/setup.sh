@@ -128,15 +128,18 @@ fi
 # docs/agents/language.md) and .claude/settings.local.json (your local Claude Code settings).
 # Neither is tracked, so a fresh worktree carries neither — link each at the root's so your prefs
 # follow you in. PARADEV_LOCAL (default symlink) → =skip to manage them yourself. A missing
-# source file is simply skipped (best-effort, never aborts).
+# source file is simply skipped (best-effort, never aborts). The Night Watch records
+# (agent_logs/night-watch) are linked the same way so a follow-up session can read the Verdicts;
+# the engine never runs in a worktree.
 if [[ "$has_root" == 1 ]]; then
   local_mode="$(switch_mode PARADEV_LOCAL)"
   if [[ "$local_mode" == skip ]]; then
     log "personal local config: PARADEV_LOCAL=skip — leaving workspace.config.local.yaml / .claude/settings.local.json as-is."
   else
-    for rel in workspace.config.local.yaml .claude/settings.local.json; do
-      if [[ ! -f "$root_ws/$rel" ]]; then log "no $rel at the root workspace — skipping (nothing to link)."; continue; fi
+    for rel in workspace.config.local.yaml .claude/settings.local.json agent_logs/night-watch; do
+      if [[ ! -e "$root_ws/$rel" ]]; then log "no $rel at the root workspace — skipping (nothing to link)."; continue; fi
       if [[ -L "$rel" && "$(readlink "$rel")" == "$root_ws/$rel" ]]; then log "$rel already symlinked to the root workspace."; continue; fi
+      if [[ -d "$rel" && ! -L "$rel" ]]; then warn "$rel is a real directory here — left as-is (remove it and re-run to link)."; continue; fi
       mkdir -p "$(dirname "$rel")"
       rm -f "$rel" 2>/dev/null   # replace any stale link / copied file with the link
       if ln -s "$root_ws/$rel" "$rel" 2>/dev/null; then log "$rel → root workspace (symlinked; personal, shared across your worktrees)."

@@ -270,5 +270,75 @@ has "loop: banner" "watch started: channel C1, every 60 min, active 08:00-20:00"
 has "loop: next Tick (flushed, not a TTY)" "next Tick at 2026-01-01 11:00" "$(cat "$T/loop.err")"
 ck "loop: no post" 0 "$(nsends)"
 
+# --- brief (dig-down) --------------------------------------------------------------------------
+cp "$SRC/run.sh" "$NW/"
+brief() { python3 "$NW/night_watch.py" brief "$@" 2>&1; }
+cfg
+V="$T/agent_logs/night-watch/verdicts"
+reset; say "$(verdict SUSPICIOUS fixed SUSPICIOUS)"; tick 2026-01-01T10:00:00 >/dev/null
+out="$(brief latest)"
+has "B1 file path" "agent_logs/night-watch/verdicts/20260101T1000.json" "$out"
+has "B1 brief_en" "brief_en: brief" "$out"
+has "B1 finding" "1. SUSPICIOUS payments r1: payout stuck" "$out"
+has "B1 evidence id" "trace abc123" "$out"
+tick 2026-01-02T10:00:00 >/dev/null
+out="$(brief 10:00)"
+has "B2 newest day wins" "agent_logs/night-watch/verdicts/20260102T1000.json" "$out"
+has "B2 other day named" "other days: 20260101T1000" "$out"
+has "B3 exact stamp" "agent_logs/night-watch/verdicts/20260101T1000.json" "$(brief 20260101T1000)"
+out="$(brief 09:00)"; rc=0; python3 "$NW/night_watch.py" brief 09:00 >/dev/null 2>&1 || rc=$?
+ck "B4 no match exits 1" 1 "$rc"; has "B4 names the argument" "09:00" "$out"
+rc=0; python3 "$NW/night_watch.py" brief nonsense >/dev/null 2>&1 || rc=$?
+ck "B5 bad argument exits 2" 2 "$rc"
+reset; printf '%s\n' '{"is_error":false,"result":"no verdict here"}' > "$FX/claude.out"; tick 2026-01-01T10:00:00 >/dev/null
+out="$(brief latest)"
+has "B6 failed tick: note" "note: FAILED Tick — no Verdict" "$out"
+has "B6 failed tick: raw text" "no verdict here" "$out"
+reset; python3 -c 'import json; print(json.dumps({"is_error":False,"result":"```json\n{\"state\":\"OK\",\"headline\":\"recovered\"}\n```"}))' > "$FX/claude.out"
+mkdir -p "$V"; cp "$FX/claude.out" "$V/20260101T1100.json"
+out="$(brief 11:00)"
+has "B6b raw envelope recovered" "Verdict recovered from raw agent output" "$out"
+has "B6b raw envelope headline" "headline: recovered" "$out"
+reset; say "$(verdict SUSPICIOUS fixed SUSPICIOUS)"; tick 2026-01-01T10:00:00 >/dev/null
+mv "$T/workspace.config.yaml" "$T/cfg.bak"; : > "$T/marker"; sleep 1
+out="$(brief latest)"; has "B7 works without config" "brief_en: brief" "$out"
+ck "B7 writes nothing" "" "$(find "$T/agent_logs" -newer "$T/marker")"
+mv "$T/cfg.bak" "$T/workspace.config.yaml"
+ck "B8 run.sh brief matches" "$(brief latest)" "$("$NW/run.sh" brief latest 2>&1)"
+
+# --- retention ---------------------------------------------------------------------------------
+cfg; NWD="$T/agent_logs/night-watch"
+age() { touch -t "$1" "${@:2}"; }
+reset; say "$OKV"; mkdir -p "$NWD/verdicts" "$T/outside" "$T/outside2"
+: > "$NWD/verdicts/20260101T1000.json"; age 202601020000 "$NWD/verdicts/20260101T1000.json"
+: > "$NWD/verdicts/20260105T1000.json"; age 202601050000 "$NWD/verdicts/20260105T1000.json"
+for f in state.json tick.lock ticks.log; do echo x > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
+for f in state.json.corrupt-20251201T1000 agent.stderr .state.x.tmp; do : > "$NWD/$f"; age 202512010000 "$NWD/$f"; done
+: > "$T/outside/f"; age 202512010000 "$T/outside/f"; ln -s "$T/outside/f" "$NWD/verdicts/old.json"
+mkdir -p "$NWD/verdicts/sub"; : > "$NWD/verdicts/sub/f"; age 202512010000 "$NWD/verdicts/sub/f" "$NWD/verdicts/sub"
+tick 2026-01-10T10:00:00 >/dev/null
+[[ ! -e "$NWD/verdicts/20260101T1000.json" ]] && ok "R1 old verdict deleted" || bad "R1 old verdict deleted" "still there"
+[[ -e "$NWD/verdicts/20260105T1000.json" && -e "$NWD/verdicts/20260110T1000.json" ]] && ok "R1 recent verdicts kept" || bad "R1 recent verdicts kept" "$(ls "$NWD/verdicts")"
+[[ -e "$NWD/state.json" && -e "$NWD/tick.lock" && -e "$NWD/ticks.log" ]] && ok "R2 state, lock, log kept" || bad "R2 state, lock, log kept" "$(ls -a "$NWD")"
+[[ ! -e "$NWD/state.json.corrupt-20251201T1000" && ! -e "$NWD/agent.stderr" && ! -e "$NWD/.state.x.tmp" ]] && ok "R3 stray old files deleted" || bad "R3 stray old files deleted" "$(ls -a "$NWD")"
+[[ -L "$NWD/verdicts/old.json" && -e "$T/outside/f" ]] && ok "R4 symlink and target intact" || bad "R4 symlink and target intact" ""
+[[ -e "$NWD/verdicts/sub/f" ]] && ok "R6 directory and contents intact" || bad "R6 directory and contents intact" ""
+reset; say "$OKV"; mkdir -p "$NWD"; : > "$T/outside2/old.json"; age 202512010000 "$T/outside2/old.json"
+ln -s "$T/outside2" "$NWD/verdicts"; tick 2026-01-10T10:00:00 >/dev/null
+[[ -e "$T/outside2/old.json" ]] && ok "R5 linked verdicts/ untouched" || bad "R5 linked verdicts/ untouched" ""
+reset; say "$OKV"; mkdir -p "$NWD/verdicts"; : > "$NWD/verdicts/20260101T1000.json"; age 202601020000 "$NWD/verdicts/20260101T1000.json"
+cfg "08:00-20:00"; tick 2026-01-10T22:00:00 >/dev/null; cfg
+[[ -e "$NWD/verdicts/20260101T1000.json" ]] && ok "R7 OUTSIDE slot does not prune" || bad "R7 OUTSIDE slot does not prune" ""
+
+# --- linked records directory ------------------------------------------------------------------
+reset; say "$OKV"; mkdir -p "$T/primary-nw" "$T/agent_logs"; ln -s "$T/primary-nw" "$NWD"
+rc="$(tick 2026-01-01T10:00:00)"; ck "G1 tick exits 2" 2 "$rc"; ck "G1 no post" 0 "$(nsends)"
+rc=0; NIGHT_WATCH_NOW=2026-01-01T10:00:00 python3 "$NW/night_watch.py" loop >/dev/null 2>&1 || rc=$?
+ck "G2 loop exits 2" 2 "$rc"
+ck "G3 primary untouched" "" "$(ls -A "$T/primary-nw")"
+mkdir -p "$T/primary-nw/verdicts"; echo '{"state":"OK","headline":"x"}' > "$T/primary-nw/verdicts/20260101T1000.json"
+has "G3 brief still works through the link" "headline: x" "$(brief latest)"
+rm -f "$NWD"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

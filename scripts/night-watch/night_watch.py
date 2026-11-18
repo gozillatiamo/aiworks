@@ -6,12 +6,14 @@ See scripts/night-watch/README.md and docs/adr/0047-*.md.
   night_watch.py tick   run one Tick now and exit
   night_watch.py loop   wait for each slot, run a Tick, repeat
   night_watch.py plan   print the slot for now, whether it is active, and the next one
+  night_watch.py brief [latest|HH:MM|YYYYMMDDTHHMM]   print a Verdict for a follow-up (read-only)
 """
 import fcntl
 import json
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -23,6 +25,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 NWDIR = ROOT / "agent_logs" / "night-watch"
 LEARN_TICKS = 24
+RETAIN_DAYS = 7
+KEEP = {"state.json", "tick.lock", "ticks.log"}
 MAX_NOTES, MAX_NOTE_LEN, MAX_BASELINES = 50, 300, 200
 RAW_CAP = 256 * 1024
 DISALLOW = ["Bash(*scripts/notify/*)", "Bash(*scripts/tracker/*)", "Bash(*scripts/vcs/*)"]
@@ -216,6 +220,21 @@ def load_state(slot):
         path.rename(NWDIR / f"state.json.corrupt-{slot.strftime('%Y%m%dT%H%M')}")
         tlog(slot, "STATE_RESET", f"corrupt state kept aside: {e}")
         return fresh_state()
+
+
+def prune():
+    """Delete regular files older than RETAIN_DAYS in NWDIR and NWDIR/verdicts. Never follows a link."""
+    cutoff = now().timestamp() - RETAIN_DAYS * 86400
+    for d in (NWDIR, NWDIR / "verdicts"):
+        if d.is_symlink() or not d.is_dir():
+            continue
+        for p in d.iterdir():
+            try:
+                st = p.lstat()
+                if p.name not in KEEP and stat.S_ISREG(st.st_mode) and st.st_mtime < cutoff:
+                    p.unlink()
+            except OSError:
+                pass  # retention is housekeeping: never fail a Tick over it
 
 
 def save_state(st):
@@ -552,6 +571,7 @@ def tick(cfg):
     try:
         return _tick_locked(cfg, t, slot)
     finally:
+        prune()
         lock.close()
 
 
@@ -653,11 +673,65 @@ def loop(cfg):
             tlog(nxt, "FAILED", f"internal error: {e}")
 
 
+# ── follow-up ──────────────────────────────────────────────────────────────────
+def _print_verdict(v):
+    for k in ("state", "headline", "conclusion", "brief_en"):
+        if v.get(k):
+            print(f"{k}: {v[k]}")
+    for i, f in enumerate(v.get("findings") or [], 1):
+        print(f"{i}. {f.get('severity')} {f.get('realm')} {f.get('rule_id') or f.get('rule')}: {f.get('title')}")
+        for e in f.get("evidence") or []:
+            print(f"   {e.get('kind')} {e.get('id')}" + (f" target={e['target']}" if e.get("target") else ""))
+    for g in v.get("gaps") or []:
+        print(f"gap {g.get('realm')}: {g.get('reason')}")
+
+
+def brief(arg):
+    """Print a Verdict file for a follow-up session. Read-only: no config, lock, state or write."""
+    files = sorted((NWDIR / "verdicts").glob("*.json"))
+    if arg == "latest":
+        hit = files[-1:]
+    elif re.fullmatch(r"\d{2}:\d{2}", arg):
+        hit = [f for f in files if f.stem.endswith(arg.replace(":", ""))][::-1]
+    elif re.fullmatch(r"\d{8}T\d{4}", arg):
+        hit = [f for f in files if f.stem == arg]
+    else:
+        print("usage: night_watch.py brief [latest|HH:MM|YYYYMMDDTHHMM]", file=sys.stderr)
+        return 2
+    if not hit:
+        print(f"night-watch: no Verdict for {arg} under {NWDIR / 'verdicts'}", file=sys.stderr)
+        return 1
+    f = hit[0]
+    print(f"file: {f}")
+    if len(hit) > 1:
+        print("other days: " + ", ".join(h.stem for h in hit[1:]))
+    text = f.read_text(encoding="utf-8", errors="replace")
+    try:
+        v = json.loads(text)
+    except ValueError:
+        v = None
+    if not (isinstance(v, dict) and "state" in v):
+        v, _ = extract_verdict(text, 0)
+        if isinstance(v, dict) and "state" in v:
+            print("note: FAILED Tick — Verdict recovered from raw agent output, not validated")
+        else:
+            print("note: FAILED Tick — no Verdict")
+            print(text[:2000])
+            return 0
+    _print_verdict(v)
+    return 0
+
+
 def main(argv):
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     cmd = argv[1] if len(argv) > 1 else ""
-    if cmd not in ("tick", "loop", "plan"):
+    if cmd not in ("tick", "loop", "plan", "brief"):
         print(__doc__, file=sys.stderr)
+        return 2
+    if cmd == "brief":
+        return brief(argv[2] if len(argv) > 2 else "latest")
+    if cmd in ("tick", "loop") and NWDIR.is_symlink():
+        print("night-watch: agent_logs/night-watch is a link to another checkout; run the watch there", file=sys.stderr)
         return 2
     try:
         cfg = load_config()
