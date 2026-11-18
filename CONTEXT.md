@@ -383,6 +383,10 @@ A Tick found likely harm or a fixed-rule breach that needs action now.
 **BLIND**:
 A Tick could not read production, so it cannot say whether anything is wrong.
 
+**Resolved case**:
+A Verdict finding a person marked safe after a dig-down; later Ticks drop a repeat of its evidence until the mark expires.
+_Avoid_: ack, mute, snooze, whitelist, thread resolution
+
 ## Providers
 
 **Agent harness**:

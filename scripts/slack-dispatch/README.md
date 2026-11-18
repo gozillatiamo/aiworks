@@ -211,8 +211,16 @@ spam on the host.
 Mention the bot under a Night Watch post to dig further. Every prompt carries a short block
 telling the session to run `<root>/scripts/night-watch/run.sh brief <HH:MM>` first: it prints the
 Verdict file path, `brief_en`, the findings with their evidence ids, and the gaps. `HH:MM` is the
-slot printed in the post (local time, never the UTC thread timestamps). The data is read-only; the
-session must never run `tick` or `loop`. The allowlist is unchanged.
+slot printed in the post (local time, never the UTC thread timestamps). The session must never run
+`tick` or `loop`, and never hand-edit `agent_logs/night-watch/`. The only writes it may make there are
+`run.sh resolve <HH:MM|latest> <N> --note "<one line>"` and `run.sh unresolve <id>`: it resolves a
+finding only when its investigation concludes the finding is safe, never when unsure, adds `--alert`
+for an ALERT finding only when a person in the thread asked, and tells the thread when the mark
+expires and how to undo it. Later Ticks then drop a repeat of that finding (see the Night Watch README).
+
+Permission: no repo allow rule covers `run.sh brief` or `run.sh resolve`. The session runs under the
+Paradev agent preset, which is defined outside this repo; if that preset does not bypass permissions,
+both commands are denied headless. Adding `Bash(*scripts/night-watch/run.sh *)` is the owner's call.
 
 ## The post-back summary — short by contract
 
