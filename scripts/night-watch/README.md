@@ -29,6 +29,12 @@ scripts/night-watch/run.sh plan     # print the current slot, whether it is acti
 scripts/night-watch/selftest.sh     # offline regression, agent and chat stubbed
 ```
 
+Progress goes to stderr, one timestamped line per event: the loop's start, `next Tick at ...` before
+each wait, each Tick's `START` and end line (state, headline, duration, where it posted), and every
+skip or gap. Each line is flushed at once, so a process manager sees it live. stdout carries only
+`plan`'s line. Findings and the brief are never printed; read them in chat or `verdicts/`.
+Under cron, redirect the output (`>> night-watch.out 2>&1`), or cron mails every Tick.
+
 Run one loop on one machine. The lock makes a second loop skip every slot; two machines would both post.
 
 ## States and posting
@@ -51,7 +57,7 @@ posting and counts as FAILED; every post also goes through the adapter's PII gat
 
 - `state.json`: counters, the day's parent message, learned `baselines` and `notes`. A corrupt file is
   kept as `state.json.corrupt-<time>` and the watch starts fresh.
-- `ticks.log`: one line per Tick (`<slot> <state> <headline or reason> [ts=...]`).
+- `ticks.log`: one line per Tick (`<slot> <state> <headline or reason> [ts=...]`); the same line is echoed to stderr.
 - `verdicts/<slot>.json`: the Verdict, or the raw agent output of a FAILED Tick.
 - `tick.lock`: held while a Tick runs.
 
