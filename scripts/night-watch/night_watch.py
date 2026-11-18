@@ -134,6 +134,7 @@ def load_config():
         "channel": channel, "interval": interval, "timeout": timeout, "mention": mention,
         "playbook": raw.get("playbook", "docs/night-watch/playbook.md"),
         "hours": (parse_hm(m[1]), parse_hm(m[2])), "lang": lang,
+        "active": m[0],
     }
 
 
@@ -181,11 +182,18 @@ def fresh_state():
             "failures": {"consecutive": 0}, "baselines": {}, "notes": []}
 
 
-def tlog(slot, status, text="", ts=""):
+def say(line):
+    # stderr: stdout stays machine-readable (`plan`); flush: prompt under a process manager.
+    print(f"{now():%Y-%m-%d %H:%M:%S} night-watch: {line}", file=sys.stderr, flush=True)
+
+
+def tlog(slot, status, text="", ts="", note=""):
     NWDIR.mkdir(parents=True, exist_ok=True)
     text = " ".join(str(text).split())[:300]
+    line = f"{slot.isoformat()} {status} {text}{f' ts={ts}' if ts else ''}"
     with open(NWDIR / "ticks.log", "a", encoding="utf-8") as f:
-        f.write(f"{slot.isoformat()} {status} {text}{f' ts={ts}' if ts else ''}\n")
+        f.write(line + "\n")
+    say(line + (f" ({note})" if note else ""))
 
 
 def load_state(slot):
@@ -324,12 +332,16 @@ def extract_verdict(stdout, rc):
 
 
 # ── agent launch ─────────────────────────────────────────────────────────────────────────────────
-def build_prompt(cfg, state, slot, t):
-    ok = state["ticks_ok"]
+def window_start(cfg, state, slot):
     last = state["last_success_slot"]
     start = datetime.fromisoformat(last) - timedelta(minutes=10) if last else \
         slot - timedelta(minutes=cfg["interval"] + 10)
-    start = max(start, slot - timedelta(hours=6))
+    return max(start, slot - timedelta(hours=6))
+
+
+def build_prompt(cfg, state, slot, t):
+    ok = state["ticks_ok"]
+    start = window_start(cfg, state, slot)
     sub = {
         "LANGUAGE_DIRECTIVE": f"LANGUAGE_DIRECTIVE: OUTPUT LANGUAGE = {cfg['lang']} "
                               "(case-report prose: headline and finding titles; brief_en stays English)",
@@ -406,6 +418,7 @@ class Poster:
         self.hm = slot.strftime("%H:%M")
         self.mentions = " ".join(f"<@{m}>" for m in cfg["mention"])
         self.err = ""
+        self.where = ""
 
     def post(self, text, thread=None, need_ts=False):
         """Return the posted ts ('' when posted without one), or None when the post failed."""
@@ -438,6 +451,7 @@ class Poster:
         return day["parent_ts"]
 
     def reply(self, text):
+        self.where = "thread"
         for attempt in (0, 1):
             parent = self.parent()
             if not parent:
@@ -448,6 +462,7 @@ class Poster:
             self.state["day"]["parent_ts"] = None
 
     def top(self, text, brief=None):
+        self.where = "top-level"
         ts = self.post(text, need_ts=bool(brief))
         if ts and brief:
             self.post(f"```\n{brief}\n```", ts)
@@ -518,11 +533,20 @@ def tick(cfg):
         lock.close()
 
 
+def _note(poster, ts, t0):
+    # ts None = post failed; "" = posted without a ts, so test `is None`, never falsiness.
+    d = int(time.monotonic() - t0)
+    return f"took {d // 60}m{d % 60:02d}s, {'not posted' if ts is None else 'posted ' + poster.where}"
+
+
 def _tick_locked(cfg, t, slot):
     st = load_state(slot)
     if st["last_slot"] and slot <= datetime.fromisoformat(st["last_slot"]):
         tlog(slot, "SKIPPED", "already-ran")
         return 0
+    t0 = time.monotonic()
+    say(f"{slot.isoformat()} START window {window_start(cfg, st, slot):%H:%M}-{t:%H:%M}, "
+        f"timeout {cfg['timeout']} min")
     poster = Poster(cfg, st, slot)
     if st["last_slot"]:
         missed = missed_slots(datetime.fromisoformat(st["last_slot"]), slot, cfg)
@@ -561,7 +585,7 @@ def _tick_locked(cfg, t, slot):
         ts = deliver(poster, verdict, st)
         if verdict["state"] != "BLIND":
             st["last_success_slot"] = slot.isoformat()
-        tlog(slot, verdict["state"], verdict["headline"], ts or "")
+        tlog(slot, verdict["state"], verdict["headline"], ts or "", note=_note(poster, ts, t0))
     else:
         vfile.write_text(raw[:RAW_CAP] or reason, encoding="utf-8")
         st["failures"]["consecutive"] += 1
@@ -569,7 +593,7 @@ def _tick_locked(cfg, t, slot):
         if st["failures"]["consecutive"] >= 2 and poster.mentions:
             text = f"{poster.mentions} {text}"
         ts = poster.reply(text)
-        tlog(slot, "FAILED", reason, ts or "")
+        tlog(slot, "FAILED", reason, ts or "", note=_note(poster, ts, t0))
     st["last_slot"] = slot.isoformat()
     save_state(st)
     return 0
@@ -594,8 +618,10 @@ def loop(cfg):
     if missing:
         print("night-watch: preflight failed:\n  " + "\n  ".join(missing), file=sys.stderr)
         return 2
+    say(f"watch started: channel {cfg['channel']}, every {cfg['interval']} min, active {cfg['active']}")
     while True:
         nxt = next_slot(now(), cfg)
+        say(f"next Tick at {nxt:%Y-%m-%d %H:%M}")
         # Wall-clock check at least every 30 s: time.sleep pauses while the machine sleeps.
         while now() < nxt:
             time.sleep(max(0.0, min(30.0, (nxt - now()).total_seconds())))
@@ -617,7 +643,11 @@ def main(argv):
             s = slot_of(now(), cfg)
             print(f"slot={s.isoformat()} active={int(is_active(s, cfg))} next={next_slot(now(), cfg).isoformat()}")
             return 0
-        return tick(cfg) if cmd == "tick" else loop(cfg)
+        if cmd == "tick":
+            rc = tick(cfg)
+            say(f"next Tick at {next_slot(now(), cfg):%Y-%m-%d %H:%M}")
+            return rc
+        return loop(cfg)
     except ConfigError as e:
         print(f"night-watch: config error: {e}", file=sys.stderr)
         return 2

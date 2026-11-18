@@ -57,6 +57,8 @@ reset() { rm -rf "$T/agent_logs" "$FX/n" "$FX/sends.log" "$FX/nots"; : > "$FX/se
 # say '<verdict json>' — wrap it the way the real CLI does: fenced JSON inside .result
 say() { python3 -c 'import json,sys; print(json.dumps({"is_error":False,"result":"done\n```json\n"+sys.argv[1]+"\n```"}))' "$1" > "$FX/claude.out"; }
 tick() { NIGHT_WATCH_NOW="$1" python3 "$NW/night_watch.py" tick >/dev/null 2>&1; echo $?; }
+# stderr only (progress lines); stdout discarded
+tickerr() { NIGHT_WATCH_NOW="$1" python3 "$NW/night_watch.py" tick 2>&1 >/dev/null; }
 sends() { cat "$FX/sends.log"; }
 nsends() { wc -l < "$FX/sends.log" | tr -d ' '; }
 sendn() { sed -n "${1}p" "$FX/sends.log"; }
@@ -177,6 +179,7 @@ python3 -c 'import fcntl,time,sys; f=open(sys.argv[1],"w"); fcntl.flock(f,fcntl.
 sleep 1
 ck "lock held: slot skipped, nothing posted" "0|0" "$(tick 2026-01-01T10:00:00)|$(nsends)"
 has "lock held: logged" "previous Tick still holds the lock" "$(tlog)"
+has "term: lock skip shown" "SKIPPED previous Tick still holds the lock" "$(tickerr 2026-01-01T10:00:00)"
 wait "$holder"
 
 # --- posting failures --------------------------------------------------------------------------
@@ -218,6 +221,43 @@ has "pii: bank account in finding title rejected" "pii-in-verdict (bank_account)
 reset; say '{"state":"OK","headline":"mail jane@example.com","findings":[],"gaps":[]}'; tick 2026-01-01T10:00:00 >/dev/null
 hasnt "pii: never posted" "jane@example.com" "$(sends)"
 has "pii: tick is FAILED" "pii-in-verdict" "$(sends)"
+
+# --- terminal progress lines -------------------------------------------------------------------
+cfg "08:00-20:00"
+ck "plan: nothing on stderr" "" "$(NIGHT_WATCH_NOW=2026-01-01T10:30:00 python3 "$NW/night_watch.py" plan 2>&1 >/dev/null)"
+reset; say "$OKV"
+ck "tick: stdout stays empty" "" "$(NIGHT_WATCH_NOW=2026-01-01T10:00:00 python3 "$NW/night_watch.py" tick 2>/dev/null)"
+reset; say "$OKV"; out="$(tickerr 2026-01-01T10:00:00)"
+has "term: timestamped" "2026-01-01 10:00:00 night-watch: " "$out"
+has "term: start line" "2026-01-01T10:00:00 START window 08:50-10:00, timeout 20 min" "$out"
+has "term: end line (state + headline)" "2026-01-01T10:00:00 OK all quiet ts=2 (took 0m" "$out"
+has "term: OK posted in thread" "posted thread)" "$out"
+has "term: one-shot next Tick" "next Tick at 2026-01-01 11:00" "$out"
+hasnt "term: ticks.log keeps its format" "took " "$(tlog)"
+reset; say "$(verdict SUSPICIOUS fixed SUSPICIOUS)"; out="$(tickerr 2026-01-01T10:00:00)"
+has "term: SUSPICIOUS end line" "SUSPICIOUS h ts=1 (took 0m" "$out"
+has "term: posted top-level" "posted top-level)" "$out"
+hasnt "term: no finding title" "payout stuck" "$out"
+hasnt "term: no evidence id" "abc123" "$out"
+hasnt "term: no mention id" "U1" "$out"
+reset; echo '{"is_error":false,"result":"no verdict here"}' > "$FX/claude.out"
+has "term: FAILED with reason" "FAILED unparseable" "$(tickerr 2026-01-01T10:00:00)"
+reset; touch "$FX/nots"; say "$OKV"; out="$(tickerr 2026-01-01T10:00:00)"
+has "term: post failure shown" "POST_FAILED" "$out"
+has "term: not posted" "not posted)" "$out"
+reset; say "$OKV"
+has "term: outside hours" "OUTSIDE outside active_hours" "$(tickerr 2026-01-01T22:10:00)"
+reset; say "$OKV"; tick 2026-01-01T10:00:00 >/dev/null
+has "term: gap line" "GAP 11:00, 12:00" "$(tickerr 2026-01-01T13:10:00)"
+reset; say '{"state":"OK","headline":"mail jane@example.com","findings":[],"gaps":[]}'
+hasnt "term: rejected PII never printed" "jane@example.com" "$(tickerr 2026-01-01T10:00:00)"
+# loop: a frozen clock never reaches the slot, so only the start lines are observable offline.
+reset; NIGHT_WATCH_NOW=2026-01-01T10:25:00 python3 "$NW/night_watch.py" loop 2>"$T/loop.err" >/dev/null & lp=$!
+for _ in $(seq 50); do grep -q 'next Tick' "$T/loop.err" && break; sleep 0.1; done
+kill "$lp" 2>/dev/null; wait "$lp" 2>/dev/null
+has "loop: banner" "watch started: channel C1, every 60 min, active 08:00-20:00" "$(cat "$T/loop.err")"
+has "loop: next Tick (flushed, not a TTY)" "next Tick at 2026-01-01 11:00" "$(cat "$T/loop.err")"
+ck "loop: no post" 0 "$(nsends)"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]
