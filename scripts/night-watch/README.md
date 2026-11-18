@@ -18,7 +18,8 @@ posts: its notify, tracker and vcs tools are disallowed for the run
    `workspace.config.example.yaml`; no comments in the live file).
 
 Post prose follows `case_report_language` (falls back to `language`). Finding titles carry identifiers
-only; the follow-up brief is always English.
+only. The English follow-up brief is not posted: it is kept in the Verdict file under
+`agent_logs/night-watch/verdicts/` for an agent asked to dig further.
 
 ## Run
 
@@ -42,8 +43,8 @@ Run one loop on one machine. The lock makes a second loop skip every slot; two m
 | Outcome | Post |
 |---|---|
 | `OK` | thread reply under that day's parent message (one parent per day) |
-| `SUSPICIOUS` | top-level, mentions, finding lines; the English brief as a thread reply |
-| `ALERT` | like `SUSPICIOUS`, posted again after 1 minute |
+| `SUSPICIOUS` | top-level, mentions: headline, a count per severity, one numbered block per finding (realm, rule, title, up to 4 evidence ids), the conclusion, the realms not checked |
+| `ALERT` | like `SUSPICIOUS`; after 1 minute a short repeat (mention and headline only) |
 | `BLIND` | first: top-level with mention and what to re-authenticate. Later consecutive ones: thread reply, no mention, until a Tick succeeds |
 | FAILED (timeout, crash, invalid Verdict) | gap line in the thread; mentions only after 2 failures in a row |
 | missed slots | ONE gap line naming them; never replayed |

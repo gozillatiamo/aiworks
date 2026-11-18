@@ -28,27 +28,34 @@ RAW_CAP = 256 * 1024
 DISALLOW = ["Bash(*scripts/notify/*)", "Bash(*scripts/tracker/*)", "Bash(*scripts/vcs/*)"]
 REALMS = {"auth", "payments", "wallet", "callbacks", "infrastructure", "errors", "other"}
 EVIDENCE_KINDS = {"trace", "row", "identity", "metric", "log", "config"}
+MAX_IDS, MAX_CONCLUSION = 4, 600
+ICON = {"SUSPICIOUS": "🟡", "ALERT": "🚨"}
+DOT = {"ALERT": "🔴", "SUSPICIOUS": "🟡"}
 
 STR = {
     "en": {
         "day": "Night Watch {date}",
         "gap": "Missed slots, not replayed: {slots}",
-        "failed": "FAILED {hm} — {reason}",
-        "ok": "OK {hm} — {headline}",
-        "gaps": "gaps: {n}",
+        "failed": "⚠️ *FAILED {hm}* — {reason}",
+        "ok": "✅ OK {hm} — {headline}",
+        "gaps": "not checked: {n}",
+        "unchecked": "Not checked",
+        "conclusion": "Conclusion",
         "learning": "(baseline learning)",
-        "repeat": "ALERT repeat:",
-        "blind": "BLIND {hm} — re-authenticate: {reauth}",
+        "repeat": "ALERT repeat",
+        "blind": "🙈 *BLIND {hm}* — re-authenticate: {reauth}",
     },
     "th": {
         "day": "Night Watch {date}",
         "gap": "ข้ามรอบตรวจ ไม่ย้อนตรวจ: {slots}",
-        "failed": "FAILED {hm} — รอบนี้ไม่ได้ผลตรวจ: {reason}",
-        "ok": "OK {hm} — {headline}",
+        "failed": "⚠️ *FAILED {hm}* — รอบนี้ไม่ได้ผลตรวจ: {reason}",
+        "ok": "✅ OK {hm} — {headline}",
         "gaps": "ตรวจไม่ได้: {n}",
+        "unchecked": "ตรวจไม่ได้",
+        "conclusion": "สรุป",
         "learning": "(กำลังเรียน baseline)",
-        "repeat": "ALERT ซ้ำ:",
-        "blind": "BLIND {hm} — ต้องยืนยันตัวตนใหม่: {reauth}",
+        "repeat": "ALERT ซ้ำ",
+        "blind": "🙈 *BLIND {hm}* — ต้องยืนยันตัวตนใหม่: {reauth}",
     },
 }
 
@@ -242,12 +249,13 @@ def pii_patterns():
 
 def _posted_strings(v):
     yield v["headline"]
-    yield v.get("brief_en") or ""
+    yield v.get("conclusion") or ""
     yield v.get("reauth") or ""
     for g in v.get("gaps", []):
         yield g["reason"]
     for f in v["findings"]:
         yield f["title"]
+        yield str(f.get("rule_id") or "")
         for e in f["evidence"]:
             yield e["id"]
             yield e.get("target", "")
@@ -287,6 +295,9 @@ def validate(v):
         return "invalid: BLIND without reauth or gaps"
     if v["state"] != "OK" and not (v.get("brief_en") or "").strip():
         return "invalid: brief_en"
+    # Posted prose is trimmed, never a reason to drop a Verdict. brief_en is kept in verdicts/, not posted.
+    c = v.get("conclusion")
+    v["conclusion"] = c.strip()[:MAX_CONCLUSION] if isinstance(c, str) else ""
     up = v.get("state_update")
     if up is not None:
         b = up.get("baselines", {}) if isinstance(up, dict) else None
@@ -462,12 +473,9 @@ class Poster:
                 return ts
             self.state["day"]["parent_ts"] = None
 
-    def top(self, text, brief=None):
+    def top(self, text):
         self.where = "top-level"
-        ts = self.post(text, need_ts=bool(brief))
-        if ts and brief:
-            self.post(f"```\n{brief}\n```", ts)
-        return ts
+        return self.post(text)
 
     def gap(self, missed):
         shown = ", ".join(s.strftime("%H:%M") for s in missed[:24]) + (
@@ -476,12 +484,20 @@ class Poster:
         tlog(self.slot, "GAP", shown)
 
 
+def _code(s):
+    return "`" + s.replace("`", "'") + "`"
+
+
 def finding_lines(findings, learning, t):
+    """One numbered block per finding: severity, realm and rule; the title; up to MAX_IDS evidence ids."""
     lines = []
-    for f in findings:
-        ids = ", ".join(e["id"] for e in f["evidence"])
+    for i, f in enumerate(findings, 1):
+        ids = [e["id"] for e in f["evidence"]]
+        more = f" +{len(ids) - MAX_IDS}" if len(ids) > MAX_IDS else ""
         tag = f" {t['learning']}" if learning and f["rule"] == "count" else ""
-        lines.append(f"- [{f['realm']}] {f['title']} — {ids}{tag}")
+        rule = _code(str(f.get("rule_id") or f["rule"]))
+        lines += ["", f"*{i}.* {DOT[f['severity']]} *{f['realm']}* · {rule}{tag}", f["title"],
+                  "> " + " ".join(_code(x) for x in ids[:MAX_IDS]) + more]
     return lines
 
 
@@ -492,25 +508,30 @@ def deliver(poster, v, st):
     st["failures"]["consecutive"] = 0
     if state == "BLIND":
         text = t["blind"].format(hm=hm, reauth=v.get("reauth") or v["headline"])
-        gaps = [f"- {g['realm']}: {g['reason']}" for g in v.get("gaps", [])]
-        body = "\n".join([text, *gaps])
+        gaps = [f"• {g['realm']}: {g['reason']}" for g in v.get("gaps", [])]
         if st["blind"]["active"]:
-            return poster.reply(body)
+            return poster.reply("\n".join([text, *gaps]))
         st["blind"]["active"] = True
-        return poster.top(f"{poster.mentions} {body}".strip(), v["brief_en"])
+        return poster.top("\n".join([f"{text} {poster.mentions}".strip(), *gaps]))
     st["blind"]["active"] = False
     st["ticks_ok"] += 1
     if state == "OK":
         extra = f" ({t['gaps'].format(n=len(v['gaps']))})" if v.get("gaps") else ""
         return poster.reply(t["ok"].format(hm=hm, headline=v["headline"]) + extra)
     suppress = learning and all(f["rule"] == "count" for f in v["findings"])
-    head = f"{state} {hm} — {v['headline']}"
-    text = "\n".join([f"{'' if suppress else poster.mentions + ' '}{head}".strip(),
-                      *finding_lines(v["findings"], learning, t)])
-    ts = poster.top(text, v["brief_en"])
+    who = "" if suppress else poster.mentions
+    counts = " · ".join(f"{DOT[s]} {s} {n}" for s in ("ALERT", "SUSPICIOUS")
+                        if (n := sum(f["severity"] == s for f in v["findings"])))
+    lines = [f"{ICON[state]} *{state} {hm}* {who}".strip(), f"*{v['headline']}*", counts,
+             *finding_lines(v["findings"], learning, t), ""]
+    if v.get("conclusion"):
+        lines.append(f"*{t['conclusion']}:* {v['conclusion']}")
+    if v.get("gaps"):
+        lines.append(f"_{t['unchecked']}:_ " + ", ".join(sorted({g["realm"] for g in v["gaps"]})))
+    ts = poster.top("\n".join(lines).rstrip())
     if state == "ALERT" and not suppress:
         time.sleep(float(os.environ.get("NIGHT_WATCH_ALERT_REPEAT_SEC", "60")))
-        poster.top(f"{t['repeat']} {text}")
+        poster.top(f"{ICON[state]} *{t['repeat']} {hm}* {who}".strip() + f"\n{v['headline']}")
     return ts
 
 

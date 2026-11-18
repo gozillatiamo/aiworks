@@ -102,8 +102,8 @@ has "agent: posting tools disallowed" "scripts/notify/" "$argv"
 reset; say "$OKV"; tick 2026-01-01T10:00:00 >/dev/null; tick 2026-01-01T11:00:00 >/dev/null
 ck "OK x2: parent + 2 replies" 3 "$(nsends)"
 has "OK: parent is top-level day line" "-|on|Night Watch 2026-01-01" "$(sendn 1)"
-has "OK: reply threads under parent" "1|on|OK 10:00" "$(sendn 2)"
-has "OK: second tick reuses parent" "1|on|OK 11:00" "$(sendn 3)"
+has "OK: reply threads under parent" "1|on|✅ OK 10:00" "$(sendn 2)"
+has "OK: second tick reuses parent" "1|on|✅ OK 11:00" "$(sendn 3)"
 tick 2026-01-02T10:00:00 >/dev/null
 has "OK: new day, new parent" "-|on|Night Watch 2026-01-02" "$(sendn 4)"
 hasnt "OK: no mention" "<@U1>" "$(sends)"
@@ -112,20 +112,27 @@ has "re-run logged already-ran" already-ran "$(tlog)"
 
 # --- SUSPICIOUS / ALERT ------------------------------------------------------------------------
 reset; say "$(verdict SUSPICIOUS fixed SUSPICIOUS)"; tick 2026-01-01T10:00:00 >/dev/null
-ck "SUSPICIOUS: top-level + brief thread" 2 "$(nsends)"
-has "SUSPICIOUS: top-level with mention" "-|on|<@U1> SUSPICIOUS 10:00" "$(sendn 1)"
-has "SUSPICIOUS: brief in thread" "1|on|" "$(sendn 2)"
+ck "SUSPICIOUS: one top-level post, brief not posted" 1 "$(nsends)"
+has "SUSPICIOUS: top-level with mention" "-|on|🟡 *SUSPICIOUS 10:00* <@U1>" "$(sendn 1)"
+has "SUSPICIOUS: numbered finding, rule, title, evidence id" '*1.* 🟡 *payments* · `r1` payout stuck > `abc123`' "$(sendn 1)"
+hasnt "SUSPICIOUS: brief_en is never posted" "brief" "$(sends)"
+reset; say '{"state":"SUSPICIOUS","headline":"h","findings":[{"rule":"lead","severity":"SUSPICIOUS","realm":"auth","title":"t","evidence":[{"kind":"trace","id":"a1"},{"kind":"trace","id":"a2"},{"kind":"trace","id":"a3"},{"kind":"trace","id":"a4"},{"kind":"trace","id":"a5"}]}],"gaps":[{"realm":"wallet","reason":"x"},{"realm":"wallet","reason":"y"}],"conclusion":"look at a1 first","brief_en":"brief"}'
+tick 2026-01-01T10:00:00 >/dev/null
+has "post: conclusion line" "*Conclusion:* look at a1 first" "$(sendn 1)"
+has "post: unchecked realms, deduped" "_Not checked:_ wallet" "$(sendn 1)"
+has "post: evidence ids capped at 4" '`a4` +1' "$(sendn 1)"
+has "post: no rule_id falls back to the rule kind" '`lead`' "$(sendn 1)"
 reset; say "$(verdict ALERT fixed ALERT)"; tick 2026-01-01T10:00:00 >/dev/null
-ck "ALERT: top, brief, repeat" 3 "$(nsends)"
-has "ALERT: mention" "<@U1> ALERT 10:00" "$(sendn 1)"
-has "ALERT: repeated top-level" "-|on|ALERT repeat:" "$(sendn 3)"
+ck "ALERT: top, repeat" 2 "$(nsends)"
+has "ALERT: mention" "🚨 *ALERT 10:00* <@U1>" "$(sendn 1)"
+has "ALERT: repeated top-level" "-|on|🚨 *ALERT repeat 10:00* <@U1> h" "$(sendn 2)"
 
 # --- baseline learning -------------------------------------------------------------------------
 reset; say "$(verdict SUSPICIOUS count SUSPICIOUS)"; tick 2026-01-01T10:00:00 >/dev/null
 hasnt "learning: count finding mentions nobody" "<@U1>" "$(sends)"
 has "learning: labelled" "baseline learning" "$(sends)"
 reset; say "$(verdict ALERT count ALERT)"; tick 2026-01-01T10:00:00 >/dev/null
-ck "learning: suppressed ALERT is not repeated" 2 "$(nsends)"
+ck "learning: suppressed ALERT is not repeated" 1 "$(nsends)"
 reset; say "$(verdict ALERT fixed ALERT)"; tick 2026-01-01T10:00:00 >/dev/null
 has "learning: fixed rule mentions from tick 1" "<@U1>" "$(sendn 1)"
 reset; mkdir -p "$T/agent_logs/night-watch"
@@ -142,23 +149,23 @@ hasnt "after 24 ticks no learning label" "baseline learning" "$(sends)"
 
 # --- BLIND: first top-level, consecutive in thread, reset by success ---------------------------
 reset; say "$BLINDV"; tick 2026-01-01T10:00:00 >/dev/null
-has "BLIND first: top-level with mention" "-|on|<@U1> BLIND 10:00" "$(sendn 1)"
+has "BLIND first: top-level with mention" "-|on|🙈 *BLIND 10:00* — re-authenticate: run login <@U1>" "$(sendn 1)"
 n1="$(nsends)"; tick 2026-01-01T11:00:00 >/dev/null
-hasnt "BLIND consecutive: no mention" "<@U1> BLIND 11:00" "$(sends)"
-has "BLIND consecutive: in thread" "|on|BLIND 11:00" "$(sendn $((n1+2)))"
+hasnt "BLIND consecutive: no mention" "<@U1>" "$(sendn $((n1+2)))"
+has "BLIND consecutive: in thread" "|on|🙈 *BLIND 11:00*" "$(sendn $((n1+2)))"
 say "$OKV"; tick 2026-01-01T12:00:00 >/dev/null
 say "$BLINDV"; tick 2026-01-01T13:00:00 >/dev/null
-has "BLIND after success: mentions again" "<@U1> BLIND 13:00" "$(sends)"
+has "BLIND after success: mentions again" "*BLIND 13:00* — re-authenticate: run login <@U1>" "$(sends)"
 reset; NIGHT_WATCH_PROD_ALLOWED=0 tick 2026-01-01T10:00:00 >/dev/null
 has "prod not allowed: BLIND without agent" "BLIND 10:00" "$(sends)"
 
 # --- failures: gap line, mention only on the 2nd in a row --------------------------------------
 reset; echo '{"is_error":false,"result":"no verdict here"}' > "$FX/claude.out"
 tick 2026-01-01T10:00:00 >/dev/null
-has "failed tick: gap line in thread" "|on|FAILED 10:00" "$(sends)"
+has "failed tick: gap line in thread" "|on|⚠️ *FAILED 10:00*" "$(sends)"
 hasnt "failed tick 1: no mention" "<@U1>" "$(sends)"
 tick 2026-01-01T11:00:00 >/dev/null
-has "failed tick 2: mentions" "<@U1> FAILED 11:00" "$(sends)"
+has "failed tick 2: mentions" "<@U1> ⚠️ *FAILED 11:00*" "$(sends)"
 say "$OKV"; tick 2026-01-01T12:00:00 >/dev/null
 echo '{"is_error":false,"result":"x"}' > "$FX/claude.out"; tick 2026-01-01T13:00:00 >/dev/null
 hasnt "success resets the failure counter" "<@U1> FAILED 13:00" "$(sends)"

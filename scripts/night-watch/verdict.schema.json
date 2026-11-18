@@ -60,6 +60,7 @@
         "notes": {"type": "array", "items": {"type": "string"}}
       }
     },
+    "conclusion": {"type": "string", "maxLength": 600},
     "brief_en": {"type": "string"}
   }
 }
