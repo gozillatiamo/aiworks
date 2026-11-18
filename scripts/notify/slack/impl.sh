@@ -45,8 +45,8 @@ notify_lookup_user() {
   '
 }
 
-# notify_send CHANNEL TEXT [DRY] [THREAD_TS] -> prints "ok=1" + "permalink=<url>" on success,
-# else dies. A non-empty THREAD_TS posts the message as a reply UNDER that thread (the review
+# notify_send CHANNEL TEXT [DRY] [THREAD_TS] -> prints "ok=1" + "permalink=<url>" on success
+# (bot token also prints "ts=<message ts>" + "channel=<channel id>" so a caller can thread), else dies. A non-empty THREAD_TS posts the message as a reply UNDER that thread (the review
 # conclusion lands beneath the review-request), never broadcast to the channel.
 notify_send() {
   local channel="$1" text="$2" dry="${3:-0}" thread_ts="${4:-}"
@@ -98,7 +98,7 @@ notify_send() {
       link="$(curl -sS "https://slack.com/api/chat.getPermalink?channel=${ch}&message_ts=${ts}" \
         -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" 2>/dev/null | jq -r '.permalink // empty' || true)"
     fi
-    printf 'ok=1\npermalink=%s\n' "$link"
+    printf 'ok=1\npermalink=%s\nts=%s\nchannel=%s\n' "$link" "$ts" "$ch"
     return 0
   fi
 

@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "required": ["state", "headline", "findings", "gaps", "state_update", "brief_en"],
+  "properties": {
+    "state": {"enum": ["OK", "SUSPICIOUS", "ALERT", "BLIND"]},
+    "headline": {"type": "string", "minLength": 1, "maxLength": 200},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "rule_id", "severity", "realm", "title", "evidence"],
+        "properties": {
+          "rule": {"enum": ["fixed", "count", "lead"]},
+          "rule_id": {"type": "string"},
+          "severity": {"enum": ["SUSPICIOUS", "ALERT"]},
+          "realm": {"enum": ["auth", "payments", "wallet", "callbacks", "infrastructure", "errors", "other"]},
+          "title": {"type": "string", "minLength": 1},
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["kind", "id"],
+              "properties": {
+                "kind": {"enum": ["trace", "row", "identity", "metric", "log", "config"]},
+                "id": {"type": "string", "minLength": 1},
+                "target": {"type": "string"}
+              }
+            }
+          },
+          "baseline_key": {"type": "string"}
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["realm", "reason"],
+        "properties": {"realm": {"type": "string"}, "reason": {"type": "string"}}
+      }
+    },
+    "reauth": {"type": ["string", "null"]},
+    "state_update": {
+      "type": "object",
+      "properties": {
+        "baselines": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["value"],
+            "properties": {
+              "value": {"type": "number"},
+              "unit": {"type": "string"},
+              "window_minutes": {"type": "number"},
+              "note": {"type": "string"}
+            }
+          }
+        },
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "brief_en": {"type": "string"}
+  }
+}

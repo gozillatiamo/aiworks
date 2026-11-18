@@ -7,7 +7,8 @@
 #   ./send.sh "…" --dry-run                                 # preview, don't send
 #
 # The channel defaults to NOTIFY_CHANNEL (from scripts/notify/.env) when --channel is
-# omitted. On success the provider prints `ok=1` and (where available) `permalink=<url>`.
+# omitted. On success the provider prints `ok=1` and (where available) `permalink=<url>`,
+# plus `ts=<message ts>` and `channel=<channel id>` when a bot token posted it (what threading needs).
 #
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
