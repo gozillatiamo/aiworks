@@ -90,7 +90,7 @@ The test the agent runs on each token: **is it on the English spine? → English
 | Plans, PRDs, summaries — the **`.html` interactive render** (via `/write-interactive-docs`) | English | Thai prose (English spine) |
 | Plan/PRD/summary content **posted into a ticket body or comment** | English | Thai prose (English spine) |
 | Slack / chat notifications | English | Thai prose (English spine) |
-| **Deployed-env case report** relayed in chat, and the chat message handing it over | governed by `case_report_language` — see below | governed by `case_report_language` — see below |
+| **Deployed-env case report** relayed in chat, the chat message handing it over, and **Night Watch** posts | governed by `case_report_language` — see below | governed by `case_report_language` — see below |
 | **Code & code comments** | English | English — never Thai |
 | **Git commit messages & branch names** | English | English — never Thai |
 | **ANY `.md` file you author** — plans, testcases, PRD/BRD/summary Markdown in `agent_logs/`, and every checked-in repo doc (`docs/`, `README`, `docs/adr/` ADRs, `CONTEXT.md`, PRD/BRD committed into a product repo) | English | English — never Thai |

@@ -353,6 +353,36 @@ step 6b — the git-ignored home for organisation-specific, idempotent, local-on
 The convention where a human reviewer's PR/MR comments prefixed `Human:` are blocking,
 top-priority directives the agents auto-route and resolve. → `docs/agents/human-review.md`
 
+## Night Watch
+
+**Night Watch**:
+An unattended, scheduled read-only watch over production that reports anomalies, bugs, fraud and attacks to a chat channel.
+_Avoid_: watchdog, cron job, sweep
+
+**Tick**:
+One scheduled Night Watch run over one slot, ending in a Verdict or a failure.
+_Avoid_: sweep, run
+
+**Playbook**:
+The workspace-owned file of fixed rules, count rules and known-routine patterns a Tick follows.
+_Avoid_: runbook
+
+**Verdict**:
+The structured result a Tick's agent returns: a state, headline, findings with evidence ids, gaps and a follow-up brief.
+_Avoid_: report
+
+**OK**:
+A Tick found nothing outside the Playbook and its baselines.
+
+**SUSPICIOUS**:
+A Tick found something that needs a person to look, not yet harm.
+
+**ALERT**:
+A Tick found likely harm or a fixed-rule breach that needs action now.
+
+**BLIND**:
+A Tick could not read production, so it cannot say whether anything is wrong.
+
 ## Providers
 
 **Agent harness**:
