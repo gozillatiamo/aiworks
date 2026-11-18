@@ -11,7 +11,7 @@ Tick
 - window: {{WINDOW_START}} to {{WINDOW_END}}
 - successful Ticks so far: {{TICK_NUMBER}} ({{LEARNING}})
 
-Memory from earlier Ticks (JSON; you return the full updated `baselines` and `notes`)
+Memory from earlier Ticks (JSON; you return the full updated `baselines` and `notes`; at most 50 notes of 300 characters each, longer ones are cut)
 {{STATE}}
 
 Rules

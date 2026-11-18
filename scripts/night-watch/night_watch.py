@@ -295,9 +295,10 @@ def validate(v):
                 isinstance(x, dict) and isinstance(x.get("value"), (int, float))
                 and not isinstance(x["value"], bool) for x in b.values()):
             return "invalid: state_update.baselines"
-        if not isinstance(n, list) or len(n) > MAX_NOTES or not all(
-                isinstance(x, str) and len(x) <= MAX_NOTE_LEN for x in n):
+        if not isinstance(n, list) or not all(isinstance(x, str) for x in n):
             return "invalid: state_update.notes"
+        # Notes are memory, not report: an overlong one is trimmed, never a reason to drop a Verdict.
+        up["notes"] = [x[:MAX_NOTE_LEN] for x in n[:MAX_NOTES]]
     try:
         pats = pii_patterns()
     except OSError:

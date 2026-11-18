@@ -211,6 +211,10 @@ has "validate: finding without evidence" "evidence" \
 has "validate: ALERT without brief" "brief_en" "$(v '{"state":"ALERT","headline":"h","findings":['"$F"'],"gaps":[]}')"
 has "validate: BLIND without reauth or gaps" "BLIND" "$(v '{"state":"BLIND","headline":"h","findings":[],"gaps":[],"brief_en":"b"}')"
 has "validate: headline with newline" "headline" "$(v '{"state":"OK","headline":"a\\nb","findings":[],"gaps":[]}')"
+ck "validate: overlong and excess notes are trimmed, not rejected" "None 50 300" "$(py "
+v = {'state':'OK','headline':'h','findings':[],'gaps':[],'state_update':{'notes':['x'*353]*60}}
+r = n.validate(v); print(r, len(v['state_update']['notes']), len(v['state_update']['notes'][0]))")"
+has "validate: non-string note" "state_update.notes" "$(v '{"state":"OK","headline":"h","findings":[],"gaps":[],"state_update":{"notes":[1]}}')"
 has "validate: bad baselines" "baselines" "$(v '{"state":"OK","headline":"h","findings":[],"gaps":[],"state_update":{"baselines":{"a":{"value":"x"}}}}')"
 
 # --- PII rejection -----------------------------------------------------------------------------
