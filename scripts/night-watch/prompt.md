@@ -27,8 +27,14 @@ Rules
 - States: `OK` nothing outside the Playbook and baselines; `SUSPICIOUS` needs a person to look;
   `ALERT` likely harm or a fixed-rule breach; `BLIND` could not read production.
   The state must equal the highest finding severity. `OK` has no findings.
-- `headline` and finding `title` follow the language directive above; `brief_en` is always English and
-  tells a follow-up agent what to check first, with the evidence ids.
+- `headline`, finding `title` and `conclusion` follow the language directive above. A person reads them in chat:
+  - `headline`: the single most important fact, at most 80 characters. Do not list every finding in it.
+  - `title`: one finding, one or two short sentences, at most 200 characters. Ids go in `evidence`, not in the title.
+  - `evidence`: the most useful ids first; only the first 4 are posted.
+  - `conclusion`: required unless the state is `OK`. Two or three plain sentences: what this most likely
+    means, and the first thing a person should do. No raw data, no list of what was clean.
+- `brief_en` is always English and is not posted. It is saved with the Verdict for a follow-up agent:
+  what to check first, with the evidence ids.
 - Return ONLY the Verdict as one JSON object matching the schema, in a single ```json fence. No other text.
 
 Verdict schema

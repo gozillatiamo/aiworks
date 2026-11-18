@@ -368,7 +368,7 @@ The workspace-owned file of fixed rules, count rules and known-routine patterns 
 _Avoid_: runbook
 
 **Verdict**:
-The structured result a Tick's agent returns: a state, headline, findings with evidence ids, gaps and a follow-up brief.
+The structured result a Tick's agent returns: a state, headline, findings with evidence ids, gaps, a conclusion for the person reading the post, and a follow-up brief that is saved but not posted.
 _Avoid_: report
 
 **OK**:
