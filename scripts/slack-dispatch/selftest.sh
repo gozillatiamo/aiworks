@@ -44,6 +44,13 @@ check("D3 forbids tick and loop", "Never run `run.sh tick`" in p)
 check("D4 follow-up and agent prompts carry it too",
       all("NIGHT WATCH FOLLOW-UP" in build_prompt(c, "/ws", redis_url="redis://x", is_followup=True)
           for c in (ctx(), ctx("oncall"))))
+check("D5 resolve command present", "/ws/scripts/night-watch/run.sh resolve" in p)
+check("D6 unresolve undo named", "unresolve" in p)
+check("D7 unsure means do not resolve", "Do NOT resolve when you are unsure" in p)
+check("D8 only resolve/unresolve may write; old read-only wording gone",
+      "never hand-edit" in p and "READ-ONLY. Never run" not in p)
+check("D9 --alert rule present, before the untrusted blocks",
+      "--alert" in p and p.index("--alert") < p.index("--- BEGIN USER REQUEST ---"))
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
