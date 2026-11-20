@@ -113,10 +113,23 @@ run best-effort and fall back to raw JSON plus a stderr `note:` when the result 
 Metric series are aggregates, not personal data: unlike `get-logs.sh` / `get-trace.sh`, these
 two scripts do not feed the PII provenance vault.
 
+### UI links
+
+```bash
+scripts/observability/ui-url.sh trace <trace_id>...
+```
+
+Prints one line per id, in order: the UI URL, or an empty line when that (kind, id) has no
+verified deep link (only `trace` does today). No network call; exits 2 on bad usage and 1 on
+missing config. Callers (Night Watch) use it so no URL pattern lives outside the provider impl.
+
 ## Provider interface (`lib.sh`)
 
 - `obs_require_config` — validate the provider's env, die if missing
 - `obs_get_trace TRACE_ID [SPAN_ID]` — print the trace's span waterfall
+- `obs_ui_url KIND ID` — print the backend's UI URL for one piece of evidence, or nothing when
+  there is no verified deep link. Only `trace` has one (`<SIGNOZ_BASE_URL>/trace/<id>`, assuming
+  the UI is served on the API host); the id must be 16-32 hex chars. No network call.
 - `obs_query_logs FILTERS_JSON FROM_MS TO_MS [LIMIT] [RAW]` — print matching log lines, newest
   first. `FILTERS_JSON` is a provider-agnostic semantic object (any subset of `service`,
   `severity`, `env`, `body_contains`, `trace_id`); the provider impl translates it into the

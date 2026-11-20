@@ -17,8 +17,8 @@ posts: its notify, tracker and vcs tools are disallowed for the run
 4. A `night_watch:` block in `workspace.config.yaml` (keys documented in
    `workspace.config.example.yaml`; no comments in the live file).
 
-Post prose follows `case_report_language` (falls back to `language`). Finding titles carry identifiers
-only. The English follow-up brief is not posted: it is kept in the Verdict file under
+Post prose follows `case_report_language` (falls back to `language`). Finding titles name an acting admin
+or agent by username or display name, never by e-mail. The English follow-up brief is not posted: it is kept in the Verdict file under
 `agent_logs/night-watch/verdicts/` for an agent asked to dig further.
 
 ## Run
@@ -48,7 +48,7 @@ Run it only in the root checkout: a worktree links this directory, and `tick` an
 | Outcome | Post |
 |---|---|
 | `OK` | thread reply under that day's parent message (one parent per day) |
-| `SUSPICIOUS` | top-level, mentions: headline, a count per severity, one numbered block per finding (realm, rule, title, up to 4 evidence ids), the conclusion, the realms not checked |
+| `SUSPICIOUS` | top-level, mentions: headline, a count per severity, one numbered block per finding (realm, rule, title, then one line per evidence item: kind, label, table or target, id; up to 6 and `+N`; a trace id links to the trace view), the conclusion, the realms not checked |
 | `ALERT` | like `SUSPICIOUS`; after 1 minute a short repeat (mention and headline only) |
 | `BLIND` | first: top-level with mention and what to re-authenticate. Later consecutive ones: thread reply, no mention, until a Tick succeeds |
 | FAILED (timeout, crash, invalid Verdict) | gap line in the thread; mentions only after 2 failures in a row |
@@ -58,6 +58,15 @@ Baseline learning: for the first 24 successful Ticks a count-based finding is la
 nobody (and an `ALERT` made only of count findings is not repeated). Fixed-rule findings mention from
 Tick 1. A Verdict containing personal data (email, bank-account-like numbers, ...) is rejected before
 posting and counts as FAILED; every post also goes through the adapter's PII gate.
+
+Internal staff are the one carve-out: an `identity` evidence item with `role` `admin` or `agent` is posted
+with its full id, `username`, `name` and `email`. Those values are passed to that one post as `PII_SPARE`
+(newline-separated exact values) so the PII gate leaves them alone; every other post, and every other value,
+is masked as before. The staff fields are dropped from any other item. Whether the role is right is the
+watch agent's own claim, and a staff `username` or `name` is scanned with every detector except e-mail.
+Trace links come from `scripts/observability/ui-url.sh`, called once per post with a 10 s timeout; if it is
+missing, fails or answers with the wrong number of lines, the ids are posted as plain text. The link
+assumes the trace view lives at `<SIGNOZ_BASE_URL>/trace/<id>`.
 
 ## Resolved cases
 
@@ -103,4 +112,4 @@ Files older than 7 days are deleted at the end of each Tick, except `state.json`
   `night_watch.py`) are disallowed; resolutions are read before the agent runs, so a write during a
   Tick changes nothing. `resolve` records no identity: anyone with a shell on the machine can run it.
 - Test seams (selftest only): `NIGHT_WATCH_NOW`, `NIGHT_WATCH_CLAUDE`, `NIGHT_WATCH_TIMEOUT_SEC`,
-  `NIGHT_WATCH_ALERT_REPEAT_SEC`, `NIGHT_WATCH_PROD_ALLOWED`.
+  `NIGHT_WATCH_ALERT_REPEAT_SEC`, `NIGHT_WATCH_PROD_ALLOWED`; and a stubbed `scripts/observability/ui-url.sh`.

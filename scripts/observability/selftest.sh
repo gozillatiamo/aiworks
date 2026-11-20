@@ -275,5 +275,21 @@ no_secret "find-traces --env" "$out"
 ck "--by a resource attribute groups as a resource" resource \
   "$(jq -r '.compositeQuery.builderQueries.A.groupBy[0].type' "$FAKE_DIR/body.json")"
 
+# --- ui-url: deep links are built by the provider impl, no network ------------------------------
+UU="$OBS/ui-url.sh"
+reset_fx
+T1=474635a87bd076aeb672bbcf59591a8c; T2=35ee3fb8fb1f8fc441bac2b40c944f9b
+out="$(SIGNOZ_BASE_URL=http://signoz.test/ "$UU" trace "$T1" 2>&1)"; ck "ui-url trace -> /trace/<id>, slash trimmed" "http://signoz.test/trace/$T1" "$out"
+out="$("$UU" trace "$T1" "$T2" 2>&1)"; ck "ui-url keeps order, one line per id" "http://signoz.test/trace/$T1
+http://signoz.test/trace/$T2" "$out"
+out="$("$UU" log x 2>&1)"; ck "ui-url: kind without a deep link -> empty line" "" "$out"
+out="$("$UU" trace nothex "$T1" 2>&1)"; ck "ui-url: non-hex id -> empty line, others kept" "
+http://signoz.test/trace/$T1" "$out"
+out="$("$UU" trace 'abc;rm' 2>&1)"; ck "ui-url: unsafe id -> empty line" "" "$out"
+"$UU" >/dev/null 2>&1; ck "ui-url: no args exits 2" 2 $?
+"$UU" trace >/dev/null 2>&1; ck "ui-url: kind without ids exits 2" 2 $?
+ck "ui-url makes no network call" "" "$(cat "$FAKE_DIR/argv.log" 2>/dev/null)"
+(unset SIGNOZ_BASE_URL; "$UU" trace "$T1" >/dev/null 2>&1); ck "ui-url: missing config exits non-zero" 1 $?
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

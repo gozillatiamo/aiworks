@@ -27,6 +27,18 @@ obs_require_config() {
   SIGNOZ_BASE_URL="${SIGNOZ_BASE_URL%/}"
 }
 
+# obs_ui_url KIND ID -> prints the browser URL for one piece of evidence, or nothing when
+# there is no verified deep link. Only `trace` has one (UI route /trace/<trace_id>, the same
+# host as the API); dashboards and logs-explorer queries are deliberately not built. A
+# non-hex id prints nothing, so an agent-authored string never reaches a URL. No network call.
+obs_ui_url() {
+  local kind="$1" id="$2"
+  case "$kind" in
+    trace) [[ "$id" =~ ^[0-9a-fA-F]{16,32}$ ]] && printf '%s/trace/%s\n' "$SIGNOZ_BASE_URL" "$id" ;;
+  esac
+  return 0
+}
+
 # obs_get_trace TRACE_ID [SPAN_ID] -> prints the span waterfall (indented by call depth),
 # marking SPAN_ID (if given) with "->". Falls back to pretty raw JSON if the response shape
 # doesn't match what's expected (e.g. a SigNoz version with a different payload).

@@ -43,6 +43,10 @@ DISALLOW = ["Bash(*scripts/notify/*)", "Bash(*scripts/tracker/*)", "Bash(*script
 REALMS = {"auth", "payments", "wallet", "callbacks", "infrastructure", "errors", "other"}
 EVIDENCE_KINDS = {"trace", "row", "identity", "metric", "log", "config"}
 MAX_IDS, MAX_CONCLUSION = 4, 600
+MAX_EVIDENCE_LINES, MAX_LABEL = 6, 80
+STAFF_FIELDS, STAFF_ROLES = ("username", "name", "email"), ("admin", "agent")
+EVIDENCE_ROLES = ("admin", "agent", "player", "service", "unknown")
+EMAIL_RX = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 ICON = {"SUSPICIOUS": "🟡", "ALERT": "🚨"}
 DOT = {"ALERT": "🔴", "SUSPICIOUS": "🟡"}
 
@@ -284,6 +288,36 @@ def pii_patterns():
     return out
 
 
+def _staff_strings(v):
+    """Staff identity fields: scanned with every detector except e-mail (the one carve-out)."""
+    for f in v["findings"]:
+        for e in f["evidence"]:
+            for k in STAFF_FIELDS:
+                if k in e:
+                    yield e[k]
+
+
+def _is_staff(e):
+    return e.get("kind") == "identity" and e.get("role") in STAFF_ROLES
+
+
+def _clean_evidence(e):
+    """Type-check the descriptive fields in place; False when one is malformed."""
+    for k in ("label", "target", "table", "role") + STAFF_FIELDS:
+        if k in e and not isinstance(e[k], str):
+            return False
+    if "role" in e and e["role"] not in EVIDENCE_ROLES:
+        return False
+    if "label" in e:
+        e["label"] = e["label"][:MAX_LABEL]
+    if not _is_staff(e):
+        for k in STAFF_FIELDS:
+            e.pop(k, None)
+    elif "email" in e and not EMAIL_RX.fullmatch(e["email"]):
+        del e["email"]
+    return True
+
+
 def _posted_strings(v):
     yield v["headline"]
     yield v.get("conclusion") or ""
@@ -295,7 +329,8 @@ def _posted_strings(v):
         yield str(f.get("rule_id") or "")
         for e in f["evidence"]:
             yield e["id"]
-            yield e.get("target", "")
+            for k in ("target", "label", "table"):
+                yield e.get(k, "")
 
 
 def validate(v):
@@ -320,6 +355,8 @@ def validate(v):
                 isinstance(e, dict) and e.get("kind") in EVIDENCE_KINDS
                 and isinstance(e.get("id"), str) and e["id"].strip() for e in ev):
             return "invalid: finding without evidence id"
+        if not all(_clean_evidence(e) for e in ev):
+            return "invalid: evidence fields"
     if not all(isinstance(g, dict) and isinstance(g.get("reason"), str) and isinstance(g.get("realm"), str)
                for g in gaps):
         return "invalid: gaps"
@@ -351,10 +388,11 @@ def validate(v):
         pats = pii_patterns()
     except OSError:
         return "pii-patterns-missing"
-    for s in _posted_strings(v):
-        for cat, rx in pats:
-            if rx.search(s):
-                return f"pii-in-verdict ({cat})"
+    for strings, skip in ((_posted_strings(v), ""), (_staff_strings(v), "email")):
+        for s in strings:
+            for cat, rx in pats:
+                if cat != skip and rx.search(s):
+                    return f"pii-in-verdict ({cat})"
     return None
 
 
@@ -472,14 +510,15 @@ class Poster:
         self.err = ""
         self.where = ""
 
-    def post(self, text, thread=None, need_ts=False):
-        """Return the posted ts ('' when posted without one), or None when the post failed."""
+    def post(self, text, thread=None, need_ts=False, spare=()):
+        """Return the posted ts ('' when posted without one), or None when the post failed.
+        spare: exact values the PII mask must leave alone in THIS post (staff names); every other post passes none."""
         argv = [str(ROOT / "scripts" / "notify" / "send.sh"), "--channel", self.cfg["channel"]]
         if thread:
             argv += ["--thread-ts", thread]
         try:
             r = subprocess.run(argv, input=text, capture_output=True, text=True, timeout=120,
-                               env={**os.environ, "PII_GATE": "on"})
+                               env={**os.environ, "PII_GATE": "on", "PII_SPARE": "\n".join(spare)})
         except (OSError, subprocess.TimeoutExpired) as e:
             return self._fail(str(e))
         if r.returncode != 0:
@@ -513,9 +552,9 @@ class Poster:
                 return ts
             self.state["day"]["parent_ts"] = None
 
-    def top(self, text):
+    def top(self, text, spare=()):
         self.where = "top-level"
-        return self.post(text)
+        return self.post(text, spare=spare)
 
     def gap(self, missed):
         shown = ", ".join(s.strftime("%H:%M") for s in missed[:24]) + (
@@ -528,17 +567,62 @@ def _code(s):
     return "`" + s.replace("`", "'") + "`"
 
 
-def finding_lines(findings, learning, t):
-    """One numbered block per finding: severity, realm and rule; the title; up to MAX_IDS evidence ids."""
+def _esc(s):
+    """Slack mrkdwn control characters in agent-authored text."""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def evidence_line(e, links):
+    """One quoted line: what the item is, where it lives, and its id (a link for a trace when known)."""
+    kind, eid = e["kind"], e["id"]
+    staff = _is_staff(e)
+    head = e["role"] if kind == "identity" and e.get("role") else kind
+    if e.get("table"):
+        head += f" {_code(_esc(e['table']))}"
+    if e.get("target"):
+        head += f" @ {_esc(e['target'])}"
+    if e.get("label"):
+        head += f" — {_esc(e['label'])}"
+    ref = f"<{links[eid]}|{_esc(eid)}>" if kind == "trace" and eid in links else _code(_esc(eid))
+    extra = "".join(f" · {_esc(e[k])}" for k in STAFF_FIELDS if staff and e.get(k))
+    return f"> • {head}: {ref}{extra}"
+
+
+def finding_lines(findings, learning, t, links=None):
+    """One numbered block per finding: severity, realm and rule; the title; up to MAX_EVIDENCE_LINES items."""
     lines = []
     for i, f in enumerate(findings, 1):
-        ids = [e["id"] for e in f["evidence"]]
-        more = f" +{len(ids) - MAX_IDS}" if len(ids) > MAX_IDS else ""
+        ev = f["evidence"]
+        more = [f"> +{len(ev) - MAX_EVIDENCE_LINES}"] if len(ev) > MAX_EVIDENCE_LINES else []
         tag = f" {t['learning']}" if learning and f["rule"] == "count" else ""
         rule = _code(str(f.get("rule_id") or f["rule"]))
         lines += ["", f"*{i}.* {DOT[f['severity']]} *{f['realm']}* · {rule}{tag}", f["title"],
-                  "> " + " ".join(_code(x) for x in ids[:MAX_IDS]) + more]
+                  *(evidence_line(e, links or {}) for e in ev[:MAX_EVIDENCE_LINES]), *more]
     return lines
+
+
+def _posted_evidence(findings):
+    return [e for f in findings for e in f["evidence"][:MAX_EVIDENCE_LINES]]
+
+
+def ui_links(findings):
+    """{trace id: URL} from the observability adapter; {} on any failure, never raises."""
+    ids = [e["id"] for e in _posted_evidence(findings) if e["kind"] == "trace"]
+    if not ids:
+        return {}
+    try:
+        r = subprocess.run([str(ROOT / "scripts" / "observability" / "ui-url.sh"), "trace", *ids],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    lines = r.stdout.splitlines()
+    if r.returncode != 0 or len(lines) != len(ids):
+        return {}
+    return {i: u for i, u in zip(ids, lines) if u.startswith("https://")}
+
+
+def staff_values(findings):
+    return [e[k] for e in _posted_evidence(findings) if _is_staff(e) for k in STAFF_FIELDS if e.get(k)]
 
 
 def deliver(poster, v, st):
@@ -564,14 +648,14 @@ def deliver(poster, v, st):
     counts = " · ".join(f"{DOT[s]} {s} {n}" for s in ("ALERT", "SUSPICIOUS")
                         if (n := sum(f["severity"] == s for f in v["findings"])))
     lines = [f"{ICON[state]} *{state} {hm}* {who}".strip(), f"*{v['headline']}*", counts,
-             *finding_lines(v["findings"], learning, t), ""]
+             *finding_lines(v["findings"], learning, t, ui_links(v["findings"])), ""]
     if v.get("conclusion"):
         lines.append(f"*{t['conclusion']}:* {v['conclusion']}")
     if v.get("suppressed"):
         lines.append(t["resolved"].format(n=len(v["suppressed"])))
     if v.get("gaps"):
         lines.append(f"_{t['unchecked']}:_ " + ", ".join(sorted({g["realm"] for g in v["gaps"]})))
-    ts = poster.top("\n".join(lines).rstrip())
+    ts = poster.top("\n".join(lines).rstrip(), spare=staff_values(v["findings"]))
     if state == "ALERT" and not suppress:
         time.sleep(float(os.environ.get("NIGHT_WATCH_ALERT_REPEAT_SEC", "60")))
         poster.top(f"{ICON[state]} *{t['repeat']} {hm}* {who}".strip() + f"\n{v['headline']}")
@@ -709,7 +793,8 @@ def _print_verdict(v):
     for i, f in enumerate(v.get("findings") or [], 1):
         print(f"{i}. {f.get('severity')} {f.get('realm')} {f.get('rule_id') or f.get('rule')}: {f.get('title')}")
         for e in f.get("evidence") or []:
-            print(f"   {e.get('kind')} {e.get('id')}" + (f" target={e['target']}" if e.get("target") else ""))
+            print(f"   {e.get('kind')} {e.get('id')}" + "".join(
+                f" {k}={e[k]}" for k in ("target", "label", "table", "role", *STAFF_FIELDS) if e.get(k)))
     for s in v.get("suppressed") or []:
         f = s.get("finding") or {}
         print(f"resolved earlier ({s.get('resolution')}): {f.get('severity')} {f.get('realm')} "
