@@ -20,7 +20,7 @@ has() { if grep -qF -- "$2" <<<"$3"; then ok "$1"; else bad "$1" "missing '$2' i
 hasnt() { if grep -qF -- "$2" <<<"$3"; then bad "$1" "unexpected '$2' in: $3"; else ok "$1"; fi; }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-NW="$T/scripts/night-watch"; mkdir -p "$NW" "$T/scripts/lib" "$T/scripts/notify" "$T/docs/night-watch" "$T/fx"
+NW="$T/scripts/night-watch"; mkdir -p "$NW" "$T/scripts/lib" "$T/scripts/notify" "$T/scripts/observability" "$T/docs/night-watch" "$T/fx"
 cp "$SRC/night_watch.py" "$SRC/prompt.md" "$SRC/verdict.schema.json" "$NW/"
 cp "$REPO/scripts/lib/pii-patterns.txt" "$T/scripts/lib/"
 echo "playbook" > "$T/docs/night-watch/playbook.md"
@@ -33,6 +33,7 @@ cat > "$T/scripts/notify/send.sh" <<'EOF'
 thread=""; while [[ $# -gt 0 ]]; do [[ "$1" == --thread-ts ]] && thread="$2"; shift; done
 n=$(( $(cat "$FX/n" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FX/n"
 printf '%s|%s|%s\n' "${thread:--}" "$PII_GATE" "$(tr '\n' ' ')" >> "$FX/sends.log"
+printf '%s\n' "$(printf '%s' "${PII_SPARE:-}" | tr '\n' ',')" >> "$FX/spare.log"
 [[ -f "$FX/nots" ]] || echo "ts=$n"
 EOF
 cat > "$T/claude" <<'EOF'
@@ -54,7 +55,7 @@ night_watch:
   tick_timeout_minutes: 20
 EOF
 }
-reset() { rm -rf "$T/agent_logs" "$FX/n" "$FX/sends.log" "$FX/nots"; : > "$FX/sends.log"; }
+reset() { rm -rf "$T/agent_logs" "$FX/n" "$FX/sends.log" "$FX/nots" "$T/scripts/observability/ui-url.sh"; : > "$FX/sends.log"; : > "$FX/spare.log"; }
 # say '<verdict json>' — wrap it the way the real CLI does: fenced JSON inside .result
 say() { python3 -c 'import json,sys; print(json.dumps({"is_error":False,"result":"done\n```json\n"+sys.argv[1]+"\n```"}))' "$1" > "$FX/claude.out"; }
 tick() { NIGHT_WATCH_NOW="$1" python3 "$NW/night_watch.py" tick >/dev/null 2>&1; echo $?; }
@@ -115,13 +116,13 @@ has "re-run logged already-ran" already-ran "$(tlog)"
 reset; say "$(verdict SUSPICIOUS fixed SUSPICIOUS)"; tick 2026-01-01T10:00:00 >/dev/null
 ck "SUSPICIOUS: one top-level post, brief not posted" 1 "$(nsends)"
 has "SUSPICIOUS: top-level with mention" "-|on|🟡 *SUSPICIOUS 10:00* <@U1>" "$(sendn 1)"
-has "SUSPICIOUS: numbered finding, rule, title, evidence id" '*1.* 🟡 *payments* · `r1` payout stuck > `abc123`' "$(sendn 1)"
+has "SUSPICIOUS: numbered finding, rule, title, evidence id" '*1.* 🟡 *payments* · `r1` payout stuck > • trace: `abc123`' "$(sendn 1)"
 hasnt "SUSPICIOUS: brief_en is never posted" "brief" "$(sends)"
 reset; say '{"state":"SUSPICIOUS","headline":"h","findings":[{"rule":"lead","severity":"SUSPICIOUS","realm":"auth","title":"t","evidence":[{"kind":"trace","id":"a1"},{"kind":"trace","id":"a2"},{"kind":"trace","id":"a3"},{"kind":"trace","id":"a4"},{"kind":"trace","id":"a5"}]}],"gaps":[{"realm":"wallet","reason":"x"},{"realm":"wallet","reason":"y"}],"conclusion":"look at a1 first","brief_en":"brief"}'
 tick 2026-01-01T10:00:00 >/dev/null
 has "post: conclusion line" "*Conclusion:* look at a1 first" "$(sendn 1)"
 has "post: unchecked realms, deduped" "_Not checked:_ wallet" "$(sendn 1)"
-has "post: evidence ids capped at 4" '`a4` +1' "$(sendn 1)"
+has "post: evidence lines show the first items" '• trace: `a4`' "$(sendn 1)"
 has "post: no rule_id falls back to the rule kind" '`lead`' "$(sendn 1)"
 reset; say "$(verdict ALERT fixed ALERT)"; tick 2026-01-01T10:00:00 >/dev/null
 ck "ALERT: top, repeat" 2 "$(nsends)"
@@ -233,6 +234,88 @@ has "pii: bank account in finding title rejected" "pii-in-verdict (bank_account)
 reset; say '{"state":"OK","headline":"mail jane@example.com","findings":[],"gaps":[]}'; tick 2026-01-01T10:00:00 >/dev/null
 hasnt "pii: never posted" "jane@example.com" "$(sends)"
 has "pii: tick is FAILED" "pii-in-verdict" "$(sends)"
+
+# --- evidence detail: labels, staff identity, id-only matching ---------------------------------
+evv() { # evidence-array-json -> an ALERT Verdict whose single finding carries it
+  echo '{"state":"ALERT","headline":"h","findings":[{"rule":"fixed","rule_id":"r1","severity":"ALERT","realm":"payments","title":"t","evidence":'"$1"'}],"gaps":[],"brief_en":"b"}'
+}
+STAFF='{"kind":"identity","id":"03518ef7-2c1a-4b6e-9d3f-5e8a1b2c4d6f","role":"admin","label":"acting admin","username":"ops.lead","name":"Ops Lead","email":"ops.lead@corp.example"}'
+ck "E1 validate: labelled evidence accepted" None \
+  "$(v "$(evv '[{"kind":"row","id":"r9","label":"order approval","table":"orders","target":"db-1"}]')")"
+ck "E2 validate: staff identity e-mail accepted" None "$(v "$(evv "[$STAFF]")")"
+has "E3 validate: e-mail in title still rejected" "pii-in-verdict (email)" \
+  "$(v '{"state":"ALERT","headline":"h","findings":[{"rule":"fixed","severity":"ALERT","realm":"auth","title":"admin ops.lead@corp.example","evidence":[{"kind":"log","id":"x1"}]}],"gaps":[],"brief_en":"b"}')"
+has "E3 validate: e-mail in a label still rejected" "pii-in-verdict (email)" \
+  "$(v "$(evv '[{"kind":"log","id":"x1","label":"mail ops.lead@corp.example"}]')")"
+has "E3 validate: e-mail in the id of a staff item still rejected" "pii-in-verdict (email)" \
+  "$(v "$(evv '[{"kind":"identity","id":"ops.lead@corp.example","role":"admin"}]')")"
+ck "E4 validate: staff fields stripped from a player identity" "None False False False" "$(py "
+v = json.loads('''$(evv '[{"kind":"identity","id":"p-1","role":"player","username":"u","name":"Jane Roe","email":"jane@example.com"}]')''')
+r = n.validate(v); e = v['findings'][0]['evidence'][0]; print(r, 'email' in e, 'name' in e, 'username' in e)")"
+ck "E4 validate: staff fields stripped from an identity with no role" "None False" "$(py "
+v = json.loads('''$(evv '[{"kind":"identity","id":"p-1","email":"jane@example.com"}]')''')
+r = n.validate(v); print(r, 'email' in v['findings'][0]['evidence'][0])")"
+ck "E5 validate: staff fields stripped from a non-identity item" "None False False" "$(py "
+v = json.loads('''$(evv '[{"kind":"row","id":"r9","role":"admin","email":"jane@example.com","name":"Jane Roe"}]')''')
+r = n.validate(v); e = v['findings'][0]['evidence'][0]; print(r, 'email' in e, 'name' in e)")"
+ck "E5 validate: a staff e-mail that is not an e-mail is dropped, item kept" "None False True" "$(py "
+v = json.loads('''$(evv '[{"kind":"identity","id":"a-1","role":"agent","email":"not an email","name":"Ops Lead"}]')''')
+r = n.validate(v); e = v['findings'][0]['evidence'][0]; print(r, 'email' in e, 'name' in e)")"
+ck "E5 validate: an e-mail with text around it is not a staff e-mail" "None False" "$(py "
+v = json.loads('''$(evv '[{"kind":"identity","id":"a-1","role":"admin","email":"call me at x@y.example now"}]')''')
+r = n.validate(v); print(r, 'email' in v['findings'][0]['evidence'][0])")"
+has "E6 validate: phone in staff name rejected" "pii-in-verdict (phone)" \
+  "$(v "$(evv '[{"kind":"identity","id":"a-1","role":"admin","name":"0891234567"}]')")"
+has "E6 validate: bank account in staff username rejected" "pii-in-verdict (bank_account)" \
+  "$(v "$(evv '[{"kind":"identity","id":"a-1","role":"admin","username":"bank account 123456789"}]')")"
+has "E7 validate: non-string label" "invalid: evidence fields" "$(v "$(evv '[{"kind":"log","id":"x1","label":5}]')")"
+has "E7 validate: non-string table" "invalid: evidence fields" "$(v "$(evv '[{"kind":"row","id":"x1","table":["t"]}]')")"
+has "E7 validate: unknown role" "invalid: evidence fields" "$(v "$(evv '[{"kind":"identity","id":"x1","role":"root"}]')")"
+has "E7 validate: non-string staff field" "invalid: evidence fields" \
+  "$(v "$(evv '[{"kind":"identity","id":"x1","role":"admin","name":7}]')")"
+ck "E8 validate: label over 80 trimmed, not rejected" "None 80" "$(py "
+v = json.loads('''$(evv '[{"kind":"log","id":"x1","label":"'"$(printf 'x%.0s' $(seq 1 100))"'"}]')''')
+r = n.validate(v); print(r, len(v['findings'][0]['evidence'][0]['label']))")"
+
+posted() { reset; say "$(evv "$1")"; tick 2026-01-01T10:00:00 >/dev/null; sendn 1; }
+EV8=""; for i in 1 2 3 4 5 6 7 8; do EV8="$EV8${EV8:+,}{\"kind\":\"log\",\"id\":\"a$i\"}"; done
+out="$(posted "[$EV8]")"
+has "E9 post: sixth evidence line present" '`a6`' "$out"
+hasnt "E9 post: seventh evidence line capped" '`a7`' "$out"
+has "E9 post: overflow count" '> +2' "$out"
+has "E10 post: row line" '• row `orders` @ db-1 — order approval: `r9`' \
+  "$(posted '[{"kind":"row","id":"r9","label":"order approval","table":"orders","target":"db-1"}]')"
+has "E11 post: staff identity line" '• admin — acting admin: `03518ef7-2c1a-4b6e-9d3f-5e8a1b2c4d6f` · ops.lead · Ops Lead · ops.lead@corp.example' \
+  "$(posted "[$STAFF]")"
+hasnt "E12 post: player identity line has no personal fields" "jane" \
+  "$(posted '[{"kind":"identity","id":"p-1","role":"player","label":"player","name":"Jane Roe","email":"jane@example.com"}]')"
+has "E12 post: player identity line keeps role and id" '• player — player: `p-1`' \
+  "$(posted '[{"kind":"identity","id":"p-1","role":"player","label":"player","name":"Jane Roe"}]')"
+has "E13 post: old evidence without a label renders kind and id" '> • log: `x1`' "$(posted '[{"kind":"log","id":"x1"}]')"
+has "E14 post: label is Slack-escaped" 'a&lt;b&gt;&amp;c' "$(posted '[{"kind":"log","id":"x1","label":"a<b>&c"}]')"
+
+# ui-url.sh stub (absent by default; reset removes it): one URL per id, or a canned broken output
+stub_ui() { printf '#!/usr/bin/env bash\n%s\n' "$1" > "$T/scripts/observability/ui-url.sh"; chmod +x "$T/scripts/observability/ui-url.sh"; }
+TR='[{"kind":"trace","id":"abc123","label":"approve call","target":"svc"},{"kind":"row","id":"r9","table":"orders"}]'
+posted_ui() { reset; stub_ui "$1"; say "$(evv "$2")"; tick 2026-01-01T10:00:00 >/dev/null; sendn 1; }
+has "E15 post: trace id is a link" '<https://obs.example/trace/abc123|abc123>' \
+  "$(posted_ui 'shift; for i in "$@"; do echo "https://obs.example/trace/$i"; done' "$TR")"
+out="$(posted "$TR")"
+has "E16 post: helper missing gives plain code id" 'approve call: `abc123`' "$out"
+ck "E16 post: helper missing, post and repeat still sent" 2 "$(nsends)"
+has "E17 post: non-zero exit gives plain text" 'approve call: `abc123`' "$(posted_ui 'echo https://obs.example/x; exit 1' "$TR")"
+has "E17 post: wrong line count gives plain text" 'approve call: `abc123`' "$(posted_ui 'echo https://obs.example/x; echo https://obs.example/y' "$TR")"
+has "E17 post: empty line leaves that id plain" 'approve call: `abc123`' "$(posted_ui 'echo ""' "$TR")"
+has "E17 post: non-https output is not linked" 'approve call: `abc123`' "$(posted_ui 'echo javascript:x' "$TR")"
+out="$(posted_ui 'shift; for i in "$@"; do echo "https://obs.example/trace/$i"; done' "$TR")"
+hasnt "E20 post: a row is never linked" 'obs.example/trace/r9' "$out"
+has "E20 post: row stays code" '`r9`' "$out"
+posted_ui 'echo' "[$STAFF]" >/dev/null
+ck "E18 post: spare list is this Verdict's staff values" "ops.lead,Ops Lead,ops.lead@corp.example" "$(sed -n 1p "$FX/spare.log")"
+reset; say '{"state":"OK","headline":"h","findings":[],"gaps":[]}'; tick 2026-01-01T10:00:00 >/dev/null
+ck "E19 post: parent and OK carry an empty spare list" "||" "$(tr '\n' '|' < "$FX/spare.log")"
+reset; say "$(evv "[$STAFF]")"; tick 2026-01-01T10:00:00 >/dev/null
+ck "E19 post: the ALERT repeat carries no spare" "" "$(sed -n 2p "$FX/spare.log")"
 
 # --- terminal progress lines -------------------------------------------------------------------
 cfg "08:00-20:00"
@@ -512,6 +595,22 @@ ck "L1 the link is still a link" "yes" "$([[ -L "$NWD" ]] && echo yes || echo no
 has "L1 resolved works through the link" "20260101T1100-1" "$(nw resolved)"
 ck "L1 tick still exits 2" 2 "$(tick 2026-01-01T11:00:00)"
 rm -f "$NWD"
+
+# --- labelled evidence stays id-keyed ------------------------------------------------------------
+rm -rf "$T/primary-nw" "$NWD"; mkdir -p "$NWD"
+LAB='{"rule":"fixed","rule_id":"r1","severity":"SUSPICIOUS","realm":"payments","title":"t","evidence":[{"kind":"trace","id":"abc123","label":"first run","target":"svc"},{"kind":"identity","id":"a-1","role":"admin","label":"actor","name":"Ops Lead","email":"ops.lead@corp.example"}]}'
+LAB2="${LAB//first run/second run}"
+reset; say "$(vx SUSPICIOUS "$LAB")"; tick 2026-01-01T10:00:00 >/dev/null; nw resolve latest 1 --note n >/dev/null
+ck "E21 resolve stores ids only" "[['abc123', 'a-1']]" "$(python3 -c 'import json,sys; print([r["evidence"] for r in json.load(open(sys.argv[1]))["resolutions"]])' "$RJ")"
+hasnt "E21 resolved.json has no staff data" "ops.lead" "$(cat "$RJ")"
+say "$(vx SUSPICIOUS "$LAB2")"; tick 2026-01-01T11:00:00 >/dev/null
+has "E22 labelled repeat is dropped" "✅ OK 11:00 — only cases already marked resolved (1)" "$(sends)"
+out="$(brief 10:00)"
+has "E23 brief prints label" "trace abc123 target=svc label=first run" "$out"
+has "E23 brief prints role and staff fields" "identity a-1 label=actor role=admin name=Ops Lead email=ops.lead@corp.example" "$out"
+argv="$(cat "$FX/claude.argv")"
+has "E24 prompt carries the evidence label rule" "\`label\`" "$argv"
+has "E24 prompt carries the staff role rule" "\`role\`" "$argv"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

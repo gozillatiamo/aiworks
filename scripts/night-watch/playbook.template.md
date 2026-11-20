@@ -56,7 +56,8 @@ Patterns that look odd but are normal. Do not flag them.
 ## 7. Leads
 
 If a check shows something the rules do not cover, you may follow it for a few queries. A lead finding
-uses `rule: "lead"` and must cite evidence ids. No evidence id, no finding.
+uses `rule: "lead"` and must cite evidence ids. No evidence id, no finding. Every evidence item has a
+label saying what it is.
 
 ## 8. Re-authentication
 
@@ -70,5 +71,6 @@ When a realm cannot be read, return `BLIND` and name what to re-authenticate:
 
 - No call to a deployed endpoint (no curl, wget or HTTP client).
 - No write of any kind: no row, key, ticket, comment, post or merge request.
-- No personal data in the output: no email, phone, wallet, bank account, national id or name. Use
-  identifiers (`*_code`, UUIDs, trace ids) and counts.
+- No end-customer personal data in the output: no email, phone, wallet, bank account, national id or name.
+  Use identifiers (`*_code`, UUIDs, trace ids) and counts. Internal staff are the exception: for an admin or
+  agent actor, identity evidence carries the full id, username, display name and e-mail.

@@ -7,6 +7,8 @@
 #
 #   obs_require_config                                    — validate the provider's env (base url/key), die if missing
 #   obs_get_trace TRACE_ID [SPAN_ID]                       — print the trace's span waterfall; SPAN_ID (optional) highlights one span
+#   obs_ui_url KIND ID                                     — print the UI URL for one piece of evidence (kind: trace), or nothing when
+#                                                            there is no verified deep link; no network call (used by ui-url.sh)
 #   obs_query_logs FILTERS_JSON FROM_MS TO_MS [LIMIT] [RAW] — print log lines matching a semantic filter object in [FROM_MS, TO_MS).
 #                                                            FILTERS_JSON is provider-agnostic (any subset of service/severity/env/
 #                                                            body_contains/trace_id); the provider impl translates it. RAW=1 -> raw JSON.

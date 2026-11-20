@@ -81,6 +81,7 @@ python3 scripts/lib/pii_provenance.py --selftest          # 13 cases, uses a thr
 | `PII_GATE=auto` | **Default.** Redact vault-matched (production) values only. |
 | `PII_GATE=on` | Also redact every shape match, vault or not. Use when hand-writing a prod incident report from values that never passed through an instrumented path. |
 | `PII_GATE=off` | Redact nothing. The escape hatch when a redaction is wrong. |
+| `PII_SPARE=<values>` | Newline-separated exact values exempt from egress masking, for that one process only (e-mail case-insensitive; a name by its words). Narrower than `PII_GATE=off`: everything not named is still masked. Night Watch sets it for staff (admin/agent) identity fields on the one post that carries them; empty on every other post. |
 | `PII_VAULT_DIR` | Vault location (default `~/.claude/prod-pii-vault`). |
 | `PII_VAULT_TTL_DAYS` | Entry lifetime, default 30. |
 | `PII_TOKEN_MIN` | Minimum length for a shapeless value (name/address) to be vaulted or matched. Default 5. |

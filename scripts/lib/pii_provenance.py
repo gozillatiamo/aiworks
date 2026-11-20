@@ -41,6 +41,11 @@ MODES (env `PII_GATE`)
   on             — also mask every shape match, vault or not (paranoid; hand-written report).
   off            — mask nothing.
 
+`PII_SPARE` (env, newline-separated exact values; unset/empty = off) — narrower than `PII_GATE=off`:
+  only the NAMED values are exempt from egress masking (e-mail case-insensitively; a name by its
+  words), everything else is masked as usual. Set by a caller for ONE post that must carry a
+  specific staff value (scripts/night-watch); never exported globally.
+
 STORAGE
   `PII_VAULT_DIR` (default `~/.claude/prod-pii-vault`) holds `salt` (0600, per machine) and
   `vault.tsv` (`<hmac-hex>\t<category>\t<epoch>`). It lives under $HOME, NOT in the repo, so
@@ -371,7 +376,10 @@ def mask_text(text: str) -> tuple[str, dict[str, int]]:
 
     `PII_GATE=off` returns the text untouched. In `auto` (default) a value is replaced only
     when its digest is in the vault — i.e. only when production is provably where it came
-    from. In `on` every shape match is replaced as well, vault or not."""
+    from. In `on` every shape match is replaced as well, vault or not.
+
+    `PII_SPARE` (newline-separated exact values) exempts just those values, for this process:
+    a shape span equal to one (case-insensitive) and a token that is a word of one are kept."""
     mode = os.environ.get("PII_GATE", "auto").lower()
     if mode == "off" or not text:
         return text, {}
@@ -381,6 +389,8 @@ def mask_text(text: str) -> tuple[str, dict[str, int]]:
     force = mode == "on"
     if not vault and not force:
         return text, {}
+    spare = {v.strip().lower() for v in os.environ.get("PII_SPARE", "").splitlines() if v.strip()}
+    spare_tokens = {t.strip(".,!?;:").lower() for v in spare for t in v.split()}
 
     def vault_hit(value: str, category: str = "") -> str | None:
         if key is None:
@@ -397,6 +407,9 @@ def mask_text(text: str) -> tuple[str, dict[str, int]]:
 
     # Pass 1 — shape-detected values.
     for start, end, cat, val in iter_pii_spans(text):
+        if val.strip().lower() in spare:
+            covered.append((start, end))
+            continue
         matched = vault_hit(val, cat)
         if matched or force:
             label = matched or cat
@@ -412,7 +425,7 @@ def mask_text(text: str) -> tuple[str, dict[str, int]]:
             if any(m.start() < e and s < m.end() for s, e in covered):
                 continue
             token = m.group(0).strip(".,!?;:")
-            if not token or token.lower() in _STOP_TOKENS:
+            if not token or token.lower() in _STOP_TOKENS or token.lower() in spare_tokens:
                 continue
             cat = vault_hit(token)
             if cat:
@@ -599,6 +612,42 @@ def _selftest() -> int:
         masked, _ = mask_text(allowed)
         check("PII_GATE=on still spares the ALLOW set", masked == allowed)
         os.environ["PII_GATE"] = "auto"
+
+        # --- PII_SPARE: named values exempt, nothing else ---------------------------------------
+        os.environ["PII_GATE"] = "on"
+        both = "lead ops.lead@corp.example cc other@corp.example"
+        masked, _ = mask_text(both)
+        check("spare unset: both e-mails masked (as before)",
+              "ops.lead@corp.example" not in masked and "other@corp.example" not in masked)
+        os.environ["PII_SPARE"] = "ops.lead@corp.example"
+        masked, _ = mask_text(both)
+        check("spared e-mail kept, other still masked",
+              "ops.lead@corp.example" in masked and "other@corp.example" not in masked)
+        os.environ["PII_SPARE"] = "OPS.Lead@Corp.Example"
+        masked, _ = mask_text(both)
+        check("spare e-mail match is case-insensitive", "ops.lead@corp.example" in masked)
+        os.environ["PII_SPARE"] = "\n\nops.lead@corp.example\n"
+        masked, _ = mask_text(both)
+        check("empty spare lines ignored", "ops.lead@corp.example" in masked and "other@corp.example" not in masked)
+        os.environ["PII_SPARE"] = "ops.lead@corp.example"
+        masked, _ = mask_text("phone 0891234567 for ops.lead@corp.example")
+        check("spare never exempts a different value (phone still masked)", "0891234567" not in masked)
+        os.environ["PII_GATE"] = "auto"
+        masked, _ = mask_text("prod player real.holder@example.net is negative")
+        check("spare does not exempt a vaulted e-mail it does not name", "real.holder@example.net" not in masked)
+        os.environ["PII_SPARE"] = "real.holder@example.net"
+        masked, _ = mask_text("prod player real.holder@example.net is negative")
+        check("spared vaulted e-mail kept", "real.holder@example.net" in masked)
+        os.environ["PII_SPARE"] = "Marlowe K."
+        masked, _ = mask_text("acting admin Marlowe approved; holder Sampson")
+        check("spared name token kept in auto mode", "Marlowe" in masked)
+        os.environ.pop("PII_SPARE")
+        masked, _ = mask_text("acting admin Marlowe approved")
+        check("unspared vaulted name masked", "<prod-pii:name>" in masked)
+        os.environ["PII_SPARE"] = ""
+        masked, _ = mask_text("acting admin Marlowe approved")
+        check("empty PII_SPARE behaves as unset", "<prod-pii:name>" in masked)
+        os.environ.pop("PII_SPARE")
 
         # --- the vault never holds a value -----------------------------------------------
         raw = (Path(tmp) / "vault.tsv").read_text(encoding="utf-8")

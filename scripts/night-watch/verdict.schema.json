@@ -24,7 +24,13 @@
               "properties": {
                 "kind": {"enum": ["trace", "row", "identity", "metric", "log", "config"]},
                 "id": {"type": "string", "minLength": 1},
-                "target": {"type": "string"}
+                "label": {"type": "string", "maxLength": 80},
+                "target": {"type": "string"},
+                "table": {"type": "string"},
+                "role": {"enum": ["admin", "agent", "player", "service", "unknown"]},
+                "username": {"type": "string"},
+                "name": {"type": "string"},
+                "email": {"type": "string"}
               }
             }
           },
