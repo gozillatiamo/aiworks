@@ -268,6 +268,16 @@ has "E6 validate: phone in staff name rejected" "pii-in-verdict (phone)" \
   "$(v "$(evv '[{"kind":"identity","id":"a-1","role":"admin","name":"0891234567"}]')")"
 has "E6 validate: bank account in staff username rejected" "pii-in-verdict (bank_account)" \
   "$(v "$(evv '[{"kind":"identity","id":"a-1","role":"admin","username":"bank account 123456789"}]')")"
+ck "E8 validate: a hex trace id shaped like a BTC address is accepted" None \
+  "$(v "$(evv '[{"kind":"trace","id":"17e9812345a6bcd7efa8b9c11def22ab"}]')")"
+ck "E8 validate: a table name ahead of a row uuid is not a bank account" None \
+  "$(v "$(evv '[{"kind":"config","id":"payout_bank_account 123456ce-123c-4567-bc89-eefdadf9ca12"}]')")"
+ck "E8 validate: nor ahead of a uuid prefix" None \
+  "$(v "$(evv '[{"kind":"config","id":"payout_bank_account 123456ce"}]')")"
+has "E8 validate: a bank account in an evidence id still rejected" "pii-in-verdict (bank_account)" \
+  "$(v "$(evv '[{"kind":"config","id":"payout_bank_account 1234567890"}]')")"
+has "E8 validate: a BTC address in an evidence id still rejected" "pii-in-verdict (crypto_wallet_btc)" \
+  "$(v "$(evv '[{"kind":"row","id":"1BoatSLRHtKNngkdXEeobR76b53LETtpyT"}]')")"
 has "E7 validate: non-string label" "invalid: evidence fields" "$(v "$(evv '[{"kind":"log","id":"x1","label":5}]')")"
 has "E7 validate: non-string table" "invalid: evidence fields" "$(v "$(evv '[{"kind":"row","id":"x1","table":["t"]}]')")"
 has "E7 validate: unknown role" "invalid: evidence fields" "$(v "$(evv '[{"kind":"identity","id":"x1","role":"root"}]')")"

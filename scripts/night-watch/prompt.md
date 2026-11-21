@@ -46,7 +46,8 @@ Rules
     `label` (what it is, at most 80 characters, in the post language) and a `target` (where it lives: database
     target, service, dashboard or config key). A `row` adds `table`. An `identity` adds `role`
     (admin, agent, player, service, unknown) and, for admin or agent, `username`, `name`, `email`.
-    Trace ids are turned into links by the script.
+    `id` is the bare, complete identifier and nothing else: no table or key name in front of it (that goes in
+    `table` or `target`), never a prefix. Trace ids are turned into links by the script.
   - `conclusion`: required unless the state is `OK`. Two or three plain sentences: what this most likely
     means, and the first thing a person should do. No raw data, no list of what was clean.
 - `brief_en` is always English and is not posted. It is saved with the Verdict for a follow-up agent:
