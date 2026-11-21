@@ -36,7 +36,7 @@ RESOLVE_DAYS, AGG_DAYS = 7, 1  # aggregate-only evidence names no occurrence, so
 AGGREGATE = {"metric", "config"}
 MAX_RESOLVED, MAX_RES_IDS, MAX_RES_NOTE = 200, 50, 200
 RANK = {"SUSPICIOUS": 1, "ALERT": 2}
-MAX_NOTES, MAX_NOTE_LEN, MAX_BASELINES = 50, 300, 200
+MAX_NOTES, MAX_NOTE_LEN, MAX_BASELINES = 50, 300, 400
 RAW_CAP = 256 * 1024
 DISALLOW = ["Bash(*scripts/notify/*)", "Bash(*scripts/tracker/*)", "Bash(*scripts/vcs/*)",
             "Bash(*night-watch/run.sh*)", "Bash(*night_watch.py*)"]
@@ -50,6 +50,8 @@ EMAIL_RX = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # A UUID, or a hex run that holds a letter (trace id, span id, hash): never a personal value, but its digits
 # trip the shape detectors (a 32-hex trace id reads as a BTC address, `<table>_bank_account <uuid>` as an account).
 MACHINE_ID_RX = re.compile(r"\b(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|(?=[0-9a-f]*[a-f])[0-9a-f]{8,32})\b")
+# A cloud service account is a machine identity, named in a gap when a datasource refuses it: not a person's e-mail.
+SERVICE_ACCOUNT_RX = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]*\bgserviceaccount\.com\b")
 ICON = {"SUSPICIOUS": "🟡", "ALERT": "🚨"}
 DOT = {"ALERT": "🔴", "SUSPICIOUS": "🟡"}
 
@@ -379,20 +381,25 @@ def validate(v):
     if up is not None:
         b = up.get("baselines", {}) if isinstance(up, dict) else None
         n = up.get("notes", []) if isinstance(up, dict) else None
-        if not isinstance(b, dict) or len(b) > MAX_BASELINES or not all(
+        if not isinstance(b, dict) or not all(
                 isinstance(x, dict) and isinstance(x.get("value"), (int, float))
                 and not isinstance(x["value"], bool) for x in b.values()):
             return "invalid: state_update.baselines"
         if not isinstance(n, list) or not all(isinstance(x, str) for x in n):
             return "invalid: state_update.notes"
-        # Notes are memory, not report: an overlong one is trimmed, never a reason to drop a Verdict.
+        # Memory, not report: an overlong or excess entry is trimmed, never a reason to drop a Verdict.
         up["notes"] = [x[:MAX_NOTE_LEN] for x in n[:MAX_NOTES]]
+        up["baselines"] = dict(list(b.items())[:MAX_BASELINES])
+        for x in up["baselines"].values():
+            if isinstance(x.get("note"), str):
+                x["note"] = x["note"][:MAX_NOTE_LEN]
     try:
         pats = pii_patterns()
     except OSError:
         return "pii-patterns-missing"
     for strings, skip in ((_posted_strings(v), ""), (_staff_strings(v), "email")):
         for s in strings:
+            s = SERVICE_ACCOUNT_RX.sub("", s)
             for cat, rx in pats:
                 if cat != skip and rx.search(s):
                     return f"pii-in-verdict ({cat})"
