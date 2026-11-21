@@ -224,11 +224,18 @@ ck "validate: overlong and excess notes are trimmed, not rejected" "None 50 300"
 v = {'state':'OK','headline':'h','findings':[],'gaps':[],'state_update':{'notes':['x'*353]*60}}
 r = n.validate(v); print(r, len(v['state_update']['notes']), len(v['state_update']['notes'][0]))")"
 has "validate: non-string note" "state_update.notes" "$(v '{"state":"OK","headline":"h","findings":[],"gaps":[],"state_update":{"notes":[1]}}')"
+ck "validate: excess baselines and an overlong baseline note are trimmed, not rejected" "None 400 300" "$(py "
+v = {'state':'OK','headline':'h','findings':[],'gaps':[],'state_update':{'baselines':{f'k{i}':{'value':i,'note':'x'*353} for i in range(402)}}}
+r = n.validate(v); b = v['state_update']['baselines']; print(r, len(b), len(b['k0']['note']))")"
 has "validate: bad baselines" "baselines" "$(v '{"state":"OK","headline":"h","findings":[],"gaps":[],"state_update":{"baselines":{"a":{"value":"x"}}}}')"
 
 # --- PII rejection -----------------------------------------------------------------------------
 has "pii: email in headline rejected" "pii-in-verdict (email)" \
   "$(v '{"state":"OK","headline":"mail jane@example.com","findings":[],"gaps":[]}')"
+ck "pii: a service account in a gap is a machine identity, not an e-mail" None \
+  "$(v '{"state":"OK","headline":"h","findings":[],"gaps":[{"realm":"infra","reason":"denied for k8s-triage@proj-123456.iam.gserviceaccount.com"}]}')"
+has "pii: a person e-mail beside a service account still rejected" "pii-in-verdict (email)" \
+  "$(v '{"state":"OK","headline":"h","findings":[],"gaps":[{"realm":"infra","reason":"sa@p.iam.gserviceaccount.com asked by jane@example.com"}]}')"
 has "pii: bank account in finding title rejected" "pii-in-verdict (bank_account)" \
   "$(v '{"state":"ALERT","headline":"h","findings":[{"rule":"fixed","severity":"ALERT","realm":"auth","title":"bank account 123456789","evidence":[{"kind":"log","id":"x1"}]}],"gaps":[],"brief_en":"b"}')"
 reset; say '{"state":"OK","headline":"mail jane@example.com","findings":[],"gaps":[]}'; tick 2026-01-01T10:00:00 >/dev/null
