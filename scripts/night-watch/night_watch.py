@@ -47,6 +47,9 @@ MAX_EVIDENCE_LINES, MAX_LABEL = 6, 80
 STAFF_FIELDS, STAFF_ROLES = ("username", "name", "email"), ("admin", "agent")
 EVIDENCE_ROLES = ("admin", "agent", "player", "service", "unknown")
 EMAIL_RX = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# A UUID, or a hex run that holds a letter (trace id, span id, hash): never a personal value, but its digits
+# trip the shape detectors (a 32-hex trace id reads as a BTC address, `<table>_bank_account <uuid>` as an account).
+MACHINE_ID_RX = re.compile(r"\b(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|(?=[0-9a-f]*[a-f])[0-9a-f]{8,32})\b")
 ICON = {"SUSPICIOUS": "🟡", "ALERT": "🚨"}
 DOT = {"ALERT": "🔴", "SUSPICIOUS": "🟡"}
 
@@ -328,7 +331,7 @@ def _posted_strings(v):
         yield f["title"]
         yield str(f.get("rule_id") or "")
         for e in f["evidence"]:
-            yield e["id"]
+            yield MACHINE_ID_RX.sub("", e["id"])
             for k in ("target", "label", "table"):
                 yield e.get(k, "")
 
