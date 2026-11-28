@@ -1534,6 +1534,17 @@ ard "$(jq -cn --arg m "HANDOFF_RELAY:$WSH/d1/da.md" '{hook_event_name:"SubagentS
 exits "the relay is recorded under the same root"  0 "$(test -f "$WSH/d1/pending-relay/developer"; echo $?)"
 hoc "and the parent is relayed from it"            block "$(ard '{"hook_event_name":"PostToolUse","session_id":"d1","tool_name":"Bash"}')" "$WSH/d1/da.md"
 
+# Retention (ADR-0048): inside the project nothing purges these for us, so a demand sweeps out
+# what is older than seven days. A fresh document and the demanding agent's own state survive.
+mkdir -p "$WSH/old" "$WSH/keep"
+printf '# old\n' > "$WSH/old/x.md"; touch -t 200001010000 "$WSH/old/x.md"
+printf '# fresh\n' > "$WSH/keep/y.md"
+mkctx d3 30000 dp 145000; hod d3 dp >/dev/null
+exits "a demand prunes a week-old document"        1 "$(test -e "$WSH/old/x.md"; echo $?)"
+exits "and the directory it emptied"               1 "$(test -d "$WSH/old"; echo $?)"
+exits "a fresh document survives the prune"        0 "$(test -f "$WSH/keep/y.md"; echo $?)"
+exits "so does the demanding agent's state"        0 "$(test -f "$WSH/d3/dp.state"; echo $?)"
+
 for bad in 'not json' '{}' '{"hook_event_name":"PostToolUse","session_id":"x"}'; do
   if printf '%s\n' "$bad" | AIWORKS_HANDOFF_DIR="$HDIR" "$HO" >/dev/null 2>&1; then
     pass=$((pass+1)); printf 'ok   handoff hook exits 0 on payload: %s\n' "$bad"

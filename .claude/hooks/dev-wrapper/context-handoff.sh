@@ -135,6 +135,12 @@ mark="$sdir/$key.mark"   # mtime = the moment of the FIRST demand; the document 
 case "$phase" in
   armed|resumed)
     [ "$win" -ge "$H" ] || exit 0
+    # Retention: nothing purges a project directory for us. 7 days outlives any run we resume.
+    # Only this hook's own file shapes at its own depths — AIWORKS_HANDOFF_DIR may point anywhere.
+    find "$DIR" -mindepth 2 -maxdepth 3 -type f -mtime +7 \
+      \( -name '*.md' -o -name '*.state' -o -name '*.mark' -o -name '*.count' -o -path '*/pending-relay/*' \) \
+      -delete 2>/dev/null
+    find "$DIR" -mindepth 1 -maxdepth 2 -type d -empty -delete 2>/dev/null
     save requested "$now" 1 "$win"
     touch "$mark" 2>/dev/null
     json_out block "$(demand "$win" "$doc" 1)" "" ""
