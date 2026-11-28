@@ -34,6 +34,11 @@ for (const [name, input] of [["brd", "phase-1"], ["prd", "phase-1"], ["dev-cycle
   // …and hands that brief to the relay loop rather than to rawAgent directly, so a sealed
   // agent is replaced instead of its partial being taken at face value (docs/adr/0037).
   assert.match(src, /relayed\(brief, opts\)/, `${name}.js does not relay a sealed agent`);
+  // The brief names the document where the hook files it: inside the workspace, never a temp
+  // path the agent's own shell would expand differently from the hook's (docs/adr/0048).
+  const discipline = src.match(/^const HANDOFF_DISCIPLINE = .*$/m)?.[0] ?? "";
+  assert.match(discipline, /agent_logs\/handoff\/by-key\//, `${name}.js brief does not name the in-workspace handoff path`);
+  assert.doesNotMatch(discipline, /TMPDIR|aiworks-handoff/, `${name}.js brief still names a temp path`);
 }
 
 

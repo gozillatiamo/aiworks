@@ -50,8 +50,14 @@ The grace window pays for the one thing the document cannot carry: an **uncommit
 or park it and return. Findings, verdicts, ledger rows and ticket notes belong *in* the document —
 the relay posts them — so 20 calls is slack, not a dependency.
 
-The document and its state live **outside the workspace** — `AIWORKS_HANDOFF_DIR`, default
-`$TMPDIR/aiworks-handoff/<sid>/<agent_id|main>.md` — which is the skill's own rule for handoffs.
+The document and its state live **inside the workspace** — `AIWORKS_HANDOFF_DIR`, default
+`$CLAUDE_PROJECT_DIR/agent_logs/handoff/<sid>/<agent_id>.md`, and `by-key/<key>.md` for a workflow
+step (`docs/adr/0048`). A path outside the session's working directories is one an agent under auto
+permission mode may not write, edit or name in a brief, so the loop could not close there.
+`agent_logs/` is git-ignored, so nothing here is ever committed. Both hooks take the directory from
+`handoff_dir` in `lib-context-window.sh`, the one place that defines it. Nothing purges a project
+directory, so each demand first prunes the hook's own files older than 7 days and the directories
+that leaves empty.
 Exit 0 always: a measuring hook never breaks the tool call it rides on.
 
 ## Workflows — where this actually pays
@@ -143,7 +149,7 @@ comparing prompt hashes.
 | `AIWORKS_HANDOFF_NAGS` | `3` | demands per cycle before the hook gives up |
 | `AIWORKS_HANDOFF_GRACE` | `20` | tool calls between the document landing and the seal closing |
 | `AIWORKS_HANDOFF_RELAYS` | `5` | re-spawns a parent will be pushed into, per (session, agent type) |
-| `AIWORKS_HANDOFF_DIR` | `$TMPDIR/aiworks-handoff` | where documents and state live |
+| `AIWORKS_HANDOFF_DIR` | `$CLAUDE_PROJECT_DIR/agent_logs/handoff` | where documents and state live; pruned after 7 days, so give an override a directory of its own |
 | `AIWORKS_CONTEXT_WARN` / `_ALARM` | `150000` / `300000` | the advisory budget hook, unchanged |
 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `75` (settings.json) | runtime auto-compaction point, percent of the model window; applies to subagents |
 
