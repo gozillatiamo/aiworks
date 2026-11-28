@@ -28,6 +28,15 @@ own_transcript() {
   return 0
 }
 
+# handoff_dir — where handoff documents and their state live. Inside the project, so an agent under
+# auto permission mode may write, edit and name them (docs/adr/0048). agent_logs/ is git-ignored.
+handoff_dir() {
+  local t
+  if [ -n "${AIWORKS_HANDOFF_DIR:-}" ]; then printf '%s' "${AIWORKS_HANDOFF_DIR%/}"
+  elif [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then printf '%s/agent_logs/handoff' "${CLAUDE_PROJECT_DIR%/}"
+  else t="${TMPDIR:-/tmp}"; printf '%s/aiworks-handoff' "${t%/}"; fi
+}
+
 # handoff_key_of <transcript> — the `HANDOFF_KEY: <key>` a workflow wrapper appended to the brief,
 # read off the first user message(s) of the agent's own transcript, sanitised to a file name
 # (anything outside [A-Za-z0-9_.-] becomes `_`). Empty when the brief carries none. Keying the

@@ -24,8 +24,8 @@
 #              as context → resumed
 #   resumed    behaves as armed: the next crossing writes the next document over the last.
 #
-# The document lives OUTSIDE the workspace (the skill's own rule), under AIWORKS_HANDOFF_DIR,
-# as <sid>/<agent_id|main>.md; the state file sits beside it. Everything is keyed by the
+# The document lives INSIDE the project, under agent_logs/handoff/ (git-ignored; ADR-0048 —
+# AIWORKS_HANDOFF_DIR overrides), as <sid>/<agent_id|main>.md; the state file sits beside it. Everything is keyed by the
 # caller's OWN transcript (lib-context-window.sh): a subagent is measured on its file, never
 # the parent's. Exit 0 always — a measuring hook must never break the tool call it rides on.
 #
@@ -39,10 +39,10 @@ NAGS="${AIWORKS_HANDOFF_NAGS:-3}"
 # document and the relay posts them, so this is slack rather than a dependency — 4-6 calls is
 # the honest need (status, add, commit, push, a ledger Write) and the rest is room to retry.
 GRACE="${AIWORKS_HANDOFF_GRACE:-20}"
-tmp="${TMPDIR:-/tmp}"; DIR="${AIWORKS_HANDOFF_DIR:-${tmp%/}/aiworks-handoff}"
 DROP=20000   # a window never shrinks between two calls except across a compaction
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-context-window.sh"
+DIR="$(handoff_dir)"
 
 json_out() { # json_out <decision|""> <reason|""> <additionalContext|""> <systemMessage|"">
   jq -cn --arg d "$1" --arg r "$2" --arg c "$3" --arg m "$4" '

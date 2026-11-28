@@ -33,7 +33,8 @@
 set -uo pipefail
 
 RELAYS="${AIWORKS_HANDOFF_RELAYS:-5}"
-tmp="${TMPDIR:-/tmp}"; DIR="${AIWORKS_HANDOFF_DIR:-${tmp%/}/aiworks-handoff}"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-context-window.sh"
+DIR="$(handoff_dir)"
 
 payload="$(cat 2>/dev/null)" || exit 0
 ev="$(printf '%s' "$payload" | jq -r '.hook_event_name // "PostToolUse"' 2>/dev/null)" || exit 0
