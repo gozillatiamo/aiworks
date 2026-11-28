@@ -5,6 +5,8 @@
 written, but a subagent that writes one is now SEALED and REPLACED rather than continuing in
 place, and the main session no longer takes part at all. Read 0037 for what the loop does today;
 this record is why the document exists.
+Location amended by [ADR-0048](0048-the-handoff-document-lives-inside-the-workspace.md): the
+document lives inside the workspace.
 
 ## Context
 
